@@ -12,13 +12,13 @@
   <img src="https://img.shields.io/badge/Licencia-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Lenguaje-TypeScript-3178c6.svg" alt="TypeScript">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Node 20+">
-  <img src="https://img.shields.io/badge/Tests-75%20correctos-2ea44f.svg" alt="75 tests">
+  <img src="https://img.shields.io/badge/Tests-91%20correctos-2ea44f.svg" alt="91 tests">
   <img src="https://img.shields.io/badge/Madurez-funcional-00E5FF.svg" alt="funcional">
 </p>
 
 ---
 
-**Comprobación de honestidad - qué funciona hoy:** cada ruta, sesión, cifrado y regla de evidencias descrita aquí es real y está cubierta por tests (`npm test`, 75 tests, con una suite de integración HTTP completa contra un servidor aislado). Lo que **todavía no está demostrado**: MQTT contra un broker real, FFmpeg contra una cámara real, ONVIF/PTZ con todos los firmwares de cámara y cualquier hardware Jetson. Son hitos de despliegue, recogidos en [ARMOR-DOCS](../ARMOR-DOCS); este README nunca los da por hechos.
+**Comprobación de honestidad - qué funciona hoy:** cada ruta, sesión, cifrado y regla de evidencias descrita aquí es real y está cubierta por tests (`npm test`, 91 tests, con una suite de integración HTTP completa contra un servidor aislado). Lo que **todavía no está demostrado**: MQTT contra un broker real, FFmpeg contra una cámara real, ONVIF/PTZ con todos los firmwares de cámara y cualquier hardware Jetson. Son hitos de despliegue, recogidos en [ARMOR-DOCS](../ARMOR-DOCS); este README nunca los da por hechos.
 
 ---
 
@@ -32,6 +32,10 @@
 * 🎥 **Pasarela de cámaras:** bóveda cifrada, PTZ ONVIF / Hi3510 / PSIA, descubrimiento de rutas RTSP, un único relé FFmpeg compartido por cámara, capturas y grabación MP4.
 * 🗄️ **Biblioteca de evidencias:** retención por antigüedad y tamaño (la más antigua primero), **evidencia protegida** que nunca se borra sola y SHA-256 para la cadena de custodia.
 * 🧾 **Auditoría:** una línea JSON por cada acción relevante para la seguridad, sin credenciales.
+* 💾 **Estado que sobrevive:** el modo de seguridad y la última observación de cada nodo se restauran tras un reinicio (un reinicio nunca desarma el perímetro en silencio).
+* 📜 **Historial de eventos:** cada cambio de nivel de alerta, de estado de nodo y de modo queda registrado y se consulta paginado con `GET /api/v1/history`.
+* 🚨 **Salida de alarma:** las alertas altas y, con el sistema armado, los nodos en silencio o fuera de línea van a MQTT `armor/server/alert` y a un webhook opcional firmado con HMAC.
+* 🎯 **Reglas de alerta:** un tiempo de permanencia antes de ALTA y zonas ignoradas, ajustables desde Studio.
 
 ---
 
@@ -89,6 +93,7 @@ flowchart LR
 | Cámaras | `GET /api/v1/cameras` · `POST /cameras/configure` · `DELETE /cameras/:id` · `POST /cameras/discover` · `POST /cameras/:id/ptz` · `POST /cameras/:id/discover-rtsp` · `POST /cameras/:id/stream-ticket` |
 | Directo / captura | `GET /cameras/:id/mjpeg` (operador **o** ticket) · `POST /cameras/:id/snapshot` · `POST /cameras/:id/recordings/start\|stop` |
 | Evidencias | `GET /api/v1/media` · `GET /media/:camara/:tipo/:archivo` · `GET …/sha256` · `PUT …/protected` · `DELETE …` · `DELETE /media` |
+| Historial y reglas | `GET /api/v1/history?limit&before&type&node` · `GET/PUT /api/v1/rules` |
 | Eventos | WebSocket `/api/v1/events` (token de control o cookie de sesión) |
 
 El contrato legible por máquina está en [ARMOR-COMMON](../ARMOR-COMMON).
@@ -112,6 +117,8 @@ Copia `.env.example` a `.env` (ignorado por Git) o deja que `run.bat` / `run.sh`
 | `ARMOR_MAX_MJPEG_RELAYS` | `8` | Relés compartidos (uno por cámara activa) |
 | `ARMOR_MEDIA_MAX_BYTES` / `_RETENTION_DAYS` | 20 GiB / 30 | Límites de evidencias |
 | `ARMOR_NODE_STALE_AFTER_S` | `30` | Silencio tras el que un nodo se considera obsoleto |
+| `ARMOR_ALERT_DWELL_MS` | `2000` | Tiempo que deben persistir dos objetivos antes de ALTA (0 = al instante) |
+| `ARMOR_ALERT_WEBHOOK_URL` / `_SECRET` | sin definir | Webhook de alarma opcional, firmado con `X-Armor-Signature` si hay secreto |
 | `ARMOR_MQTT_URL` (+ `_USERNAME`, `_PASSWORD`) | sin definir | Ingesta MQTT opcional |
 | `ARMOR_COOKIE_SECURE` | `0` | Pon `1` detrás de TLS |
 
@@ -122,7 +129,7 @@ Copia `.env.example` a `.env` (ignorado por Git) o deja que `run.bat` / `run.sh`
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 75 tests: unitarios + integración HTTP completa
+npm test            # 91 tests: unitarios + integración HTTP completa
 npm run build       # dist/server.mjs
 .\run.bat           # servidor de desarrollo con recarga
 ```
@@ -135,9 +142,9 @@ Para instalar en el banco de pruebas CM5 (aislado de cualquier otro proyecto, co
 
 ```text
 ARMOR-SERVER/
-├── src/            server, app, config, context, store, contracts, mqtt, audit
+├── src/            server, app, config, context, store, persistence, events, rules, notify, contracts, mqtt, audit
 │   ├── http/       primitivas de autenticación
-│   ├── routes/     sessions, cameras, media, ingest
+│   ├── routes/     sessions, cameras, media, ingest, history
 │   ├── cameras/    model, vault, digest, ptz, rtsp, discovery, errors
 │   └── media/      relay, evidence
 ├── tests/          tests unitarios + integración HTTP completa

@@ -13,6 +13,7 @@ import { createContext, type AppContext, type ContextOverrides } from "./context
 import { hasBearer } from "./http/auth.js";
 import { attachMqtt } from "./mqtt.js";
 import { registerCameraRoutes } from "./routes/cameras.js";
+import { registerHistoryRoutes } from "./routes/history.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerMediaRoutes } from "./routes/media.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
@@ -37,10 +38,12 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   });
   app.use(express.json({ limit: "64kb", type: "application/json" }));
   app.use(cors({ origin: config.studioOrigins, credentials: true, methods: ["GET", "POST", "PUT", "PATCH", "DELETE"] }));
-  app.use(rateLimit({ windowMs: 60_000, limit: 240, standardHeaders: "draft-8", legacyHeaders: false }));
+  // Field-node ingest has its own, larger budget (routes/ingest.ts): a burst of node messages must never lock an operator out.
+  app.use(rateLimit({ windowMs: 60_000, limit: 240, standardHeaders: "draft-8", legacyHeaders: false, skip: request => request.method === "POST" && (request.path === "/api/v1/telemetry" || request.path === "/api/v1/health") }));
 
   registerIngestRoutes(app, context, Date.now(), version);
   registerSessionRoutes(app, context);
+  registerHistoryRoutes(app, context);
   registerCameraRoutes(app, context);
   registerMediaRoutes(app, context);
 
@@ -60,9 +63,16 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   });
 
   const mqtt = config.mqtt ? attachMqtt(context.store, config.mqtt.url, config.mqtt.username, config.mqtt.password) : null;
+  if (mqtt) context.notifier.setPublisher((topic, payload) => { if (mqtt.connected) mqtt.publish(topic, payload, { qos: 1 }); });
+  // Silence and dwell time are time-driven: they need a clock, not a message.
+  const sweeper = setInterval(() => context.store.sweep(), 2_000);
+  sweeper.unref();
   return {
     server, context,
     close: async () => {
+      clearInterval(sweeper);
+      context.store.flush();
+      context.notifier.close();
       mqtt?.end(true);
       for (const client of clients.clients) client.terminate();
       clients.close();
