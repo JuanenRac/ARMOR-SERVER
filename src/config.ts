@@ -32,6 +32,11 @@ export type ArmorConfig = {
   mqtt: { url: string; username?: string; password?: string } | null;
   /** Seconds without a message after which a field node is reported offline. */
   nodeStaleAfterS: number;
+  /** Milliseconds a two-target condition must persist before it becomes "high" (0 = immediately). */
+  alertDwellMs: number;
+  /** Where alarms are POSTed (signed with `alertWebhookSecret` when set); null when unused. */
+  alertWebhookUrl: string | null;
+  alertWebhookSecret: string;
   /** Problems that do not stop a loopback-only server but should be fixed. */
   warnings: string[];
 };
@@ -108,6 +113,20 @@ export function readConfig(env: Env = process.env): ArmorConfig {
   const cidr = env.ARMOR_CAMERA_DISCOVERY_CIDR?.trim() || null;
   if (cidr && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/24$/.test(cidr)) throw new ConfigError("ARMOR_CAMERA_DISCOVERY_CIDR must use an IPv4 /24 CIDR");
 
+  const webhookRaw = env.ARMOR_ALERT_WEBHOOK_URL?.trim() ?? "";
+  let alertWebhookUrl: string | null = null;
+  if (webhookRaw) {
+    let parsed: URL | undefined;
+    try { parsed = new URL(webhookRaw); } catch { /* reported below */ }
+    if (!parsed || (parsed.protocol !== "http:" && parsed.protocol !== "https:") || parsed.username || parsed.password || parsed.hash) {
+      throw new ConfigError("ARMOR_ALERT_WEBHOOK_URL must be a plain http(s) URL without credentials");
+    }
+    alertWebhookUrl = parsed.toString();
+  }
+  const alertWebhookSecret = env.ARMOR_ALERT_WEBHOOK_SECRET?.trim() ?? "";
+  if (alertWebhookUrl && !alertWebhookSecret) warnings.push("ARMOR_ALERT_WEBHOOK_SECRET is not set; alarm calls will not be signed");
+  if (alertWebhookSecret) secret(env, "ARMOR_ALERT_WEBHOOK_SECRET");
+
   const mqttUrl = env.ARMOR_MQTT_URL?.trim();
   return {
     host,
@@ -127,6 +146,8 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     discoveryCidr: cidr,
     mqtt: mqttUrl ? { url: mqttUrl, username: env.ARMOR_MQTT_USERNAME?.trim() || undefined, password: env.ARMOR_MQTT_PASSWORD || undefined } : null,
     nodeStaleAfterS: integer(env, "ARMOR_NODE_STALE_AFTER_S", 30, 5, 3600),
+    alertDwellMs: integer(env, "ARMOR_ALERT_DWELL_MS", 2000, 0, 60_000),
+    alertWebhookUrl, alertWebhookSecret,
     warnings,
   };
 }

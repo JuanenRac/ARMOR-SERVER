@@ -1,12 +1,16 @@
 # First vertical integration
 
-1. Generate JSONL with `ARMOR-SIMULATOR`.
-2. Validate every envelope with `ARMOR-COMMON`.
-3. Call `ArmorService.ingest()` only after validation.
-4. Read `ArmorService.status()` from an authenticated API adapter.
+1. Generate JSONL with `ARMOR-SIMULATOR` (`--server-url` and `--ingest-token` deliver it over HTTP).
+2. Validate every envelope with `ARMOR-COMMON` (`--validate`); the server validates again at its boundary.
+3. Read the state from `GET /api/v1/status` and the changes from `GET /api/v1/history`.
 
+`tests/vertical-slice.test.ts` runs exactly this path with the real simulator and the real server.
 The Node service provides `GET /healthz` and `GET /api/v1/status`. It accepts no
-unauthenticated writes. A production API must add TLS, authentication,
+unauthenticated writes.
+
+Alarms leave the server on MQTT `armor/server/alert` and, when `ARMOR_ALERT_WEBHOOK_URL` is set, as a
+JSON POST. When `ARMOR_ALERT_WEBHOOK_SECRET` is set the body is signed: check
+`X-Armor-Signature: sha256=<hex HMAC-SHA256 of the raw body>` in constant time before trusting it. A production API must add TLS, authentication,
 authorization, rate limits and audit events before any command endpoint is
 introduced.
 

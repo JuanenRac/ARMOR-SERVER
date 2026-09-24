@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.0] - State that survives, an event history and alarm output
+
+- **Persistence:** the security mode and the last observation of every node are written atomically to `data/state.json` (the mode at once, node data coalesced) and restored at start. A restart no longer disarms the perimeter; restored nodes are stale until they speak again. A damaged or foreign file is ignored, never trusted.
+- **Event history:** every alert-level change, node status change (online, offline, silent) and mode change is recorded in `data/events.log` (rotated) and served, newest first and paged, by `GET /api/v1/history` (operator).
+- **Alarm output:** `alert.raised`, `alert.cleared` and, while armed, `node.offline` / `node.stale` are published on MQTT `armor/server/alert` and POSTed to an optional webhook (`ARMOR_ALERT_WEBHOOK_URL`), signed with `X-Armor-Signature: sha256=HMAC` when `ARMOR_ALERT_WEBHOOK_SECRET` is set. Delivery never blocks ingestion, retries server errors with back-off, does not retry client errors, follows no redirect and is audited.
+- **Alert rules:** `ARMOR_ALERT_DWELL_MS` (default 2000) is how long two targets must persist before the alert becomes high, and rectangular ignore zones (per node and sensor) exclude targets such as a road. `GET`/`PUT /api/v1/rules` are strictly validated, persisted in `data/rules.json` and audited.
+- A time-driven sweep (every 2 s) makes silence and dwell time take effect without a message.
+- Ingest has its own rate budget (1200/min) so a burst of node messages cannot lock an operator out.
+- Removed the leftover Python server (`http_api.py`, `service.py`, `state.py`) and its tests; the end-to-end check now runs the real simulator against the real server.
+- 91 tests (was 75).
+
 ## [0.2.0] - Modular server, security fixes and honest node state
 
 - Split the 700-line `server.ts` into `config`, `http/auth`, `context`, `app`, `routes/*`, `cameras/*` and `media/*`; the behaviour of every existing route is unchanged.

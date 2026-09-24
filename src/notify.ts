@@ -1,0 +1,129 @@
+/**
+ * A.R.M.O.R. alarm output: turns the events that matter into a signed webhook
+ * call and an MQTT message. Delivery never blocks ingestion, retries with
+ * back-off, and its failures are audited, never thrown into the request path.
+ * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
+ */
+import { createHmac } from "node:crypto";
+import type { AuditLog } from "./audit.js";
+import type { ArmorEvent } from "./events.js";
+import type { SecurityMode } from "./store.js";
+
+export const ALERT_TOPIC = "armor/server/alert";
+export type AlertMessage = {
+  service: "armor-server";
+  event: "alert.raised" | "alert.cleared" | "node.offline" | "node.stale";
+  at: string;
+  mode: SecurityMode;
+  node_id: string;
+  targets?: number;
+};
+
+/**
+ * Which events are worth waking someone for: a node reaching "high" (and
+ * clearing), and a node that goes offline or silent while the system is armed
+ * (a dead sensor is how a perimeter is defeated).
+ */
+export function alertMessageFor(event: ArmorEvent, mode: SecurityMode): AlertMessage | null {
+  const base = { service: "armor-server" as const, at: event.at, mode };
+  if (event.type === "alert") {
+    if (event.to === "high") return { ...base, event: "alert.raised", node_id: event.node_id, targets: event.targets };
+    if (event.from === "high") return { ...base, event: "alert.cleared", node_id: event.node_id, targets: event.targets };
+  }
+  if (event.type === "node" && mode === "armed") {
+    if (event.to === "offline") return { ...base, event: "node.offline", node_id: event.node_id };
+    if (event.to === "stale") return { ...base, event: "node.stale", node_id: event.node_id };
+  }
+  return null;
+}
+
+export const signBody = (secret: string, body: string): string => `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
+
+export type NotifierOptions = {
+  webhookUrl?: string;
+  webhookSecret?: string;
+  audit: AuditLog;
+  fetchImpl?: typeof fetch;
+  /** Waits before each retry; the number of entries is the number of retries. */
+  retryDelaysMs?: number[];
+  timeoutMs?: number;
+};
+
+const MAX_QUEUE = 100;
+
+export class AlertNotifier {
+  readonly #options: NotifierOptions;
+  readonly #fetch: typeof fetch;
+  readonly #delays: number[];
+  #publish: ((topic: string, payload: string) => void) | undefined;
+  readonly #queue: AlertMessage[] = [];
+  #running = false;
+  #closed = false;
+  #timer: NodeJS.Timeout | undefined;
+
+  constructor(options: NotifierOptions) {
+    this.#options = options;
+    this.#fetch = options.fetchImpl ?? fetch;
+    this.#delays = options.retryDelaysMs ?? [1_000, 4_000, 15_000];
+  }
+
+  /** Connect the MQTT output once the broker client exists. */
+  setPublisher(publish: (topic: string, payload: string) => void): void { this.#publish = publish; }
+
+  get enabled(): boolean { return Boolean(this.#options.webhookUrl || this.#publish); }
+
+  notify(event: ArmorEvent, mode: SecurityMode): void {
+    const message = alertMessageFor(event, mode);
+    if (!message || this.#closed) return;
+    try { this.#publish?.(ALERT_TOPIC, JSON.stringify(message)); } catch { /* MQTT down: the webhook still goes out. */ }
+    if (!this.#options.webhookUrl) return;
+    if (this.#queue.length >= MAX_QUEUE) {
+      this.#queue.shift();
+      this.#options.audit.record({ action: "alert.webhook", outcome: "failed", detail: "queue full, oldest message dropped" });
+    }
+    this.#queue.push(message);
+    void this.#drain();
+  }
+
+  /** Resolves when everything queued has been attempted (for tests and shutdown). */
+  async idle(): Promise<void> {
+    while (this.#running || this.#queue.length > 0) await new Promise(resolve => setTimeout(resolve, 5));
+  }
+
+  close(): void {
+    this.#closed = true;
+    if (this.#timer) clearTimeout(this.#timer);
+    this.#queue.length = 0;
+  }
+
+  async #drain(): Promise<void> {
+    if (this.#running) return;
+    this.#running = true;
+    try {
+      for (let message = this.#queue.shift(); message && !this.#closed; message = this.#queue.shift()) await this.#deliver(message);
+    } finally { this.#running = false; }
+  }
+
+  async #deliver(message: AlertMessage): Promise<void> {
+    const { webhookUrl, webhookSecret, audit } = this.#options;
+    if (!webhookUrl) return;
+    const body = JSON.stringify(message);
+    const headers: Record<string, string> = { "Content-Type": "application/json", "User-Agent": "armor-server" };
+    if (webhookSecret) headers["X-Armor-Signature"] = signBody(webhookSecret, body);
+    let detail = "no attempt";
+    for (let attempt = 0; attempt <= this.#delays.length; attempt += 1) {
+      if (this.#closed) return;
+      try {
+        const response = await this.#fetch(webhookUrl, { method: "POST", headers, body, redirect: "error", signal: AbortSignal.timeout(this.#options.timeoutMs ?? 5_000) });
+        if (response.ok) { audit.record({ action: "alert.webhook", outcome: "allowed", target: message.event }); return; }
+        detail = `HTTP ${response.status}`;
+        // A client error will not get better by retrying; a server error or rate limit might.
+        if (response.status >= 400 && response.status < 500 && response.status !== 429) break;
+      } catch (error) {
+        detail = error instanceof Error ? error.name : "network error";
+      }
+      if (attempt < this.#delays.length) await new Promise<void>(resolve => { this.#timer = setTimeout(resolve, this.#delays[attempt]); this.#timer.unref(); });
+    }
+    audit.record({ action: "alert.webhook", outcome: "failed", target: message.event, detail });
+  }
+}

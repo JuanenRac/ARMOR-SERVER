@@ -11,6 +11,7 @@ import { hasBearer } from "../http/auth.js";
 
 export function registerIngestRoutes(app: Express, context: AppContext, startedAt: number, version: string): void {
   const { config, store, audit } = context;
+  const ingestLimit = rateLimit({ windowMs: 60_000, limit: 1_200, standardHeaders: "draft-8", legacyHeaders: false });
   const controlLimit = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false });
 
   app.get("/healthz", (_request, response) => response.json({ ok: true, service: "armor-server" }));
@@ -20,13 +21,13 @@ export function registerIngestRoutes(app: Express, context: AppContext, startedA
     mode: store.snapshot().mode, live_video: Boolean(config.ffmpegPath), mqtt: Boolean(config.mqtt),
   }));
 
-  app.post("/api/v1/telemetry", (request, response) => {
+  app.post("/api/v1/telemetry", ingestLimit, (request, response) => {
     if (!hasBearer(request, config.ingestToken)) return response.sendStatus(401);
     try { return response.status(202).json(store.telemetry(parseTelemetry(request.body))); }
     catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "invalid telemetry" }); }
   });
 
-  app.post("/api/v1/health", (request, response) => {
+  app.post("/api/v1/health", ingestLimit, (request, response) => {
     if (!hasBearer(request, config.ingestToken)) return response.sendStatus(401);
     try { return response.status(202).json(store.health(parseHealth(request.body))); }
     catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "invalid health" }); }

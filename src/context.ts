@@ -13,12 +13,19 @@ import type { ArmorConfig } from "./config.js";
 import { hasBearer, SessionStore, type HeaderSource } from "./http/auth.js";
 import { EvidenceLibrary } from "./media/evidence.js";
 import { RelayManager, StreamTickets } from "./media/relay.js";
+import { EventLog } from "./events.js";
+import { AlertNotifier } from "./notify.js";
+import { FileStatePersistence } from "./persistence.js";
+import { RulesFile } from "./rules.js";
 import { ArmorStore, type SystemState } from "./store.js";
 import path from "node:path";
 
 export type AppContext = {
   config: ArmorConfig;
   store: ArmorStore;
+  events: EventLog;
+  rules: RulesFile;
+  notifier: AlertNotifier;
   audit: AuditLog;
   studioSessions: SessionStore;
   operatorSessions: SessionStore;
@@ -50,7 +57,14 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   });
   const evidence = new EvidenceLibrary({ root: path.join(config.dataDir, "media"), ffmpegPath: config.ffmpegPath, maxBytes: config.maxMediaBytes, retentionMs: config.mediaRetentionMs, warn });
   const relays = new RelayManager({ ffmpegPath: config.ffmpegPath, maxRelays: config.maxMjpegRelays });
-  const store = new ArmorStore(overrides.broadcast, { staleAfterMs: config.nodeStaleAfterS * 1000, now: overrides.now });
+  const events = new EventLog({ file: path.join(config.dataDir, "events.log") });
+  const rules = new RulesFile(path.join(config.dataDir, "rules.json"), config.alertDwellMs, warn);
+  const notifier = new AlertNotifier({ webhookUrl: config.alertWebhookUrl ?? undefined, webhookSecret: config.alertWebhookSecret || undefined, audit });
+  const persistence = new FileStatePersistence(path.join(config.dataDir, "state.json"), { warn });
+  const store: ArmorStore = new ArmorStore(overrides.broadcast, {
+    staleAfterMs: config.nodeStaleAfterS * 1000, now: overrides.now, persistence, rules: () => rules.get(),
+    onEvent: body => notifier.notify(events.append(body), store.snapshot().mode),
+  });
   const operatorAuthorized = (request: HeaderSource): boolean =>
     hasBearer(request, config.operatorToken) || operatorSessions.has(request) || studioSessions.has(request);
   const requireOperator: RequestHandler = (request, response, next) => {
@@ -59,7 +73,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(401).json({ error: "operator authorization is required" });
   };
   return {
-    config, store, audit, studioSessions, operatorSessions, vault, evidence, relays,
+    config, store, events, rules, notifier, audit, studioSessions, operatorSessions, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),
