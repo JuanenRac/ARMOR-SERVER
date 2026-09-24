@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" role="img" aria-labelledby="title desc">
+  <title id="title">ARMOR-SERVER</title><desc id="desc">ARMOR-SERVER | A.R.M.O.R. Autonomous Radar &amp; Multimodal Observation Range</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#07090C"/><stop offset="1" stop-color="#12161C"/></linearGradient>
+    <filter id="g"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="1200" height="400" fill="url(#bg)"/>
+  <g fill="none" stroke="#00E5FF" stroke-width="1" opacity=".25"><path d="M0 100H200L250 150H600"/><path d="M1200 300H1000L950 250H600"/><path d="M1200 80H1040L1000 120H760"/></g>
+  <g transform="translate(205 190)"><g transform="scale(1.0)" filter="url(#g)" fill="none" stroke="#00E5FF" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M0,-84 L66,-58 V4 C66,48 34,72 0,88 C-34,72 -66,48 -66,4 V-58 Z"/>
+    <circle r="46" stroke-width="2" opacity=".55"/>
+    <circle r="28" stroke-width="2" opacity=".55"/>
+    <circle r="10" stroke-width="2" opacity=".55"/>
+    <path d="M0,0 L34,-32" stroke-width="4"/>
+    <path d="M0,-46 A46,46 0 0 1 32.5,-32.5" stroke="#FFB020" stroke-width="3" opacity=".9"/>
+    <circle cx="34" cy="-32" r="5" fill="#FFB020" stroke="none"/>
+    <circle r="4" fill="#00E5FF" stroke="none"/>
+  </g></g>
+  <text x="360" y="136" font-family="Arial,sans-serif" font-size="50" font-weight="bold" fill="#FFF" letter-spacing="8">A.R.M.O.R.</text>
+  <text x="364" y="181" font-family="Arial,sans-serif" font-size="17" fill="#00E5FF" letter-spacing="4">AUTONOMOUS RADAR &amp; MULTIMODAL OBSERVATION RANGE</text>
+  <text x="360" y="246" font-family="Arial,sans-serif" font-size="29" font-weight="bold" fill="#FFF">ARMOR-SERVER</text>
+  <text x="362" y="280" font-family="Arial,sans-serif" font-size="16" fill="#FFB020" letter-spacing="3">CENTRAL SECURITY COORDINATOR</text>
+  <g font-family="monospace" font-size="12" fill="#00E5FF" opacity=".65"><text x="105" y="360">#NODE</text><text x="255" y="360">#TYPESCRIPT</text><text x="405" y="360">#MQTT</text><text x="555" y="360">#WEBSOCKET</text><text x="705" y="360">#FFMPEG</text></g>
+</svg>

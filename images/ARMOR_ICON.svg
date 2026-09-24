@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-110 -110 220 220" role="img" aria-label="A.R.M.O.R.">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%"><stop stop-color="#07090C"/><stop offset="1" stop-color="#12161C"/></linearGradient>
+    <filter id="g"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect x="-110" y="-110" width="220" height="220" rx="36" fill="url(#bg)"/>
+  <g transform="scale(0.95)" filter="url(#g)" fill="none" stroke="#00E5FF" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M0,-84 L66,-58 V4 C66,48 34,72 0,88 C-34,72 -66,48 -66,4 V-58 Z"/>
+    <circle r="46" stroke-width="2" opacity=".55"/>
+    <circle r="28" stroke-width="2" opacity=".55"/>
+    <circle r="10" stroke-width="2" opacity=".55"/>
+    <path d="M0,0 L34,-32" stroke-width="4"/>
+    <path d="M0,-46 A46,46 0 0 1 32.5,-32.5" stroke="#FFB020" stroke-width="3" opacity=".9"/>
+    <circle cx="34" cy="-32" r="5" fill="#FFB020" stroke="none"/>
+    <circle r="4" fill="#00E5FF" stroke="none"/>
+  </g>
+</svg>
