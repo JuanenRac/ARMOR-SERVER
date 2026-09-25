@@ -12,13 +12,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="TypeScript">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Node 20+">
-  <img src="https://img.shields.io/badge/Tests-118%20passing-2ea44f.svg" alt="118 tests">
+  <img src="https://img.shields.io/badge/Tests-130%20passing-2ea44f.svg" alt="130 tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="functional">
 </p>
 
 ---
 
-**Honesty check - what runs today:** every route, session, encryption and evidence rule below is real and covered by tests (`npm test`, 118 tests, including a full HTTP integration suite against an isolated server). It has run against a real MQTT broker on the CM5 (with scripts, not field-node firmware). It has streamed live video, saved a snapshot and recorded from five real IP cameras through FFmpeg on the CM5. What is **not** proven yet: ONVIF against a real ONVIF camera, PTZ on every camera firmware (it works on the Hi3510 unit and is honest about the rest), and any Jetson hardware. Those are deployment milestones, tracked in [ARMOR-DOCS](../ARMOR-DOCS), and this README never claims them.
+**Honesty check - what runs today:** every route, session, encryption and evidence rule below is real and covered by tests (`npm test`, 130 tests, including a full HTTP integration suite against an isolated server). It has run against a real MQTT broker on the CM5 (with scripts, not field-node firmware). It has streamed live video, saved a snapshot and recorded from five real IP cameras through FFmpeg on the CM5. What is **not** proven yet: ONVIF against a real ONVIF camera, PTZ on every camera firmware (it works on the Hi3510 unit and is honest about the rest), and any Jetson hardware. Those are deployment milestones, tracked in [ARMOR-DOCS](../ARMOR-DOCS), and this README never claims them.
 
 ---
 
@@ -37,6 +37,7 @@
 * 📷 **Camera watchdog:** every configured camera is probed on its RTSP and ONVIF ports; one that stops answering becomes an event and, while armed, an alarm.
 * 🚨 **Alarm output:** high alerts and, while armed, silent or offline nodes go to MQTT `armor/server/alert` and an optional HMAC-signed webhook.
 * 🎯 **Alert rules:** a dwell time before HIGH and ignore zones, tuned from Studio.
+* 👥 **Studio users:** names and passwords (scrypt hashes) kept in `users.json`, an `admin` role that manages users and an `operator` role that operates; a changed password or role ends that user's other sessions.
 
 ---
 
@@ -74,7 +75,7 @@ Source layout (`src/`):
 | `ARMOR_INGEST_TOKEN` | Posting telemetry and health | Reading cameras, arming |
 | `ARMOR_CONTROL_TOKEN` | Arm / disarm, WebSocket events | Camera work |
 | `ARMOR_OPERATOR_TOKEN` | Operator session for service automation | Ingest, arming |
-| Studio login (`admin` + password) | An 8-hour **HttpOnly, SameSite=Strict** session for camera, PTZ and evidence work | The operator token itself |
+| Studio login (a user and password from `users.json`; the first is seeded from the environment) | An 8-hour **HttpOnly, SameSite=Strict** session for camera, PTZ and evidence work; an `admin` may also manage users | The operator token itself |
 
 * Every route that configures, moves, captures, records, protects or deletes needs an operator. **Live video** needs an operator **or** a short-lived, camera-bound stream ticket that only an operator can obtain.
 * Camera passwords are stored only in `data/cameras.json`, AES-256-GCM encrypted with `ARMOR_CAMERA_CONFIG_KEY`, and are never returned by any API. Rotating a token does not lock the cameras out.
@@ -114,7 +115,8 @@ Copy `.env.example` to `.env` (ignored by Git), or let `run.bat` / `run.sh` gene
 | `ARMOR_INGEST_TOKEN`, `ARMOR_CONTROL_TOKEN` | required | ≥ 24 characters each, all different |
 | `ARMOR_OPERATOR_TOKEN` | control token | Operator automation token |
 | `ARMOR_CAMERA_CONFIG_KEY` | control token (migration only) | Key for the camera vault |
-| `ARMOR_STUDIO_USERNAME` / `_PASSWORD` | required | Studio sign-in (password ≥ 12 characters off loopback) |
+| `ARMOR_STUDIO_USERNAME` / `_PASSWORD` | required | Seeds the first administrator (password ≥ 12 characters off loopback); afterwards users are managed in Studio |
+| `ARMOR_STUDIO_RESET_PASSWORD` | `0` | Set to `1` for one start to put `ARMOR_STUDIO_PASSWORD` back on the seed administrator (a forgotten password) |
 | `ARMOR_STUDIO_ORIGIN` | local Studio | Comma-separated allowed Studio origins |
 | `ARMOR_DATA_DIR` | `./data` | Vault, evidence and audit log |
 | `ARMOR_FFMPEG_PATH` | unset | Enables live video and capture |
@@ -134,7 +136,7 @@ Copy `.env.example` to `.env` (ignored by Git), or let `run.bat` / `run.sh` gene
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 118 tests: unit + full HTTP integration
+npm test            # 130 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```
