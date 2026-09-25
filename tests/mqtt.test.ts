@@ -4,6 +4,7 @@ import { bodyMatchesTopic, topicKind, topicNode } from "../src/mqtt.js";
 
 test("accepts only published field observation topics", () => {
   assert.equal(topicKind("armor/node/north-1/telemetry"), "telemetry");
+  assert.equal(topicKind("armor/node/north-1/info"), "info");
   assert.equal(topicKind("armor/node/north-1/command"), undefined);
   assert.equal(topicKind("armor/node/north-1/telemetry/extra"), undefined);
   assert.equal(topicKind("armor/server/alert"), undefined);

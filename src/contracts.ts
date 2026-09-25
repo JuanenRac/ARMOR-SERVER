@@ -7,6 +7,8 @@
 export type RadarTrack = { sensor_id: number; track_id: number; x_mm: number; y_mm: number; speed_mm_s: number };
 export type Telemetry = { node_id: string; timestamp_ms: number; lux: number; targets: RadarTrack[] };
 export type Health = { node_id: string; timestamp_ms: number; online: boolean };
+/** What a node says about itself so that a console can offer its web panel (see ARMOR-COMMON's info schema). */
+export type Info = { node_id: string; timestamp_ms: number; name: string; firmware: string; ip: string; port: number };
 
 export const MAX_TARGETS = 15;
 export const MAX_LUX = 200_000;
@@ -60,4 +62,21 @@ export function parseHealth(value: unknown): Health {
   const timestamp = readTimestamp(body);
   if (typeof body.online !== "boolean") throw new Error("invalid online flag");
   return { node_id: node, timestamp_ms: timestamp, online: body.online };
+}
+
+const IPV4 = /^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}$/;
+const FIRMWARE = /^[0-9]+\.[0-9]+\.[0-9]+$/;
+export const MAX_NAME = 48;
+
+export function parseInfo(value: unknown): Info {
+  const body = record(value, "info");
+  onlyKnown(body, ["node_id", "timestamp_ms", "name", "firmware", "ip", "port"], "info");
+  const node = readNodeId(body);
+  const timestamp = readTimestamp(body);
+  // The schema counts characters, not UTF-16 units: an emoji is one.
+  if (typeof body.name !== "string" || Array.from(body.name).length < 1 || Array.from(body.name).length > MAX_NAME) throw new Error("invalid name");
+  if (typeof body.firmware !== "string" || !FIRMWARE.test(body.firmware)) throw new Error("invalid firmware");
+  if (typeof body.ip !== "string" || !IPV4.test(body.ip)) throw new Error("invalid ip");
+  if (!integer(body.port) || body.port < 1 || body.port > 65535) throw new Error("invalid port");
+  return { node_id: node, timestamp_ms: timestamp, name: body.name, firmware: body.firmware, ip: body.ip, port: body.port };
 }

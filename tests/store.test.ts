@@ -109,3 +109,30 @@ test("a target inside an ignore zone is shown but not counted", () => {
   assert.equal(node.target_count, 1);
   assert.deepEqual(node.targets.map(target => target.counted), [false, true]);
 });
+
+test("a node's own panel address is kept beside its state, and repeating it does not spend a revision", () => {
+  const store = new ArmorStore();
+  store.health({ node_id: "north-1", timestamp_ms: 10, online: true });
+  assert.equal(store.snapshot().nodes["north-1"].panel, null);
+  const info = { node_id: "north-1", timestamp_ms: 11, name: "North gate", firmware: "0.2.3", ip: "192.168.0.181", port: 80 };
+  const before = store.snapshot().revision;
+  store.info(info);
+  assert.deepEqual(store.snapshot().nodes["north-1"].panel, { name: "North gate", firmware: "0.2.3", ip: "192.168.0.181", port: 80 });
+  assert.equal(store.snapshot().revision, before + 1);
+  store.info({ ...info, timestamp_ms: 12 });
+  assert.equal(store.snapshot().revision, before + 1, "the same words again change nothing");
+  store.info({ ...info, ip: "192.168.0.190" });
+  assert.equal(store.snapshot().nodes["north-1"].panel?.ip, "192.168.0.190");
+  assert.equal(store.snapshot().revision, before + 2);
+});
+
+test("a node that only sent its info does not appear, and forgetting a node forgets its panel", () => {
+  const store = new ArmorStore();
+  store.info({ node_id: "quiet", timestamp_ms: 1, name: "Quiet", firmware: "0.2.3", ip: "10.0.0.5", port: 80 });
+  assert.deepEqual(Object.keys(store.snapshot().nodes), []);
+  store.health({ node_id: "quiet", timestamp_ms: 2, online: true });
+  assert.equal(store.snapshot().nodes.quiet.panel?.ip, "10.0.0.5", "the address said before the node appeared is there when it does");
+  assert.equal(store.removeNode("quiet"), true);
+  store.health({ node_id: "quiet", timestamp_ms: 3, online: true });
+  assert.equal(store.snapshot().nodes.quiet.panel, null);
+});

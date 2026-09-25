@@ -3,13 +3,13 @@
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import { connect, type MqttClient } from "mqtt";
-import { parseHealth, parseTelemetry } from "./contracts.js";
+import { parseHealth, parseInfo, parseTelemetry } from "./contracts.js";
 import { ArmorStore } from "./store.js";
 
-export function topicKind(topic: string): "telemetry" | "health" | undefined {
+export function topicKind(topic: string): "telemetry" | "health" | "info" | undefined {
   const parts = topic.split("/");
   if (parts.length !== 4 || parts[0] !== "armor" || parts[1] !== "node" || !parts[2]) return undefined;
-  return parts[3] === "telemetry" || parts[3] === "health" ? parts[3] : undefined;
+  return parts[3] === "telemetry" || parts[3] === "health" || parts[3] === "info" ? parts[3] : undefined;
 }
 
 /** The node a topic belongs to (armor/node/<id>/...), or undefined. */
@@ -29,15 +29,16 @@ export function bodyMatchesTopic(topic: string, body: { node_id: string }): bool
 
 export function attachMqtt(store: ArmorStore, brokerUrl: string, username?: string, password?: string): MqttClient {
   const client = connect(brokerUrl, { username, password, reconnectPeriod: 2_000, clean: true, protocolVersion: 5 });
-  client.on("connect", () => client.subscribe(["armor/node/+/telemetry", "armor/node/+/health"], { qos: 1 }));
+  client.on("connect", () => client.subscribe(["armor/node/+/telemetry", "armor/node/+/health", "armor/node/+/info"], { qos: 1 }));
   client.on("message", (topic, raw) => {
     try {
       const kind = topicKind(topic);
       if (!kind) return;
       const body: unknown = JSON.parse(raw.toString("utf8"));
-      const message = kind === "telemetry" ? parseTelemetry(body) : parseHealth(body);
+      const message = kind === "telemetry" ? parseTelemetry(body) : kind === "info" ? parseInfo(body) : parseHealth(body);
       if (!bodyMatchesTopic(topic, message)) throw new Error("node_id does not match the topic");
       if (kind === "telemetry") store.telemetry(message as ReturnType<typeof parseTelemetry>);
+      else if (kind === "info") store.info(message as ReturnType<typeof parseInfo>);
       else store.health(message as ReturnType<typeof parseHealth>);
     } catch (error) {
       console.warn("ARMOR_MQTT=REJECTED", error instanceof Error ? error.message : "invalid payload");

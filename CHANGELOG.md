@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.1] - The address of a node's own panel
+
+- The server listens to `armor/node/+/info` and keeps, beside each node, the name, firmware, address and port the node said (`panel` in the node state, null until it has). It is validated by the shared contract (conformance vectors, one of them per rule), it never makes a node appear by itself, it is not written to disk (the node repeats it every minute), a repeated message spends no revision, and forgetting a node forgets it.
+- Tests: 148 (was 145).
+
 ## [0.2.0] - Devices, alarms, automations, arm and disarm from the console, and the design kept on the server
 
 - **Devices:** smoke, CO, gas and flood detectors, panic buttons, door and window contacts, motion, glass-break and vibration sensors, temperature, humidity and light sensors, smart plugs, lights and switches, sirens, locks and valves, over Wi-Fi, Zigbee, Bluetooth, Z-Wave, Thread, LoRa, 433 MHz or a wire. A device reports by MQTT (any topic under `armor/device/`, with a field map and an optional availability topic) or by an authenticated push; its state is normalised (`triggered`, `open`, `on`, `locked`, `tamper`, temperature, humidity, battery, power...). Commands go out by MQTT or by HTTP to an address on the local network only.
