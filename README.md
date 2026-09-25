@@ -12,13 +12,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="TypeScript">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Node 20+">
-  <img src="https://img.shields.io/badge/Tests-130%20passing-2ea44f.svg" alt="130 tests">
+  <img src="https://img.shields.io/badge/Tests-132%20passing-2ea44f.svg" alt="132 tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="functional">
 </p>
 
 ---
 
-**Honesty check - what runs today:** every route, session, encryption and evidence rule below is real and covered by tests (`npm test`, 130 tests, including a full HTTP integration suite against an isolated server). It has run against a real MQTT broker on the CM5 (with scripts, not field-node firmware). It has streamed live video, saved a snapshot and recorded from five real IP cameras through FFmpeg on the CM5. What is **not** proven yet: ONVIF against a real ONVIF camera, PTZ on every camera firmware (it works on the Hi3510 unit and is honest about the rest), and any Jetson hardware. Those are deployment milestones, tracked in [ARMOR-DOCS](../ARMOR-DOCS), and this README never claims them.
+**Honesty check - what runs today:** every route, session, encryption and evidence rule below is real and covered by tests (`npm test`, 132 tests, including a full HTTP integration suite against an isolated server). It has run against a real MQTT broker on the CM5 (with scripts, not field-node firmware). It has streamed live video, saved a snapshot and recorded from five real IP cameras through FFmpeg on the CM5. What is **not** proven yet: ONVIF against a real ONVIF camera, PTZ on every camera firmware (it works on the Hi3510 unit and is honest about the rest), and any Jetson hardware. Those are deployment milestones, tracked in [ARMOR-DOCS](../ARMOR-DOCS), and this README never claims them.
 
 ---
 
@@ -136,7 +136,7 @@ Copy `.env.example` to `.env` (ignored by Git), or let `run.bat` / `run.sh` gene
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 130 tests: unit + full HTTP integration
+npm test            # 132 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```

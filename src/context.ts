@@ -55,7 +55,7 @@ export type ContextOverrides = Partial<Pick<AppContext, "audit">> & { broadcast?
 export function createContext(config: ArmorConfig, overrides: ContextOverrides = {}): AppContext {
   const audit = overrides.audit ?? createAuditLog(config.dataDir);
   const warn = (message: string) => console.warn(message);
-  const studioSessions = new SessionStore({ cookieName: "armor_studio_session", cookiePath: "/", ttlMs: config.studioSessionTtlMs, secure: config.cookieSecure });
+  const studioSessions = new SessionStore({ cookieName: "armor_studio_session", cookiePath: "/", ttlMs: config.studioSessionTtlMs, secure: config.cookieSecure, file: path.join(config.dataDir, "sessions.json") });
   const operatorSessions = new SessionStore({ cookieName: "armor_operator_session", cookiePath: "/api/v1", ttlMs: config.operatorSessionTtlMs, secure: config.cookieSecure });
   if (config.cameraKeyIsFallback) warn("ARMOR_CAMERA_CONFIG_KEY is not set; using the migration fallback derived from ARMOR_CONTROL_TOKEN");
   const vault = new CameraVault({

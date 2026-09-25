@@ -170,3 +170,33 @@ test("the administrator seeded from the environment can sign in, and a wrong use
     if (process.platform !== "win32") assert.equal((fs.statSync(file).mode & 0o077), 0, "the users file is private");
   } finally { await running.stop(); }
 });
+
+test("a signed-in console is never rate limited by its own polling, while an anonymous flood still is", async () => {
+  const running = await startServer();
+  try {
+    const cookie = await studioCookie(running.base);
+    let refused = 0;
+    for (let index = 0; index < 300; index += 1) if ((await fetch(`${running.base}/api/v1/status`, { headers: { cookie } })).status === 429) refused += 1;
+    assert.equal(refused, 0, "300 requests in a minute from a signed-in operator all get through");
+    let limited = 0;
+    for (let index = 0; index < 300; index += 1) if ((await fetch(`${running.base}/api/v1/camera-views`)).status === 429) limited += 1;
+    assert.ok(limited > 0, "an anonymous client is still limited");
+  } finally { await running.stop(); }
+});
+
+test("a signed-in session survives a server restart, and the file holds no usable cookie", async () => {
+  const dataDir = tempDir();
+  const first = await startServer({ ARMOR_DATA_DIR: dataDir });
+  const cookie = await studioCookie(first.base);
+  const value = decodeURIComponent(cookie.split("=")[1]);
+  await first.stop();
+  assert.equal(fs.readFileSync(path.join(dataDir, "sessions.json"), "utf8").includes(value), false, "only a hash of the session id is written");
+  const second = await startServer({ ARMOR_DATA_DIR: dataDir });
+  try {
+    assert.equal((await api(second.base, cookie, "GET", "/api/v1/users")).status, 200, "the same cookie still works after the restart");
+    await api(second.base, cookie, "DELETE", "/api/v1/studio/session");
+    assert.equal((await api(second.base, cookie, "GET", "/api/v1/users")).status, 401);
+  } finally { await second.stop(); }
+  const third = await startServer({ ARMOR_DATA_DIR: dataDir });
+  try { assert.equal((await api(third.base, cookie, "GET", "/api/v1/users")).status, 401, "a signed-out session stays signed out"); } finally { await third.stop(); }
+});

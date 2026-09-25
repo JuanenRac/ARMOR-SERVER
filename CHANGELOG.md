@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [0.1.9] - Sessions that survive a restart and a console that is never rate limited by its own polling
+
+- Studio sessions are kept in `sessions.json` (only a hash of each session id, never the cookie), so an update or a reboot no longer signs everyone out. A signed-out session stays signed out.
+- The general rate limit (240 requests a minute) no longer applies to a signed-in operator: the console's own polling could use it up and get every request refused. Anonymous clients are still limited, and the sign-in route keeps its own limit.
+- 132 tests (was 130).
+
 ## [0.1.8] - Studio users and the targets of each node
 
 - **Users.** Studio sign-in is now a list of users kept in `users.json` (scrypt hashes, never a password): an administrator creates, renames, gives a new password or role to, and removes users; anyone signed in can change their own name and password with the current one. Roles are `admin` and `operator`. A changed password or role ends that user's other sessions at once; there is always one administrator. `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD` seed the first administrator; `ARMOR_STUDIO_RESET_PASSWORD=1` puts the configured password back on a forgotten one. New passwords need 12 characters (8 on a loopback-only server).
