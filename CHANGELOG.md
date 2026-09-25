@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.0] - Working PTZ, manageable history
+
+- **PTZ told the truth:** an empty 200 or a web page used to count as a confirmed move, so a camera without PTZ looked as if it moved. Now only a camera's own confirmation counts (`[Succeed]` from a Hi3510 unit, an XML status from PSIA), and a failed move says why: the stored login was refused, the camera did not answer, or it accepts no PTZ command. A refused login no longer waits for a slow ONVIF attempt.
+- **PTZ stops itself:** most cameras keep turning until told to stop, so every move schedules its own stop after 2.5 s (a client holding a button repeats the move); closing the server cancels pending stops. PTZ has its own rate budget (240 a minute) and only the start of a movement is audited, not every repeat.
+- **History:** search by node or camera, filter by level and by time range, read oldest first, `GET /api/v1/history/summary` (totals and the last 24 hours) and `DELETE /api/v1/history` (all events, one type, or older than N days) which needs `confirm=delete`, is permanent, audited, reaches the rotated log files and never reuses event numbers. The browsing window is now 5000 events.
+- 118 tests (was 107).
+
 ## [0.4.0] - Camera watchdog, own broker, sharper security
 
 - **Camera watchdog:** every configured camera is probed (a plain TCP connection to its RTSP or ONVIF port, no credential) every `ARMOR_CAMERA_CHECK_S` seconds (default 20, 0 disables). A camera is offline after two consecutive failures. Changes are events (`type: camera`), an offline camera is an alarm while armed (`camera.offline`), and `GET /api/v1/camera-status` (operator) reports each camera.

@@ -81,6 +81,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       for (const timer of watchdogs) clearTimeout(timer);
       context.store.flush();
       context.notifier.close();
+      context.ptz.close();
       mqtt?.end(true);
       for (const client of clients.clients) client.terminate();
       clients.close();

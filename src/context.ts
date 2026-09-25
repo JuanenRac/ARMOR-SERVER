@@ -14,6 +14,7 @@ import { hasBearer, SessionStore, type HeaderSource } from "./http/auth.js";
 import { EvidenceLibrary } from "./media/evidence.js";
 import { RelayManager, StreamTickets } from "./media/relay.js";
 import { CameraWatcher } from "./cameras/health.js";
+import { PtzController } from "./cameras/ptz.js";
 import { EventLog } from "./events.js";
 import { AlertNotifier } from "./notify.js";
 import { FileStatePersistence } from "./persistence.js";
@@ -28,6 +29,7 @@ export type AppContext = {
   rules: RulesFile;
   notifier: AlertNotifier;
   cameraWatcher: CameraWatcher;
+  ptz: PtzController;
   audit: AuditLog;
   studioSessions: SessionStore;
   operatorSessions: SessionStore;
@@ -76,7 +78,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(401).json({ error: "operator authorization is required" });
   };
   return {
-    config, store, events, rules, notifier, cameraWatcher, audit, studioSessions, operatorSessions, vault, evidence, relays,
+    config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),
