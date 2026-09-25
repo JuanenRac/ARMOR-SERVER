@@ -18,7 +18,7 @@
 
 ---
 
-**Honesty check - what runs today:** every route, session, encryption and evidence rule below is real and covered by tests (`npm test`, 107 tests, including a full HTTP integration suite against an isolated server). It has run against a real MQTT broker on the CM5 (with scripts, not field-node firmware). What is **not** proven yet: FFmpeg against a real camera, ONVIF/PTZ against every camera firmware, and any Jetson hardware. Those are deployment milestones, tracked in [ARMOR-DOCS](../ARMOR-DOCS), and this README never claims them.
+**Honesty check - what runs today:** every route, session, encryption and evidence rule below is real and covered by tests (`npm test`, 107 tests, including a full HTTP integration suite against an isolated server). It has run against a real MQTT broker on the CM5 (with scripts, not field-node firmware). It has streamed live video, saved a snapshot and recorded from five real IP cameras through FFmpeg on the CM5. What is **not** proven yet: ONVIF/PTZ against every camera firmware, and any Jetson hardware. Those are deployment milestones, tracked in [ARMOR-DOCS](../ARMOR-DOCS), and this README never claims them.
 
 ---
 
