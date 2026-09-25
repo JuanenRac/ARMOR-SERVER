@@ -9,8 +9,8 @@ import { cleanState, STATE_FIELDS, type DeviceState } from "./catalog.js";
 export type MapEntry = { field: string; path: string; invert?: boolean };
 export const MAX_MAP_ENTRIES = 12;
 
-const TRUE_WORDS = new Set(["on", "true", "1", "open", "opened", "detected", "alarm", "triggered", "unlocked", "motion", "wet", "leak", "active", "pressed", "smoke", "gas"]);
-const FALSE_WORDS = new Set(["off", "false", "0", "closed", "clear", "cleared", "normal", "locked", "no_motion", "dry", "inactive", "idle", "released", "safe"]);
+const TRUE_WORDS = new Set(["on", "true", "1", "open", "opened", "detected", "alarm", "triggered", "motion", "wet", "leak", "active", "pressed", "smoke", "gas"]);
+const FALSE_WORDS = new Set(["off", "false", "0", "closed", "clear", "cleared", "normal", "no_motion", "dry", "inactive", "idle", "released", "safe"]);
 
 /** The value at a dotted path ("contact", "sensor.temperature", "a.0.b"); "$" is the whole payload. */
 export function readPath(payload: unknown, path: string): unknown {
@@ -21,6 +21,15 @@ export function readPath(payload: unknown, path: string): unknown {
     current = (current as Record<string, unknown>)[part];
   }
   return current;
+}
+
+/** For a lock the words mean the opposite way round: "locked" is true. */
+const LOCK_TRUE = new Set(["locked", "lock", "true", "1", "on"]), LOCK_FALSE = new Set(["unlocked", "unlock", "false", "0", "off"]);
+export function toLockBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") { const word = value.trim().toLowerCase(); if (LOCK_TRUE.has(word)) return true; if (LOCK_FALSE.has(word)) return false; }
+  return undefined;
 }
 
 export function toBoolean(value: unknown): boolean | undefined {
@@ -55,7 +64,7 @@ export function stateFromPayload(payload: unknown, map: readonly MapEntry[] | un
     const value = readPath(payload, entry.path);
     if (value === undefined) continue;
     if (BOOLEAN_FIELDS.has(entry.field)) {
-      const flag = toBoolean(value);
+      const flag = entry.field === "locked" ? toLockBoolean(value) : toBoolean(value);
       if (flag !== undefined) raw[entry.field] = entry.invert ? !flag : flag;
     } else {
       const number = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;

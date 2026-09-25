@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.0] - Devices, alarms, automations, arm and disarm from the console, and the design kept on the server
+
+- **Devices:** smoke, CO, gas and flood detectors, panic buttons, door and window contacts, motion, glass-break and vibration sensors, temperature, humidity and light sensors, smart plugs, lights and switches, sirens, locks and valves, over Wi-Fi, Zigbee, Bluetooth, Z-Wave, Thread, LoRa, 433 MHz or a wire. A device reports by MQTT (any topic under `armor/device/`, with a field map and an optional availability topic) or by an authenticated push; its state is normalised (`triggered`, `open`, `on`, `locked`, `tamper`, temperature, humidity, battery, power...). Commands go out by MQTT or by HTTP to an address on the local network only.
+- **Alarms:** a smoke, CO, gas, flood or panic device raises an alarm at once; a door, window, motion, glass-break or vibration device raises one only while the system is armed. An alarm is raised, acknowledged by a person and cleared, with who and when; radar and camera problems use the same lifecycle. `/api/v1/alarms` lists, acknowledges one or all, and clears the record.
+- **Automations:** when a device changes, an alarm is raised or the mode changes, and only in the chosen mode, switch devices on, off or toggle (optionally back after some seconds) and notify. At most six actions per rule and six runs a minute per rule, so a loop cannot flood a device.
+- **Arm and disarm** from a signed-in Studio session (`POST /api/v1/mode`), audited with the user's name.
+- **Site design on the server** (`GET` and `PUT /api/v1/site`): one design for every browser and the phone, versioned, and a save made from an out-of-date copy is refused with the newer version instead of overwriting it. Terrain, buildings, cameras, radars and the places of devices are stored; the server does not interpret them.
+- **System and audit:** `GET /api/v1/system` (version, uptime, links, counts, storage) and, for an administrator, `GET /api/v1/audit`.
+- 145 tests (was 132).
+
 ## [0.1.9] - Sessions that survive a restart and a console that is never rate limited by its own polling
 
 - Studio sessions are kept in `sessions.json` (only a hash of each session id, never the cookie), so an update or a reboot no longer signs everyone out. A signed-out session stays signed out.
