@@ -3,7 +3,7 @@
  * that describe its changes, and (through an adapter) its persistence.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
-import type { Health, RadarTrack, Telemetry } from "./contracts.js";
+import type { Health, Info, RadarTrack, Telemetry } from "./contracts.js";
 import type { ArmorEventBody, NodeStatus } from "./events.js";
 import type { PersistedState, StatePersistence } from "./persistence.js";
 import { defaultRules, targetCounts, type Rules } from "./rules.js";
@@ -12,6 +12,8 @@ export type SecurityMode = "disarmed" | "armed";
 export type AlertLevel = "normal" | "review" | "high";
 /** A target as the radar last reported it (in the radar's own frame, millimetres); `counted` is false when an ignore zone covers it. */
 export type TargetView = RadarTrack & { counted: boolean };
+/** Where a node's own web panel is, as the node said itself (not stored: the node repeats it). */
+export type PanelInfo = { name: string; firmware: string; ip: string; port: number };
 export type NodeState = {
   node_id: string;
   /** Reported online AND heard from recently: a silent node is never shown as online. */
@@ -24,10 +26,12 @@ export type NodeState = {
   /** Where the targets of the latest report were: what a live radar map draws. Empty until the node reports. */
   targets: TargetView[];
   alert_level: AlertLevel;
+  /** The address of the node's web panel, or null until the node has said it. */
+  panel: PanelInfo | null;
 };
 export type SystemState = { mode: SecurityMode; revision: number; nodes: Record<string, NodeState>; updated_at: string };
 
-type StoredNode = Omit<NodeState, "stale"> & { received_at_ms: number; status: NodeStatus; high_since_ms: number | null };
+type StoredNode = Omit<NodeState, "stale" | "panel"> & { received_at_ms: number; status: NodeStatus; high_since_ms: number | null };
 
 /** Two or more targets while armed is high, any target is a review, none is normal. */
 export const alertLevelFor = (mode: SecurityMode, targetCount: number): AlertLevel =>
@@ -50,6 +54,7 @@ export class ArmorStore {
   #revision = 0;
   #updatedAt = new Date(0).toISOString();
   readonly #nodes = new Map<string, StoredNode>();
+  readonly #panels = new Map<string, PanelInfo>();
   readonly #onChange: ((state: SystemState) => void) | undefined;
   readonly #onEvent: ((event: ArmorEventBody) => void) | undefined;
   readonly #staleAfterMs: number;
@@ -73,7 +78,7 @@ export class ArmorStore {
     for (const [id, node] of this.#nodes) {
       const { received_at_ms, status: _status, high_since_ms: _since, ...visible } = node;
       const stale = now - received_at_ms > this.#staleAfterMs;
-      nodes[id] = { ...visible, stale, online: visible.online && !stale };
+      nodes[id] = { ...visible, stale, online: visible.online && !stale, panel: this.#panels.get(id) ?? null };
     }
     return { mode: this.#mode, revision: this.#revision, nodes, updated_at: this.#updatedAt };
   }
@@ -148,8 +153,22 @@ export class ArmorStore {
     return changed;
   }
 
+  /**
+   * What a node says about itself. It does not make a node appear (only telemetry and health do) and is not persisted: the node repeats it
+   * when it connects and now and then. Nothing changes, and no revision is spent, when it says what it said before.
+   */
+  info(message: Info): SystemState {
+    const known = this.#panels.get(message.node_id);
+    if (!known && this.#panels.size >= MAX_NODES) throw new Error("too many nodes");
+    const next: PanelInfo = { name: message.name, firmware: message.firmware, ip: message.ip, port: message.port };
+    if (known && known.name === next.name && known.firmware === next.firmware && known.ip === next.ip && known.port === next.port) return this.snapshot();
+    this.#panels.set(message.node_id, next);
+    return this.#nodes.has(message.node_id) ? this.#bump(false) : this.snapshot();
+  }
+
   /** Forget a decommissioned node. Returns false when the node is unknown. A node that speaks again is simply new. */
   removeNode(nodeId: string): boolean {
+    this.#panels.delete(nodeId);
     if (!this.#nodes.delete(nodeId)) return false;
     this.#bump(false);
     return true;

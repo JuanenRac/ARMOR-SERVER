@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { parseHealth, parseTelemetry } from "../src/contracts.js";
+import { parseHealth, parseInfo, parseTelemetry } from "../src/contracts.js";
 
 const directory = path.resolve(import.meta.dirname, "..", "..", "ARMOR-COMMON", "conformance");
 const available = fs.existsSync(directory);
@@ -12,7 +12,7 @@ const available = fs.existsSync(directory);
 type Vector = { name: string; valid: boolean; payload: unknown };
 const load = (kind: string): Vector[] => (JSON.parse(fs.readFileSync(path.join(directory, `${kind}.json`), "utf8")) as { vectors: Vector[] }).vectors;
 
-for (const [kind, parse] of [["telemetry", parseTelemetry], ["health", parseHealth]] as const) {
+for (const [kind, parse] of [["telemetry", parseTelemetry], ["health", parseHealth], ["info", parseInfo]] as const) {
   test(`${kind} parsing agrees with every shared conformance vector`, { skip: available ? false : "ARMOR-COMMON is not checked out next to this repository" }, () => {
     for (const vector of load(kind)) {
       if (vector.valid) assert.doesNotThrow(() => parse(vector.payload), `should accept: ${vector.name}`);
