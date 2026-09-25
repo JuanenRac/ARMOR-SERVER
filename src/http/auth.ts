@@ -40,7 +40,7 @@ export type SessionOptions = { cookieName: string; cookiePath: string; ttlMs: nu
 
 /** In-memory sessions: random ids, absolute expiry, a hard cap and lazy pruning. */
 export class SessionStore {
-  readonly #sessions = new Map<string, number>();
+  readonly #sessions = new Map<string, { expiry: number; userId?: string }>();
   readonly #options: SessionOptions;
   readonly #now: () => number;
 
@@ -53,18 +53,18 @@ export class SessionStore {
 
   #prune(): void {
     const now = this.#now();
-    for (const [id, expiry] of this.#sessions) if (expiry <= now) this.#sessions.delete(id);
+    for (const [id, session] of this.#sessions) if (session.expiry <= now) this.#sessions.delete(id);
     const capacity = this.#options.capacity ?? 256;
     // The oldest sessions go first, so a flood of logins cannot grow memory without bound.
     while (this.#sessions.size >= capacity) this.#sessions.delete(this.#sessions.keys().next().value!);
   }
 
-  /** Create a session and set its HttpOnly cookie. Returns the expiry as an ISO date. */
-  open(response: Response): string {
+  /** Create a session (for a user, when there is one) and set its HttpOnly cookie. Returns the expiry as an ISO date. */
+  open(response: Response, userId?: string): string {
     this.#prune();
     const id = randomBytes(32).toString("base64url");
     const expiresAt = this.#now() + this.#options.ttlMs;
-    this.#sessions.set(id, expiresAt);
+    this.#sessions.set(id, { expiry: expiresAt, userId });
     response.cookie(this.#options.cookieName, id, {
       httpOnly: true, sameSite: "strict", secure: this.#options.secure, maxAge: this.#options.ttlMs, path: this.#options.cookiePath,
     });
@@ -73,12 +73,23 @@ export class SessionStore {
 
   has(request: HeaderSource): boolean {
     const id = requestCookies(request)[this.#options.cookieName];
-    const expiry = id ? this.#sessions.get(id) : undefined;
-    if (!expiry || expiry <= this.#now()) {
+    const session = id ? this.#sessions.get(id) : undefined;
+    if (!session || session.expiry <= this.#now()) {
       if (id) this.#sessions.delete(id);
       return false;
     }
     return true;
+  }
+
+  /** The user a valid session belongs to. */
+  userId(request: HeaderSource): string | undefined {
+    return this.has(request) ? this.#sessions.get(requestCookies(request)[this.#options.cookieName])?.userId : undefined;
+  }
+
+  /** End every session of a user, except the one making this request (so changing your own password does not sign you out). */
+  revokeUser(userId: string, keep?: HeaderSource): void {
+    const kept = keep ? requestCookies(keep)[this.#options.cookieName] : undefined;
+    for (const [id, session] of this.#sessions) if (session.userId === userId && id !== kept) this.#sessions.delete(id);
   }
 
   close(request: HeaderSource, response: Response): void {

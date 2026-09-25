@@ -17,6 +17,7 @@ import { registerHistoryRoutes } from "./routes/history.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerMediaRoutes } from "./routes/media.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
+import { registerUserRoutes } from "./routes/users.js";
 import type { SystemState } from "./store.js";
 
 export type ArmorApp = { server: Server; context: AppContext; close(): Promise<void> };
@@ -43,6 +44,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
 
   registerIngestRoutes(app, context, Date.now(), version);
   registerSessionRoutes(app, context);
+  registerUserRoutes(app, context);
   registerHistoryRoutes(app, context);
   registerCameraRoutes(app, context);
   registerMediaRoutes(app, context);
