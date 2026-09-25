@@ -67,7 +67,9 @@ test("the Studio session cookie is HttpOnly and strict, and signs out", async ()
   assert.match(setCookie, /HttpOnly/i);
   assert.match(setCookie, /SameSite=Strict/i);
   const own = setCookie.split(";")[0];
-  assert.deepEqual(await (await call("/api/v1/studio/session", { cookie: own })).json(), { authenticated: true });
+  const who = await (await call("/api/v1/studio/session", { cookie: own })).json() as { authenticated: boolean; user?: { username: string; role: string } };
+  assert.equal(who.authenticated, true);
+  assert.deepEqual({ username: who.user?.username, role: who.user?.role }, { username: SECRETS.ARMOR_STUDIO_USERNAME, role: "admin" });
   assert.equal((await call("/api/v1/studio/session", { method: "DELETE", cookie: own })).status, 204);
   assert.deepEqual(await (await call("/api/v1/studio/session", { cookie: own })).json(), { authenticated: false });
 });

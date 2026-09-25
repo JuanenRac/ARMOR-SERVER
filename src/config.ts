@@ -19,6 +19,10 @@ export type ArmorConfig = {
   cameraKeyIsFallback: boolean;
   studioUsername: string;
   studioPassword: string;
+  /** Shortest password accepted for a Studio user: 12 characters on a reachable server, 8 on a loopback-only one. */
+  passwordMinLength: number;
+  /** Reset the seed administrator's password from ARMOR_STUDIO_PASSWORD at start-up (recovery of a forgotten password). */
+  resetStudioPassword: boolean;
   studioSessionTtlMs: number;
   operatorSessionTtlMs: number;
   studioOrigins: string[];
@@ -135,7 +139,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     port: integer(env, "ARMOR_PORT", 8080, 1, 65535),
     ingestToken, controlToken, operatorToken, cameraConfigKey,
     cameraKeyIsFallback: !configuredKey,
-    studioUsername, studioPassword,
+    studioUsername, studioPassword, passwordMinLength: isLoopbackHost(host) ? 8 : 12, resetStudioPassword: env.ARMOR_STUDIO_RESET_PASSWORD === "1",
     studioSessionTtlMs: integer(env, "ARMOR_STUDIO_SESSION_TTL_MS", 28_800_000, 60_000, 7 * 86_400_000),
     operatorSessionTtlMs: integer(env, "ARMOR_OPERATOR_SESSION_TTL_MS", 28_800_000, 60_000, 7 * 86_400_000),
     studioOrigins: [...origins],

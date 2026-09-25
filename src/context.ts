@@ -11,6 +11,7 @@ import { DiscoveryGate } from "./cameras/discovery.js";
 import { cameraPublic, cameraView, type CameraConnection } from "./cameras/model.js";
 import type { ArmorConfig } from "./config.js";
 import { hasBearer, SessionStore, type HeaderSource } from "./http/auth.js";
+import { UserStore, type PublicUser } from "./users.js";
 import { EvidenceLibrary } from "./media/evidence.js";
 import { RelayManager, StreamTickets } from "./media/relay.js";
 import { CameraWatcher } from "./cameras/health.js";
@@ -33,6 +34,9 @@ export type AppContext = {
   audit: AuditLog;
   studioSessions: SessionStore;
   operatorSessions: SessionStore;
+  users: UserStore;
+  /** The Studio user behind this request's session cookie, if any. */
+  studioUser(request: HeaderSource): PublicUser | undefined;
   vault: CameraVault;
   evidence: EvidenceLibrary;
   relays: RelayManager;
@@ -40,6 +44,8 @@ export type AppContext = {
   discovery: DiscoveryGate;
   operatorAuthorized(request: HeaderSource): boolean;
   requireOperator: RequestHandler;
+  /** A signed-in Studio user with the administrator role (bearer tokens are service credentials and do not qualify). */
+  requireAdmin: RequestHandler;
   publicCamera(camera: CameraConnection): ReturnType<typeof cameraPublic>;
   viewCamera(camera: CameraConnection): ReturnType<typeof cameraView>;
 };
@@ -70,15 +76,25 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     onEvent: body => notifier.notify(events.append(body), store.snapshot().mode),
   });
   const cameraWatcher = new CameraWatcher({ list: () => vault.list(), onEvent: body => notifier.notify(events.append(body), store.snapshot().mode) });
+  const users = new UserStore({
+    file: path.join(config.dataDir, "users.json"), seed: { username: config.studioUsername, password: config.studioPassword },
+    minPasswordLength: config.passwordMinLength, resetSeedPassword: config.resetStudioPassword, warn,
+  });
+  const studioUser = (request: HeaderSource): PublicUser | undefined => { const id = studioSessions.userId(request); return id ? users.get(id) : undefined; };
   const operatorAuthorized = (request: HeaderSource): boolean =>
-    hasBearer(request, config.operatorToken) || operatorSessions.has(request) || studioSessions.has(request);
+    hasBearer(request, config.operatorToken) || operatorSessions.has(request) || Boolean(studioUser(request));
   const requireOperator: RequestHandler = (request, response, next) => {
     if (operatorAuthorized(request)) return next();
     audit.record({ action: "operator.access", outcome: "denied", target: `${request.method} ${request.path}` });
     return response.status(401).json({ error: "operator authorization is required" });
   };
+  const requireAdmin: RequestHandler = (request, response, next) => {
+    if (studioUser(request)?.role === "admin") return next();
+    audit.record({ action: "admin.access", outcome: "denied", actor: studioUser(request)?.username, target: `${request.method} ${request.path}` });
+    return response.status(studioUser(request) ? 403 : 401).json({ error: "an administrator is required" });
+  };
   return {
-    config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, vault, evidence, relays,
+    config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, studioUser, requireAdmin, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),
