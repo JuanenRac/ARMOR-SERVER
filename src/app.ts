@@ -40,7 +40,12 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   app.use(express.json({ limit: "64kb", type: "application/json" }));
   app.use(cors({ origin: config.studioOrigins, credentials: true, methods: ["GET", "POST", "PUT", "PATCH", "DELETE"] }));
   // Field-node ingest has its own, larger budget (routes/ingest.ts): a burst of node messages must never lock an operator out.
-  app.use(rateLimit({ windowMs: 60_000, limit: 240, standardHeaders: "draft-8", legacyHeaders: false, skip: request => request.method === "POST" && (request.path === "/api/v1/telemetry" || request.path === "/api/v1/health") }));
+  // A signed-in operator is identified, so the console's own polling never spends the anonymous budget (which exists to slow a flood
+  // from an unknown client); the sign-in route has its own, much tighter limit.
+  app.use(rateLimit({
+    windowMs: 60_000, limit: 240, standardHeaders: "draft-8", legacyHeaders: false,
+    skip: request => (request.method === "POST" && (request.path === "/api/v1/telemetry" || request.path === "/api/v1/health")) || context.operatorAuthorized(request),
+  }));
 
   registerIngestRoutes(app, context, Date.now(), version);
   registerSessionRoutes(app, context);
@@ -82,6 +87,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       clearInterval(sweeper);
       for (const timer of watchdogs) clearTimeout(timer);
       context.store.flush();
+      context.studioSessions.flush();
       context.notifier.close();
       context.ptz.close();
       mqtt?.end(true);

@@ -3,7 +3,8 @@
  * parsing and bounded, expiring session tables.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import fs from "node:fs";
 import type { Response } from "express";
 
 /** Anything that can read a request header: an Express request, or a plain HTTP one wrapped by the caller. */
@@ -36,7 +37,14 @@ export function requestCookies(request: HeaderSource): Record<string, string> {
   return cookies;
 }
 
-export type SessionOptions = { cookieName: string; cookiePath: string; ttlMs: number; secure: boolean; capacity?: number };
+export type SessionOptions = {
+  cookieName: string; cookiePath: string; ttlMs: number; secure: boolean; capacity?: number;
+  /** Where the sessions are kept so a restart (an update, a reboot) does not sign everyone out. Only a hash of each session id is written. */
+  file?: string;
+};
+
+/** What is stored and looked up: never the cookie value itself. */
+const keyOf = (id: string): string => createHash("sha256").update(id).digest("hex");
 
 /** In-memory sessions: random ids, absolute expiry, a hard cap and lazy pruning. */
 export class SessionStore {
@@ -47,6 +55,39 @@ export class SessionStore {
   constructor(options: SessionOptions, now: () => number = Date.now) {
     this.#options = options;
     this.#now = now;
+    this.#load();
+  }
+
+  #load(): void {
+    if (!this.#options.file) return;
+    try {
+      const saved = JSON.parse(fs.readFileSync(this.#options.file, "utf8")) as { sessions?: Record<string, { expiry?: unknown; userId?: unknown }> };
+      const now = this.#now();
+      for (const [key, session] of Object.entries(saved.sessions ?? {})) {
+        if (/^[0-9a-f]{64}$/.test(key) && typeof session.expiry === "number" && session.expiry > now) this.#sessions.set(key, { expiry: session.expiry, userId: typeof session.userId === "string" ? session.userId : undefined });
+      }
+    } catch { /* No file yet, or an unreadable one: start with no sessions. */ }
+  }
+
+  #timer: NodeJS.Timeout | undefined;
+  /** Written a moment after a change, and at most once in that moment. */
+  #save(): void {
+    const file = this.#options.file;
+    if (!file || this.#timer) return;
+    this.#timer = setTimeout(() => { this.#timer = undefined; this.flush(); }, 500);
+    this.#timer.unref();
+  }
+
+  /** Write the sessions now (also used on shutdown). */
+  flush(): void {
+    const file = this.#options.file;
+    if (!file) return;
+    if (this.#timer) { clearTimeout(this.#timer); this.#timer = undefined; }
+    try {
+      const temporary = `${file}.${process.pid}.tmp`;
+      fs.writeFileSync(temporary, JSON.stringify({ schema: 1, sessions: Object.fromEntries(this.#sessions) }), { encoding: "utf8", mode: 0o600 });
+      fs.renameSync(temporary, file);
+    } catch { /* Losing the file only means signing in again after a restart. */ }
   }
 
   get size(): number { return this.#sessions.size; }
@@ -64,7 +105,8 @@ export class SessionStore {
     this.#prune();
     const id = randomBytes(32).toString("base64url");
     const expiresAt = this.#now() + this.#options.ttlMs;
-    this.#sessions.set(id, { expiry: expiresAt, userId });
+    this.#sessions.set(keyOf(id), { expiry: expiresAt, userId });
+    this.#save();
     response.cookie(this.#options.cookieName, id, {
       httpOnly: true, sameSite: "strict", secure: this.#options.secure, maxAge: this.#options.ttlMs, path: this.#options.cookiePath,
     });
@@ -73,9 +115,10 @@ export class SessionStore {
 
   has(request: HeaderSource): boolean {
     const id = requestCookies(request)[this.#options.cookieName];
-    const session = id ? this.#sessions.get(id) : undefined;
+    const key = id ? keyOf(id) : undefined;
+    const session = key ? this.#sessions.get(key) : undefined;
     if (!session || session.expiry <= this.#now()) {
-      if (id) this.#sessions.delete(id);
+      if (key && this.#sessions.delete(key)) this.#save();
       return false;
     }
     return true;
@@ -83,18 +126,19 @@ export class SessionStore {
 
   /** The user a valid session belongs to. */
   userId(request: HeaderSource): string | undefined {
-    return this.has(request) ? this.#sessions.get(requestCookies(request)[this.#options.cookieName])?.userId : undefined;
+    return this.has(request) ? this.#sessions.get(keyOf(requestCookies(request)[this.#options.cookieName]))?.userId : undefined;
   }
 
   /** End every session of a user, except the one making this request (so changing your own password does not sign you out). */
   revokeUser(userId: string, keep?: HeaderSource): void {
-    const kept = keep ? requestCookies(keep)[this.#options.cookieName] : undefined;
-    for (const [id, session] of this.#sessions) if (session.userId === userId && id !== kept) this.#sessions.delete(id);
+    const cookie = keep ? requestCookies(keep)[this.#options.cookieName] : undefined, kept = cookie ? keyOf(cookie) : undefined;
+    for (const [key, session] of this.#sessions) if (session.userId === userId && key !== kept) this.#sessions.delete(key);
+    this.#save();
   }
 
   close(request: HeaderSource, response: Response): void {
     const id = requestCookies(request)[this.#options.cookieName];
-    if (id) this.#sessions.delete(id);
+    if (id && this.#sessions.delete(keyOf(id))) this.#save();
     response.clearCookie(this.#options.cookieName, { path: this.#options.cookiePath });
   }
 }
