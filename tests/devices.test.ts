@@ -38,6 +38,8 @@ test("a device's own payload is translated into the canonical state", () => {
   // Zigbee2MQTT contact sensor: contact=false means open
   assert.deepEqual(stateFromPayload({ contact: false, battery: 97, linkquality: 60 }, [{ field: "open", path: "contact", invert: true }, { field: "battery", path: "battery" }]), { open: true, battery: 97 });
   assert.deepEqual(stateFromPayload({ POWER: "ON", ENERGY: { Power: 12.5 } }, [{ field: "on", path: "POWER" }, { field: "power_w", path: "ENERGY.Power" }]), { on: true, power_w: 12.5 });
+  assert.deepEqual(stateFromPayload({ state: "LOCK" }, [{ field: "locked", path: "state" }]), { locked: true });
+  assert.deepEqual(stateFromPayload({ state: "UNLOCK" }, [{ field: "locked", path: "state" }]), { locked: false });
   assert.deepEqual(stateFromPayload({ triggered: true, junk: 1 }, undefined), { triggered: true });
   assert.deepEqual(cleanMap([{ field: "open", path: "contact" }, { field: "bogus", path: "x" }, { field: "on", path: "a;b" }, { field: "on", path: "$", invert: true }]), [{ field: "open", path: "contact" }, { field: "on", path: "$", invert: true }]);
 });
@@ -249,5 +251,26 @@ test("the site design is kept on the server and a save from an out-of-date copy 
     const big = { items: Array.from({ length: 4000 }, (_, index) => ({ id: `item-${index}`, x: index, y: index * 2, text: "x".repeat(10) })) };
     assert.equal((await call(running.base, cookie, "PUT", "/api/v1/site", { revision: 1, site: big })).status, 200);
     assert.equal((await call(running.base, cookie, "PUT", "/api/v1/site", { revision: 2, site: { blob: "x".repeat(800_000) } })).status, 413);
+  } finally { await running.stop(); }
+});
+
+test("the system page counts what the server holds, and only an administrator reads the audit trail", async () => {
+  const running = await startServer();
+  try {
+    const cookie = await studioCookie(running.base);
+    assert.equal((await call(running.base, "", "GET", "/api/v1/system")).status, 401);
+    await call(running.base, cookie, "POST", "/api/v1/devices", { name: "Door", kind: "door" });
+    const system = (await call(running.base, cookie, "GET", "/api/v1/system")).body;
+    assert.equal(system.service, "armor-server");
+    assert.deepEqual([system.counts.devices, system.counts.users, system.counts.alarms_active], [1, 1, 0]);
+    assert.equal(typeof system.storage.media_bytes, "number");
+    const audit = (await call(running.base, cookie, "GET", "/api/v1/audit?limit=20")).body;
+    assert.ok(audit.entries.some((entry: { action: string }) => entry.action === "device.create"));
+    assert.equal(JSON.stringify(audit).toLowerCase().includes("password"), false);
+    await call(running.base, cookie, "POST", "/api/v1/users", { username: "guard", password: "guard-password-1", role: "operator" });
+    const login = await fetch(`${running.base}/api/v1/studio/session`, { method: "POST", headers: json, body: JSON.stringify({ username: "guard", password: "guard-password-1" }) });
+    const operator = (login.headers.getSetCookie()[0] ?? "").split(";")[0];
+    assert.equal((await call(running.base, operator, "GET", "/api/v1/system")).status, 200);
+    assert.equal((await call(running.base, operator, "GET", "/api/v1/audit")).status, 403);
   } finally { await running.stop(); }
 });

@@ -19,6 +19,7 @@ import { registerHistoryRoutes } from "./routes/history.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerMediaRoutes } from "./routes/media.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
+import { registerSystemRoutes } from "./routes/system.js";
 import { registerUserRoutes } from "./routes/users.js";
 import type { SystemState } from "./store.js";
 
@@ -56,6 +57,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerUserRoutes(app, context);
   registerDeviceRoutes(app, context);
   registerAlarmRoutes(app, context);
+  registerSystemRoutes(app, context, version);
   registerHistoryRoutes(app, context);
   registerCameraRoutes(app, context);
   registerMediaRoutes(app, context);
