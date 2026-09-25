@@ -29,7 +29,7 @@ test("the limits in src/contracts.ts match the generated contract constants", { 
   assert.equal(Number(/MAX_LUX = (\d+)/.exec(text)?.[1]), MAX_LUX);
 });
 
-const openapi = path.resolve(directory, "..", "openapi", "armor-server-0.5.0.yaml");
+const openapi = path.resolve(directory, "..", "openapi", "armor-server-0.1.4.yaml");
 test("every route the server registers is described in the OpenAPI contract", { skip: fs.existsSync(openapi) ? false : "ARMOR-COMMON OpenAPI is not available" }, () => {
   const described = fs.readFileSync(openapi, "utf8");
   const routes = path.resolve(import.meta.dirname, "..", "src", "routes");
