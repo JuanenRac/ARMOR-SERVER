@@ -10,7 +10,6 @@ import type { AppContext } from "../context.js";
 import { discoveryPrefixes, scanNetworks } from "../cameras/discovery.js";
 import { clientMessage } from "../cameras/errors.js";
 import { parseCameraInput, type CameraConnection } from "../cameras/model.js";
-import { movePtz } from "../cameras/ptz.js";
 import { discoverRtspPaths } from "../cameras/rtsp.js";
 
 const param = (request: Request, name: string): string => {
@@ -20,6 +19,9 @@ const param = (request: Request, name: string): string => {
 
 export function registerCameraRoutes(app: Express, context: AppContext): void {
   const { config, vault, evidence, relays, tickets, discovery, audit, requireOperator, operatorAuthorized } = context;
+  // A held PTZ button repeats its command every second, so movement has a budget of its own.
+  const ptzLimit = rateLimit({ windowMs: 60_000, limit: 240, standardHeaders: "draft-8", legacyHeaders: false });
+  const lastPtzAudit = new Map<string, number>();
   const sensitiveLimit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
   const withCamera = (request: Request, response: Response): CameraConnection | null => {
     const camera = vault.get(param(request, "id"));
@@ -65,12 +67,17 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
     }
   });
 
-  app.post("/api/v1/cameras/:id/ptz", requireOperator, sensitiveLimit, async (request, response) => {
+  app.post("/api/v1/cameras/:id/ptz", requireOperator, ptzLimit, async (request, response) => {
     const camera = withCamera(request, response);
     if (!camera) return;
     try {
-      await movePtz(camera, request.body?.command);
-      audit.record({ action: "camera.ptz", outcome: "allowed", target: camera.id, detail: String(request.body?.command) });
+      await context.ptz.move(camera, request.body?.command);
+      // Audit a movement when it starts, not every repeat of a held button.
+      const now = Date.now();
+      if (now - (lastPtzAudit.get(camera.id) ?? 0) > 5_000 || request.body?.command === "stop") {
+        lastPtzAudit.set(camera.id, now);
+        audit.record({ action: "camera.ptz", outcome: "allowed", target: camera.id, detail: String(request.body?.command) });
+      }
       response.json({ camera: context.publicCamera(camera), command: request.body?.command });
     } catch (error) {
       audit.record({ action: "camera.ptz", outcome: "failed", target: camera.id });

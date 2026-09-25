@@ -96,13 +96,13 @@ async function onvifMove(camera: CameraConnection, command: PtzCommand): Promise
   await onvifPost(camera, profile.endpoint, "http://www.onvif.org/ver20/ptz/wsdl/ContinuousMove", `<tptz:ContinuousMove xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl" xmlns:tt="http://www.onvif.org/ver10/schema"><tptz:ProfileToken>${xmlEscape(profile.token)}</tptz:ProfileToken><tptz:Velocity>${panTilt}${zoom}</tptz:Velocity><tptz:Timeout>PT0.35S</tptz:Timeout></tptz:ContinuousMove>`);
 }
 
-type HttpResult = { ok: boolean; status: number };
+type HttpResult = { status: number; body: string };
 
 /** One authenticated request to the camera's own HTTP interface (Basic or Digest). */
 function cameraHttp(camera: CameraConnection, method: string, requestPath: string, body?: string): Promise<HttpResult> {
   return new Promise(resolve => {
     const credentials = camera.secrets;
-    if (!credentials?.username || !credentials.password) { resolve({ ok: false, status: 401 }); return; }
+    if (!credentials?.username || !credentials.password) { resolve({ status: 401, body: "" }); return; }
     const execute = (authorization?: string): void => {
       const headers: Record<string, string> = {
         ...(body ? { "Content-Type": "application/xml", "Content-Length": String(Buffer.byteLength(body)) } : {}),
@@ -117,12 +117,11 @@ function cameraHttp(camera: CameraConnection, method: string, requestPath: strin
             const answer = answerChallenge(Array.isArray(header) ? header[0] : header, credentials, method, requestPath);
             if (answer) { execute(answer); return; }
           }
-          const success = Boolean(response.statusCode && response.statusCode >= 200 && response.statusCode < 300 && (!/\[Failed\]|error/i.test(payload) || /\[Succeed\]|<ResponseStatus>/i.test(payload)));
-          resolve({ ok: success, status: response.statusCode ?? 0 });
+          resolve({ status: response.statusCode ?? 0, body: payload });
         });
       });
-      request.once("error", () => resolve({ ok: false, status: 0 }));
-      request.once("timeout", () => { request.destroy(); resolve({ ok: false, status: 0 }); });
+      request.once("error", () => resolve({ status: 0, body: "" }));
+      request.once("timeout", () => { request.destroy(); resolve({ status: 0, body: "" }); });
       if (body) request.write(body);
       request.end();
     };
@@ -130,17 +129,70 @@ function cameraHttp(camera: CameraConnection, method: string, requestPath: strin
   });
 }
 
-async function legacyMove(camera: CameraConnection, command: PtzCommand): Promise<boolean> {
+export type LegacyOutcome = "ok" | "unauthorized" | "unreachable" | "unsupported";
+
+/**
+ * A camera confirms a command in its own words: a Hi3510 unit answers `[Succeed]set ok.`, a PSIA or
+ * ISAPI unit an XML status. An empty 200 (some cameras answer every unknown address that way) or a
+ * web page is NOT a confirmation: counting it as one made a camera without PTZ look as if it moved.
+ */
+export const hi3510Confirmed = (result: HttpResult): boolean => result.status >= 200 && result.status < 300 && /\[Succeed\]/i.test(result.body);
+export const psiaConfirmed = (result: HttpResult): boolean =>
+  result.status >= 200 && result.status < 300 && /<statusCode>\s*1\s*<\/statusCode>|<statusString>\s*OK\s*<\/statusString>/i.test(result.body);
+
+async function legacyMove(camera: CameraConnection, command: PtzCommand): Promise<LegacyOutcome> {
   const vector = LEGACY_VECTORS[command];
   const hi3510 = await cameraHttp(camera, "GET", `/cgi-bin/hi3510/ptzctrl.cgi?-step=0&-act=${encodeURIComponent(vector.action)}&-speed=38`);
-  if (hi3510.ok) return true;
+  if (hi3510Confirmed(hi3510)) return "ok";
   const psia = await cameraHttp(camera, "PUT", "/PSIA/PTZ/channels/1/continuous", `<PTZData version="1.0" xmlns="urn:psialliance-org"><pan>${vector.pan}</pan><tilt>${vector.tilt}</tilt><zoom>${vector.zoom}</zoom></PTZData>`);
-  return psia.ok;
+  if (psiaConfirmed(psia)) return "ok";
+  if (hi3510.status === 0 && psia.status === 0) return "unreachable";
+  if (hi3510.status === 401 || hi3510.status === 403 || psia.status === 401 || psia.status === 403) return "unauthorized";
+  return "unsupported";
 }
 
-/** Move the camera: Hi3510 / PSIA first, then ONVIF. Rejects with a MediaError when none works. */
+/**
+ * Move the camera: Hi3510 / PSIA first, then ONVIF, and say honestly why it failed: the stored
+ * login was refused, the camera did not answer, or it accepts no PTZ command at all.
+ */
 export async function movePtz(camera: CameraConnection, command: unknown): Promise<void> {
   if (!isPtzCommand(command)) throw mediaError("invalid PTZ command");
-  if (await legacyMove(camera, command)) return;
-  await onvifMove(camera, command);
+  const outcome = await legacyMove(camera, command);
+  if (outcome === "ok") return;
+  if (outcome === "unauthorized") throw mediaError("the camera refused the stored login: check its web password in the camera settings");
+  if (outcome === "unreachable") throw mediaError("the camera did not answer on its web port");
+  try { await onvifMove(camera, command); }
+  catch { throw mediaError("this camera accepts no PTZ command (Hi3510, PSIA and ONVIF were all refused); it may not have PTZ hardware"); }
+}
+
+/**
+ * Moves are continuous on most cameras (they keep turning until told to stop), so a lost "stop" -
+ * a closed tab, a dropped connection - would leave the camera turning against its end stop. Every
+ * move therefore schedules its own stop, and a client that is still holding a button repeats the move.
+ */
+export class PtzController {
+  readonly #timers = new Map<string, NodeJS.Timeout>();
+  readonly #maxMoveMs: number;
+  readonly #move: (camera: CameraConnection, command: unknown) => Promise<void>;
+
+  constructor(options: { maxMoveMs?: number; move?: (camera: CameraConnection, command: unknown) => Promise<void> } = {}) {
+    this.#maxMoveMs = options.maxMoveMs ?? 2_500;
+    this.#move = options.move ?? movePtz;
+  }
+
+  async move(camera: CameraConnection, command: unknown): Promise<void> {
+    await this.#move(camera, command);
+    const pending = this.#timers.get(camera.id);
+    if (pending) clearTimeout(pending);
+    this.#timers.delete(camera.id);
+    if (command === "stop") return;
+    const timer = setTimeout(() => { this.#timers.delete(camera.id); void this.#move(camera, "stop").catch(() => undefined); }, this.#maxMoveMs);
+    timer.unref();
+    this.#timers.set(camera.id, timer);
+  }
+
+  close(): void {
+    for (const timer of this.#timers.values()) clearTimeout(timer);
+    this.#timers.clear();
+  }
 }
