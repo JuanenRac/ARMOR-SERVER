@@ -29,7 +29,7 @@ test("the simulator, the shared contract and the real server agree end to end", 
       child.on("close", status => { clearTimeout(timer); resolve({ status, stderr }); });
     });
     assert.equal(run.status, 0, `${run.stderr}`);
-    const state = await (await fetch(`${running.base}/api/v1/status`)).json() as { mode: string; nodes: Record<string, { online: boolean; alert_level: string; target_count: number }> };
+    const state = await (await fetch(`${running.base}/api/v1/status`, { headers: { Authorization: `Bearer ${SECRETS.ARMOR_OPERATOR_TOKEN}` } })).json() as { mode: string; nodes: Record<string, { online: boolean; alert_level: string; target_count: number }> };
     assert.equal(state.mode, "armed");
     assert.ok(state.nodes["north-1"], "the node reached the server");
     assert.equal(state.nodes["north-1"].online, true);

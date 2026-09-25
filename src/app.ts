@@ -67,10 +67,18 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   // Silence and dwell time are time-driven: they need a clock, not a message.
   const sweeper = setInterval(() => context.store.sweep(), 2_000);
   sweeper.unref();
+  // The camera watchdog: a first pass shortly after start, then on a fixed interval.
+  const watchdogs: NodeJS.Timeout[] = [];
+  if (config.cameraCheckS > 0) {
+    const first = setTimeout(() => void context.cameraWatcher.check(), 3_000);
+    const every = setInterval(() => void context.cameraWatcher.check(), config.cameraCheckS * 1000);
+    first.unref(); every.unref(); watchdogs.push(first, every);
+  }
   return {
     server, context,
     close: async () => {
       clearInterval(sweeper);
+      for (const timer of watchdogs) clearTimeout(timer);
       context.store.flush();
       context.notifier.close();
       mqtt?.end(true);

@@ -12,17 +12,19 @@ import type { SecurityMode } from "./store.js";
 export const ALERT_TOPIC = "armor/server/alert";
 export type AlertMessage = {
   service: "armor-server";
-  event: "alert.raised" | "alert.cleared" | "node.offline" | "node.stale";
+  event: "alert.raised" | "alert.cleared" | "node.offline" | "node.stale" | "camera.offline";
   at: string;
   mode: SecurityMode;
-  node_id: string;
+  node_id?: string;
+  camera_id?: string;
   targets?: number;
 };
 
 /**
  * Which events are worth waking someone for: a node reaching "high" (and
  * clearing), and a node that goes offline or silent while the system is armed
- * (a dead sensor is how a perimeter is defeated).
+ * (a dead sensor is how a perimeter is defeated), and a camera that stops
+ * answering while armed.
  */
 export function alertMessageFor(event: ArmorEvent, mode: SecurityMode): AlertMessage | null {
   const base = { service: "armor-server" as const, at: event.at, mode };
@@ -34,6 +36,7 @@ export function alertMessageFor(event: ArmorEvent, mode: SecurityMode): AlertMes
     if (event.to === "offline") return { ...base, event: "node.offline", node_id: event.node_id };
     if (event.to === "stale") return { ...base, event: "node.stale", node_id: event.node_id };
   }
+  if (event.type === "camera" && mode === "armed" && event.to === "offline") return { ...base, event: "camera.offline", camera_id: event.camera_id };
   return null;
 }
 

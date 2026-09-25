@@ -29,6 +29,9 @@ type StoredNode = Omit<NodeState, "stale"> & { received_at_ms: number; status: N
 export const alertLevelFor = (mode: SecurityMode, targetCount: number): AlertLevel =>
   targetCount >= 2 && mode === "armed" ? "high" : targetCount > 0 ? "review" : "normal";
 
+/** More distinct nodes than this is a mistake or an attack, not a perimeter. */
+export const MAX_NODES = 256;
+
 export type StoreOptions = {
   staleAfterMs?: number;
   now?: () => number;
@@ -87,6 +90,7 @@ export class ArmorStore {
 
   telemetry(message: Telemetry): SystemState {
     const previous = this.#nodes.get(message.node_id);
+    if (!previous && this.#nodes.size >= MAX_NODES) throw new Error("too many nodes");
     if (previous && message.timestamp_ms < previous.timestamp_ms) return this.snapshot();
     const now = this.#now();
     const rules = this.#rules();
@@ -101,6 +105,7 @@ export class ArmorStore {
 
   health(message: Health): SystemState {
     const previous = this.#nodes.get(message.node_id);
+    if (!previous && this.#nodes.size >= MAX_NODES) throw new Error("too many nodes");
     // An "offline" message is always applied: it is normally the MQTT last will, which the node had to write
     // before it knew the time of its own death, so its timestamp is necessarily older than the node's last
     // message. An older "online" message is still ignored. The stored timestamp never moves backwards, and
@@ -136,6 +141,13 @@ export class ArmorStore {
     }
     if (changed) this.#bump(false);
     return changed;
+  }
+
+  /** Forget a decommissioned node. Returns false when the node is unknown. A node that speaks again is simply new. */
+  removeNode(nodeId: string): boolean {
+    if (!this.#nodes.delete(nodeId)) return false;
+    this.#bump(false);
+    return true;
   }
 
   /** Write any pending state now (used on shutdown). */

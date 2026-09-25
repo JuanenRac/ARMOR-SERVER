@@ -12,13 +12,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="TypeScript">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Node 20+">
-  <img src="https://img.shields.io/badge/Tests-91%20passing-2ea44f.svg" alt="91 tests">
+  <img src="https://img.shields.io/badge/Tests-107%20passing-2ea44f.svg" alt="107 tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="functional">
 </p>
 
 ---
 
-**Honesty check - what runs today:** every route, session, encryption and evidence rule below is real and covered by tests (`npm test`, 91 tests, including a full HTTP integration suite against an isolated server). What is **not** proven yet: MQTT against a real broker, FFmpeg against a real camera, ONVIF/PTZ against every camera firmware, and any Jetson hardware. Those are deployment milestones, tracked in [ARMOR-DOCS](../ARMOR-DOCS), and this README never claims them.
+**Honesty check - what runs today:** every route, session, encryption and evidence rule below is real and covered by tests (`npm test`, 107 tests, including a full HTTP integration suite against an isolated server). It has run against a real MQTT broker on the CM5 (with scripts, not field-node firmware). What is **not** proven yet: FFmpeg against a real camera, ONVIF/PTZ against every camera firmware, and any Jetson hardware. Those are deployment milestones, tracked in [ARMOR-DOCS](../ARMOR-DOCS), and this README never claims them.
 
 ---
 
@@ -34,6 +34,7 @@
 * 🧾 **Audit trail:** one JSON line per security-relevant action, with credentials scrubbed.
 * 💾 **State that survives:** the security mode and every node's last observation are restored after a restart (a restart never silently disarms the perimeter).
 * 📜 **Event history:** each alert-level, node-status and mode change is recorded and paged through `GET /api/v1/history`.
+* 📷 **Camera watchdog:** every configured camera is probed on its RTSP and ONVIF ports; one that stops answering becomes an event and, while armed, an alarm.
 * 🚨 **Alarm output:** high alerts and, while armed, silent or offline nodes go to MQTT `armor/server/alert` and an optional HMAC-signed webhook.
 * 🎯 **Alert rules:** a dwell time before HIGH and ignore zones, tuned from Studio.
 
@@ -95,6 +96,7 @@ Source layout (`src/`):
 | Cameras | `GET /api/v1/cameras` · `POST /cameras/configure` · `DELETE /cameras/:id` · `POST /cameras/discover` · `POST /cameras/:id/ptz` · `POST /cameras/:id/discover-rtsp` · `POST /cameras/:id/stream-ticket` |
 | Live / capture | `GET /cameras/:id/mjpeg` (operator **or** ticket) · `POST /cameras/:id/snapshot` · `POST /cameras/:id/recordings/start\|stop` |
 | Evidence | `GET /api/v1/media` · `GET /media/:camera/:kind/:file` · `GET …/sha256` · `PUT …/protected` · `DELETE …` · `DELETE /media` |
+| Watchdog & nodes | `GET /api/v1/camera-status` · `DELETE /api/v1/nodes/:id` |
 | History & rules | `GET /api/v1/history?limit&before&type&node` · `GET/PUT /api/v1/rules` |
 | Events | WebSocket `/api/v1/events` (control token or a session cookie) |
 
@@ -119,6 +121,7 @@ Copy `.env.example` to `.env` (ignored by Git), or let `run.bat` / `run.sh` gene
 | `ARMOR_MAX_MJPEG_RELAYS` | `8` | Shared relays (one per active camera) |
 | `ARMOR_MEDIA_MAX_BYTES` / `_RETENTION_DAYS` | 20 GiB / 30 | Evidence limits |
 | `ARMOR_NODE_STALE_AFTER_S` | `30` | Silence before a node is stale |
+| `ARMOR_CAMERA_CHECK_S` | `20` | Seconds between camera reachability checks (0 disables) |
 | `ARMOR_ALERT_DWELL_MS` | `2000` | Time two targets must persist before HIGH (0 = at once) |
 | `ARMOR_ALERT_WEBHOOK_URL` / `_SECRET` | unset | Optional alarm webhook, signed with `X-Armor-Signature` when a secret is set |
 | `ARMOR_MQTT_URL` (+ `_USERNAME`, `_PASSWORD`) | unset | Optional MQTT ingress |
@@ -131,7 +134,7 @@ Copy `.env.example` to `.env` (ignored by Git), or let `run.bat` / `run.sh` gene
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 91 tests: unit + full HTTP integration
+npm test            # 107 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```
@@ -147,7 +150,7 @@ ARMOR-SERVER/
 ├── src/            server, app, config, context, store, persistence, events, rules, notify, contracts, mqtt, audit
 │   ├── http/       auth primitives
 │   ├── routes/     sessions, cameras, media, ingest, history
-│   ├── cameras/    model, vault, digest, ptz, rtsp, discovery, errors
+│   ├── cameras/    model, vault, digest, ptz, rtsp, discovery, health, errors
 │   └── media/      relay, evidence
 ├── tests/          unit tests + full HTTP integration suite
 ├── docs/           state machine, camera gateway, integration

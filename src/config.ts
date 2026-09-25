@@ -34,6 +34,8 @@ export type ArmorConfig = {
   nodeStaleAfterS: number;
   /** Milliseconds a two-target condition must persist before it becomes "high" (0 = immediately). */
   alertDwellMs: number;
+  /** Seconds between camera reachability checks (0 disables the watchdog). */
+  cameraCheckS: number;
   /** Where alarms are POSTed (signed with `alertWebhookSecret` when set); null when unused. */
   alertWebhookUrl: string | null;
   alertWebhookSecret: string;
@@ -147,6 +149,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     mqtt: mqttUrl ? { url: mqttUrl, username: env.ARMOR_MQTT_USERNAME?.trim() || undefined, password: env.ARMOR_MQTT_PASSWORD || undefined } : null,
     nodeStaleAfterS: integer(env, "ARMOR_NODE_STALE_AFTER_S", 30, 5, 3600),
     alertDwellMs: integer(env, "ARMOR_ALERT_DWELL_MS", 2000, 0, 60_000),
+    cameraCheckS: integer(env, "ARMOR_CAMERA_CHECK_S", 20, 0, 3600),
     alertWebhookUrl, alertWebhookSecret,
     warnings,
   };

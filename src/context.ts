@@ -13,6 +13,7 @@ import type { ArmorConfig } from "./config.js";
 import { hasBearer, SessionStore, type HeaderSource } from "./http/auth.js";
 import { EvidenceLibrary } from "./media/evidence.js";
 import { RelayManager, StreamTickets } from "./media/relay.js";
+import { CameraWatcher } from "./cameras/health.js";
 import { EventLog } from "./events.js";
 import { AlertNotifier } from "./notify.js";
 import { FileStatePersistence } from "./persistence.js";
@@ -26,6 +27,7 @@ export type AppContext = {
   events: EventLog;
   rules: RulesFile;
   notifier: AlertNotifier;
+  cameraWatcher: CameraWatcher;
   audit: AuditLog;
   studioSessions: SessionStore;
   operatorSessions: SessionStore;
@@ -65,6 +67,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     staleAfterMs: config.nodeStaleAfterS * 1000, now: overrides.now, persistence, rules: () => rules.get(),
     onEvent: body => notifier.notify(events.append(body), store.snapshot().mode),
   });
+  const cameraWatcher = new CameraWatcher({ list: () => vault.list(), onEvent: body => notifier.notify(events.append(body), store.snapshot().mode) });
   const operatorAuthorized = (request: HeaderSource): boolean =>
     hasBearer(request, config.operatorToken) || operatorSessions.has(request) || studioSessions.has(request);
   const requireOperator: RequestHandler = (request, response, next) => {
@@ -73,7 +76,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(401).json({ error: "operator authorization is required" });
   };
   return {
-    config, store, events, rules, notifier, audit, studioSessions, operatorSessions, vault, evidence, relays,
+    config, store, events, rules, notifier, cameraWatcher, audit, studioSessions, operatorSessions, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

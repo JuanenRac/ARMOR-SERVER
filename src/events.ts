@@ -12,6 +12,7 @@ export type NodeStatus = "online" | "offline" | "stale";
 export type ArmorEventBody =
   | { type: "alert"; node_id: string; from: AlertLevel; to: AlertLevel; targets: number }
   | { type: "node"; node_id: string; from: NodeStatus | null; to: NodeStatus }
+  | { type: "camera"; camera_id: string; from: "unknown" | "online" | "offline"; to: "unknown" | "online" | "offline" }
   | { type: "mode"; mode: SecurityMode };
 export type ArmorEvent = ArmorEventBody & { id: number; at: string };
 
@@ -56,7 +57,7 @@ export class EventLog {
       const event = this.#events[index];
       if (options.before !== undefined && event.id >= options.before) continue;
       if (options.type && event.type !== options.type) continue;
-      if (options.node && !("node_id" in event && event.node_id === options.node)) continue;
+      if (options.node && !(("node_id" in event && event.node_id === options.node) || ("camera_id" in event && event.camera_id === options.node))) continue;
       out.push(event);
     }
     return out;
