@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.1.8] - Studio users and the targets of each node
+
+- **Users.** Studio sign-in is now a list of users kept in `users.json` (scrypt hashes, never a password): an administrator creates, renames, gives a new password or role to, and removes users; anyone signed in can change their own name and password with the current one. Roles are `admin` and `operator`. A changed password or role ends that user's other sessions at once; there is always one administrator. `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD` seed the first administrator; `ARMOR_STUDIO_RESET_PASSWORD=1` puts the configured password back on a forgotten one. New passwords need 12 characters (8 on a loopback-only server).
+- Sessions carry the user they belong to; `GET /api/v1/studio/session` says who is signed in. Bearer tokens remain service credentials and do not qualify for user administration.
+- The state of a node includes the targets of its latest report (position, speed, whether an ignore zone excludes it), so a client can draw them. They are not written to disk.
+- 130 tests (was 118).
+
 ## [0.1.7] - Working PTZ, manageable history
 
 - **PTZ told the truth:** an empty 200 or a web page used to count as a confirmed move, so a camera without PTZ looked as if it moved. Now only a camera's own confirmation counts (`[Succeed]` from a Hi3510 unit, an XML status from PSIA), and a failed move says why: the stored login was refused, the camera did not answer, or it accepts no PTZ command. A refused login no longer waits for a slow ONVIF attempt.
