@@ -12,7 +12,9 @@ import type { ArmorConfig } from "./config.js";
 import { createContext, type AppContext, type ContextOverrides } from "./context.js";
 import { hasBearer } from "./http/auth.js";
 import { attachMqtt } from "./mqtt.js";
+import { registerAlarmRoutes } from "./routes/alarms.js";
 import { registerCameraRoutes } from "./routes/cameras.js";
+import { registerDeviceRoutes } from "./routes/devices.js";
 import { registerHistoryRoutes } from "./routes/history.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerMediaRoutes } from "./routes/media.js";
@@ -37,7 +39,9 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     response.set({ "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Cross-Origin-Resource-Policy": "same-site" });
     next();
   });
-  app.use(express.json({ limit: "64kb", type: "application/json" }));
+  // The site design has its own, larger body limit (routes/alarms.ts); everything else is small.
+  const smallJson = express.json({ limit: "64kb", type: "application/json" });
+  app.use((request, response, next) => (request.path === "/api/v1/site" && request.method === "PUT" ? next() : smallJson(request, response, next)));
   app.use(cors({ origin: config.studioOrigins, credentials: true, methods: ["GET", "POST", "PUT", "PATCH", "DELETE"] }));
   // Field-node ingest has its own, larger budget (routes/ingest.ts): a burst of node messages must never lock an operator out.
   // A signed-in operator is identified, so the console's own polling never spends the anonymous budget (which exists to slow a flood
@@ -50,6 +54,8 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerIngestRoutes(app, context, Date.now(), version);
   registerSessionRoutes(app, context);
   registerUserRoutes(app, context);
+  registerDeviceRoutes(app, context);
+  registerAlarmRoutes(app, context);
   registerHistoryRoutes(app, context);
   registerCameraRoutes(app, context);
   registerMediaRoutes(app, context);
@@ -71,8 +77,15 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
 
   const mqtt = config.mqtt ? attachMqtt(context.store, config.mqtt.url, config.mqtt.username, config.mqtt.password) : null;
   if (mqtt) context.notifier.setPublisher((topic, payload) => { if (mqtt.connected) mqtt.publish(topic, payload, { qos: 1 }); });
+  if (mqtt) {
+    // Devices speak over the same broker: subscribe to their topics (again whenever the list changes), hand their messages to the registry, and publish commands.
+    context.deviceLink.publish = (topic, payload) => { if (!mqtt.connected) throw new Error("the MQTT broker is not connected"); mqtt.publish(topic, payload, { qos: 1 }); };
+    context.deviceLink.resubscribe = () => { const topics = context.devices.topics(); if (topics.length > 0 && mqtt.connected) mqtt.subscribe(topics, { qos: 1 }); };
+    mqtt.on("connect", () => context.deviceLink.resubscribe?.());
+    mqtt.on("message", (topic, raw) => { try { context.devices.ingestMqtt(topic, raw); } catch { /* one bad device message never stops the rest */ } });
+  }
   // Silence and dwell time are time-driven: they need a clock, not a message.
-  const sweeper = setInterval(() => context.store.sweep(), 2_000);
+  const sweeper = setInterval(() => { context.store.sweep(); context.devices.sweep(); }, 2_000);
   sweeper.unref();
   // The camera watchdog: a first pass shortly after start, then on a fixed interval.
   const watchdogs: NodeJS.Timeout[] = [];
@@ -88,6 +101,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       for (const timer of watchdogs) clearTimeout(timer);
       context.store.flush();
       context.studioSessions.flush();
+      context.devices.flush(); context.alarms.flush(); context.automations.close();
       context.notifier.close();
       context.ptz.close();
       mqtt?.end(true);

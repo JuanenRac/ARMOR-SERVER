@@ -13,12 +13,27 @@ export type ArmorEventBody =
   | { type: "alert"; node_id: string; from: AlertLevel; to: AlertLevel; targets: number }
   | { type: "node"; node_id: string; from: NodeStatus | null; to: NodeStatus }
   | { type: "camera"; camera_id: string; from: "unknown" | "online" | "offline"; to: "unknown" | "online" | "offline" }
-  | { type: "mode"; mode: SecurityMode };
+  | { type: "mode"; mode: SecurityMode }
+  /** A device changed: a binary field (triggered, open, on, locked, tamper) or whether it is online. */
+  | { type: "device"; device_id: string; kind: string; field: string; from: boolean | number | null; to: boolean | number }
+  /** The life of an alarm: raised, acknowledged by someone, or cleared because its cause ended. */
+  | { type: "alarm"; alarm_id: string; state: "raised" | "acknowledged" | "cleared"; severity: "critical" | "high" | "warning"; source: string; source_type: "node" | "camera" | "device"; code: string };
 export type ArmorEvent = ArmorEventBody & { id: number; at: string };
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const KEPT_FILES = 3;
 export const MAX_PAGE = 200;
+
+/** What an event is about: a node, a camera, a device, an alarm's source, or the mode. */
+export function subjectOf(event: ArmorEvent): string {
+  switch (event.type) {
+    case "alert": case "node": return event.node_id;
+    case "camera": return event.camera_id;
+    case "device": return event.device_id;
+    case "alarm": return event.source;
+    case "mode": return event.mode;
+  }
+}
 
 export type EventSummary = {
   total: number; oldest_at: string | null; newest_at: string | null;
@@ -66,7 +81,7 @@ export class EventLog {
     const matches = (event: ArmorEvent): boolean => {
       if (options.before !== undefined && (ascending ? event.id <= options.before : event.id >= options.before)) return false;
       if (options.type && event.type !== options.type) return false;
-      if (options.node && !(("node_id" in event && event.node_id === options.node) || ("camera_id" in event && event.camera_id === options.node))) return false;
+      if (options.node && subjectOf(event) !== options.node) return false;
       if (options.level && !(event.type === "alert" && event.to === options.level)) return false;
       if (options.since !== undefined || options.until !== undefined) {
         const time = Date.parse(event.at);
@@ -74,8 +89,7 @@ export class EventLog {
         if (options.until !== undefined && time > options.until) return false;
       }
       if (options.q) {
-        const subject = ("node_id" in event ? event.node_id : "camera_id" in event ? event.camera_id : event.mode) ?? "";
-        if (!subject.toLowerCase().includes(options.q.toLowerCase())) return false;
+        if (!subjectOf(event).toLowerCase().includes(options.q.toLowerCase())) return false;
       }
       return true;
     };
@@ -93,7 +107,7 @@ export class EventLog {
     const dayAgo = now - 86_400_000;
     const summary: EventSummary = {
       total: this.#events.length, oldest_at: this.#events[0]?.at ?? null, newest_at: this.#events.at(-1)?.at ?? null,
-      by_type: { alert: 0, node: 0, camera: 0, mode: 0 },
+      by_type: { alert: 0, node: 0, camera: 0, mode: 0, device: 0, alarm: 0 },
       last_24h: { events: 0, high_alerts: 0, node_incidents: 0, camera_incidents: 0 },
     };
     for (const event of this.#events) {
