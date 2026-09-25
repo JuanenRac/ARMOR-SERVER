@@ -3,13 +3,15 @@
  * that describe its changes, and (through an adapter) its persistence.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
-import type { Health, Telemetry } from "./contracts.js";
+import type { Health, RadarTrack, Telemetry } from "./contracts.js";
 import type { ArmorEventBody, NodeStatus } from "./events.js";
 import type { PersistedState, StatePersistence } from "./persistence.js";
 import { defaultRules, targetCounts, type Rules } from "./rules.js";
 
 export type SecurityMode = "disarmed" | "armed";
 export type AlertLevel = "normal" | "review" | "high";
+/** A target as the radar last reported it (in the radar's own frame, millimetres); `counted` is false when an ignore zone covers it. */
+export type TargetView = RadarTrack & { counted: boolean };
 export type NodeState = {
   node_id: string;
   /** Reported online AND heard from recently: a silent node is never shown as online. */
@@ -19,6 +21,8 @@ export type NodeState = {
   timestamp_ms: number;
   lux: number | null;
   target_count: number;
+  /** Where the targets of the latest report were: what a live radar map draws. Empty until the node reports. */
+  targets: TargetView[];
   alert_level: AlertLevel;
 };
 export type SystemState = { mode: SecurityMode; revision: number; nodes: Record<string, NodeState>; updated_at: string };
@@ -94,10 +98,11 @@ export class ArmorStore {
     if (previous && message.timestamp_ms < previous.timestamp_ms) return this.snapshot();
     const now = this.#now();
     const rules = this.#rules();
-    const counted = message.targets.filter(target => targetCounts(rules, message.node_id, target)).length;
+    const views: TargetView[] = message.targets.map(target => ({ ...target, counted: targetCounts(rules, message.node_id, target) }));
+    const counted = views.filter(target => target.counted).length;
     const node = this.#evaluated({
       node_id: message.node_id, online: previous?.online ?? true, timestamp_ms: message.timestamp_ms, lux: message.lux,
-      target_count: counted, alert_level: previous?.alert_level ?? "normal", received_at_ms: now,
+      target_count: counted, targets: views, alert_level: previous?.alert_level ?? "normal", received_at_ms: now,
       status: "online", high_since_ms: previous?.high_since_ms ?? null,
     }, counted, now);
     return this.#store(node, previous);
@@ -114,7 +119,7 @@ export class ArmorStore {
     const timestamp = Math.max(message.timestamp_ms, previous?.timestamp_ms ?? 0);
     const node: StoredNode = {
       node_id: message.node_id, online: message.online, timestamp_ms: timestamp, lux: previous?.lux ?? null,
-      target_count: previous?.target_count ?? 0, alert_level: previous?.alert_level ?? "normal", received_at_ms: this.#now(),
+      target_count: previous?.target_count ?? 0, targets: previous?.targets ?? [], alert_level: previous?.alert_level ?? "normal", received_at_ms: this.#now(),
       status: message.online ? "online" : "offline", high_since_ms: previous?.high_since_ms ?? null,
     };
     return this.#store(node, previous);
@@ -179,14 +184,15 @@ export class ArmorStore {
   }
 
   #persisted(): PersistedState {
-    return { schema: 1, mode: this.#mode, revision: this.#revision, nodes: [...this.#nodes.values()] };
+    // Positions are only meaningful live: they are not written to disk.
+    return { schema: 1, mode: this.#mode, revision: this.#revision, nodes: [...this.#nodes.values()].map(node => ({ ...node, targets: [] })) };
   }
 
   #restore(state: PersistedState | undefined): void {
     if (!state) return;
     this.#mode = state.mode;
     this.#revision = state.revision;
-    for (const node of state.nodes) this.#nodes.set(node.node_id, node);
+    for (const node of state.nodes) this.#nodes.set(node.node_id, { ...node, targets: [] });
     this.#updatedAt = new Date(this.#now()).toISOString();
   }
 }

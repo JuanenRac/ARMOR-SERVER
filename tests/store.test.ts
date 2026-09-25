@@ -90,3 +90,22 @@ test("an offline message (the node's last will) is applied even though it is old
   store.health(parseHealth({ node_id: "north-1", timestamp_ms: 6000, online: true }));
   assert.equal(store.snapshot().nodes["north-1"].online, true);
 });
+
+test("the latest targets are exposed with their positions, and stay through a heartbeat", () => {
+  const store = new ArmorStore();
+  store.telemetry(parseTelemetry({ node_id: "gate", timestamp_ms: 5, lux: 10, targets: [{ sensor_id: 2, track_id: 7, x_mm: -400, y_mm: 2500, speed_mm_s: 120 }] }));
+  const seen = store.snapshot().nodes.gate.targets;
+  assert.deepEqual(seen, [{ sensor_id: 2, track_id: 7, x_mm: -400, y_mm: 2500, speed_mm_s: 120, counted: true }]);
+  store.health(parseHealth({ node_id: "gate", timestamp_ms: 6, online: true }));
+  assert.equal(store.snapshot().nodes.gate.targets.length, 1);
+  store.telemetry(parseTelemetry({ node_id: "gate", timestamp_ms: 7, lux: 10, targets: [] }));
+  assert.deepEqual(store.snapshot().nodes.gate.targets, []);
+});
+
+test("a target inside an ignore zone is shown but not counted", () => {
+  const store = new ArmorStore(undefined, { rules: () => ({ schema: 1, dwell_ms: 0, zones: [{ id: "z", name: "road", action: "ignore", x_min_mm: 0, x_max_mm: 1000, y_min_mm: 0, y_max_mm: 1000 }] }) });
+  store.telemetry(parseTelemetry({ node_id: "gate", timestamp_ms: 5, lux: 10, targets: [{ sensor_id: 1, track_id: 1, x_mm: 500, y_mm: 500, speed_mm_s: 0 }, { sensor_id: 1, track_id: 2, x_mm: 2000, y_mm: 500, speed_mm_s: 0 }] }));
+  const node = store.snapshot().nodes.gate;
+  assert.equal(node.target_count, 1);
+  assert.deepEqual(node.targets.map(target => target.counted), [false, true]);
+});
