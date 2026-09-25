@@ -10,26 +10,29 @@ import { parseHealth, parseTelemetry } from "../contracts.js";
 import { hasBearer } from "../http/auth.js";
 
 export function registerIngestRoutes(app: Express, context: AppContext, startedAt: number, version: string): void {
-  const { config, store, audit } = context;
-  const ingestLimit = rateLimit({ windowMs: 60_000, limit: 1_200, standardHeaders: "draft-8", legacyHeaders: false });
+  const { config, store, audit, requireOperator, operatorAuthorized } = context;
+  const ingestLimit = rateLimit({ windowMs: 60_000, limit: 6_000, standardHeaders: "draft-8", legacyHeaders: false });
   const controlLimit = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false });
 
   app.get("/healthz", (_request, response) => response.json({ ok: true, service: "armor-server" }));
-  app.get("/api/v1/status", (_request, response) => response.json(store.snapshot()));
-  app.get("/api/v1/info", (_request, response) => response.json({
+  // The perimeter state (armed or not, where the targets are) is for operators only: a stranger on the
+  // network must not learn whether the system is armed.
+  app.get("/api/v1/status", requireOperator, (_request, response) => response.json(store.snapshot()));
+  app.get("/api/v1/info", (request, response) => response.json({
     service: "armor-server", version, uptime_s: Math.round((Date.now() - startedAt) / 1000),
-    mode: store.snapshot().mode, live_video: Boolean(config.ffmpegPath), mqtt: Boolean(config.mqtt),
+    ...(operatorAuthorized(request) ? { mode: store.snapshot().mode, live_video: Boolean(config.ffmpegPath), mqtt: Boolean(config.mqtt) } : {}),
   }));
 
   app.post("/api/v1/telemetry", ingestLimit, (request, response) => {
     if (!hasBearer(request, config.ingestToken)) return response.sendStatus(401);
-    try { return response.status(202).json(store.telemetry(parseTelemetry(request.body))); }
+    // The answer is deliberately minimal: a field node's token must not reveal the rest of the perimeter.
+    try { return response.status(202).json({ accepted: true, revision: store.telemetry(parseTelemetry(request.body)).revision }); }
     catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "invalid telemetry" }); }
   });
 
   app.post("/api/v1/health", ingestLimit, (request, response) => {
     if (!hasBearer(request, config.ingestToken)) return response.sendStatus(401);
-    try { return response.status(202).json(store.health(parseHealth(request.body))); }
+    try { return response.status(202).json({ accepted: true, revision: store.health(parseHealth(request.body)).revision }); }
     catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "invalid health" }); }
   });
 

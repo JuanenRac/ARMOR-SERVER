@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.0] - Camera watchdog, own broker, sharper security
+
+- **Camera watchdog:** every configured camera is probed (a plain TCP connection to its RTSP or ONVIF port, no credential) every `ARMOR_CAMERA_CHECK_S` seconds (default 20, 0 disables). A camera is offline after two consecutive failures. Changes are events (`type: camera`), an offline camera is an alarm while armed (`camera.offline`), and `GET /api/v1/camera-status` (operator) reports each camera.
+- **Security:** `GET /api/v1/status` now needs an operator (a stranger on the network could learn whether the system was armed and where the targets were); `GET /api/v1/info` shows the mode and capabilities only to an operator.
+- **Security:** the answer to a field node's HTTP ingest is now just `accepted` and the revision; it used to return the whole perimeter state to whoever held the ingest token.
+- **Security:** over MQTT a node can no longer speak for another one: the `node_id` in the body must be the node of the topic it was published on (the broker ACL guarantees who published it).
+- **Security:** at most 256 distinct nodes are accepted, so inventing node names cannot grow the state and its file without bound; `DELETE /api/v1/nodes/:id` forgets a decommissioned node (operator, audited).
+- The ingest rate budget is 6000 requests a minute (three nodes at 10 Hz need about 1800).
+- Load and chaos tests (seeded fuzzing of both contracts and of the HTTP ingest, a 1000-message burst from 40 nodes, random operations against the state invariants, crash and restart cases, an unreachable webhook under a flood); 107 tests.
+
 ## [0.3.0] - State that survives, an event history and alarm output
 
 - **Persistence:** the security mode and the last observation of every node are written atomically to `data/state.json` (the mode at once, node data coalesced) and restored at start. A restart no longer disarms the perimeter; restored nodes are stale until they speak again. A damaged or foreign file is ignored, never trusted.

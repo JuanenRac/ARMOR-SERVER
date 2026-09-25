@@ -231,7 +231,7 @@ test("history and rules are operator-only and validated over HTTP", async () => 
     assert.equal(stored.zones.length, 1);
     assert.ok(fs.existsSync(path.join(running.config.dataDir, "rules.json")));
     await fetch(`${running.base}/api/v1/telemetry`, { method: "POST", headers: ingest, body: JSON.stringify({ ...body, timestamp_ms: 6 }) });
-    const state = await (await fetch(`${running.base}/api/v1/status`)).json() as { nodes: Record<string, { target_count: number }> };
+    const state = await (await fetch(`${running.base}/api/v1/status`, { headers: { Authorization: `Bearer ${SECRETS.ARMOR_OPERATOR_TOKEN}` } })).json() as { nodes: Record<string, { target_count: number }> };
     assert.equal(state.nodes["north-1"].target_count, 0);
   } finally { await running.stop(); }
 });
@@ -252,4 +252,19 @@ test("the audit log is created for a webhook failure without leaking the URL sec
   const audit = createAuditLog(tempDir(), line => lines.push(line));
   audit.record({ action: "alert.webhook", outcome: "failed", detail: "HTTP 500" });
   assert.match(lines[0], /alert\.webhook/);
+});
+
+test("a decommissioned node can be forgotten, once, by an operator", async () => {
+  const running = await startServer();
+  try {
+    const ingest = { Authorization: `Bearer ${SECRETS.ARMOR_INGEST_TOKEN}`, "Content-Type": "application/json" };
+    const operator = { Authorization: `Bearer ${SECRETS.ARMOR_OPERATOR_TOKEN}` };
+    await fetch(`${running.base}/api/v1/health`, { method: "POST", headers: ingest, body: JSON.stringify({ node_id: "north-9", timestamp_ms: 1, online: true }) });
+    assert.equal((await fetch(`${running.base}/api/v1/nodes/north-9`, { method: "DELETE" })).status, 401);
+    assert.equal((await fetch(`${running.base}/api/v1/nodes/..%2Fx`, { method: "DELETE", headers: operator })).status, 400);
+    assert.equal((await fetch(`${running.base}/api/v1/nodes/north-9`, { method: "DELETE", headers: operator })).status, 204);
+    assert.equal((await fetch(`${running.base}/api/v1/nodes/north-9`, { method: "DELETE", headers: operator })).status, 404);
+    const state = await (await fetch(`${running.base}/api/v1/status`, { headers: { Authorization: `Bearer ${SECRETS.ARMOR_OPERATOR_TOKEN}` } })).json() as { nodes: Record<string, unknown> };
+    assert.deepEqual(Object.keys(state.nodes), []);
+  } finally { await running.stop(); }
 });

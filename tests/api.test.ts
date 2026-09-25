@@ -24,10 +24,16 @@ const camera = { id: "cam-gate", name: "Gate", host: "192.168.0.203", username: 
 
 test("health is public and status is readable", async () => {
   assert.deepEqual(await (await call("/healthz")).json(), { ok: true, service: "armor-server" });
-  const status = await (await call("/api/v1/status")).json() as { mode: string };
+  // The perimeter state is for operators: a stranger learns nothing about whether the system is armed.
+  assert.equal((await call("/api/v1/status")).status, 401);
+  const status = await (await call("/api/v1/status", { cookie })).json() as { mode: string };
   assert.equal(status.mode, "disarmed");
-  const info = await (await call("/api/v1/info")).json() as { version: string; live_video: boolean };
-  assert.equal(info.version, "test");
+  const anonymous = await (await call("/api/v1/info")).json() as Record<string, unknown>;
+  assert.equal(anonymous.version, "test");
+  assert.equal("mode" in anonymous, false);
+  assert.equal("live_video" in anonymous, false);
+  const info = await (await call("/api/v1/info", { cookie })).json() as { version: string; live_video: boolean; mode: string };
+  assert.equal(info.mode, "disarmed");
   assert.equal(info.live_video, false);
 });
 
@@ -152,9 +158,11 @@ test("ingest needs the ingest token and validates the payload", async () => {
   assert.equal((await post("/api/v1/telemetry", reading)).status, 401);
   assert.equal((await post("/api/v1/telemetry", reading, { bearer: SECRETS.ARMOR_CONTROL_TOKEN })).status, 401);
   assert.equal((await post("/api/v1/telemetry", { ...reading, lux: -1 }, { bearer: SECRETS.ARMOR_INGEST_TOKEN })).status, 400);
-  assert.equal((await post("/api/v1/telemetry", reading, { bearer: SECRETS.ARMOR_INGEST_TOKEN })).status, 202);
+  const accepted = await post("/api/v1/telemetry", reading, { bearer: SECRETS.ARMOR_INGEST_TOKEN });
+  assert.equal(accepted.status, 202);
+  assert.deepEqual(Object.keys(await accepted.json() as object).sort(), ["accepted", "revision"], "a node token must not learn the perimeter state");
   assert.equal((await post("/api/v1/health", { node_id: "north-1", timestamp_ms: 6, online: true }, { bearer: SECRETS.ARMOR_INGEST_TOKEN })).status, 202);
-  const status = await (await call("/api/v1/status")).json() as { nodes: Record<string, { online: boolean; stale: boolean }> };
+  const status = await (await call("/api/v1/status", { cookie })).json() as { nodes: Record<string, { online: boolean; stale: boolean }> };
   assert.equal(status.nodes["north-1"].online, true);
   assert.equal(status.nodes["north-1"].stale, false);
 });
