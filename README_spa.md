@@ -18,7 +18,7 @@
 
 ---
 
-**Comprobación de honestidad - qué funciona hoy:** cada ruta, sesión, cifrado y regla de evidencias descrita aquí es real y está cubierta por tests (`npm test`, 107 tests, con una suite de integración HTTP completa contra un servidor aislado). Ha funcionado contra un broker MQTT real en la CM5 (con scripts, no con el firmware de un nodo). Lo que **todavía no está demostrado**: FFmpeg contra una cámara real, ONVIF/PTZ con todos los firmwares de cámara y cualquier hardware Jetson. Son hitos de despliegue, recogidos en [ARMOR-DOCS](../ARMOR-DOCS); este README nunca los da por hechos.
+**Comprobación de honestidad - qué funciona hoy:** cada ruta, sesión, cifrado y regla de evidencias descrita aquí es real y está cubierta por tests (`npm test`, 107 tests, con una suite de integración HTTP completa contra un servidor aislado). Ha funcionado contra un broker MQTT real en la CM5 (con scripts, no con el firmware de un nodo). Ha transmitido vídeo en directo, guardado una captura y grabado con cinco cámaras IP reales mediante FFmpeg en la CM5. Lo que **todavía no está demostrado**: ONVIF/PTZ con todos los firmwares de cámara y cualquier hardware Jetson. Son hitos de despliegue, recogidos en [ARMOR-DOCS](../ARMOR-DOCS); este README nunca los da por hechos.
 
 ---
 
