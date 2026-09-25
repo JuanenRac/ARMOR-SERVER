@@ -16,7 +16,12 @@ import { EvidenceLibrary } from "./media/evidence.js";
 import { RelayManager, StreamTickets } from "./media/relay.js";
 import { CameraWatcher } from "./cameras/health.js";
 import { PtzController } from "./cameras/ptz.js";
-import { EventLog } from "./events.js";
+import { EventLog, type ArmorEventBody } from "./events.js";
+import { AlarmCentre, AlarmRules } from "./alarms.js";
+import { AutomationEngine, type Action } from "./automations.js";
+import { DeviceRegistry, type DeviceChange } from "./devices/registry.js";
+import { sendCommand, type Command } from "./devices/commands.js";
+import { SiteStore } from "./site.js";
 import { AlertNotifier } from "./notify.js";
 import { FileStatePersistence } from "./persistence.js";
 import { RulesFile } from "./rules.js";
@@ -35,6 +40,14 @@ export type AppContext = {
   studioSessions: SessionStore;
   operatorSessions: SessionStore;
   users: UserStore;
+  devices: DeviceRegistry;
+  alarms: AlarmCentre;
+  alarmRules: AlarmRules;
+  automations: AutomationEngine;
+  site: SiteStore;
+  /** The MQTT side of devices: set once the broker client exists. */
+  deviceLink: { publish?: (topic: string, payload: string) => void; resubscribe?: () => void };
+  sendDeviceCommand(id: string, command: Command): ReturnType<typeof sendCommand>;
   /** The Studio user behind this request's session cookie, if any. */
   studioUser(request: HeaderSource): PublicUser | undefined;
   vault: CameraVault;
@@ -70,12 +83,41 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const events = new EventLog({ file: path.join(config.dataDir, "events.log") });
   const rules = new RulesFile(path.join(config.dataDir, "rules.json"), config.alertDwellMs, warn);
   const notifier = new AlertNotifier({ webhookUrl: config.alertWebhookUrl ?? undefined, webhookSecret: config.alertWebhookSecret || undefined, audit });
+  const deviceLink: AppContext["deviceLink"] = {};
+  // Everything that happens goes through one place: written to the history, announced, checked for alarms, offered to the automations.
+  const record = (body: ArmorEventBody): void => {
+    const event = events.append(body);
+    notifier.notify(event, store.snapshot().mode);
+    alarmRules.handleEvent(event);
+    if (event.type === "mode") automations.handleMode(event.mode);
+  };
+  const alarms = new AlarmCentre({ file: path.join(config.dataDir, "alarms.json"), onEvent: record, onRaised: alarm => automations.handleAlarm(alarm), warn });
+  const alarmRules = new AlarmRules(alarms, () => store.snapshot().mode);
+  const devices: DeviceRegistry = new DeviceRegistry({
+    file: path.join(config.dataDir, "devices.json"), warn, onTopics: () => deviceLink.resubscribe?.(),
+    onChange: (change: DeviceChange) => {
+      if (change.onlineChanged) record({ type: "device", device_id: change.device.id, kind: change.device.kind, field: "online", from: !change.device.online, to: change.device.online });
+      for (const item of change.changes) if (typeof item.to === "boolean") record({ type: "device", device_id: change.device.id, kind: change.device.kind, field: item.field, from: item.from, to: item.to });
+      alarmRules.handleDevice(change);
+      automations.handleDevice(change);
+    },
+  });
+  const sendDeviceCommand = (id: string, command: Command) => sendCommand(devices, id, command, { publish: (topic, payload) => { if (!deviceLink.publish) throw new Error("the MQTT broker is not connected"); deviceLink.publish(topic, payload); } });
+  const automations: AutomationEngine = new AutomationEngine({
+    file: path.join(config.dataDir, "automations.json"), warn, mode: () => store.snapshot().mode,
+    run: async (action: Action, automation) => {
+      if (action.type === "device") { await sendDeviceCommand(action.device_id, action.command); return; }
+      notifier.send({ service: "armor-server", event: "automation.notify", at: new Date().toISOString(), mode: store.snapshot().mode, automation: automation.id });
+    },
+    onResult: (automation, action, ok, detail) => audit.record({ action: "automation.run", outcome: ok ? "allowed" : "failed", target: `${automation.id}:${action.type === "device" ? `${action.device_id}=${action.command}` : "notify"}`, detail }),
+  });
+  const site = new SiteStore(path.join(config.dataDir, "site.json"));
   const persistence = new FileStatePersistence(path.join(config.dataDir, "state.json"), { warn });
   const store: ArmorStore = new ArmorStore(overrides.broadcast, {
     staleAfterMs: config.nodeStaleAfterS * 1000, now: overrides.now, persistence, rules: () => rules.get(),
-    onEvent: body => notifier.notify(events.append(body), store.snapshot().mode),
+    onEvent: record,
   });
-  const cameraWatcher = new CameraWatcher({ list: () => vault.list(), onEvent: body => notifier.notify(events.append(body), store.snapshot().mode) });
+  const cameraWatcher = new CameraWatcher({ list: () => vault.list(), onEvent: record });
   const users = new UserStore({
     file: path.join(config.dataDir, "users.json"), seed: { username: config.studioUsername, password: config.studioPassword },
     minPasswordLength: config.passwordMinLength, resetSeedPassword: config.resetStudioPassword, warn,
@@ -94,7 +136,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(studioUser(request) ? 403 : 401).json({ error: "an administrator is required" });
   };
   return {
-    config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, studioUser, requireAdmin, vault, evidence, relays,
+    config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, studioUser, requireAdmin, devices, alarms, alarmRules, automations, site, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

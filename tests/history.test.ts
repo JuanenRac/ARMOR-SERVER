@@ -44,7 +44,7 @@ test("the summary counts what is held and what happened in the last day", () => 
   const { log, clock } = seeded();
   const summary = log.summary(clock.now);
   assert.equal(summary.total, 6);
-  assert.deepEqual(summary.by_type, { alert: 3, node: 1, camera: 1, mode: 1 });
+  assert.deepEqual(summary.by_type, { alert: 3, node: 1, camera: 1, mode: 1, device: 0, alarm: 0 });
   assert.deepEqual(summary.last_24h, { events: 3, high_alerts: 1, node_incidents: 0, camera_incidents: 0 });
   assert.equal(log.summary(clock.now - 4.6 * day).last_24h.camera_incidents, 1);
   assert.ok(summary.oldest_at && summary.newest_at && summary.oldest_at < summary.newest_at);

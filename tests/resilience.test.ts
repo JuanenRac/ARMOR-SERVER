@@ -135,7 +135,7 @@ test("events are recorded in order, paged, filtered and restored after a restart
 test("the store reports node and alert transitions, including going silent", () => {
   let now = 1_000_000;
   const seen: string[] = [];
-  const store = new ArmorStore(undefined, { staleAfterMs: 30_000, now: () => now, onEvent: event => seen.push(event.type === "node" ? `node:${event.from}>${event.to}` : event.type === "mode" ? `mode:${event.mode}` : `alert:${event.from}>${event.to}`) });
+  const store = new ArmorStore(undefined, { staleAfterMs: 30_000, now: () => now, onEvent: event => seen.push(event.type === "node" ? `node:${event.from}>${event.to}` : event.type === "mode" ? `mode:${event.mode}` : event.type === "alert" ? `alert:${event.from}>${event.to}` : event.type) });
   store.arm("armed");
   store.health(parseHealth({ node_id: "north-1", timestamp_ms: 1, online: true }));
   now += 31_000;
@@ -219,7 +219,7 @@ test("history and rules are operator-only and validated over HTTP", async () => 
     assert.equal((await fetch(`${running.base}/api/v1/telemetry`, { method: "POST", headers: ingest, body: JSON.stringify(body) })).status, 202);
 
     const history = await (await fetch(`${running.base}/api/v1/history?limit=10`, { headers })).json() as { events: Array<{ type: string }>; next_before: number };
-    assert.deepEqual(history.events.map(event => event.type).sort(), ["alert", "mode", "node"]);
+    assert.deepEqual(history.events.map(event => event.type).sort(), ["alarm", "alert", "mode", "node"]);
     assert.equal((await fetch(`${running.base}/api/v1/history?type=bogus`, { headers })).status, 400);
     assert.equal((await fetch(`${running.base}/api/v1/history?node=../x`, { headers })).status, 400);
 

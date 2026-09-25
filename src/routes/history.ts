@@ -15,7 +15,7 @@ const timeParam = (value: unknown): number | undefined | null => {
   const time = Date.parse(value);
   return Number.isFinite(time) ? time : null;
 };
-const TYPES = new Set<ArmorEvent["type"]>(["alert", "node", "camera", "mode"]);
+const TYPES = new Set<ArmorEvent["type"]>(["alert", "node", "camera", "mode", "device", "alarm"]);
 const positiveInteger = (value: unknown): number | undefined => {
   if (typeof value !== "string" || !/^\d{1,9}$/.test(value)) return undefined;
   const number = Number(value);

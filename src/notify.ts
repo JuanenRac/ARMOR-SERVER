@@ -12,12 +12,16 @@ import type { SecurityMode } from "./store.js";
 export const ALERT_TOPIC = "armor/server/alert";
 export type AlertMessage = {
   service: "armor-server";
-  event: "alert.raised" | "alert.cleared" | "node.offline" | "node.stale" | "camera.offline";
+  event: "alert.raised" | "alert.cleared" | "node.offline" | "node.stale" | "camera.offline" | "alarm.raised" | "automation.notify";
   at: string;
   mode: SecurityMode;
   node_id?: string;
   camera_id?: string;
   targets?: number;
+  /** For a device alarm: which alarm, how serious, what, and the device. */
+  alarm_id?: string; severity?: "critical" | "high" | "warning"; code?: string; device_id?: string;
+  /** For an automation that notifies: which one, and the alarm or device that set it off when there is one. */
+  automation?: string;
 };
 
 /**
@@ -37,6 +41,8 @@ export function alertMessageFor(event: ArmorEvent, mode: SecurityMode): AlertMes
     if (event.to === "stale") return { ...base, event: "node.stale", node_id: event.node_id };
   }
   if (event.type === "camera" && mode === "armed" && event.to === "offline") return { ...base, event: "camera.offline", camera_id: event.camera_id };
+  // Nodes and cameras already have their own messages above; a device alarm (smoke, a door, a flood...) is announced here.
+  if (event.type === "alarm" && event.state === "raised" && event.source_type === "device") return { ...base, event: "alarm.raised", alarm_id: event.alarm_id, severity: event.severity, code: event.code, device_id: event.source };
   return null;
 }
 
@@ -77,7 +83,12 @@ export class AlertNotifier {
 
   notify(event: ArmorEvent, mode: SecurityMode): void {
     const message = alertMessageFor(event, mode);
-    if (!message || this.#closed) return;
+    if (message) this.send(message);
+  }
+
+  /** Send a message to the MQTT alarm topic and the webhook (used by automations as well). */
+  send(message: AlertMessage): void {
+    if (this.#closed) return;
     try { this.#publish?.(ALERT_TOPIC, JSON.stringify(message)); } catch { /* MQTT down: the webhook still goes out. */ }
     if (!this.#options.webhookUrl) return;
     if (this.#queue.length >= MAX_QUEUE) {
