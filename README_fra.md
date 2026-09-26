@@ -20,13 +20,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-161%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-168%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="Maturity">
 </p>
 
 ---
 
-**Vérification d'honnêteté - ce qui fonctionne aujourd'hui:** Chaque route, session, chiffrement et règle de preuves ci-dessous est réel et couvert par des tests (`npm test`, 161 tests, dont une suite d'intégration HTTP complète face à un serveur isolé). Il a fonctionné avec un vrai broker MQTT sur la CM5 (avec des scripts, pas avec un firmware de nœud de terrain), a diffusé de la vidéo en direct, enregistré une capture et filmé depuis cinq vraies caméras IP via FFmpeg. Ce qui n'est **pas encore prouvé** : ONVIF avec une vraie caméra ONVIF, le PTZ sur chaque firmware de caméra (il marche sur l'unité Hi3510), tout matériel Jetson et les routes solaires avec un vrai nœud passerelle (elles sont testées avec des relevés générés).
+**Vérification d'honnêteté - ce qui fonctionne aujourd'hui:** Chaque route, session, chiffrement et règle de preuves ci-dessous est réel et couvert par des tests (`npm test`, 168 tests, dont une suite d'intégration HTTP complète face à un serveur isolé). Il a fonctionné avec un vrai broker MQTT sur la CM5 (avec des scripts, pas avec un firmware de nœud de terrain), a diffusé de la vidéo en direct, enregistré une capture et filmé depuis cinq vraies caméras IP via FFmpeg. Ce qui n'est **pas encore prouvé** : ONVIF avec une vraie caméra ONVIF, le PTZ sur chaque firmware de caméra (il marche sur l'unité Hi3510), tout matériel Jetson et les routes solaires avec un vrai nœud passerelle (elles sont testées avec des relevés générés).
 
 ---
 
@@ -50,6 +50,7 @@
 flowchart LR
     N["Field nodes (ESP32-S3)"] -->|MQTT / HTTP + ingest token| S["ARMOR-SERVER"]
     G["Solar gateway nodes"] -->|MQTT / HTTP + ingest token| S
+    E["Electrical nodes"] -->|MQTT / HTTP + ingest token| S
     C["IP cameras"] -->|RTSP / ONVIF| S
     S -->|"MJPEG, JSON, WebSocket"| U["ARMOR-STUDIO"]
     S -->|"MJPEG, JSON"| A["ARMOR-ANDROID-CONTROL"]
@@ -67,7 +68,7 @@ flowchart LR
 ## 🌐 API
 
 * Publique : `GET /healthz`. Pour un opérateur : état, informations, caméras, médias, historique, règles, appareils, alarmes, automatisations, plan du site et `GET /api/v1/solar` avec son historique.
-* Pour les nœuds de terrain et les passerelles : `POST /api/v1/telemetry`, `/health` et `/solar` avec le jeton d'ingestion, et les sujets MQTT `armor/node/#` et `armor/solar/#`. Les événements atteignent les consoles par le WebSocket `/api/v1/events`.
+* Pour les nœuds de terrain et les passerelles : `POST /api/v1/telemetry`, `/health`, `/solar` et `/electrical/readings` avec le jeton d'ingestion, et les sujets MQTT `armor/node/#`, `armor/solar/#` et `armor/electrical/#`. Les événements atteignent les consoles par le WebSocket `/api/v1/events`.
 * Chaque route, sa règle d'accès et son schéma sont dans le fichier OpenAPI d'[ARMOR-COMMON](../ARMOR-COMMON), et un test vérifie qu'aucune route n'y manque.
 
 ## ⚙️ Configuration
@@ -81,9 +82,9 @@ flowchart LR
 ```text
 ARMOR-SERVER/
 ├── src/            server, app, config, context, store, persistence, events, rules, notify, contracts, mqtt, audit,
-│   │               alarms, automations, users, site, solar
+│   │               alarms, automations, users, site, solar, solar_registry, electrical
 │   ├── http/       auth primitives
-│   ├── routes/     sessions, cameras, media, ingest, history, devices, alarms, automations, site, solar
+│   ├── routes/     sessions, cameras, media, ingest, history, devices, alarms, users, solar, electrical, system
 │   ├── devices/    the device model, kinds and MQTT bridge
 │   ├── cameras/    model, vault, digest, ptz, rtsp, discovery, health, errors
 │   └── media/      relay, evidence
@@ -98,7 +99,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 161 tests: unit + full HTTP integration
+npm test            # 168 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```

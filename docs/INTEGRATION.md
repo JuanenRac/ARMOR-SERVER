@@ -19,5 +19,7 @@ When `ARMOR_MQTT_URL` is explicitly configured, the Node server subscribes to
 unknown topic families and malformed payloads are rejected before reaching the
 state projection. The broker credential is read only from the process environment.
 
+The server also subscribes to `armor/solar/+/+/state` and `armor/electrical/+/state` (QoS 1), the messages of the solar gateway nodes and of the electrical nodes, and accepts the same messages over `POST /api/v1/solar` and `POST /api/v1/electrical/readings` with the ingest token. Over MQTT the `node_id` in a body must be the node of its topic. An operator reads them with `GET /api/v1/solar` and `GET /api/v1/electrical/readings` (with their `/history`); the Electrical Designer's drawing is kept at `GET`/`PUT /api/v1/electrical/design`. The broker's ACL for `armor-server` needs `topic read armor/solar/#` and `topic read armor/electrical/#`.
+
 The core intentionally does not execute MQTT commands. A future authenticated
 adapter must enforce identities, authorization, audit logging and replay limits.
