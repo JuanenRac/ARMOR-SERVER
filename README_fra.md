@@ -20,13 +20,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-159%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-161%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="Maturity">
 </p>
 
 ---
 
-**Vérification d'honnêteté - ce qui fonctionne aujourd'hui:** Chaque route, session, chiffrement et règle de preuves ci-dessous est réel et couvert par des tests (`npm test`, 159 tests, dont une suite d'intégration HTTP complète face à un serveur isolé). Il a fonctionné avec un vrai broker MQTT sur la CM5 (avec des scripts, pas avec un firmware de nœud de terrain), a diffusé de la vidéo en direct, enregistré une capture et filmé depuis cinq vraies caméras IP via FFmpeg. Ce qui n'est **pas encore prouvé** : ONVIF avec une vraie caméra ONVIF, le PTZ sur chaque firmware de caméra (il marche sur l'unité Hi3510), tout matériel Jetson et les routes solaires avec un vrai nœud passerelle (elles sont testées avec des relevés générés).
+**Vérification d'honnêteté - ce qui fonctionne aujourd'hui:** Chaque route, session, chiffrement et règle de preuves ci-dessous est réel et couvert par des tests (`npm test`, 161 tests, dont une suite d'intégration HTTP complète face à un serveur isolé). Il a fonctionné avec un vrai broker MQTT sur la CM5 (avec des scripts, pas avec un firmware de nœud de terrain), a diffusé de la vidéo en direct, enregistré une capture et filmé depuis cinq vraies caméras IP via FFmpeg. Ce qui n'est **pas encore prouvé** : ONVIF avec une vraie caméra ONVIF, le PTZ sur chaque firmware de caméra (il marche sur l'unité Hi3510), tout matériel Jetson et les routes solaires avec un vrai nœud passerelle (elles sont testées avec des relevés générés).
 
 ---
 
@@ -98,7 +98,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 159 tests: unit + full HTTP integration
+npm test            # 161 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```

@@ -4,7 +4,9 @@ import test from "node:test";
 import { AlarmCentre, AlarmRules } from "../src/alarms.js";
 import { parseSolarMessage, SolarStore, solarTopic, type SolarBattery, type SolarInverter } from "../src/solar.js";
 import { SECRETS, startServer, studioCookie, tempDir } from "./helpers.js";
+import fs from "node:fs";
 import path from "node:path";
+import { SolarRegistry, slug } from "../src/solar_registry.js";
 
 const inverter = (extra: Partial<SolarInverter> = {}): SolarInverter => ({
   kind: "inverter", node_id: "solar-1", device: "axpert-1", timestamp_ms: 1000, mode: "line", grid_v: 232, grid_hz: 50, out_v: 230, out_hz: 50, out_va: 161, out_w: 119, load_percent: 3,
@@ -167,4 +169,54 @@ test("a stack with cells, capacities, a model and cycles is kept whole and its c
   }
   const samples = store.history("solar-1", "us3000-1", 60)?.samples ?? [];
   assert.equal(samples[0].energy_kwh, 6.24);
+});
+
+test("an operator declares solar equipment, it waits for its first reading, an example fills it in and a real reading replaces the example", async () => {
+  const running = await startServer();
+  try {
+    const cookie = await studioCookie(running.base);
+    const json = { "Content-Type": "application/json", cookie };
+    const call = (method: string, url: string, body?: unknown, headers: Record<string, string> = json) => fetch(`${running.base}${url}`, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    assert.equal((await fetch(`${running.base}/api/v1/solar/devices`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).status, 401);
+    // declared: it shows as waiting, and the identifier comes from the name
+    const created = await call("POST", "/api/v1/solar/devices", { kind: "battery", name: "Baterías del garaje", node_id: "solar-1", model: "pylontech-us3000", connection: "rs485" });
+    assert.equal(created.status, 201);
+    const registration = await created.json() as { device: string; model: string };
+    assert.deepEqual([registration.device, registration.model], ["baterias-del-garaje", "pylontech-us3000"]);
+    const before = await (await call("GET", "/api/v1/solar")).json() as { devices: unknown[]; waiting: Array<{ device: string }>; catalog: { battery_models: string[] } };
+    assert.deepEqual([before.devices.length, before.waiting.map(item => item.device)], [0, ["baterias-del-garaje"]]);
+    assert.ok(before.catalog.battery_models.includes("ant-bms"));
+    // wrong input is refused, and the same node and device cannot change kind
+    for (const bad of [{ kind: "toaster", name: "x", node_id: "solar-1" }, { kind: "battery", name: "", node_id: "solar-1" }, { kind: "battery", name: "x", node_id: "Bad Node" }, { kind: "battery", name: "x", node_id: "solar-1", model: "axpert" }]) {
+      assert.equal((await call("POST", "/api/v1/solar/devices", bad)).status, 400, JSON.stringify(bad));
+    }
+    assert.equal((await call("POST", "/api/v1/solar/devices", { kind: "inverter", name: "x", node_id: "solar-1", device: "baterias-del-garaje" })).status, 409);
+    // an example reading: the device leaves the waiting list, is marked as an example, has its cells and capacities, and raises no alarm
+    assert.equal((await call("POST", "/api/v1/solar/devices/solar-1/nobody/example")).status, 404);
+    assert.equal((await call("POST", "/api/v1/solar/devices/solar-1/baterias-del-garaje/example")).status, 202);
+    const after = await (await call("GET", "/api/v1/solar")).json() as { devices: Array<{ example: boolean; registered?: { name: string }; reading: { stack: Array<{ cells_v: number[] }>; capacity_ah: number; full_capacity_ah: number } }>; waiting: unknown[] };
+    assert.equal(after.waiting.length, 0);
+    assert.deepEqual([after.devices[0].example, after.devices[0].registered?.name, after.devices[0].reading.stack.length, after.devices[0].reading.stack[0].cells_v.length, after.devices[0].reading.full_capacity_ah], [true, "Baterías del garaje", 2, 15, 148]);
+    // the first real reading replaces the example
+    const real = await fetch(`${running.base}/api/v1/solar`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SECRETS.ARMOR_INGEST_TOKEN}` }, body: JSON.stringify(battery({ device: "baterias-del-garaje" })) });
+    assert.equal(real.status, 202);
+    const replaced = await (await call("GET", "/api/v1/solar")).json() as { devices: Array<{ example: boolean }> };
+    assert.equal(replaced.devices[0].example, false);
+    // removing it forgets the declaration and the reading
+    assert.equal((await call("DELETE", "/api/v1/solar/devices/solar-1/baterias-del-garaje")).status, 204);
+    assert.equal((await call("DELETE", "/api/v1/solar/devices/solar-1/baterias-del-garaje")).status, 404);
+    const gone = await (await call("GET", "/api/v1/solar")).json() as { devices: unknown[]; waiting: unknown[] };
+    assert.deepEqual([gone.devices.length, gone.waiting.length], [0, 0]);
+  } finally { await running.stop(); }
+});
+
+test("the registry survives a restart and ignores a damaged file", () => {
+  const directory = tempDir();
+  const file = path.join(directory, "solar-devices.json");
+  const first = new SolarRegistry(file);
+  first.save({ kind: "inverter", name: "Axpert 5 kW", node_id: "solar-1", model: "voltronic", connection: "rs232", notes: "roof" });
+  assert.deepEqual(new SolarRegistry(file).list().map(item => [item.device, item.model, item.notes]), [["axpert-5-kw", "voltronic", "roof"]]);
+  fs.writeFileSync(file, "{ not json");
+  assert.deepEqual(new SolarRegistry(file).list(), []);
+  assert.equal(slug("  Ñandú / Casa 2 "), "nandu-casa-2");
 });

@@ -20,13 +20,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-159%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-161%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="Maturity">
 </p>
 
 ---
 
-**Ehrlichkeitsprüfung - was heute läuft:** Jede Route, Sitzung, Verschlüsselung und Beweisregel unten ist real und durch Tests abgedeckt (`npm test`, 159 Tests, darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server). Er lief gegen einen echten MQTT-Broker auf der CM5 (mit Skripten, nicht mit Feldknoten-Firmware) und hat Live-Video gestreamt, einen Schnappschuss gespeichert und von fünf echten IP-Kameras über FFmpeg aufgezeichnet. **Noch nicht belegt:** ONVIF mit einer echten ONVIF-Kamera, PTZ auf jeder Kamera-Firmware (es funktioniert an der Hi3510-Einheit), jede Jetson-Hardware und die Solar-Routen mit einem echten Gateway-Knoten (sie sind mit erzeugten Messwerten getestet).
+**Ehrlichkeitsprüfung - was heute läuft:** Jede Route, Sitzung, Verschlüsselung und Beweisregel unten ist real und durch Tests abgedeckt (`npm test`, 161 Tests, darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server). Er lief gegen einen echten MQTT-Broker auf der CM5 (mit Skripten, nicht mit Feldknoten-Firmware) und hat Live-Video gestreamt, einen Schnappschuss gespeichert und von fünf echten IP-Kameras über FFmpeg aufgezeichnet. **Noch nicht belegt:** ONVIF mit einer echten ONVIF-Kamera, PTZ auf jeder Kamera-Firmware (es funktioniert an der Hi3510-Einheit), jede Jetson-Hardware und die Solar-Routen mit einem echten Gateway-Knoten (sie sind mit erzeugten Messwerten getestet).
 
 ---
 
@@ -98,7 +98,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 159 tests: unit + full HTTP integration
+npm test            # 161 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```

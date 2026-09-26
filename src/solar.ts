@@ -112,7 +112,7 @@ export function solarTopic(topic: string): [string, string] | undefined {
 
 // ---- the store --------------------------------------------------------------------------------------------------------------------------
 
-export type SolarDeviceView = { node_id: string; device: string; kind: "inverter" | "battery"; reading: SolarMessage; received_at: string; stale: boolean };
+export type SolarDeviceView = { node_id: string; device: string; kind: "inverter" | "battery"; reading: SolarMessage; received_at: string; stale: boolean; example: boolean };
 export type SolarTotals = {
   inverters: number; batteries: number; stale: number;
   /** Power from the panels and drawn by the load, in watts, summed over the inverters that are not stale. */
@@ -144,7 +144,7 @@ export type SolarStoreOptions = {
   onStale?: (node: string, device: string, stale: boolean) => void;
 };
 
-type Entry = { reading: SolarMessage; receivedAtMs: number; stale: boolean; samples: SolarSample[]; lastSampleMs: number };
+type Entry = { reading: SolarMessage; receivedAtMs: number; stale: boolean; samples: SolarSample[]; lastSampleMs: number; example: boolean };
 
 const round = (value: number, places = 1): number => Math.round(value * 10 ** places) / 10 ** places;
 
@@ -160,18 +160,23 @@ export class SolarStore {
     };
   }
 
-  /** Keep a message. Refuses (throws) a new device when the store is full, so a broker full of noise cannot grow it without limit. */
-  ingest(message: SolarMessage): void {
+  /**
+   * Keep a message. Refuses (throws) a new device when the store is full, so a broker full of noise cannot grow it without limit.
+   * An `example` reading (made by the server to try the menus) is marked as such, raises no alarm and gives way to the first real one.
+   */
+  ingest(message: SolarMessage, options: { example?: boolean } = {}): void {
     const key = `${message.node_id}/${message.device}`;
     const now = this.#options.now();
     let entry = this.#entries.get(key);
     if (!entry) {
       if (this.#entries.size >= this.#options.maxDevices) throw new Error("too many solar devices");
-      entry = { reading: message, receivedAtMs: now, stale: false, samples: [], lastSampleMs: 0 };
+      entry = { reading: message, receivedAtMs: now, stale: false, samples: [], lastSampleMs: 0, example: options.example === true };
       this.#entries.set(key, entry);
     }
     const wasStale = entry.stale;
     const modeChanged = entry.reading.kind === "inverter" && message.kind === "inverter" && entry.reading.mode !== message.mode;
+    if (entry.example && options.example !== true) { entry.samples = []; entry.lastSampleMs = 0; }   // the first real reading replaces the example, history included
+    entry.example = options.example === true;
     entry.reading = message;
     entry.receivedAtMs = now;
     entry.stale = false;
@@ -180,15 +185,19 @@ export class SolarStore {
       entry.lastSampleMs = now;
       if (entry.samples.length > this.#options.keepSamples) entry.samples.splice(0, entry.samples.length - this.#options.keepSamples);
     }
+    if (options.example === true) return;
     if (wasStale) this.#options.onStale?.(message.node_id, message.device, false);
     this.#options.onMessage?.(message);
   }
+
+  /** Forget a device (its reading and its history). */
+  remove(node: string, device: string): boolean { return this.#entries.delete(`${node}/${device}`); }
 
   /** Mark the devices that went quiet (and tell), or came back. Called now and then. */
   sweep(): void {
     const now = this.#options.now();
     for (const entry of this.#entries.values()) {
-      if (!entry.stale && now - entry.receivedAtMs > this.#options.staleAfterMs) {
+      if (!entry.stale && !entry.example && now - entry.receivedAtMs > this.#options.staleAfterMs) {
         entry.stale = true;
         this.#options.onStale?.(entry.reading.node_id, entry.reading.device, true);
       }
@@ -199,7 +208,7 @@ export class SolarStore {
     this.sweep();
     return [...this.#entries.values()].map(entry => ({
       node_id: entry.reading.node_id, device: entry.reading.device, kind: entry.reading.kind, reading: entry.reading,
-      received_at: new Date(entry.receivedAtMs).toISOString(), stale: entry.stale,
+      received_at: new Date(entry.receivedAtMs).toISOString(), stale: entry.stale, example: entry.example,
     })).sort((a, b) => (a.kind === b.kind ? `${a.node_id}/${a.device}`.localeCompare(`${b.node_id}/${b.device}`) : a.kind === "inverter" ? -1 : 1));
   }
 
