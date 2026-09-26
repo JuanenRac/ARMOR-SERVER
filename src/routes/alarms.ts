@@ -9,7 +9,7 @@ import { AutomationError } from "../automations.js";
 import { MAX_SITE_BYTES, SiteConflict, SiteInvalid } from "../site.js";
 
 export function registerAlarmRoutes(app: Express, context: AppContext): void {
-  const { alarms, automations, audit, store, site, requireOperator, studioUser } = context;
+  const { alarms, automations, audit, store, site, electrical, requireOperator, studioUser } = context;
   const actor = (request: Parameters<typeof studioUser>[0]): string => studioUser(request)?.username ?? "operator";
   const body = (request: { body?: unknown }): Record<string, unknown> => (typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {});
   const fail = (response: Response, error: unknown) => {
@@ -87,6 +87,22 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
     } catch (error) {
       if (error instanceof SiteConflict) return response.status(409).json({ error: "the site was changed by someone else", code: "conflict", current: error.current });
       if (error instanceof SiteInvalid) return response.status(400).json({ error: error.message, code: "invalid_site" });
+      return response.status(500).json({ error: "internal error" });
+    }
+  });
+
+  // ---- the electrical design (the house's electrical diagram, drawn in Studio's Electrical Designer) ----
+  const electricalView = (doc: ReturnType<typeof electrical.get>) => ({ revision: doc.revision, updated_at: doc.updated_at, updated_by: doc.updated_by, electrical: doc.site });
+  app.get("/api/v1/electrical", requireOperator, (_request, response) => response.json(electricalView(electrical.get())));
+  app.put("/api/v1/electrical", requireOperator, bigJson, (request, response) => {
+    const input = body(request);
+    try {
+      const saved = electrical.save(input.electrical, input.revision, actor(request));
+      audit.record({ action: "electrical.save", outcome: "allowed", actor: actor(request), detail: `revision ${saved.revision}` });
+      return response.json({ revision: saved.revision, updated_at: saved.updated_at, updated_by: saved.updated_by });
+    } catch (error) {
+      if (error instanceof SiteConflict) return response.status(409).json({ error: error.message, code: "conflict", current: electricalView(error.current) });
+      if (error instanceof SiteInvalid) return response.status(400).json({ error: error.message, code: "invalid_electrical" });
       return response.status(500).json({ error: "internal error" });
     }
   });

@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.7] - The electrical design is kept on the server
+
+- `GET` and `PUT /api/v1/electrical`: the house's electrical diagram drawn in Studio's Electrical Designer, kept in its own file (`electrical.json`), apart from the site design. Same rules as the site design: an operator's route, up to 768 kB, versioned, and a save made from an out-of-date copy is refused with the current one (409) instead of overwriting it; every accepted save is in the audit trail. The server does not interpret the drawing.
+
 ## [0.2.6] - A catalogue of inverters and batteries
 
 - The solar catalogue lists the inverter families the reference projects name (Axpert VM II / VM III / MKS / MKS IV / King, MPP Solar PIP MS / HS / GK, EASun iSolar, Must PV18 / PH18, Revo VM III, InfiniSolar V, LV5048, SunGoldPower) with the **serial dialect** each answers in (`inverter_dialects`: auto, pi30, revo or pi18), the Pylontech models (US2000, US2000C, US2000B Plus, US2KBPL, US3000, US3000C, US5000, UP2500, UP5000, Force L1 and L2), the Pytes E-Box and **96 ANT-BMS presets** (`ant-bms-<cells>s-<amps>a`: 4 to 32 cells by 40 to 300 A).

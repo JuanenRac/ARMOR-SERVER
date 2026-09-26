@@ -281,3 +281,30 @@ test("the system page counts what the server holds, and only an administrator re
     assert.equal((await call(running.base, operator, "GET", "/api/v1/audit")).status, 403);
   } finally { await running.stop(); }
 });
+
+test("the electrical design is kept on the server, apart from the site design, with the same protection against two people editing", async () => {
+  const running = await startServer();
+  try {
+    const cookie = await studioCookie(running.base);
+    assert.equal((await call(running.base, "", "GET", "/api/v1/electrical")).status, 401);
+    const empty = (await call(running.base, cookie, "GET", "/api/v1/electrical")).body;
+    assert.deepEqual([empty.revision, empty.electrical], [0, null]);
+    const first = await call(running.base, cookie, "PUT", "/api/v1/electrical", { revision: 0, electrical: { elements: [{ id: "grid-01" }], note: "a" } });
+    assert.equal(first.status, 200);
+    assert.equal(first.body.revision, 1);
+    // the two designs do not touch each other
+    assert.equal((await call(running.base, cookie, "GET", "/api/v1/site")).body.revision, 0);
+    const stale = await call(running.base, cookie, "PUT", "/api/v1/electrical", { revision: 0, electrical: { note: "b" } });
+    assert.equal(stale.status, 409);
+    assert.equal(stale.body.current.electrical.note, "a");
+    assert.match(stale.body.error, /electrical design/);
+    const notObject = await call(running.base, cookie, "PUT", "/api/v1/electrical", { revision: 1, electrical: [] });
+    assert.equal(notObject.status, 400);
+    assert.equal(notObject.body.code, "invalid_electrical");
+    const big = { elements: Array.from({ length: 4000 }, (_, index) => ({ id: `e-${index}`, x: index, y: index * 2 })) };
+    assert.equal((await call(running.base, cookie, "PUT", "/api/v1/electrical", { revision: 1, electrical: big })).status, 200);
+    assert.equal((await call(running.base, cookie, "PUT", "/api/v1/electrical", { revision: 2, electrical: { blob: "x".repeat(800_000) } })).status, 413);
+    // the refused saves left the last accepted one in place
+    assert.equal((await call(running.base, cookie, "GET", "/api/v1/electrical")).body.revision, 2);
+  } finally { await running.stop(); }
+});
