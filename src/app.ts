@@ -44,7 +44,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   });
   // The site design and the electrical design have their own, larger body limit (routes/alarms.ts); everything else is small.
   const smallJson = express.json({ limit: "64kb", type: "application/json" });
-  app.use((request, response, next) => ((request.path === "/api/v1/site" || request.path === "/api/v1/electrical") && request.method === "PUT" ? next() : smallJson(request, response, next)));
+  app.use((request, response, next) => ((request.path === "/api/v1/site" || request.path === "/api/v1/electrical/design") && request.method === "PUT" ? next() : smallJson(request, response, next)));
   app.use(cors({ origin: config.studioOrigins, credentials: true, methods: ["GET", "POST", "PUT", "PATCH", "DELETE"] }));
   // Field-node ingest has its own, larger budget (routes/ingest.ts): a burst of node messages must never lock an operator out.
   // A signed-in operator is identified, so the console's own polling never spends the anonymous budget (which exists to slow a flood
