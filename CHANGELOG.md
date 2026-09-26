@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.9] - The way to a switch, and off
+
+- **`electrical_switching.ts`, the only code that can send anything towards mains equipment, and it is OFF.** `POST /api/v1/electrical/switch` (an administrator) takes `{node, switch, action}` (`arm`, `close_a`, `close_b`, `open`, `acknowledge`) and answers 202 with a command id; `GET /api/v1/electrical/switching` (an operator) says whether it is on, which commands wait for an answer and what became of the latest ones. It refuses (and audits every refusal) unless `ARMOR_ELECTRICAL_SWITCHING=1`, the node is not stale, says in its own reading that it may switch (`switching_enabled`) and has that switch, no fault is latched (except to `open` or `acknowledge`) and nothing else waits on that switch (`open` never waits). A close only follows an arm the node accepted and carries the one-time token the node gave then: the token stays in the server and appears in no response, audit line or log.
+- The command goes to `armor/electrical/{node}/command` (never retained, at most once); the node's answer (`.../result`, subscribed) is matched to a command that is waiting, and one that matches nothing is dropped and audited. No answer in five seconds is recorded as `timeout`. With no broker the command is not sent (503).
+- The strict parsers of the state message (`switches`, up to four, each once), of a command and of an answer implement the new ARMOR-COMMON 0.2.4 schemas, and the 266 shared vectors pass. The alarm `electrical_switch_fault` (high) rises for a latched fault or both contacts closed and ends when the node says it is gone.
+- Off by default at three places: this server (`ARMOR_ELECTRICAL_SWITCHING`, with a start-up warning when on), the node (`switching_enabled`) and the broker's ACL. Nothing that switches has been built; the 14 new tests use answers made by the tests.
+
 ## [0.2.8] - The optional fields of the inverter message
 
 - **Alarms for the electrical nodes:** a meter's own alarm (`electrical_alarm`), the mains out of range on an AC channel (`electrical_voltage`, below 195 V or above 253 V, ending inside 200 to 250 V), the grid lost (`electrical_grid_lost`, the channel called `grid` below 50 V, ending at 100 V) and a node that went silent (`electrical_offline`). None depends on the security mode; the notifier announces them like the solar ones. 169 tests.

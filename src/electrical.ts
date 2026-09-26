@@ -1,8 +1,8 @@
 /**
  * What the ARMOR-ELECTRICAL nodes measure on the house's electrical network (armor/electrical/{node_id}/state): the strict parser of the message, and the
  * store that keeps the latest reading of every node, a short history of a few numbers per channel, and the few sums Studio shows.
- * The parser implements ARMOR-COMMON's electrical schema exactly (tests/electrical.test.ts runs the shared vectors). Reading only: nothing here sends a
- * command to a node.
+ * The parser implements ARMOR-COMMON's electrical schema exactly (tests/electrical.test.ts runs the shared vectors), and so do the parsers of a command to a
+ * switch and of the node's answer. Nothing in this file sends anything: the command path is electrical_switching.ts, and it is off unless the operator turned it on.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import { finite, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
@@ -11,7 +11,14 @@ export type ElectricalChannel = {
   id: string; domain: "ac" | "dc"; label?: string; voltage_v?: number; current_a?: number; power_w?: number; energy_kwh?: number; frequency_hz?: number; power_factor?: number;
   state?: "closed" | "open" | "unknown"; alarm?: boolean; alarm_code?: string;
 };
-export type ElectricalMessage = { kind: "electrical"; node_id: string; timestamp_ms: number; switching_enabled?: boolean; channels: ElectricalChannel[] };
+export type Side = "none" | "a" | "b";
+export type SwitchFault = "none" | "did_not_close" | "did_not_open" | "both_closed" | "disabled";
+/** A switch of a node (a source transfer: two contactors onto one line). What it says is what the auxiliary contacts show, never what was asked. */
+export type ElectricalSwitch = {
+  id: string; kind: "transfer"; label?: string; source_a?: string; source_b?: string; a_closed: boolean; b_closed: boolean;
+  selected: Side; wanted: Side; closing: boolean; armed: boolean; fault: SwitchFault;
+};
+export type ElectricalMessage = { kind: "electrical"; node_id: string; timestamp_ms: number; switching_enabled?: boolean; channels: ElectricalChannel[]; switches?: ElectricalSwitch[] };
 
 const channelId = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 const alarmCode = /^[a-z][a-z0-9_]{0,39}$/;
@@ -34,9 +41,28 @@ function parseChannel(value: unknown, index: number): ElectricalChannel {
   return channel as unknown as ElectricalChannel;
 }
 
+const SIDES: readonly string[] = ["none", "a", "b"];
+const FAULTS: readonly string[] = ["none", "did_not_close", "did_not_open", "both_closed", "disabled"];
+const SWITCH_KEYS = ["id", "kind", "label", "source_a", "source_b", "a_closed", "b_closed", "selected", "wanted", "closing", "armed", "fault"] as const;
+export const MAX_SWITCHES = 4;
+
+function parseSwitch(value: unknown, index: number): ElectricalSwitch {
+  const item = record(value, `switch ${index}`);
+  onlyKnown(item, SWITCH_KEYS, `switch ${index}`);
+  for (const key of ["id", "kind", "a_closed", "b_closed", "selected", "wanted", "closing", "armed", "fault"]) if (!(key in item)) throw new Error(`switch ${index} is missing ${key}`);
+  if (typeof item.id !== "string" || !channelId.test(item.id)) throw new Error(`invalid switch ${index}.id`);
+  if (item.kind !== "transfer") throw new Error(`invalid switch ${index}.kind`);
+  if ("label" in item && (typeof item.label !== "string" || Array.from(item.label).length < 1 || Array.from(item.label).length > 40)) throw new Error(`invalid switch ${index}.label`);
+  for (const key of ["source_a", "source_b"]) if (key in item && (typeof item[key] !== "string" || !channelId.test(item[key] as string))) throw new Error(`invalid switch ${index}.${key}`);
+  for (const key of ["a_closed", "b_closed", "closing", "armed"]) if (typeof item[key] !== "boolean") throw new Error(`invalid switch ${index}.${key}`);
+  for (const key of ["selected", "wanted"]) if (typeof item[key] !== "string" || !SIDES.includes(item[key] as string)) throw new Error(`invalid switch ${index}.${key}`);
+  if (typeof item.fault !== "string" || !FAULTS.includes(item.fault)) throw new Error(`invalid switch ${index}.fault`);
+  return item as unknown as ElectricalSwitch;
+}
+
 export function parseElectricalMessage(value: unknown): ElectricalMessage {
   const body = record(value, "electrical message");
-  onlyKnown(body, ["kind", "node_id", "timestamp_ms", "switching_enabled", "channels"], "electrical message");
+  onlyKnown(body, ["kind", "node_id", "timestamp_ms", "switching_enabled", "channels", "switches"], "electrical message");
   for (const key of ["kind", "node_id", "timestamp_ms", "channels"]) if (!(key in body)) throw new Error(`the electrical message is missing ${key}`);
   if (body.kind !== "electrical") throw new Error("invalid kind");
   const node = readNodeId(body), timestamp = readTimestamp(body);
@@ -44,13 +70,65 @@ export function parseElectricalMessage(value: unknown): ElectricalMessage {
   if (!Array.isArray(body.channels) || body.channels.length > 16) throw new Error("invalid channels");
   const channels = body.channels.map(parseChannel);
   if (new Set(channels.map(channel => channel.id)).size !== channels.length) throw new Error("a channel id must appear once");
+  if ("switches" in body) {
+    if (!Array.isArray(body.switches) || body.switches.length > MAX_SWITCHES) throw new Error("invalid switches");
+    const switches = body.switches.map(parseSwitch);
+    if (new Set(switches.map(item => item.id)).size !== switches.length) throw new Error("a switch id must appear once");
+    return { ...(body as unknown as ElectricalMessage), node_id: node, timestamp_ms: timestamp, channels, switches };
+  }
   return { ...(body as unknown as ElectricalMessage), node_id: node, timestamp_ms: timestamp, channels };
 }
 
-/** armor/electrical/{node_id}/state as node_id, or undefined when the topic is not one. */
-export function electricalTopic(topic: string): string | undefined {
+// ---- the command to a switch, and the node's answer ---------------------------------------------------------------------------------------
+
+export const SWITCH_ACTIONS = ["arm", "close_a", "close_b", "open", "acknowledge"] as const;
+export type SwitchAction = (typeof SWITCH_ACTIONS)[number];
+export const REFUSALS = ["none", "disabled", "fault", "not_armed", "not_confirmed_open", "unknown_switch", "bad_token", "not_supported"] as const;
+export type Refusal = (typeof REFUSALS)[number];
+/** A command id or a token: lowercase letters and digits, eight to thirty-two. */
+export const codePattern = /^[a-z0-9]{8,32}$/;
+
+export type ElectricalCommand = { kind: "electrical_command"; node_id: string; timestamp_ms: number; command_id: string; switch: string; action: SwitchAction; token?: string };
+export type ElectricalResult = { kind: "electrical_result"; node_id: string; timestamp_ms: number; command_id: string; switch: string; action: SwitchAction; accepted: boolean; refusal: Refusal; token?: string };
+
+function readCommonSwitchFields(body: Record<string, unknown>, kind: string): void {
+  for (const key of ["kind", "node_id", "timestamp_ms", "command_id", "switch", "action"]) if (!(key in body)) throw new Error(`the ${kind} is missing ${key}`);
+  if (typeof body.command_id !== "string" || !codePattern.test(body.command_id)) throw new Error("invalid command_id");
+  if (typeof body.switch !== "string" || !channelId.test(body.switch)) throw new Error("invalid switch");
+  if (typeof body.action !== "string" || !(SWITCH_ACTIONS as readonly string[]).includes(body.action)) throw new Error("invalid action");
+  if ("token" in body && (typeof body.token !== "string" || !codePattern.test(body.token))) throw new Error("invalid token");
+}
+
+/** A command to a switch, as the contract has it: a token exactly on close_a and close_b. The server builds these; the parser is what the shared vectors check. */
+export function parseElectricalCommand(value: unknown): ElectricalCommand {
+  const body = record(value, "electrical command");
+  onlyKnown(body, ["kind", "node_id", "timestamp_ms", "command_id", "switch", "action", "token"], "electrical command");
+  readCommonSwitchFields(body, "electrical command");
+  if (body.kind !== "electrical_command") throw new Error("invalid kind");
+  const node = readNodeId(body), timestamp = readTimestamp(body);
+  if ((body.action === "close_a" || body.action === "close_b") !== ("token" in body)) throw new Error("a token goes on close_a and close_b and on nothing else");
+  return { ...(body as unknown as ElectricalCommand), node_id: node, timestamp_ms: timestamp };
+}
+
+/** The answer of a node: the refusal is none exactly when it accepted, and a token comes only with an accepted arm. */
+export function parseElectricalResult(value: unknown): ElectricalResult {
+  const body = record(value, "electrical result");
+  onlyKnown(body, ["kind", "node_id", "timestamp_ms", "command_id", "switch", "action", "accepted", "refusal", "token"], "electrical result");
+  readCommonSwitchFields(body, "electrical result");
+  for (const key of ["accepted", "refusal"]) if (!(key in body)) throw new Error(`the electrical result is missing ${key}`);
+  if (body.kind !== "electrical_result") throw new Error("invalid kind");
+  const node = readNodeId(body), timestamp = readTimestamp(body);
+  if (typeof body.accepted !== "boolean") throw new Error("invalid accepted");
+  if (typeof body.refusal !== "string" || !(REFUSALS as readonly string[]).includes(body.refusal)) throw new Error("invalid refusal");
+  if (body.accepted !== (body.refusal === "none")) throw new Error("the refusal is none exactly when the request was accepted");
+  if (("token" in body) !== (body.accepted && body.action === "arm")) throw new Error("a token is given only in the result of an accepted arm");
+  return { ...(body as unknown as ElectricalResult), node_id: node, timestamp_ms: timestamp };
+}
+
+/** armor/electrical/{node_id}/{leaf} as node_id, or undefined when the topic is not one; the leaf is state (a node's reading), command or result. */
+export function electricalTopic(topic: string, leaf: "state" | "command" | "result" = "state"): string | undefined {
   const parts = topic.split("/");
-  if (parts.length !== 4 || parts[0] !== "armor" || parts[1] !== "electrical" || parts[3] !== "state") return undefined;
+  if (parts.length !== 4 || parts[0] !== "armor" || parts[1] !== "electrical" || parts[3] !== leaf) return undefined;
   return /^[a-z0-9][a-z0-9_-]{0,63}$/.test(parts[2]) ? parts[2] : undefined;
 }
 

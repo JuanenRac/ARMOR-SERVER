@@ -222,6 +222,7 @@ export class AlarmRules {
    * says nothing, so what it had raised stays until the node is forgotten or the channel speaks again.
    */
   handleElectrical(message: ElectricalMessage): void {
+    this.handleElectricalSwitches(message);
     for (const channel of message.channels) {
       const id = `${message.node_id}/${channel.id}`, source: AlarmSource = { type: "electrical", id };
       const base = `electrical:${id}`;
@@ -237,6 +238,18 @@ export class AlarmRules {
       if (volts < GRID_BACK) this.centre.clear(`${base}:voltage`);
       else if (volts < MAINS_LOW || volts > MAINS_HIGH) this.centre.raise(`${base}:voltage`, { source, severity: "warning", code: "electrical_voltage" });
       else if (volts >= MAINS_LOW_OK && volts <= MAINS_HIGH_OK) this.centre.clear(`${base}:voltage`);
+    }
+  }
+
+  /**
+   * The switches of an electrical node. A latched fault (a contactor that did not close, one that did not open, both closed) is a HIGH alarm that ends when the node says the
+   * fault is gone; both contacts closed at once is one whatever the node says about its own fault. An armed or closing switch is not an alarm: it is what was asked.
+   */
+  handleElectricalSwitches(message: ElectricalMessage): void {
+    for (const item of message.switches ?? []) {
+      const id = `${message.node_id}/${item.id}`, key = `electrical:${id}:switch`;
+      if (item.fault !== "none" || (item.a_closed && item.b_closed)) this.centre.raise(key, { source: { type: "electrical", id }, severity: "high", code: "electrical_switch_fault" });
+      else this.centre.clear(key);
     }
   }
 

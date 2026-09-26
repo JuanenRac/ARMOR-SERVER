@@ -19,7 +19,7 @@ import { registerHistoryRoutes } from "./routes/history.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerSolarRoutes } from "./routes/solar.js";
 import { registerElectricalRoutes } from "./routes/electrical.js";
-import { electricalTopic, parseElectricalMessage } from "./electrical.js";
+import { electricalTopic, parseElectricalMessage, parseElectricalResult } from "./electrical.js";
 import { parseSolarMessage, solarTopic } from "./solar.js";
 import { registerMediaRoutes } from "./routes/media.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
@@ -96,6 +96,19 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     mqtt.on("connect", () => mqtt.subscribe("armor/solar/+/+/state", { qos: 1 }));
     // The nodes that measure the house's electrical network: armor/electrical/{node}/state, the same rule for the node named in the body.
     mqtt.on("connect", () => mqtt.subscribe("armor/electrical/+/state", { qos: 1 }));
+    // What a node answers to a command to its switch. A command is never retained and is sent at most once: an old one must never be delivered later, and a node that
+    // was away misses it (the node's own arm and token make a late one harmless anyway).
+    mqtt.on("connect", () => mqtt.subscribe("armor/electrical/+/result", { qos: 1 }));
+    context.switchLink.publish = (topic, payload) => { if (!mqtt.connected) throw new Error("the MQTT broker is not connected"); mqtt.publish(topic, payload, { qos: 0, retain: false }); };
+    mqtt.on("message", (topic, raw) => {
+      const named = electricalTopic(topic, "result");
+      if (!named) return;
+      try {
+        const result = parseElectricalResult(JSON.parse(raw.toString("utf8")));
+        if (result.node_id !== named) throw new Error("node_id does not match the topic");
+        context.electricalSwitching.handleResult(result, named);
+      } catch (error) { console.warn("ARMOR_MQTT=REJECTED", error instanceof Error ? error.message : "invalid electrical result"); }
+    });
     mqtt.on("message", (topic, raw) => {
       const named = electricalTopic(topic);
       if (!named) return;
@@ -116,7 +129,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     });
   }
   // Silence and dwell time are time-driven: they need a clock, not a message.
-  const sweeper = setInterval(() => { context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); }, 2_000);
+  const sweeper = setInterval(() => { context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); }, 2_000);
   sweeper.unref();
   // The camera watchdog: a first pass shortly after start, then on a fixed interval.
   const watchdogs: NodeJS.Timeout[] = [];

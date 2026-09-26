@@ -24,6 +24,7 @@ import { sendCommand, type Command } from "./devices/commands.js";
 import { SiteStore } from "./site.js";
 import { SolarStore } from "./solar.js";
 import { ElectricalStore } from "./electrical.js";
+import { SwitchingService } from "./electrical_switching.js";
 import { SolarRegistry } from "./solar_registry.js";
 import { AlertNotifier } from "./notify.js";
 import { FileStatePersistence } from "./persistence.js";
@@ -51,6 +52,10 @@ export type AppContext = {
   electrical: SiteStore;
   /** What the ARMOR-ELECTRICAL nodes measure on the house's network. */
   electricalNodes: ElectricalStore;
+  /** The one way a command reaches an electrical node's switch: off unless the operator turned it on (see electrical_switching.ts). */
+  electricalSwitching: SwitchingService;
+  /** Where its commands are published; set when the broker is connected (never retained, at most once). */
+  switchLink: { publish?: (topic: string, payload: string) => void };
   /** The solar inverters and batteries the gateway nodes report. */
   solar: SolarStore;
   /** The solar equipment an operator declared, kept in a file. */
@@ -124,6 +129,11 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const site = new SiteStore(path.join(config.dataDir, "site.json"));
   const electricalNodes = new ElectricalStore({ now: overrides.now, onMessage: message => alarmRules.handleElectrical(message), onStale: (node, stale) => alarmRules.handleElectricalStale(node, stale) });
   const electrical = new SiteStore(path.join(config.dataDir, "electrical.json"), () => new Date(), "electrical design");
+  const switchLink: AppContext["switchLink"] = {};
+  const electricalSwitching = new SwitchingService({
+    enabled: config.electricalSwitching, nodes: electricalNodes, audit, now: overrides.now,
+    publish: (topic, payload) => { if (!switchLink.publish) throw new Error("the MQTT broker is not connected"); switchLink.publish(topic, payload); },
+  });
   const solarRegistry = new SolarRegistry(path.join(config.dataDir, "solar-devices.json"), overrides.now ? () => new Date(overrides.now!()) : undefined);
   const solar = new SolarStore({ now: overrides.now, onMessage: message => alarmRules.handleSolar(message), onStale: (node, device, stale) => alarmRules.handleSolarStale(node, device, stale) });
   const persistence = new FileStatePersistence(path.join(config.dataDir, "state.json"), { warn });
@@ -150,7 +160,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(studioUser(request) ? 403 : 401).json({ error: "an administrator is required" });
   };
   return {
-    config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),
