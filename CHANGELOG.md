@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.5] - Solar alarms reach the phone and the webhook
+
+- **A solar alarm is announced like a device alarm:** the outbound message (`alarm.raised`) now also goes out for an alarm raised by solar equipment (an inverter fault, a battery that is low or protecting itself, equipment that went silent), with `solar_id` (`node/device`) where a device alarm has `device_id`, the severity and the code. It is sent once, when the alarm is raised, whether or not the system is armed; acknowledging or clearing it sends nothing. The Android app announces the same alarms from the history (ARMOR-ANDROID-CONTROL 0.3.0).
+- Tests: 162 (was 161).
+
 ## [0.2.4] - Declaring solar equipment and trying the menus
 
 - **An operator can declare an inverter or a battery stack** (name, model of the Voltronic, MPP Solar, Pylontech US2000 / US3000 / US5000 and ANT-BMS families, connection RS232 / RS485 / USB / CAN / Wi-Fi, gateway node, notes) from Studio; the declaration is kept in `solar-devices.json`, survives a restart and shows as *waiting* until the gateway node sends the first real reading, which fills it in.
