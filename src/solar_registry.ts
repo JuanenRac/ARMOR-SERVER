@@ -8,8 +8,77 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseSolarMessage, type SolarMessage } from "./solar.js";
 
-export const INVERTER_MODELS = ["voltronic", "mpp-solar", "other"] as const;
-export const BATTERY_MODELS = ["pylontech-us2000", "pylontech-us3000", "pylontech-us5000", "ant-bms", "other"] as const;
+/**
+ * The inverter families the projects that speak to them list (mpp-solar, esphome-pipsolar and others), with the dialect of the serial protocol each one answers in, which
+ * is what a gateway node's port has to be set to ("auto" lets the node look for it). A family is a name for a group of look-alike models, not a promise that every unit of it
+ * answers: none has been connected yet.
+ */
+export type InverterDialect = "auto" | "pi30" | "revo" | "pi18";
+export const INVERTER_FAMILIES: Record<string, { label: string; dialect: InverterDialect }> = {
+  voltronic: { label: "Voltronic (Axpert, PIP)", dialect: "auto" },
+  "mpp-solar": { label: "MPP Solar (Axpert, PIP, InfiniSolar)", dialect: "auto" },
+  "axpert-vm-ii": { label: "Voltronic Axpert VM II", dialect: "pi30" },
+  "axpert-vm-iii": { label: "Voltronic Axpert VM III", dialect: "pi30" },
+  "axpert-mks": { label: "Voltronic Axpert MKS / MKS II", dialect: "pi30" },
+  "axpert-mks-iv": { label: "Voltronic Axpert MKS IV / MKS V", dialect: "pi30" },
+  "axpert-king": { label: "Voltronic Axpert King", dialect: "pi30" },
+  "pip-ms": { label: "MPP Solar PIP MS / MSD / MSE / MSX", dialect: "pi30" },
+  "pip-hs": { label: "MPP Solar PIP HS / HSE / LV", dialect: "pi30" },
+  "pip-gk": { label: "MPP Solar PIP-GK / MK", dialect: "pi30" },
+  "easun-isolar": { label: "EASun iSolar SMG II / SMH II", dialect: "pi30" },
+  "must-ph18": { label: "Must PV18 / PH18 (PI30 compatible)", dialect: "pi30" },
+  "revo-vm-iii": { label: "Revo VM III / Revo II (checksum replies)", dialect: "revo" },
+  "infinisolar-v": { label: "MPP Solar InfiniSolar V", dialect: "pi18" },
+  "lv5048-hybrid": { label: "MPP Solar LV5048 Hybrid / LV6048", dialect: "pi18" },
+  "sungoldpower": { label: "SunGoldPower SPH / SPF hybrid", dialect: "pi18" },
+};
+export const INVERTER_MODELS = [...Object.keys(INVERTER_FAMILIES), "other"] as const;
+
+/** What a battery model is like: modules of how many cells and ampere-hours, and how many modules an example shows. (Only the example readings use the numbers.) */
+type BatteryShape = { modules: number; cells: number; ah: number; label: string };
+export const BATTERY_FAMILIES: Record<string, BatteryShape> = {
+  "pylontech-us2000": { modules: 2, cells: 15, ah: 50, label: "Pylontech US2000 / US2000B" },
+  "pylontech-us2000c": { modules: 2, cells: 15, ah: 50, label: "Pylontech US2000C" },
+  "pylontech-us2000b-plus": { modules: 2, cells: 15, ah: 50, label: "Pylontech US2000B Plus" },
+  "pylontech-us2kbpl": { modules: 2, cells: 15, ah: 50, label: "Pylontech US2KBPL" },
+  "pylontech-us3000": { modules: 2, cells: 15, ah: 74, label: "Pylontech US3000" },
+  "pylontech-us3000c": { modules: 2, cells: 15, ah: 74, label: "Pylontech US3000C" },
+  "pylontech-us5000": { modules: 3, cells: 15, ah: 100, label: "Pylontech US5000" },
+  "pylontech-up2500": { modules: 2, cells: 16, ah: 50, label: "Pylontech UP2500" },
+  "pylontech-up5000": { modules: 2, cells: 16, ah: 100, label: "Pylontech UP5000" },
+  "pylontech-force-l1": { modules: 2, cells: 15, ah: 74, label: "Pylontech Force L1" },
+  "pylontech-force-l2": { modules: 2, cells: 15, ah: 142, label: "Pylontech Force L2" },
+  "pytes-e-box": { modules: 2, cells: 16, ah: 100, label: "Pytes E-Box 48100R" },
+  "ant-bms": { modules: 1, cells: 16, ah: 100, label: "ANT-BMS (own battery)" },
+  other: { modules: 1, cells: 15, ah: 100, label: "Battery" },
+};
+
+/**
+ * ANT-BMS units differ in the number of cells they watch (a 16S watches sixteen) and the current they carry: `ant-bms-<cells>s-<amps>a`. They all speak the same protocol, so the
+ * catalogue offers the usual combinations as presets and any other combination within the limits is accepted.
+ */
+export const ANT_CELL_COUNTS = [4, 7, 8, 10, 12, 13, 14, 15, 16, 20, 24, 32] as const;
+export const ANT_CURRENTS = [40, 60, 100, 120, 150, 200, 250, 300] as const;
+const ANT_MODEL = /^ant-bms-(\d{1,2})s-(\d{2,3})a$/;
+/** The cells and the rated current a `ant-bms-<cells>s-<amps>a` model names, or undefined when it is not one (or is out of range). */
+export function antVariant(model: string): { cells: number; amps: number } | undefined {
+  const found = ANT_MODEL.exec(model);
+  if (!found) return undefined;
+  const cells = Number(found[1]), amps = Number(found[2]);
+  return cells >= 4 && cells <= 32 && amps >= 20 && amps <= 500 ? { cells, amps } : undefined;
+}
+const ANT_PRESETS = ANT_CELL_COUNTS.flatMap(cells => ANT_CURRENTS.map(amps => `ant-bms-${cells}s-${amps}a`));
+export const BATTERY_MODELS = [...Object.keys(BATTERY_FAMILIES).filter(id => id !== "other"), ...ANT_PRESETS, "other"] as const;
+
+/** A model as words (brands are the same in every language). An unknown model is its own identifier. */
+export function modelLabel(model: string): string {
+  const variant = antVariant(model);
+  if (variant) return `ANT-BMS ${variant.cells}S · ${variant.amps} A`;
+  return INVERTER_FAMILIES[model]?.label ?? BATTERY_FAMILIES[model]?.label ?? model;
+}
+/** Whether a battery model may be declared: one of the list, or an ANT-BMS combination within the limits. */
+export function isBatteryModel(model: string): boolean { return Object.hasOwn(BATTERY_FAMILIES, model) || antVariant(model) !== undefined; }
+
 export const CONNECTIONS = ["rs232", "rs485", "usb", "can", "wifi", "other"] as const;
 export type SolarKind = "inverter" | "battery";
 export type SolarRegistration = {
@@ -58,9 +127,10 @@ export class SolarRegistry {
     if (!NODE.test(node)) throw new SolarRegistryError("node_id must be lowercase letters, digits, '-' or '_' (at most 64)");
     const device = typeof input.device === "string" && input.device.trim() ? input.device.trim() : slug(name);
     if (!DEVICE.test(device)) throw new SolarRegistryError("device must be lowercase letters, digits, '-' or '_' (at most 32)");
-    const models: readonly string[] = kind === "inverter" ? INVERTER_MODELS : BATTERY_MODELS;
     const model = typeof input.model === "string" ? input.model : "other";
-    if (!models.includes(model)) throw new SolarRegistryError(`model must be one of ${models.join(", ")}`);
+    if (kind === "inverter" ? !(INVERTER_MODELS as readonly string[]).includes(model) : !isBatteryModel(model)) {
+      throw new SolarRegistryError(kind === "inverter" ? `model must be one of ${INVERTER_MODELS.join(", ")}` : "model must be one of the catalogue's battery models, or ant-bms-<cells>s-<amps>a (4 to 32 cells, 20 to 500 A)");
+    }
     const connection = typeof input.connection === "string" ? input.connection : "rs232";
     if (!(CONNECTIONS as readonly string[]).includes(connection)) throw new SolarRegistryError(`connection must be one of ${CONNECTIONS.join(", ")}`);
     const notes = typeof input.notes === "string" ? input.notes.trim().slice(0, 200) : "";
@@ -99,14 +169,13 @@ function isRegistration(value: unknown): value is SolarRegistration {
 
 // ---- example readings ---------------------------------------------------------------------------------------------------------------------
 
-/** What each battery model is like: modules of how many cells and ampere-hours, and how many modules an example shows. */
-const BATTERY_SHAPES: Record<string, { modules: number; cells: number; ah: number; label: string }> = {
-  "pylontech-us2000": { modules: 2, cells: 15, ah: 50, label: "US2000C" },
-  "pylontech-us3000": { modules: 2, cells: 15, ah: 74, label: "US3000C" },
-  "pylontech-us5000": { modules: 3, cells: 15, ah: 100, label: "US5000" },
-  "ant-bms": { modules: 1, cells: 16, ah: 100, label: "ANT-BMS 16S" },
-  other: { modules: 1, cells: 15, ah: 100, label: "Battery" },
-};
+/** The shape an example reading gives a battery: the family's, or an ANT-BMS combination's own cell count. */
+function batteryShape(model: string): BatteryShape {
+  const variant = antVariant(model);
+  if (variant) return { modules: 1, cells: variant.cells, ah: 100, label: `ANT-BMS ${variant.cells}S` };
+  const family = Object.hasOwn(BATTERY_FAMILIES, model) ? BATTERY_FAMILIES[model] : BATTERY_FAMILIES.other;
+  return model === "ant-bms" ? { ...family, label: "ANT-BMS 16S" } : { ...family, label: family.label.replace(/^Pylontech /, "").split(" / ")[0] };
+}
 
 /**
  * One reading that looks plausible, to try the menus with. It follows the schema of the real messages (it goes through the same parser) and says what
@@ -128,7 +197,7 @@ export function exampleReading(registration: SolarRegistration, now: number, pha
       heatsink_c: Math.round(34 + load / 90 + sun / 300), ac_charging: false, pv_charging: sun > load, load_on: true, warnings: [],
     });
   }
-  const shape = BATTERY_SHAPES[registration.model] ?? BATTERY_SHAPES.other;
+  const shape = batteryShape(registration.model);
   const base = 3.2 + soc / 100 * 0.2;
   const stack = Array.from({ length: shape.modules }, (_, index) => {
     const n = index + 1;
