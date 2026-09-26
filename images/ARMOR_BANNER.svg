@@ -6,15 +6,13 @@
   </defs>
   <rect width="1200" height="400" fill="url(#bg)"/>
   <g fill="none" stroke="#00E5FF" stroke-width="1" opacity=".25"><path d="M0 100H200L250 150H600"/><path d="M1200 300H1000L950 250H600"/><path d="M1200 80H1040L1000 120H760"/></g>
-  <g transform="translate(205 190)"><g transform="scale(1.0)" filter="url(#g)" fill="none" stroke="#00E5FF" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">
+  <g transform="translate(205 190)"><g transform="scale(1.0)" filter="url(#g)" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke="#00E5FF" stroke-width="4">
     <path d="M0,-84 L66,-58 V4 C66,48 34,72 0,88 C-34,72 -66,48 -66,4 V-58 Z"/>
-    <circle r="46" stroke-width="2" opacity=".55"/>
-    <circle r="28" stroke-width="2" opacity=".55"/>
-    <circle r="10" stroke-width="2" opacity=".55"/>
-    <path d="M0,0 L34,-32" stroke-width="4"/>
-    <path d="M0,-46 A46,46 0 0 1 32.5,-32.5" stroke="#FFB020" stroke-width="3" opacity=".9"/>
-    <circle cx="34" cy="-32" r="5" fill="#FFB020" stroke="none"/>
-    <circle r="4" fill="#00E5FF" stroke="none"/>
+    <g transform="scale(.78) translate(0 4)" stroke-width="4">
+    <rect x="-34" y="-40" width="68" height="24" rx="5"/><rect x="-34" y="-12" width="68" height="24" rx="5"/><rect x="-34" y="16" width="68" height="24" rx="5"/>
+    <circle cx="-22" cy="-28" r="3" fill="#FFB020" stroke="none"/><circle cx="-22" cy="0" r="3" fill="#FFB020" stroke="none"/><circle cx="-22" cy="28" r="3" fill="#FFB020" stroke="none"/>
+    <path d="M-8,-28 h30 M-8,0 h30 M-8,28 h30" stroke-width="2" opacity=".6"/>
+    </g>
   </g></g>
   <text x="360" y="136" font-family="Arial,sans-serif" font-size="50" font-weight="bold" fill="#FFF" letter-spacing="8">A.R.M.O.R.</text>
   <text x="364" y="181" font-family="Arial,sans-serif" font-size="17" fill="#00E5FF" letter-spacing="4">AUTONOMOUS RADAR &amp; MULTIMODAL OBSERVATION RANGE</text>
