@@ -206,7 +206,7 @@ export function exampleReading(registration: SolarRegistration, now: number, pha
       n, present: true, voltage_v: Math.round(cells.reduce((sum, value) => sum + value, 0) * 1000) / 1000, current_a: Math.round((current / shape.modules) * 100) / 100,
       temperature_c: Math.round((21 + n + jitter(0.3, 5)) * 10) / 10, soc_percent: soc, state: current > 0 ? "Charge" : "Dischg", cells_v: cells,
       temperatures_c: [0, 1, 2, 3, 4].map(k => Math.round((21 + n + jitter(0.6, 6 + k)) * 10) / 10),
-      capacity_ah: Math.round(shape.ah * soc) / 100, full_capacity_ah: shape.ah, cycles: 180 + n,
+      capacity_ah: Math.round(shape.ah * soc) / 100, full_capacity_ah: shape.ah, cycles: 180 + n, health_percent: 100 - 4 * n,
     };
   });
   const all = stack.flatMap(module => module.cells_v);
@@ -216,6 +216,7 @@ export function exampleReading(registration: SolarRegistration, now: number, pha
     kind: "battery", node_id: registration.node_id, device: registration.device, timestamp_ms: now, modules: shape.modules, state: current > 0 ? "charging" : "discharging",
     voltage_v: voltage, current_a: Math.round(current * 100) / 100, temperature_min_c: Math.min(...stack.map(m => m.temperature_c)), temperature_max_c: Math.max(...stack.map(m => m.temperature_c)),
     cell_min_v: Math.min(...all), cell_max_v: Math.max(...all), soc_percent: soc, alarm: false, model: shape.label,
-    capacity_ah: Math.round(totalAh * soc) / 100, full_capacity_ah: totalAh, energy_kwh: Math.round(totalAh * soc / 100 * voltage / 10) / 100, cycles: 181, stack,
+    capacity_ah: Math.round(totalAh * soc) / 100, full_capacity_ah: totalAh, energy_kwh: Math.round(totalAh * soc / 100 * voltage / 10) / 100, cycles: 181,
+    health_percent: Math.round(stack.reduce((sum, module) => sum + module.health_percent, 0) / stack.length), stack,
   });
 }

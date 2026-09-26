@@ -16,13 +16,13 @@ export type SolarInverter = {
 };
 export type SolarModule = {
   n: number; present: boolean; voltage_v?: number; current_a?: number; temperature_c?: number; soc_percent?: number; state?: string;
-  cells_v?: number[]; temperatures_c?: number[]; capacity_ah?: number; full_capacity_ah?: number; cycles?: number;
+  cells_v?: number[]; temperatures_c?: number[]; capacity_ah?: number; full_capacity_ah?: number; cycles?: number; health_percent?: number;
 };
 export type SolarBattery = {
   kind: "battery"; node_id: string; device: string; timestamp_ms: number; modules: number; stack: SolarModule[];
   state?: "charging" | "discharging" | "idle"; voltage_v?: number; current_a?: number; temperature_min_c?: number; temperature_max_c?: number;
   cell_min_v?: number; cell_max_v?: number; soc_percent?: number; alarm?: boolean;
-  model?: string; capacity_ah?: number; full_capacity_ah?: number; energy_kwh?: number; cycles?: number;
+  model?: string; capacity_ah?: number; full_capacity_ah?: number; energy_kwh?: number; cycles?: number; health_percent?: number;
 };
 export type SolarMessage = SolarInverter | SolarBattery;
 
@@ -61,7 +61,7 @@ const BATTERY_OPTIONAL_RANGES: Record<string, readonly [number, number]> = {
 
 function parseModule(value: unknown, index: number): SolarModule {
   const module = record(value, `module ${index}`);
-  onlyKnown(module, ["n", "present", "voltage_v", "current_a", "temperature_c", "soc_percent", "state", "cells_v", "temperatures_c", "capacity_ah", "full_capacity_ah", "cycles"], `module ${index}`);
+  onlyKnown(module, ["n", "present", "voltage_v", "current_a", "temperature_c", "soc_percent", "state", "cells_v", "temperatures_c", "capacity_ah", "full_capacity_ah", "cycles", "health_percent"], `module ${index}`);
   if (!integer(module.n) || module.n < 1 || module.n > 16) throw new Error(`invalid module ${index}.n`);
   if (typeof module.present !== "boolean") throw new Error(`invalid module ${index}.present`);
   if ("voltage_v" in module && !inRange(module.voltage_v, 0, 1000)) throw new Error(`invalid module ${index}.voltage_v`);
@@ -73,12 +73,13 @@ function parseModule(value: unknown, index: number): SolarModule {
   if ("temperatures_c" in module && (!Array.isArray(module.temperatures_c) || module.temperatures_c.length > 8 || !module.temperatures_c.every(v => inRange(v, -50, 200)))) throw new Error(`invalid module ${index}.temperatures_c`);
   for (const key of ["capacity_ah", "full_capacity_ah"]) if (key in module && !inRange(module[key], 0, 100_000)) throw new Error(`invalid module ${index}.${key}`);
   if ("cycles" in module && (!integer(module.cycles) || module.cycles < 0 || module.cycles > 1_000_000)) throw new Error(`invalid module ${index}.cycles`);
+  if ("health_percent" in module && (!integer(module.health_percent) || module.health_percent < 0 || module.health_percent > 100)) throw new Error(`invalid module ${index}.health_percent`);
   return module as unknown as SolarModule;
 }
 
 export function parseSolarBattery(value: unknown): SolarBattery {
   const body = record(value, "battery");
-  onlyKnown(body, ["kind", "node_id", "device", "timestamp_ms", "modules", "stack", "state", "voltage_v", "current_a", "temperature_min_c", "temperature_max_c", "cell_min_v", "cell_max_v", "soc_percent", "alarm", "model", "capacity_ah", "full_capacity_ah", "energy_kwh", "cycles"], "battery");
+  onlyKnown(body, ["kind", "node_id", "device", "timestamp_ms", "modules", "stack", "state", "voltage_v", "current_a", "temperature_min_c", "temperature_max_c", "cell_min_v", "cell_max_v", "soc_percent", "alarm", "model", "capacity_ah", "full_capacity_ah", "energy_kwh", "cycles", "health_percent"], "battery");
   for (const key of ["kind", "node_id", "device", "timestamp_ms", "modules", "stack"]) if (!(key in body)) throw new Error(`battery is missing ${key}`);
   if (body.kind !== "battery") throw new Error("invalid kind");
   const node = readNodeId(body), device = readDevice(body), timestamp = readTimestamp(body);
@@ -92,6 +93,7 @@ export function parseSolarBattery(value: unknown): SolarBattery {
   if ("model" in body && (typeof body.model !== "string" || Array.from(body.model).length < 1 || Array.from(body.model).length > 24)) throw new Error("invalid model");
   for (const [key, high] of [["capacity_ah", 100_000], ["full_capacity_ah", 100_000], ["energy_kwh", 10_000]] as const) if (key in body && !inRange(body[key], 0, high)) throw new Error(`invalid ${key}`);
   if ("cycles" in body && (!integer(body.cycles) || body.cycles < 0 || body.cycles > 1_000_000)) throw new Error("invalid cycles");
+  if ("health_percent" in body && (!integer(body.health_percent) || body.health_percent < 0 || body.health_percent > 100)) throw new Error("invalid health_percent");
   return { ...(body as unknown as SolarBattery), node_id: node, device, timestamp_ms: timestamp, stack };
 }
 
