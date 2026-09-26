@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.4] - Declaring solar equipment and trying the menus
+
+- **An operator can declare an inverter or a battery stack** (name, model of the Voltronic, MPP Solar, Pylontech US2000 / US3000 / US5000 and ANT-BMS families, connection RS232 / RS485 / USB / CAN / Wi-Fi, gateway node, notes) from Studio; the declaration is kept in `solar-devices.json`, survives a restart and shows as *waiting* until the gateway node sends the first real reading, which fills it in.
+- **Example readings:** one call makes a plausible reading of a declared device (a battery with its modules, cells and capacities according to its model) so the menus can be tried before any gateway exists. It is marked as an example, raises no alarm and is replaced, history included, by the first real reading.
+- Tests: 161.
+
 ## [0.2.3] - Solar inverters and batteries
 
 - **`POST /api/v1/solar`** (an ingest token) and the topic `armor/solar/#` take the messages of a gateway node, validated by the shared contract; **`GET /api/v1/solar`** gives the latest reading of every device, marked stale after two minutes without news, and the totals (panel and load power, battery power, charge, remaining and full capacity in Ah, energy in kWh); **`GET /api/v1/solar/history`** gives a series (a sample every 30 s, up to a day).
