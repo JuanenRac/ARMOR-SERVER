@@ -5,6 +5,7 @@ All notable changes to this project are documented here.
 ## [0.2.7] - The electrical design is kept on the server
 
 - `GET` and `PUT /api/v1/electrical/design`: the house's electrical diagram drawn in Studio's Electrical Designer, kept in its own file (`electrical.json`), apart from the site design. Same rules as the site design: an operator's route, up to 768 kB, versioned, and a save made from an out-of-date copy is refused with the current one (409) instead of overwriting it; every accepted save is in the audit trail. The server does not interpret the drawing.
+- **Readings of the ARMOR-ELECTRICAL nodes.** `POST /api/v1/electrical/readings` (the ingest token) and the MQTT topic `armor/electrical/+/state` take the `electrical` message, parsed strictly like the shared vectors say (a node that names another node in its body is refused); `GET /api/v1/electrical/readings` gives an operator the latest reading of every node and the sums (grid power and energy, alarms), `GET /api/v1/electrical/history` the recent samples of a channel. A node silent for a minute is stale and counts for nothing. Reading only: no route sends anything to a node.
 
 ## [0.2.6] - A catalogue of inverters and batteries
 
