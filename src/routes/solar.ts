@@ -7,7 +7,7 @@ import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { hasBearer } from "../http/auth.js";
 import { parseSolarMessage } from "../solar.js";
-import { BATTERY_MODELS, CONNECTIONS, INVERTER_MODELS, SolarRegistryError, exampleReading } from "../solar_registry.js";
+import { ANT_CELL_COUNTS, ANT_CURRENTS, BATTERY_MODELS, CONNECTIONS, INVERTER_FAMILIES, INVERTER_MODELS, SolarRegistryError, exampleReading, modelLabel } from "../solar_registry.js";
 
 const NODE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const DEVICE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
@@ -30,7 +30,12 @@ export function registerSolarRoutes(app: Express, context: AppContext): void {
     const devices = solar.list().map(view => ({ ...view, registered: registered.get(`${view.node_id}/${view.device}`) }));
     const reporting = new Set(devices.map(view => `${view.node_id}/${view.device}`));
     const waiting = solarRegistry.list().filter(item => !reporting.has(`${item.node_id}/${item.device}`));
-    return response.json({ devices, waiting, totals: solar.totals(), catalog: { inverter_models: INVERTER_MODELS, battery_models: BATTERY_MODELS, connections: CONNECTIONS } });
+    return response.json({ devices, waiting, totals: solar.totals(), catalog: {
+      inverter_models: INVERTER_MODELS, battery_models: BATTERY_MODELS, connections: CONNECTIONS,
+      labels: Object.fromEntries([...INVERTER_MODELS, ...BATTERY_MODELS].filter(model => model !== "other").map(model => [model, modelLabel(model)])),   // "other" is worded by each client, in its language
+      inverter_dialects: Object.fromEntries(Object.entries(INVERTER_FAMILIES).map(([model, family]) => [model, family.dialect])),
+      ant_bms: { cell_counts: ANT_CELL_COUNTS, currents_a: ANT_CURRENTS },
+    } });
   });
 
   const fail = (response: Response, error: unknown) => {

@@ -186,6 +186,21 @@ test("an operator declares solar equipment, it waits for its first reading, an e
     const before = await (await call("GET", "/api/v1/solar")).json() as { devices: unknown[]; waiting: Array<{ device: string }>; catalog: { battery_models: string[] } };
     assert.deepEqual([before.devices.length, before.waiting.map(item => item.device)], [0, ["baterias-del-garaje"]]);
     assert.ok(before.catalog.battery_models.includes("ant-bms"));
+    // the catalogue: the inverter families with the dialect each answers in, the Pylontech models and the ANT-BMS presets (cells x current)
+    const catalog = (await (await call("GET", "/api/v1/solar")).json() as { catalog: { inverter_models: string[]; battery_models: string[]; labels: Record<string, string>; inverter_dialects: Record<string, string> } }).catalog;
+    assert.ok(catalog.inverter_models.includes("infinisolar-v") && catalog.inverter_models.includes("axpert-mks") && catalog.inverter_models.at(-1) === "other");
+    assert.deepEqual([catalog.inverter_dialects["infinisolar-v"], catalog.inverter_dialects["axpert-mks"], catalog.inverter_dialects["revo-vm-iii"], catalog.inverter_dialects.voltronic], ["pi18", "pi30", "revo", "auto"]);
+    assert.ok(catalog.battery_models.includes("pylontech-up5000") && catalog.battery_models.includes("pytes-e-box") && catalog.battery_models.includes("ant-bms-16s-100a"));
+    assert.ok(catalog.battery_models.filter(model => model.startsWith("ant-bms-")).length >= 90);
+    assert.deepEqual([catalog.labels["ant-bms-16s-100a"], catalog.labels["pylontech-force-l2"], catalog.labels["axpert-king"]], ["ANT-BMS 16S · 100 A", "Pylontech Force L2", "Voltronic Axpert King"]);
+    // a combination that is not a preset is accepted when it is within the limits, and refused when it is not
+    for (const [model, status] of [["ant-bms-13s-80a", 201], ["ant-bms-99s-80a", 400], ["ant-bms-16s-5a", 400], ["constructor", 400], ["ant-bms-16s", 400]] as const) {
+      assert.equal((await call("POST", "/api/v1/solar/devices", { kind: "battery", name: `bms ${model}`, node_id: "solar-1", device: `t-${status}-${model.length}`, model })).status, status, model);
+    }
+    assert.equal((await call("POST", "/api/v1/solar/devices", { kind: "inverter", name: "infini", node_id: "solar-1", device: "infini-1", model: "infinisolar-v" })).status, 201);
+    assert.equal((await call("POST", "/api/v1/solar/devices", { kind: "inverter", name: "infini", node_id: "solar-1", device: "infini-2", model: "ant-bms-16s-100a" })).status, 400);
+    assert.equal((await call("DELETE", "/api/v1/solar/devices/solar-1/t-201-15")).status, 204);
+    assert.equal((await call("DELETE", "/api/v1/solar/devices/solar-1/infini-1")).status, 204);
     // wrong input is refused, and the same node and device cannot change kind
     for (const bad of [{ kind: "toaster", name: "x", node_id: "solar-1" }, { kind: "battery", name: "", node_id: "solar-1" }, { kind: "battery", name: "x", node_id: "Bad Node" }, { kind: "battery", name: "x", node_id: "solar-1", model: "axpert" }]) {
       assert.equal((await call("POST", "/api/v1/solar/devices", bad)).status, 400, JSON.stringify(bad));

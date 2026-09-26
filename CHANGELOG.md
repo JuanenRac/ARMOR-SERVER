@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.6] - A catalogue of inverters and batteries
+
+- The solar catalogue lists the inverter families the reference projects name (Axpert VM II / VM III / MKS / MKS IV / King, MPP Solar PIP MS / HS / GK, EASun iSolar, Must PV18 / PH18, Revo VM III, InfiniSolar V, LV5048, SunGoldPower) with the **serial dialect** each answers in (`inverter_dialects`: auto, pi30, revo or pi18), the Pylontech models (US2000, US2000C, US2000B Plus, US2KBPL, US3000, US3000C, US5000, UP2500, UP5000, Force L1 and L2), the Pytes E-Box and **96 ANT-BMS presets** (`ant-bms-<cells>s-<amps>a`: 4 to 32 cells by 40 to 300 A).
+- Any ANT-BMS combination inside the limits (4 to 32 cells, 20 to 500 A) can be declared even when it is not a preset; anything else is refused. The catalogue also gives the name of every model (`labels`; "other" is worded by each client in its language) so a client that does not know a model can still show it.
+- The example readings follow the model: an ANT-BMS shows as many cells as its name says.
+
 ## [0.2.5] - Solar alarms reach the phone and the webhook
 
 - **A solar alarm is announced like a device alarm:** the outbound message (`alarm.raised`) now also goes out for an alarm raised by solar equipment (an inverter fault, a battery that is low or protecting itself, equipment that went silent), with `solar_id` (`node/device`) where a device alarm has `device_id`, the severity and the code. It is sent once, when the alarm is raised, whether or not the system is armed; acknowledging or clearing it sends nothing. The Android app announces the same alarms from the history (ARMOR-ANDROID-CONTROL 0.3.0).
