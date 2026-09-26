@@ -1,0 +1,8 @@
+device_state {"triggered":true,"distance_cm":240}
+device_state {"triggered":true}
+device_state {"triggered":false}
+device_state {"triggered":true}
+device_state {"open":false}
+device_state {"on":true}
+device_state {"brightness":40.000}
+device_state {"battery":12.600}
