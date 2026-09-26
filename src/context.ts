@@ -122,7 +122,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     onResult: (automation, action, ok, detail) => audit.record({ action: "automation.run", outcome: ok ? "allowed" : "failed", target: `${automation.id}:${action.type === "device" ? `${action.device_id}=${action.command}` : "notify"}`, detail }),
   });
   const site = new SiteStore(path.join(config.dataDir, "site.json"));
-  const electricalNodes = new ElectricalStore({ now: overrides.now });
+  const electricalNodes = new ElectricalStore({ now: overrides.now, onMessage: message => alarmRules.handleElectrical(message), onStale: (node, stale) => alarmRules.handleElectricalStale(node, stale) });
   const electrical = new SiteStore(path.join(config.dataDir, "electrical.json"), () => new Date(), "electrical design");
   const solarRegistry = new SolarRegistry(path.join(config.dataDir, "solar-devices.json"), overrides.now ? () => new Date(overrides.now!()) : undefined);
   const solar = new SolarStore({ now: overrides.now, onMessage: message => alarmRules.handleSolar(message), onStale: (node, device, stale) => alarmRules.handleSolarStale(node, device, stale) });

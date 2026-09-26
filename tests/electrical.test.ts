@@ -78,3 +78,54 @@ test("the routes take a node's reading with the ingest token and give it to an o
     assert.equal((await fetch(`${running.base}/api/v1/electrical/history?node=Bad&channel=grid`, { headers: { cookie } })).status, 400);
   } finally { await running.stop(); }
 });
+
+test("the alarms: a meter's own alarm, the mains out of range with a recovery margin, the grid lost, and a silent node", async () => {
+  const { AlarmCentre, AlarmRules } = await import("../src/alarms.js");
+  const os = await import("node:os");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "armor-electrical-alarms-"));
+  const centre = new AlarmCentre({ file: path.join(dir, "alarms.json") });
+  const rules = new AlarmRules(centre, () => "disarmed");        // these alarms do not depend on the security mode
+  const codes = () => centre.active().filter(alarm => !alarm.cleared_at).map(alarm => alarm.code).sort();
+  const at = (volts: number, extra: Record<string, unknown> = {}, id = "grid"): ElectricalMessage => message({ channels: [{ id, domain: "ac", voltage_v: volts, ...extra }] });
+  rules.handleElectrical(at(231));
+  assert.deepEqual(codes(), []);
+  rules.handleElectrical(at(231, { alarm: true }, "heater"));
+  assert.deepEqual(codes(), ["electrical_alarm"]);
+  rules.handleElectrical(at(231, { alarm: false }, "heater"));
+  assert.deepEqual(codes(), []);
+  // the voltage: low and high raise, and end only inside the margin
+  rules.handleElectrical(at(190));
+  assert.deepEqual(codes(), ["electrical_voltage"]);
+  rules.handleElectrical(at(197));
+  assert.deepEqual(codes(), ["electrical_voltage"]);              // back above the limit, not yet inside the margin
+  rules.handleElectrical(at(201));
+  assert.deepEqual(codes(), []);
+  rules.handleElectrical(at(256));
+  assert.deepEqual(codes(), ["electrical_voltage"]);
+  rules.handleElectrical(at(251));
+  assert.deepEqual(codes(), ["electrical_voltage"]);
+  rules.handleElectrical(at(249));
+  assert.deepEqual(codes(), []);
+  // the grid lost is one alarm and not a "voltage out of range" as well; it ends when the supply is back
+  rules.handleElectrical(at(0));
+  assert.deepEqual(codes(), ["electrical_grid_lost"]);
+  rules.handleElectrical(at(60));
+  assert.deepEqual(codes(), ["electrical_grid_lost"]);            // 60 V: still lost (it ends at 100 V), and not an out-of-range voltage as well
+  rules.handleElectrical(at(110));
+  assert.deepEqual(codes(), ["electrical_voltage"]);              // the supply is back but far too low: now it is a voltage alarm
+  rules.handleElectrical(at(230));
+  assert.deepEqual(codes(), []);
+  // a channel that is not the grid and has no supply is not a grid alarm; DC channels and channels with no voltage say nothing about the mains
+  rules.handleElectrical(at(0, {}, "heater"));
+  assert.deepEqual(codes(), []);
+  rules.handleElectrical(message({ channels: [{ id: "dc-bus", domain: "dc", voltage_v: 5 }, { id: "oven", domain: "ac", power_w: 900 }] }));
+  assert.deepEqual(codes(), []);
+  // a silent node
+  rules.handleElectricalStale("electrical-1", true);
+  assert.deepEqual(codes(), ["electrical_offline"]);
+  rules.handleElectricalStale("electrical-1", false);
+  assert.deepEqual(codes(), []);
+  rules.handleElectrical(at(190, { alarm: true }));
+  assert.deepEqual(centre.active().filter(alarm => !alarm.cleared_at).map(alarm => alarm.source.type), ["electrical", "electrical"]);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

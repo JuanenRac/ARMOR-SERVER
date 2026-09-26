@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.8] - The optional fields of the inverter message
+
+- **Alarms for the electrical nodes:** a meter's own alarm (`electrical_alarm`), the mains out of range on an AC channel (`electrical_voltage`, below 195 V or above 253 V, ending inside 200 to 250 V), the grid lost (`electrical_grid_lost`, the channel called `grid` below 50 V, ending at 100 V) and a node that went silent (`electrical_offline`). None depends on the security mode; the notifier announces them like the solar ones. 169 tests.
+- The strict parser of the inverter message accepts the optional second PV input and the units of a parallel system of ARMOR-COMMON 0.2.3 (and the shared vectors, 193 now, pass).
+
+
 ## [0.2.7] - The electrical design is kept on the server
 
 - `GET` and `PUT /api/v1/electrical/design`: the house's electrical diagram drawn in Studio's Electrical Designer, kept in its own file (`electrical.json`), apart from the site design. Same rules as the site design: an operator's route, up to 768 kB, versioned, and a save made from an out-of-date copy is refused with the current one (409) instead of overwriting it; every accepted save is in the audit trail. The server does not interpret the drawing.

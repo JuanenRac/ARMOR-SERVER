@@ -10,10 +10,11 @@ import path from "node:path";
 import type { DeviceChange } from "./devices/registry.js";
 import { kindInfo, type Severity } from "./devices/catalog.js";
 import type { ArmorEvent, ArmorEventBody } from "./events.js";
+import type { ElectricalMessage } from "./electrical.js";
 import type { SolarMessage } from "./solar.js";
 import type { SecurityMode } from "./store.js";
 
-export type AlarmSource = { type: "node" | "camera" | "device" | "solar"; id: string };
+export type AlarmSource = { type: "node" | "camera" | "device" | "solar" | "electrical"; id: string };
 export type Alarm = {
   id: string; key: string; source: AlarmSource; severity: Severity;
   /** What happened, as a stable code the client translates: intrusion, node_down, camera_down, smoke, water_leak, door_open, tamper, low_battery, device_offline ... */
@@ -124,6 +125,8 @@ const armedOnlyCodes = new Set(["intrusion", "door_open", "window_open", "motion
 const DEVICE_CODE: Record<string, string> = { smoke: "smoke", co: "co", gas: "gas", water_leak: "water_leak", panic_button: "panic", door: "door_open", window: "window_open", motion: "motion", glass_break: "glass_break", vibration: "vibration" };
 const LOW_BATTERY = 15, BATTERY_OK = 20;
 const SOLAR_LOW = 20, SOLAR_OK = 30;
+/** The mains voltage an AC channel of an electrical node may have (about 230 V less 15 % and plus 10 %), with the margin at which a raised alarm ends; below GRID_LOST the channel has no supply at all. */
+const MAINS_LOW = 195, MAINS_LOW_OK = 200, MAINS_HIGH = 253, MAINS_HIGH_OK = 250, GRID_LOST = 50, GRID_BACK = 100;
 /** The QPIWS flags that mean the inverter is faulty, not just warning. */
 const SOLAR_FAULTS = new Set(["inverter_fault", "bus_over", "bus_under", "bus_soft_fail", "inverter_voltage_low", "inverter_voltage_high", "over_temperature", "fan_locked",
   "eeprom_fault", "inverter_over_current", "inverter_soft_fail", "self_test_fail", "op_dc_voltage_over", "battery_open", "current_sensor_fail", "battery_short"]);
@@ -211,6 +214,36 @@ export class AlarmRules {
     const id = `${node}/${device}`;
     if (stale) this.centre.raise(`solar:${id}:offline`, { source: { type: "solar", id }, severity: "warning", code: "solar_offline" });
     else this.centre.clear(`solar:${id}:offline`);
+  }
+
+  /**
+   * An electrical node's reading. A meter's own alarm flag, an AC channel whose voltage is out of the range of the mains, and the grid input being lost are warnings that end
+   * when the cause does (the voltage with a margin, so a value on the edge does not flap). None of these depends on the security mode. A channel that is not in the message
+   * says nothing, so what it had raised stays until the node is forgotten or the channel speaks again.
+   */
+  handleElectrical(message: ElectricalMessage): void {
+    for (const channel of message.channels) {
+      const id = `${message.node_id}/${channel.id}`, source: AlarmSource = { type: "electrical", id };
+      const base = `electrical:${id}`;
+      if (channel.alarm === true) this.centre.raise(`${base}:alarm`, { source, severity: "warning", code: "electrical_alarm" });
+      else if (channel.alarm === false) this.centre.clear(`${base}:alarm`);
+      if (channel.domain !== "ac" || channel.voltage_v === undefined) continue;
+      const volts = channel.voltage_v;
+      if (channel.id === "grid") {
+        if (volts < GRID_LOST) this.centre.raise(`${base}:lost`, { source, severity: "warning", code: "electrical_grid_lost" });
+        else if (volts >= GRID_BACK) this.centre.clear(`${base}:lost`);
+      }
+      // below GRID_BACK there is no mains to speak of (a circuit that is off, or the grid lost, which is its own alarm): "out of range" is for a supply that is there
+      if (volts < GRID_BACK) this.centre.clear(`${base}:voltage`);
+      else if (volts < MAINS_LOW || volts > MAINS_HIGH) this.centre.raise(`${base}:voltage`, { source, severity: "warning", code: "electrical_voltage" });
+      else if (volts >= MAINS_LOW_OK && volts <= MAINS_HIGH_OK) this.centre.clear(`${base}:voltage`);
+    }
+  }
+
+  /** An electrical node went silent, or came back. */
+  handleElectricalStale(node: string, stale: boolean): void {
+    if (stale) this.centre.raise(`electrical:${node}:offline`, { source: { type: "electrical", id: node }, severity: "warning", code: "electrical_offline" });
+    else this.centre.clear(`electrical:${node}:offline`);
   }
 
   /** A device that was removed can no longer be in trouble. */

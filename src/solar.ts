@@ -13,6 +13,14 @@ export type SolarInverter = {
   grid_v: number; grid_hz: number; out_v: number; out_hz: number; out_va: number; out_w: number; load_percent: number;
   battery_v: number; battery_a: number; battery_percent: number; pv_v: number; pv_a: number; pv_w: number; heatsink_c: number;
   ac_charging: boolean; pv_charging: boolean; load_on: boolean; warnings: string[];
+  /** A second PV input (pv_w is already the sum of both) and, for a parallel system, the totals and the units the node reads (QPGS). */
+  pv2_v?: number; pv2_a?: number; pv2_w?: number;
+  total_out_w?: number; total_out_va?: number; total_load_percent?: number; total_charging_a?: number;
+  units?: SolarUnit[];
+};
+export type SolarUnit = {
+  unit: number; mode: SolarMode; serial?: string; fault_code?: string; grid_v?: number; out_v?: number; out_va?: number; out_w?: number;
+  load_percent?: number; battery_v?: number; battery_percent?: number; pv_v?: number; charging_a?: number;
 };
 export type SolarModule = {
   n: number; present: boolean; voltage_v?: number; current_a?: number; temperature_c?: number; soc_percent?: number; state?: string;
@@ -30,6 +38,14 @@ const deviceName = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 const warningName = /^[a-z][a-z0-9_]{0,39}$/;
 const INVERTER_KEYS = ["kind", "node_id", "device", "timestamp_ms", "mode", "grid_v", "grid_hz", "out_v", "out_hz", "out_va", "out_w", "load_percent", "battery_v", "battery_a", "battery_percent",
   "pv_v", "pv_a", "pv_w", "heatsink_c", "ac_charging", "pv_charging", "load_on", "warnings"] as const;
+const INVERTER_OPTIONAL_KEYS = ["pv2_v", "pv2_a", "pv2_w", "total_out_w", "total_out_va", "total_load_percent", "total_charging_a", "units"] as const;
+const INVERTER_OPTIONAL_RANGES: Record<string, readonly [number, number]> = {
+  pv2_v: [0, 1500], pv2_a: [0, 500], pv2_w: [0, 100_000], total_out_w: [0, 1_000_000], total_out_va: [0, 1_000_000], total_load_percent: [0, 200], total_charging_a: [0, 10_000],
+};
+const UNIT_KEYS = ["unit", "serial", "mode", "fault_code", "grid_v", "out_v", "out_va", "out_w", "load_percent", "battery_v", "battery_percent", "pv_v", "charging_a"] as const;
+const UNIT_RANGES: Record<string, readonly [number, number]> = {
+  grid_v: [0, 600], out_v: [0, 600], out_va: [0, 100_000], out_w: [0, 100_000], load_percent: [0, 200], battery_v: [0, 1000], battery_percent: [0, 100], pv_v: [0, 1500], charging_a: [0, 1000],
+};
 /** The bounds of every number of an inverter message: [minimum, maximum]. */
 const INVERTER_RANGES: Record<string, readonly [number, number]> = {
   grid_v: [0, 600], grid_hz: [0, 100], out_v: [0, 600], out_hz: [0, 100], out_va: [0, 100_000], out_w: [0, 100_000], load_percent: [0, 200], battery_v: [0, 1000], battery_a: [-1000, 1000],
@@ -42,17 +58,31 @@ function readDevice(body: Record<string, unknown>): string {
   return body.device;
 }
 
+function parseUnit(value: unknown, index: number): SolarUnit {
+  const unit = record(value, `unit ${index}`);
+  onlyKnown(unit, UNIT_KEYS, `unit ${index}`);
+  if (!integer(unit.unit) || unit.unit < 0 || unit.unit > 9) throw new Error(`invalid unit ${index}.unit`);
+  if (typeof unit.mode !== "string" || !(SOLAR_MODES as readonly string[]).includes(unit.mode)) throw new Error(`invalid unit ${index}.mode`);
+  if ("serial" in unit && (typeof unit.serial !== "string" || unit.serial.length > 24)) throw new Error(`invalid unit ${index}.serial`);
+  if ("fault_code" in unit && (typeof unit.fault_code !== "string" || !/^[0-9]{2}$/.test(unit.fault_code))) throw new Error(`invalid unit ${index}.fault_code`);
+  for (const [key, [low, high]] of Object.entries(UNIT_RANGES)) if (key in unit && !inRange(unit[key], low, high)) throw new Error(`invalid unit ${index}.${key}`);
+  return unit as unknown as SolarUnit;
+}
+
 export function parseSolarInverter(value: unknown): SolarInverter {
   const body = record(value, "inverter");
-  onlyKnown(body, INVERTER_KEYS, "inverter");
+  onlyKnown(body, [...INVERTER_KEYS, ...INVERTER_OPTIONAL_KEYS], "inverter");
   for (const key of INVERTER_KEYS) if (!(key in body)) throw new Error(`inverter is missing ${key}`);
+  for (const [key, [low, high]] of Object.entries(INVERTER_OPTIONAL_RANGES)) if (key in body && !inRange(body[key], low, high)) throw new Error(`invalid ${key}`);
+  if ("units" in body && (!Array.isArray(body.units) || body.units.length > 10)) throw new Error("invalid units");
+  const units = Array.isArray(body.units) ? body.units.map(parseUnit) : undefined;
   if (body.kind !== "inverter") throw new Error("invalid kind");
   const node = readNodeId(body), device = readDevice(body), timestamp = readTimestamp(body);
   if (typeof body.mode !== "string" || !(SOLAR_MODES as readonly string[]).includes(body.mode)) throw new Error("invalid mode");
   for (const [key, [low, high]] of Object.entries(INVERTER_RANGES)) if (!inRange(body[key], low, high)) throw new Error(`invalid ${key}`);
   for (const key of ["ac_charging", "pv_charging", "load_on"]) if (typeof body[key] !== "boolean") throw new Error(`invalid ${key}`);
   if (!Array.isArray(body.warnings) || body.warnings.length > 32 || !body.warnings.every(name => typeof name === "string" && warningName.test(name))) throw new Error("invalid warnings");
-  return { ...(body as unknown as SolarInverter), node_id: node, device, timestamp_ms: timestamp, warnings: [...(body.warnings as string[])] };
+  return { ...(body as unknown as SolarInverter), node_id: node, device, timestamp_ms: timestamp, warnings: [...(body.warnings as string[])], ...(units ? { units } : {}) };
 }
 
 const BATTERY_OPTIONAL_RANGES: Record<string, readonly [number, number]> = {
