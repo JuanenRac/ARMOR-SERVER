@@ -43,6 +43,8 @@ export type ArmorConfig = {
   /** Where alarms are POSTed (signed with `alertWebhookSecret` when set); null when unused. */
   alertWebhookUrl: string | null;
   alertWebhookSecret: string;
+  /** Whether this server may send a command to the switch of an electrical node. Off unless ARMOR_ELECTRICAL_SWITCHING=1; even then the node has to allow it too. */
+  electricalSwitching: boolean;
   /** Problems that do not stop a loopback-only server but should be fixed. */
   warnings: string[];
 };
@@ -133,6 +135,8 @@ export function readConfig(env: Env = process.env): ArmorConfig {
   if (alertWebhookUrl && !alertWebhookSecret) warnings.push("ARMOR_ALERT_WEBHOOK_SECRET is not set; alarm calls will not be signed");
   if (alertWebhookSecret) secret(env, "ARMOR_ALERT_WEBHOOK_SECRET");
 
+  const electricalSwitching = env.ARMOR_ELECTRICAL_SWITCHING === "1";
+  if (electricalSwitching) warnings.push("ARMOR_ELECTRICAL_SWITCHING=1: this server may send commands to the switches of electrical nodes; that is only for a bench, a lamp and a person present, until the installation has its own protections");
   const mqttUrl = env.ARMOR_MQTT_URL?.trim();
   return {
     host,
@@ -154,7 +158,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     nodeStaleAfterS: integer(env, "ARMOR_NODE_STALE_AFTER_S", 30, 5, 3600),
     alertDwellMs: integer(env, "ARMOR_ALERT_DWELL_MS", 2000, 0, 60_000),
     cameraCheckS: integer(env, "ARMOR_CAMERA_CHECK_S", 20, 0, 3600),
-    alertWebhookUrl, alertWebhookSecret,
+    alertWebhookUrl, alertWebhookSecret, electricalSwitching,
     warnings,
   };
 }
