@@ -17,6 +17,8 @@ import { registerCameraRoutes } from "./routes/cameras.js";
 import { registerDeviceRoutes } from "./routes/devices.js";
 import { registerHistoryRoutes } from "./routes/history.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
+import { registerSolarRoutes } from "./routes/solar.js";
+import { parseSolarMessage, solarTopic } from "./solar.js";
 import { registerMediaRoutes } from "./routes/media.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerSystemRoutes } from "./routes/system.js";
@@ -49,13 +51,14 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   // from an unknown client); the sign-in route has its own, much tighter limit.
   app.use(rateLimit({
     windowMs: 60_000, limit: 240, standardHeaders: "draft-8", legacyHeaders: false,
-    skip: request => (request.method === "POST" && (request.path === "/api/v1/telemetry" || request.path === "/api/v1/health")) || context.operatorAuthorized(request),
+    skip: request => (request.method === "POST" && (request.path === "/api/v1/telemetry" || request.path === "/api/v1/health" || request.path === "/api/v1/solar")) || context.operatorAuthorized(request),
   }));
 
   registerIngestRoutes(app, context, Date.now(), version);
   registerSessionRoutes(app, context);
   registerUserRoutes(app, context);
   registerDeviceRoutes(app, context);
+  registerSolarRoutes(app, context);
   registerAlarmRoutes(app, context);
   registerSystemRoutes(app, context, version);
   registerHistoryRoutes(app, context);
@@ -85,9 +88,21 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     context.deviceLink.resubscribe = () => { const topics = context.devices.topics(); if (topics.length > 0 && mqtt.connected) mqtt.subscribe(topics, { qos: 1 }); };
     mqtt.on("connect", () => context.deviceLink.resubscribe?.());
     mqtt.on("message", (topic, raw) => { try { context.devices.ingestMqtt(topic, raw); } catch { /* one bad device message never stops the rest */ } });
+    // The gateway nodes that read solar inverters and batteries: armor/solar/{node}/{device}/state. The broker lets a node write only its own topics, so a body that
+    // names another node or device is refused, as for the radar nodes.
+    mqtt.on("connect", () => mqtt.subscribe("armor/solar/+/+/state", { qos: 1 }));
+    mqtt.on("message", (topic, raw) => {
+      const named = solarTopic(topic);
+      if (!named) return;
+      try {
+        const message = parseSolarMessage(JSON.parse(raw.toString("utf8")));
+        if (message.node_id !== named[0] || message.device !== named[1]) throw new Error("node_id and device do not match the topic");
+        context.solar.ingest(message);
+      } catch (error) { console.warn("ARMOR_MQTT=REJECTED", error instanceof Error ? error.message : "invalid solar payload"); }
+    });
   }
   // Silence and dwell time are time-driven: they need a clock, not a message.
-  const sweeper = setInterval(() => { context.store.sweep(); context.devices.sweep(); }, 2_000);
+  const sweeper = setInterval(() => { context.store.sweep(); context.devices.sweep(); context.solar.sweep(); }, 2_000);
   sweeper.unref();
   // The camera watchdog: a first pass shortly after start, then on a fixed interval.
   const watchdogs: NodeJS.Timeout[] = [];
