@@ -166,6 +166,13 @@ test("a device alarm is announced, and a node or camera alarm is not announced t
   assert.equal(alertMessageFor({ id: 2, at: "x", type: "alarm", alarm_id: "a", state: "raised", severity: "high", source: "north-1", source_type: "node", code: "intrusion" }, "armed"), null);
 });
 
+test("a solar alarm is announced with its node/device path, whether or not the system is armed, and only when it is raised", () => {
+  const raised = alertMessageFor({ id: 3, at: "2026-01-01T00:00:00Z", type: "alarm", alarm_id: "alm-00003", state: "raised", severity: "high", source: "casa/axpert-1", source_type: "solar", code: "solar_fault" }, "disarmed");
+  assert.deepEqual([raised?.event, raised?.solar_id, raised?.severity, raised?.code, raised?.device_id], ["alarm.raised", "casa/axpert-1", "high", "solar_fault", undefined]);
+  assert.equal(alertMessageFor({ id: 4, at: "x", type: "alarm", alarm_id: "alm-00003", state: "cleared", severity: "high", source: "casa/axpert-1", source_type: "solar", code: "solar_fault" }, "armed"), null);
+  assert.equal(alertMessageFor({ id: 5, at: "x", type: "alarm", alarm_id: "alm-00003", state: "acknowledged", severity: "high", source: "casa/axpert-1", source_type: "solar", code: "solar_fault" }, "armed"), null);
+});
+
 test("commands go to the device over MQTT or HTTP, are refused for a sensor, and a toggle is worked out from the state", async () => {
   const running = await startServer();
   const published: Array<[string, string]> = [];
