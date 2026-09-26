@@ -20,13 +20,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-161%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-168%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="Maturity">
 </p>
 
 ---
 
-**诚实性检查 - 今天真正能运行的部分:** 下面的每条路由、会话、加密和证据规则都是真实的，并有测试覆盖（`npm test`，161 个测试，其中包括针对隔离服务器的完整 HTTP 集成测试）。它已在 CM5 上对着真实的 MQTT 代理运行过（用的是脚本，不是现场节点固件），并通过 FFmpeg 从五台真实 IP 摄像头推送过实时视频、保存过快照并录过像。**尚未证实的：** 对真实 ONVIF 摄像头的 ONVIF、每种摄像头固件上的 PTZ（在 Hi3510 设备上可用）、任何 Jetson 硬件，以及对真实网关节点的太阳能路由（它们用生成的读数测试）。
+**诚实性检查 - 今天真正能运行的部分:** 下面的每条路由、会话、加密和证据规则都是真实的，并有测试覆盖（`npm test`，168 个测试，其中包括针对隔离服务器的完整 HTTP 集成测试）。它已在 CM5 上对着真实的 MQTT 代理运行过（用的是脚本，不是现场节点固件），并通过 FFmpeg 从五台真实 IP 摄像头推送过实时视频、保存过快照并录过像。**尚未证实的：** 对真实 ONVIF 摄像头的 ONVIF、每种摄像头固件上的 PTZ（在 Hi3510 设备上可用）、任何 Jetson 硬件，以及对真实网关节点的太阳能路由（它们用生成的读数测试）。
 
 ---
 
@@ -50,6 +50,7 @@
 flowchart LR
     N["Field nodes (ESP32-S3)"] -->|MQTT / HTTP + ingest token| S["ARMOR-SERVER"]
     G["Solar gateway nodes"] -->|MQTT / HTTP + ingest token| S
+    E["Electrical nodes"] -->|MQTT / HTTP + ingest token| S
     C["IP cameras"] -->|RTSP / ONVIF| S
     S -->|"MJPEG, JSON, WebSocket"| U["ARMOR-STUDIO"]
     S -->|"MJPEG, JSON"| A["ARMOR-ANDROID-CONTROL"]
@@ -67,7 +68,7 @@ flowchart LR
 ## 🌐 API
 
 * 公开：`GET /healthz`。对操作员：状态、信息、摄像头、媒体、历史、规则、设备、报警、自动化、场地设计，以及带历史的 `GET /api/v1/solar`。
-* 对现场节点和网关：使用摄取令牌的 `POST /api/v1/telemetry`、`/health` 和 `/solar`，以及 MQTT 主题 `armor/node/#` 和 `armor/solar/#`。事件通过 WebSocket `/api/v1/events` 到达控制台。
+* 对现场节点和网关：使用摄取令牌的 `POST /api/v1/telemetry`、`/health`、`/solar` 和 `/electrical/readings`，以及 MQTT 主题 `armor/node/#`、`armor/solar/#` 和 `armor/electrical/#`。事件通过 WebSocket `/api/v1/events` 到达控制台。
 * 每条路由、其访问规则和模式都在 [ARMOR-COMMON](../ARMOR-COMMON) 的 OpenAPI 文件中，并有测试确保没有遗漏的路由。
 
 ## ⚙️ 配置
@@ -81,9 +82,9 @@ flowchart LR
 ```text
 ARMOR-SERVER/
 ├── src/            server, app, config, context, store, persistence, events, rules, notify, contracts, mqtt, audit,
-│   │               alarms, automations, users, site, solar
+│   │               alarms, automations, users, site, solar, solar_registry, electrical
 │   ├── http/       auth primitives
-│   ├── routes/     sessions, cameras, media, ingest, history, devices, alarms, automations, site, solar
+│   ├── routes/     sessions, cameras, media, ingest, history, devices, alarms, users, solar, electrical, system
 │   ├── devices/    the device model, kinds and MQTT bridge
 │   ├── cameras/    model, vault, digest, ptz, rtsp, discovery, health, errors
 │   └── media/      relay, evidence
@@ -98,7 +99,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 161 tests: unit + full HTTP integration
+npm test            # 168 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```

@@ -20,13 +20,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-161%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-168%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="Maturity">
 </p>
 
 ---
 
-**正直さのチェック - 今日動いているもの:** 以下のすべてのルート、セッション、暗号化、証拠の規則は実在し、テストで網羅されています（`npm test`、161 件。隔離したサーバーに対する完全な HTTP 統合テストを含む）。CM5 上の実際の MQTT ブローカーに対して動作し（スクリプトによるもので、フィールドノードのファームウェアではありません）、5 台の実際の IP カメラから FFmpeg でライブ映像の配信、スナップショットの保存、録画を行いました。**まだ実証されていないもの：** 実際の ONVIF カメラでの ONVIF、すべてのカメラファームウェアでの PTZ（Hi3510 の機種では動作します）、Jetson ハードウェア全般、そして実際のゲートウェイノードでの太陽光ルート（生成した測定値でテストしています）。
+**正直さのチェック - 今日動いているもの:** 以下のすべてのルート、セッション、暗号化、証拠の規則は実在し、テストで網羅されています（`npm test`、168 件。隔離したサーバーに対する完全な HTTP 統合テストを含む）。CM5 上の実際の MQTT ブローカーに対して動作し（スクリプトによるもので、フィールドノードのファームウェアではありません）、5 台の実際の IP カメラから FFmpeg でライブ映像の配信、スナップショットの保存、録画を行いました。**まだ実証されていないもの：** 実際の ONVIF カメラでの ONVIF、すべてのカメラファームウェアでの PTZ（Hi3510 の機種では動作します）、Jetson ハードウェア全般、そして実際のゲートウェイノードでの太陽光ルート（生成した測定値でテストしています）。
 
 ---
 
@@ -50,6 +50,7 @@
 flowchart LR
     N["Field nodes (ESP32-S3)"] -->|MQTT / HTTP + ingest token| S["ARMOR-SERVER"]
     G["Solar gateway nodes"] -->|MQTT / HTTP + ingest token| S
+    E["Electrical nodes"] -->|MQTT / HTTP + ingest token| S
     C["IP cameras"] -->|RTSP / ONVIF| S
     S -->|"MJPEG, JSON, WebSocket"| U["ARMOR-STUDIO"]
     S -->|"MJPEG, JSON"| A["ARMOR-ANDROID-CONTROL"]
@@ -67,7 +68,7 @@ flowchart LR
 ## 🌐 API
 
 * 公開：`GET /healthz`。オペレーター向け：状態、情報、カメラ、メディア、履歴、規則、デバイス、アラーム、自動化、サイト設計、履歴付きの `GET /api/v1/solar`。
-* フィールドノードとゲートウェイ向け：取り込みトークンを使う `POST /api/v1/telemetry`、`/health`、`/solar` と、MQTT トピック `armor/node/#`、`armor/solar/#`。イベントは WebSocket `/api/v1/events` でコンソールに届きます。
+* フィールドノードとゲートウェイ向け：取り込みトークンを使う `POST /api/v1/telemetry`、`/health`、`/solar`、`/electrical/readings` と、MQTT トピック `armor/node/#`、`armor/solar/#`、`armor/electrical/#`。イベントは WebSocket `/api/v1/events` でコンソールに届きます。
 * すべてのルート、そのアクセス規則、スキーマは [ARMOR-COMMON](../ARMOR-COMMON) の OpenAPI ファイルにあり、漏れがないことをテストが確認します。
 
 ## ⚙️ 設定
@@ -81,9 +82,9 @@ flowchart LR
 ```text
 ARMOR-SERVER/
 ├── src/            server, app, config, context, store, persistence, events, rules, notify, contracts, mqtt, audit,
-│   │               alarms, automations, users, site, solar
+│   │               alarms, automations, users, site, solar, solar_registry, electrical
 │   ├── http/       auth primitives
-│   ├── routes/     sessions, cameras, media, ingest, history, devices, alarms, automations, site, solar
+│   ├── routes/     sessions, cameras, media, ingest, history, devices, alarms, users, solar, electrical, system
 │   ├── devices/    the device model, kinds and MQTT bridge
 │   ├── cameras/    model, vault, digest, ptz, rtsp, discovery, health, errors
 │   └── media/      relay, evidence
@@ -98,7 +99,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 161 tests: unit + full HTTP integration
+npm test            # 168 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```

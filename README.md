@@ -20,13 +20,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-161%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-168%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="Maturity">
 </p>
 
 ---
 
-**Honesty check - what runs today:** Every route, session, encryption and evidence rule below is real and covered by tests (`npm test`, 161 tests, including a full HTTP integration suite against an isolated server). It has run against a real MQTT broker on the CM5 (with scripts, not field-node firmware), and has streamed live video, saved a snapshot and recorded from five real IP cameras through FFmpeg. What is **not** proven yet: ONVIF against a real ONVIF camera, PTZ on every camera firmware (it works on the Hi3510 unit), any Jetson hardware, and the solar routes against a real gateway node (they are tested with generated readings).
+**Honesty check - what runs today:** Every route, session, encryption and evidence rule below is real and covered by tests (`npm test`, 168 tests, including a full HTTP integration suite against an isolated server). It has run against a real MQTT broker on the CM5 (with scripts, not field-node firmware), and has streamed live video, saved a snapshot and recorded from five real IP cameras through FFmpeg. What is **not** proven yet: ONVIF against a real ONVIF camera, PTZ on every camera firmware (it works on the Hi3510 unit), any Jetson hardware, and the solar routes against a real gateway node (they are tested with generated readings).
 
 ---
 
@@ -50,6 +50,7 @@
 flowchart LR
     N["Field nodes (ESP32-S3)"] -->|MQTT / HTTP + ingest token| S["ARMOR-SERVER"]
     G["Solar gateway nodes"] -->|MQTT / HTTP + ingest token| S
+    E["Electrical nodes"] -->|MQTT / HTTP + ingest token| S
     C["IP cameras"] -->|RTSP / ONVIF| S
     S -->|"MJPEG, JSON, WebSocket"| U["ARMOR-STUDIO"]
     S -->|"MJPEG, JSON"| A["ARMOR-ANDROID-CONTROL"]
@@ -67,7 +68,7 @@ flowchart LR
 ## 🌐 API
 
 * Public: `GET /healthz`. For an operator: status, information, cameras, media, history, rules, devices, alarms, automations, the site design, and `GET /api/v1/solar` with its history.
-* For the field nodes and the gateways: `POST /api/v1/telemetry`, `/health` and `/solar` with the ingest token, and the MQTT topics `armor/node/#` and `armor/solar/#`. Events reach the consoles by the WebSocket `/api/v1/events`.
+* For the field nodes and the gateways: `POST /api/v1/telemetry`, `/health`, `/solar` and `/electrical/readings` with the ingest token, and the MQTT topics `armor/node/#`, `armor/solar/#` and `armor/electrical/#`. Events reach the consoles by the WebSocket `/api/v1/events`.
 * Every route, its access rule and its schema is in the OpenAPI file of [ARMOR-COMMON](../ARMOR-COMMON), and a test checks that no route is missing from it.
 
 ## ⚙️ Configuration
@@ -81,9 +82,9 @@ flowchart LR
 ```text
 ARMOR-SERVER/
 ├── src/            server, app, config, context, store, persistence, events, rules, notify, contracts, mqtt, audit,
-│   │               alarms, automations, users, site, solar
+│   │               alarms, automations, users, site, solar, solar_registry, electrical
 │   ├── http/       auth primitives
-│   ├── routes/     sessions, cameras, media, ingest, history, devices, alarms, automations, site, solar
+│   ├── routes/     sessions, cameras, media, ingest, history, devices, alarms, users, solar, electrical, system
 │   ├── devices/    the device model, kinds and MQTT bridge
 │   ├── cameras/    model, vault, digest, ptz, rtsp, discovery, health, errors
 │   └── media/      relay, evidence
@@ -98,7 +99,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 161 tests: unit + full HTTP integration
+npm test            # 168 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```
