@@ -10,9 +10,10 @@ import path from "node:path";
 import type { DeviceChange } from "./devices/registry.js";
 import { kindInfo, type Severity } from "./devices/catalog.js";
 import type { ArmorEvent, ArmorEventBody } from "./events.js";
+import type { SolarMessage } from "./solar.js";
 import type { SecurityMode } from "./store.js";
 
-export type AlarmSource = { type: "node" | "camera" | "device"; id: string };
+export type AlarmSource = { type: "node" | "camera" | "device" | "solar"; id: string };
 export type Alarm = {
   id: string; key: string; source: AlarmSource; severity: Severity;
   /** What happened, as a stable code the client translates: intrusion, node_down, camera_down, smoke, water_leak, door_open, tamper, low_battery, device_offline ... */
@@ -122,6 +123,10 @@ export class AlarmCentre {
 const armedOnlyCodes = new Set(["intrusion", "door_open", "window_open", "motion", "glass_break", "vibration"]);
 const DEVICE_CODE: Record<string, string> = { smoke: "smoke", co: "co", gas: "gas", water_leak: "water_leak", panic_button: "panic", door: "door_open", window: "window_open", motion: "motion", glass_break: "glass_break", vibration: "vibration" };
 const LOW_BATTERY = 15, BATTERY_OK = 20;
+const SOLAR_LOW = 20, SOLAR_OK = 30;
+/** The QPIWS flags that mean the inverter is faulty, not just warning. */
+const SOLAR_FAULTS = new Set(["inverter_fault", "bus_over", "bus_under", "bus_soft_fail", "inverter_voltage_low", "inverter_voltage_high", "over_temperature", "fan_locked",
+  "eeprom_fault", "inverter_over_current", "inverter_soft_fail", "self_test_fail", "op_dc_voltage_over", "battery_open", "current_sensor_fail", "battery_short"]);
 
 /**
  * What raises and clears alarms: the rules that connect the events of the perimeter (a node, a camera, the mode) and the reports of the
@@ -176,6 +181,36 @@ export class AlarmRules {
       if (!device.online && device.expected_interval_s > 0) this.centre.raise(`${base}:offline`, { source, severity: "warning", code: "device_offline" });
       else if (device.online) this.centre.clear(`${base}:offline`);
     }
+  }
+
+  /**
+   * A solar reading. A fault of an inverter (its mode, or a warning that is a fault) is high; a low battery (or a battery stack that reports an
+   * alarm) is a warning that ends when the charge is back above the recovery level. None of these depends on the security mode.
+   */
+  handleSolar(message: SolarMessage): void {
+    const id = `${message.node_id}/${message.device}`, source: AlarmSource = { type: "solar", id };
+    const base = `solar:${id}`;
+    if (message.kind === "inverter") {
+      const fault = message.mode === "fault" || message.warnings.some(name => SOLAR_FAULTS.has(name));
+      if (fault) this.centre.raise(`${base}:fault`, { source, severity: "high", code: "solar_fault" });
+      else this.centre.clear(`${base}:fault`);
+      const low = message.battery_percent < SOLAR_LOW || message.warnings.includes("battery_low") || message.warnings.includes("battery_under_shutdown");
+      if (low) this.centre.raise(`${base}:battery`, { source, severity: "warning", code: "solar_battery_low" });
+      else if (message.battery_percent >= SOLAR_OK) this.centre.clear(`${base}:battery`);
+    } else if (message.modules > 0) {
+      if (message.alarm === true) this.centre.raise(`${base}:battery_alarm`, { source, severity: "high", code: "solar_battery_alarm" });
+      else this.centre.clear(`${base}:battery_alarm`);
+      const soc = message.soc_percent;
+      if (soc !== undefined && soc < SOLAR_LOW) this.centre.raise(`${base}:battery`, { source, severity: "warning", code: "solar_battery_low" });
+      else if (soc !== undefined && soc >= SOLAR_OK) this.centre.clear(`${base}:battery`);
+    }
+  }
+
+  /** A solar device went silent, or came back. */
+  handleSolarStale(node: string, device: string, stale: boolean): void {
+    const id = `${node}/${device}`;
+    if (stale) this.centre.raise(`solar:${id}:offline`, { source: { type: "solar", id }, severity: "warning", code: "solar_offline" });
+    else this.centre.clear(`solar:${id}:offline`);
   }
 
   /** A device that was removed can no longer be in trouble. */

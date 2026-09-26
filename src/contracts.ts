@@ -13,25 +13,25 @@ export type Info = { node_id: string; timestamp_ms: number; name: string; firmwa
 export const MAX_TARGETS = 15;
 export const MAX_LUX = 200_000;
 const nodeId = /^[a-z0-9][a-z0-9_-]{0,63}$/;
-const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
-const integer = (value: unknown): value is number => finite(value) && Number.isInteger(value);
+export const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+export const integer = (value: unknown): value is number => finite(value) && Number.isInteger(value);
 
-const record = (value: unknown, what: string): Record<string, unknown> => {
+export const record = (value: unknown, what: string): Record<string, unknown> => {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${what} must be an object`);
   return value as Record<string, unknown>;
 };
 
 /** Refuse any field the contract does not define (additionalProperties: false). */
-const onlyKnown = (body: Record<string, unknown>, allowed: readonly string[], what: string): void => {
+export const onlyKnown = (body: Record<string, unknown>, allowed: readonly string[], what: string): void => {
   for (const key of Object.keys(body)) if (!allowed.includes(key)) throw new Error(`${what} has an unknown field: ${key}`);
 };
 
-const readNodeId = (body: Record<string, unknown>): string => {
+export const readNodeId = (body: Record<string, unknown>): string => {
   if (typeof body.node_id !== "string" || !nodeId.test(body.node_id)) throw new Error("invalid node_id");
   return body.node_id;
 };
 
-const readTimestamp = (body: Record<string, unknown>): number => {
+export const readTimestamp = (body: Record<string, unknown>): number => {
   if (!integer(body.timestamp_ms) || body.timestamp_ms < 0) throw new Error("invalid timestamp_ms");
   return body.timestamp_ms;
 };

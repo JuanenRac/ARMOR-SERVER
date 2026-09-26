@@ -22,6 +22,7 @@ import { AutomationEngine, type Action } from "./automations.js";
 import { DeviceRegistry, type DeviceChange } from "./devices/registry.js";
 import { sendCommand, type Command } from "./devices/commands.js";
 import { SiteStore } from "./site.js";
+import { SolarStore } from "./solar.js";
 import { AlertNotifier } from "./notify.js";
 import { FileStatePersistence } from "./persistence.js";
 import { RulesFile } from "./rules.js";
@@ -45,6 +46,8 @@ export type AppContext = {
   alarmRules: AlarmRules;
   automations: AutomationEngine;
   site: SiteStore;
+  /** The solar inverters and batteries the gateway nodes report. */
+  solar: SolarStore;
   /** The MQTT side of devices: set once the broker client exists. */
   deviceLink: { publish?: (topic: string, payload: string) => void; resubscribe?: () => void };
   sendDeviceCommand(id: string, command: Command): ReturnType<typeof sendCommand>;
@@ -112,6 +115,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     onResult: (automation, action, ok, detail) => audit.record({ action: "automation.run", outcome: ok ? "allowed" : "failed", target: `${automation.id}:${action.type === "device" ? `${action.device_id}=${action.command}` : "notify"}`, detail }),
   });
   const site = new SiteStore(path.join(config.dataDir, "site.json"));
+  const solar = new SolarStore({ now: overrides.now, onMessage: message => alarmRules.handleSolar(message), onStale: (node, device, stale) => alarmRules.handleSolarStale(node, device, stale) });
   const persistence = new FileStatePersistence(path.join(config.dataDir, "state.json"), { warn });
   const store: ArmorStore = new ArmorStore(overrides.broadcast, {
     staleAfterMs: config.nodeStaleAfterS * 1000, now: overrides.now, persistence, rules: () => rules.get(),
@@ -136,7 +140,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(studioUser(request) ? 403 : 401).json({ error: "an administrator is required" });
   };
   return {
-    config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, studioUser, requireAdmin, devices, alarms, alarmRules, automations, site, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, studioUser, requireAdmin, devices, alarms, alarmRules, automations, site, solar, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),
