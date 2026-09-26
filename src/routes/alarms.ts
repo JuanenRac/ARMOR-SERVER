@@ -93,8 +93,8 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
 
   // ---- the electrical design (the house's electrical diagram, drawn in Studio's Electrical Designer) ----
   const electricalView = (doc: ReturnType<typeof electrical.get>) => ({ revision: doc.revision, updated_at: doc.updated_at, updated_by: doc.updated_by, electrical: doc.site });
-  app.get("/api/v1/electrical", requireOperator, (_request, response) => response.json(electricalView(electrical.get())));
-  app.put("/api/v1/electrical", requireOperator, bigJson, (request, response) => {
+  app.get("/api/v1/electrical/design", requireOperator, (_request, response) => response.json(electricalView(electrical.get())));
+  app.put("/api/v1/electrical/design", requireOperator, bigJson, (request, response) => {
     const input = body(request);
     try {
       const saved = electrical.save(input.electrical, input.revision, actor(request));
