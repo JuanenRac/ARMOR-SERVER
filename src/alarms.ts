@@ -11,10 +11,11 @@ import type { DeviceChange } from "./devices/registry.js";
 import { kindInfo, type Severity } from "./devices/catalog.js";
 import type { ArmorEvent, ArmorEventBody } from "./events.js";
 import type { ElectricalMessage } from "./electrical.js";
+import type { NetworkEvent, NetworkMessage } from "./network.js";
 import type { SolarMessage } from "./solar.js";
 import type { SecurityMode } from "./store.js";
 
-export type AlarmSource = { type: "node" | "camera" | "device" | "solar" | "electrical"; id: string };
+export type AlarmSource = { type: "node" | "camera" | "device" | "solar" | "electrical" | "network"; id: string };
 export type Alarm = {
   id: string; key: string; source: AlarmSource; severity: Severity;
   /** What happened, as a stable code the client translates: intrusion, node_down, camera_down, smoke, water_leak, door_open, tamper, low_battery, device_offline ... */
@@ -23,6 +24,8 @@ export type Alarm = {
 };
 
 const MAX_KEPT = 400;
+/** Open ports that a house rarely wants open on something anyone on the network can reach: an old remote shell, an unencrypted file transfer, a remote desktop, a database, the provider's remote management. */
+const RISKY_PORTS = new Set([21, 23, 445, 3306, 3389, 5432, 5900, 6379, 7547]);
 export type AlarmCentreOptions = { file: string; now?: () => Date; onEvent?: (body: ArmorEventBody) => void; onRaised?: (alarm: Alarm) => void; warn?: (message: string) => void };
 
 export class AlarmCentre {
@@ -251,6 +254,42 @@ export class AlarmRules {
       if (item.fault !== "none" || (item.a_closed && item.b_closed)) this.centre.raise(key, { source: { type: "electrical", id }, severity: "high", code: "electrical_switch_fault" });
       else this.centre.clear(key);
     }
+  }
+
+  /**
+   * The state of the network an ARMOR-NETWORK node watches: the internet is down (the router answers and nothing beyond it does: the provider's side), the local network is down
+   * (the router does not answer either), or the internet is degraded. They end when the node says they have. None depends on the security mode.
+   */
+  handleNetwork(message: NetworkMessage): void {
+    const node = message.node_id, source: AlarmSource = { type: "network", id: node }, base = `network:${node}`;
+    const state = message.internet.state;
+    if (state === "down") this.centre.raise(`${base}:internet`, { source, severity: "high", code: "network_internet_down" }); else this.centre.clear(`${base}:internet`);
+    if (state === "lan_down") this.centre.raise(`${base}:lan`, { source, severity: "high", code: "network_lan_down" }); else this.centre.clear(`${base}:lan`);
+    if (state === "degraded") this.centre.raise(`${base}:degraded`, { source, severity: "warning", code: "network_degraded" }); else this.centre.clear(`${base}:degraded`);
+  }
+
+  /**
+   * An event of the network. A device that was never seen (unless the operator already marked it as known), an address answered by another MAC (a machine that took the router's
+   * place, or a mistake), and a port that opened (a high alarm when it is one a house rarely wants open, such as Telnet or a remote desktop) raise an alarm; a port that closed
+   * or a device that went away ends the one about it. Being offline or online again is news for the list of events, not an alarm.
+   */
+  handleNetworkEvent(node: string, event: NetworkEvent, isKnown: (deviceId: string) => boolean): void {
+    if (!event.device_id) return;
+    const id = `${node}/${event.device_id}`, source: AlarmSource = { type: "network", id }, base = `network:${id}`;
+    if (event.kind === "new_device" && !isKnown(event.device_id)) this.centre.raise(`${base}:new`, { source, severity: "warning", code: "network_new_device" });
+    else if (event.kind === "arp_conflict") this.centre.raise(`${base}:arp`, { source, severity: "high", code: "network_arp_conflict" });
+    else if (event.kind === "port_opened" && event.port !== undefined) this.centre.raise(`${base}:port:${event.port}`, { source, severity: RISKY_PORTS.has(event.port) ? "high" : "warning", code: "network_port_opened" });
+    else if (event.kind === "port_closed" && event.port !== undefined) this.centre.clear(`${base}:port:${event.port}`);
+    else if (event.kind === "device_offline") this.centre.clear(`${base}:arp`);
+  }
+
+  /** An operator marked a device as known: its "new device" alarm has no reason left. */
+  handleNetworkTrust(deviceId: string): void { this.centre.clearMatching(alarm => alarm.code === "network_new_device" && alarm.source.type === "network" && alarm.source.id.endsWith(`/${deviceId}`)); }
+
+  /** An ARMOR-NETWORK node went silent, or came back. */
+  handleNetworkStale(node: string, stale: boolean): void {
+    if (stale) this.centre.raise(`network:${node}:offline`, { source: { type: "network", id: node }, severity: "warning", code: "network_offline" });
+    else this.centre.clear(`network:${node}:offline`);
   }
 
   /** An electrical node went silent, or came back. */

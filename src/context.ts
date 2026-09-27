@@ -25,6 +25,7 @@ import { SiteStore } from "./site.js";
 import { SolarStore } from "./solar.js";
 import { ElectricalStore } from "./electrical.js";
 import { SwitchingService } from "./electrical_switching.js";
+import { DeviceNotes, NetworkStore } from "./network.js";
 import { SolarRegistry } from "./solar_registry.js";
 import { AlertNotifier } from "./notify.js";
 import { FileStatePersistence } from "./persistence.js";
@@ -52,6 +53,10 @@ export type AppContext = {
   electrical: SiteStore;
   /** What the ARMOR-ELECTRICAL nodes measure on the house's network. */
   electricalNodes: ElectricalStore;
+  /** What the ARMOR-NETWORK nodes see on the local network, the names an operator gave the devices, and the network design drawn in Studio. */
+  networkNodes: NetworkStore;
+  networkNotes: DeviceNotes;
+  network: SiteStore;
   /** The one way a command reaches an electrical node's switch: off unless the operator turned it on (see electrical_switching.ts). */
   electricalSwitching: SwitchingService;
   /** Where its commands are published; set when the broker is connected (never retained, at most once). */
@@ -129,6 +134,14 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const site = new SiteStore(path.join(config.dataDir, "site.json"));
   const electricalNodes = new ElectricalStore({ now: overrides.now, onMessage: message => alarmRules.handleElectrical(message), onStale: (node, stale) => alarmRules.handleElectricalStale(node, stale) });
   const electrical = new SiteStore(path.join(config.dataDir, "electrical.json"), () => new Date(), "electrical design");
+  const networkNotes = new DeviceNotes(path.join(config.dataDir, "network-devices.json"));
+  const networkNodes = new NetworkStore({
+    now: overrides.now, notes: networkNotes, outagesFile: path.join(config.dataDir, "network-outages.json"),
+    onMessage: message => alarmRules.handleNetwork(message),
+    onEvent: (node, event) => alarmRules.handleNetworkEvent(node, event, id => networkNotes.isTrusted(id)),
+    onStale: (node, stale) => alarmRules.handleNetworkStale(node, stale),
+  });
+  const network = new SiteStore(path.join(config.dataDir, "network.json"), () => new Date(), "network design");
   const switchLink: AppContext["switchLink"] = {};
   const electricalSwitching = new SwitchingService({
     enabled: config.electricalSwitching, nodes: electricalNodes, audit, now: overrides.now,
@@ -160,7 +173,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(studioUser(request) ? 403 : 401).json({ error: "an administrator is required" });
   };
   return {
-    config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, networkNodes, networkNotes, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),
