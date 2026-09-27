@@ -19,8 +19,9 @@ catch (error) {
 }
 
 for (const warning of config.warnings) console.warn(`ARMOR_SERVER=WARNING ${warning}`);
+if (config.tls) console.log(`ARMOR_SERVER=TLS_ENABLED cert=${config.tls.certPath} key=${config.tls.keyPath}`);
 const armor = createArmorApp(config, pkg.version);
-armor.server.listen(config.port, config.host, () => console.log(`ARMOR_SERVER=LISTENING address=${config.host}:${config.port}`));
+armor.server.listen(config.port, config.host, () => console.log(`ARMOR_SERVER=LISTENING address=${config.host}:${config.port} scheme=${config.tls ? "https" : "http"}`));
 
 const shutdown = (signal: string) => {
   console.log(`ARMOR_SERVER=STOPPING signal=${signal}`);

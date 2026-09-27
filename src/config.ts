@@ -45,6 +45,8 @@ export type ArmorConfig = {
   alertWebhookSecret: string;
   /** Whether this server may send a command to the switch of an electrical node. Off unless ARMOR_ELECTRICAL_SWITCHING=1; even then the node has to allow it too. */
   electricalSwitching: boolean;
+  /** Set only when both TLS_CERT_PATH and TLS_KEY_PATH are configured - see readConfig's own check. Switches the shared REST+WebSocket listener to HTTPS/WSS (app.ts); off (plain HTTP/WS) by default, unchanged from before this existed. */
+  tls: { certPath: string; keyPath: string } | null;
   /** Problems that do not stop a loopback-only server but should be fixed. */
   warnings: string[];
 };
@@ -137,6 +139,26 @@ export function readConfig(env: Env = process.env): ArmorConfig {
 
   const electricalSwitching = env.ARMOR_ELECTRICAL_SWITCHING === "1";
   if (electricalSwitching) warnings.push("ARMOR_ELECTRICAL_SWITCHING=1: this server may send commands to the switches of electrical nodes; that is only for a bench, a lamp and a person present, until the installation has its own protections");
+
+  // Off (plain HTTP/WS) by default - unchanged for every deployment that
+  // does not opt in, same convention as HYDRA-UMC-SERVER's own
+  // TLS_CERT_PATH/TLS_KEY_PATH. Unlike that one, exactly one of the two
+  // set is a ConfigError here rather than a silent fallback to plain
+  // HTTP - a deployer who set only one (a typo'd variable name) asked for
+  // TLS and would otherwise serve arm/disarm and camera credentials over
+  // plaintext while believing the server was on HTTPS. The path itself is
+  // only checked for existence here (fs.readFileSync at server start-up
+  // reports a real, specific error for anything else - permissions, an
+  // expired/malformed PEM, ...).
+  const tlsCertPath = env.TLS_CERT_PATH?.trim() || "";
+  const tlsKeyPath = env.TLS_KEY_PATH?.trim() || "";
+  if (!!tlsCertPath !== !!tlsKeyPath) {
+    throw new ConfigError("TLS_CERT_PATH and TLS_KEY_PATH must both be set to enable HTTPS, or both left unset to keep plain HTTP");
+  }
+  if (tlsCertPath && !fs.existsSync(tlsCertPath)) throw new ConfigError(`TLS_CERT_PATH does not exist: ${tlsCertPath}`);
+  if (tlsKeyPath && !fs.existsSync(tlsKeyPath)) throw new ConfigError(`TLS_KEY_PATH does not exist: ${tlsKeyPath}`);
+  const tls = tlsCertPath && tlsKeyPath ? { certPath: tlsCertPath, keyPath: tlsKeyPath } : null;
+
   const mqttUrl = env.ARMOR_MQTT_URL?.trim();
   return {
     host,
@@ -159,6 +181,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     alertDwellMs: integer(env, "ARMOR_ALERT_DWELL_MS", 2000, 0, 60_000),
     cameraCheckS: integer(env, "ARMOR_CAMERA_CHECK_S", 20, 0, 3600),
     alertWebhookUrl, alertWebhookSecret, electricalSwitching,
+    tls,
     warnings,
   };
 }

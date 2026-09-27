@@ -76,6 +76,44 @@ flowchart LR
 * Copy `.env.example` to `.env` (ignored by Git), or let `run.bat` / `run.sh` generate random secrets on the first run.
 * Required: `ARMOR_INGEST_TOKEN` and `ARMOR_CONTROL_TOKEN` (24 characters or more, all different) and `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD` (the first administrator).
 * Common: `ARMOR_HOST` / `ARMOR_PORT`, `ARMOR_DATA_DIR`, `ARMOR_FFMPEG_PATH` (live video and capture), `ARMOR_MQTT_URL`, `ARMOR_STUDIO_ORIGIN`, `ARMOR_NODE_STALE_AFTER_S`, `ARMOR_CAMERA_CHECK_S`, `ARMOR_ALERT_DWELL_MS`, `ARMOR_ALERT_WEBHOOK_URL` and `ARMOR_COOKIE_SECURE` (set it to `1` behind TLS).
+* `TLS_CERT_PATH` / `TLS_KEY_PATH` - set **both** to switch the server (REST API + the `/api/v1/events` WebSocket, which shares the same listener) from plain HTTP/WS to HTTPS/WSS. See "TLS / HTTPS" below. Leaving both unset keeps today's plain HTTP behaviour unchanged; setting only one is refused at start-up rather than silently kept on plain HTTP.
+
+### 🔐 TLS / HTTPS
+
+Off by default - this server has always run as plain HTTP/WS on a trusted LAN, and still does unless
+you opt in. Set both `TLS_CERT_PATH` and `TLS_KEY_PATH` to a PEM certificate and its matching private
+key, and the shared REST + WebSocket listener switches to Node's own `https.createServer()` -
+`/api/v1/events` automatically becomes WSS along with it, no separate configuration needed. A
+cert/key path that is set but unreadable, missing or invalid fails start-up loudly (a real error)
+rather than silently falling back to plain HTTP.
+
+This matters most once this server is reachable beyond a fully trusted LAN (for example exposed via
+a router's port-forward for real remote access) - plain HTTP means the Studio login, the control
+token and every camera/alarm command cross the network in clear text. `ARMOR-ANDROID-CONTROL`'s own
+client already refuses to speak plain HTTP to anything outside a private LAN address for exactly
+this reason - it needs a real `https://` origin to connect remotely at all.
+
+Getting a certificate:
+
+* **You own a domain pointing at this server** - use [Let's Encrypt](https://letsencrypt.org/) (for
+  example via [Certbot](https://certbot.eff.org/)) for a real, browser- and Android-trusted
+  certificate, free and automatically renewable. Point `TLS_CERT_PATH` / `TLS_KEY_PATH` at the
+  resulting `fullchain.pem` / `privkey.pem`. Once real HTTPS is up, add that same domain's origin
+  (`https://your-domain.example`) to `ARMOR_STUDIO_ORIGIN` so Studio's own CORS check accepts it.
+* **Local testing, no domain** - a self-signed certificate is enough to exercise the HTTPS/WSS code
+  path (browsers and most HTTP clients will warn/require an explicit trust override, which is
+  expected and fine for testing):
+  ```bash
+  openssl req -x509 -newkey rsa:2048 -nodes \
+    -keyout key.pem -out cert.pem -days 365 -subj "/CN=localhost"
+  ```
+  Then set `TLS_CERT_PATH=./cert.pem` and `TLS_KEY_PATH=./key.pem`.
+
+For a LAN-only deployment that would rather not manage a certificate directly, `ARMOR-DEVOPS`'s own
+Compose `tls` profile puts a Caddy reverse proxy (with its own local certificate authority) in front
+of Studio instead - see that repository's `docs/BACKUP_AND_TLS.md`. The two approaches are
+independent: this server's own `TLS_CERT_PATH`/`TLS_KEY_PATH` is the one that works with a real,
+publicly-trusted certificate for genuine remote access.
 
 ## 📂 Repository Structure
 

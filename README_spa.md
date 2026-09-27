@@ -76,6 +76,25 @@ flowchart LR
 * Copia `.env.example` a `.env` (ignorado por Git), o deja que `run.bat` / `run.sh` genere secretos aleatorios en la primera ejecución.
 * Obligatorias: `ARMOR_INGEST_TOKEN` y `ARMOR_CONTROL_TOKEN` (24 caracteres o más, todas distintas) y `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD` (el primer administrador).
 * Habituales: `ARMOR_HOST` / `ARMOR_PORT`, `ARMOR_DATA_DIR`, `ARMOR_FFMPEG_PATH` (vídeo en vivo y captura), `ARMOR_MQTT_URL`, `ARMOR_STUDIO_ORIGIN`, `ARMOR_NODE_STALE_AFTER_S`, `ARMOR_CAMERA_CHECK_S`, `ARMOR_ALERT_DWELL_MS`, `ARMOR_ALERT_WEBHOOK_URL` y `ARMOR_COOKIE_SECURE` (ponlo a `1` detrás de TLS).
+* `TLS_CERT_PATH` / `TLS_KEY_PATH` - fija **ambas** para pasar el servidor (la API REST + el WebSocket de `/api/v1/events`, que comparten el mismo listener) de HTTP/WS plano a HTTPS/WSS. Ver "TLS / HTTPS" más abajo. Dejar las dos sin definir mantiene el comportamiento actual en HTTP plano; definir solo una se rechaza al arrancar en vez de quedarse en HTTP en silencio.
+
+### 🔐 TLS / HTTPS
+
+Desactivado por defecto - este servidor siempre ha corrido en HTTP/WS plano sobre una LAN de confianza, y sigue así salvo que lo actives. Fija `TLS_CERT_PATH` y `TLS_KEY_PATH` a un certificado PEM y su clave privada correspondiente, y el listener compartido de REST + WebSocket pasa a usar el propio `https.createServer()` de Node - `/api/v1/events` se convierte automáticamente en WSS junto con él, sin configuración aparte. Una ruta de certificado/clave definida pero ilegible, ausente o inválida hace fallar el arranque de forma ruidosa (un error real) en vez de caer en silencio a HTTP plano.
+
+Esto importa sobre todo en cuanto este servidor es alcanzable más allá de una LAN totalmente de confianza (por ejemplo, expuesto mediante el redireccionamiento de puertos del router para acceso remoto real) - HTTP plano significa que el login de Studio, el token de control y cada comando de cámara/alarma cruzan la red en texto claro. El propio cliente de `ARMOR-ANDROID-CONTROL` ya se niega a hablar HTTP plano con cualquier cosa fuera de una dirección LAN privada precisamente por esto - necesita un origen `https://` real para conectarse en remoto.
+
+Cómo conseguir un certificado:
+
+* **Ya tienes un dominio apuntando a este servidor** - usa [Let's Encrypt](https://letsencrypt.org/) (por ejemplo con [Certbot](https://certbot.eff.org/)) para un certificado real, de confianza para navegadores y Android, gratis y renovable automáticamente. Apunta `TLS_CERT_PATH` / `TLS_KEY_PATH` a los `fullchain.pem` / `privkey.pem` resultantes. En cuanto el HTTPS real esté activo, añade ese mismo origen de dominio (`https://tu-dominio.example`) a `ARMOR_STUDIO_ORIGIN` para que la comprobación CORS de Studio lo acepte.
+* **Pruebas locales, sin dominio** - un certificado autofirmado basta para ejercitar el camino de código HTTPS/WSS (los navegadores y la mayoría de clientes HTTP avisarán o pedirán confiar en él explícitamente, lo cual es normal y correcto para pruebas):
+  ```bash
+  openssl req -x509 -newkey rsa:2048 -nodes \
+    -keyout key.pem -out cert.pem -days 365 -subj "/CN=localhost"
+  ```
+  Después fija `TLS_CERT_PATH=./cert.pem` y `TLS_KEY_PATH=./key.pem`.
+
+Para un despliegue solo-LAN que prefiera no gestionar un certificado directamente, el propio perfil `tls` de Compose de `ARMOR-DEVOPS` pone un proxy inverso Caddy (con su propia autoridad de certificación local) delante de Studio - ver `docs/BACKUP_AND_TLS.md` de ese repositorio. Los dos enfoques son independientes: el propio `TLS_CERT_PATH`/`TLS_KEY_PATH` de este servidor es el que funciona con un certificado real, de confianza pública, para un acceso remoto genuino.
 
 ## 📂 Estructura del repositorio
 

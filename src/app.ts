@@ -6,7 +6,9 @@
 import cors from "cors";
 import express from "express";
 import rateLimit from "express-rate-limit";
+import fs from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import { WebSocketServer } from "ws";
 import type { ArmorConfig } from "./config.js";
 import { createContext, type AppContext, type ContextOverrides } from "./context.js";
@@ -77,7 +79,17 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     response.status(status >= 400 && status < 500 ? status : 500).json({ error: status >= 400 && status < 500 ? "invalid request" : "internal error" });
   });
 
-  const server = createServer(app);
+  // config.tls is only ever set when readConfig() already found both
+  // TLS_CERT_PATH and TLS_KEY_PATH pointing at an existing file - a real,
+  // specific fs error (permissions, an expired/malformed PEM) still fails
+  // start-up loudly right here rather than silently falling back to plain
+  // HTTP. The WebSocket 'upgrade' handling below is unchanged either way:
+  // an https.Server emits the same 'upgrade' event a plain http.Server
+  // does, so /api/v1/events becomes WSS the moment this does, with no
+  // separate configuration.
+  const server: Server = config.tls
+    ? (createHttpsServer({ cert: fs.readFileSync(config.tls.certPath), key: fs.readFileSync(config.tls.keyPath) }, app) as unknown as Server)
+    : createServer(app);
   // A browser cannot set headers on a WebSocket: an operator session cookie is enough as well as the control token.
   server.on("upgrade", (request, socket, head) => {
     const reader = headerReader(request);
