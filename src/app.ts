@@ -19,6 +19,8 @@ import { registerHistoryRoutes } from "./routes/history.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerSolarRoutes } from "./routes/solar.js";
 import { registerElectricalRoutes } from "./routes/electrical.js";
+import { registerNetworkRoutes } from "./routes/network.js";
+import { networkTopic, parseNetworkMessage } from "./network.js";
 import { electricalTopic, parseElectricalMessage, parseElectricalResult } from "./electrical.js";
 import { parseSolarMessage, solarTopic } from "./solar.js";
 import { registerMediaRoutes } from "./routes/media.js";
@@ -46,14 +48,14 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   });
   // The site design and the electrical design have their own, larger body limit (routes/alarms.ts); everything else is small.
   const smallJson = express.json({ limit: "64kb", type: "application/json" });
-  app.use((request, response, next) => ((request.path === "/api/v1/site" || request.path === "/api/v1/electrical/design") && request.method === "PUT" ? next() : smallJson(request, response, next)));
+  app.use((request, response, next) => ((request.path === "/api/v1/site" || request.path === "/api/v1/electrical/design" || request.path === "/api/v1/network/design") && request.method === "PUT" ? next() : smallJson(request, response, next)));
   app.use(cors({ origin: config.studioOrigins, credentials: true, methods: ["GET", "POST", "PUT", "PATCH", "DELETE"] }));
   // Field-node ingest has its own, larger budget (routes/ingest.ts): a burst of node messages must never lock an operator out.
   // A signed-in operator is identified, so the console's own polling never spends the anonymous budget (which exists to slow a flood
   // from an unknown client); the sign-in route has its own, much tighter limit.
   app.use(rateLimit({
     windowMs: 60_000, limit: 240, standardHeaders: "draft-8", legacyHeaders: false,
-    skip: request => (request.method === "POST" && (request.path === "/api/v1/telemetry" || request.path === "/api/v1/health" || request.path === "/api/v1/solar" || request.path === "/api/v1/electrical/readings")) || context.operatorAuthorized(request),
+    skip: request => (request.method === "POST" && (request.path === "/api/v1/telemetry" || request.path === "/api/v1/health" || request.path === "/api/v1/solar" || request.path === "/api/v1/electrical/readings" || request.path === "/api/v1/network/state")) || context.operatorAuthorized(request),
   }));
 
   registerIngestRoutes(app, context, Date.now(), version);
@@ -62,6 +64,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerDeviceRoutes(app, context);
   registerSolarRoutes(app, context);
   registerElectricalRoutes(app, context);
+  registerNetworkRoutes(app, context);
   registerAlarmRoutes(app, context);
   registerSystemRoutes(app, context, version);
   registerHistoryRoutes(app, context);
@@ -96,6 +99,17 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     mqtt.on("connect", () => mqtt.subscribe("armor/solar/+/+/state", { qos: 1 }));
     // The nodes that measure the house's electrical network: armor/electrical/{node}/state, the same rule for the node named in the body.
     mqtt.on("connect", () => mqtt.subscribe("armor/electrical/+/state", { qos: 1 }));
+    // The nodes that watch the local network: armor/network/{node}/state, the same rule for the node named in the body.
+    mqtt.on("connect", () => mqtt.subscribe("armor/network/+/state", { qos: 1 }));
+    mqtt.on("message", (topic, raw) => {
+      const named = networkTopic(topic);
+      if (!named) return;
+      try {
+        const message = parseNetworkMessage(JSON.parse(raw.toString("utf8")));
+        if (message.node_id !== named) throw new Error("node_id does not match the topic");
+        context.networkNodes.ingest(message);
+      } catch (error) { console.warn("ARMOR_MQTT=REJECTED", error instanceof Error ? error.message : "invalid network payload"); }
+    });
     // What a node answers to a command to its switch. A command is never retained and is sent at most once: an old one must never be delivered later, and a node that
     // was away misses it (the node's own arm and token make a late one harmless anyway).
     mqtt.on("connect", () => mqtt.subscribe("armor/electrical/+/result", { qos: 1 }));
@@ -129,7 +143,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     });
   }
   // Silence and dwell time are time-driven: they need a clock, not a message.
-  const sweeper = setInterval(() => { context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); }, 2_000);
+  const sweeper = setInterval(() => { context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.networkNodes.sweep(); }, 2_000);
   sweeper.unref();
   // The camera watchdog: a first pass shortly after start, then on a fixed interval.
   const watchdogs: NodeJS.Timeout[] = [];
