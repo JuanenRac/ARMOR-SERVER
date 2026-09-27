@@ -104,6 +104,16 @@ def test_project(project: Path, manifest: dict[str, object]) -> None:
         command(project, [sys.executable, "-m", "pytest", "tests", "-q"], environment)
     elif name in NODE_PROJECTS:
         check_tool("npm", "npm is required; install Node.js 22 or newer")
+        # A fresh checkout (every CI run; a developer machine only the first
+        # time) has no node_modules yet - found for real when ARMOR-SERVER's
+        # and ARMOR-STUDIO's own CI runs failed with "Cannot find module"
+        # for every import, because typecheck ran before anything installed
+        # a single dependency. Reusing an existing tree (rather than
+        # reinstalling unconditionally) matters on a developer machine,
+        # where a running editor/linter can hold a native module's file
+        # open.
+        if not (project / "node_modules").is_dir():
+            command(project, [NPM, "ci"])
         command(project, [NPM, "run", "typecheck"])
         command(project, [NPM, "test"])
         command(project, [NPM, "run", "build"])
