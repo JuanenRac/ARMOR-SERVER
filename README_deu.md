@@ -76,6 +76,25 @@ flowchart LR
 * `.env.example` nach `.env` kopieren (von Git ignoriert) oder `run.bat` / `run.sh` beim ersten Lauf zufällige Geheimnisse erzeugen lassen.
 * Pflicht: `ARMOR_INGEST_TOKEN` und `ARMOR_CONTROL_TOKEN` (24 Zeichen oder mehr, alle verschieden) und `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD` (der erste Administrator).
 * Üblich: `ARMOR_HOST` / `ARMOR_PORT`, `ARMOR_DATA_DIR`, `ARMOR_FFMPEG_PATH` (Live-Video und Aufnahme), `ARMOR_MQTT_URL`, `ARMOR_STUDIO_ORIGIN`, `ARMOR_NODE_STALE_AFTER_S`, `ARMOR_CAMERA_CHECK_S`, `ARMOR_ALERT_DWELL_MS`, `ARMOR_ALERT_WEBHOOK_URL` und `ARMOR_COOKIE_SECURE` (hinter TLS auf `1`).
+* `TLS_CERT_PATH` / `TLS_KEY_PATH` - setzen Sie **beide**, um den Server (die REST-API + den WebSocket unter `/api/v1/events`, die sich denselben Listener teilen) von reinem HTTP/WS auf HTTPS/WSS umzustellen. Siehe „TLS / HTTPS" weiter unten. Beide unverändert zu lassen erhält das heutige reine HTTP-Verhalten; nur eine der beiden zu setzen wird beim Start abgelehnt, statt still bei HTTP zu bleiben.
+
+### 🔐 TLS / HTTPS
+
+Standardmäßig deaktiviert - dieser Server lief schon immer als reines HTTP/WS in einem vertrauenswürdigen LAN und tut das weiterhin, solange Sie es nicht aktivieren. Setzen Sie `TLS_CERT_PATH` und `TLS_KEY_PATH` auf ein PEM-Zertifikat und den passenden privaten Schlüssel, und der gemeinsame REST+WebSocket-Listener wechselt zu Nodes eigenem `https.createServer()` - `/api/v1/events` wird dabei automatisch zu WSS, ohne separate Konfiguration. Ein Zertifikats-/Schlüsselpfad, der gesetzt, aber unlesbar, fehlend oder ungültig ist, lässt den Start laut fehlschlagen (ein echter Fehler), statt still auf reines HTTP zurückzufallen.
+
+Das ist vor allem wichtig, sobald dieser Server über ein voll vertrauenswürdiges LAN hinaus erreichbar ist (zum Beispiel über eine Port-Weiterleitung am Router für echten Fernzugriff freigegeben) - reines HTTP bedeutet, dass der Studio-Login, das Kontroll-Token und jeder Kamera-/Alarmbefehl im Klartext über das Netzwerk laufen. Der `ARMOR-ANDROID-CONTROL`-Client selbst weigert sich schon genau deshalb, mit irgendetwas außerhalb einer privaten LAN-Adresse reines HTTP zu sprechen - er braucht einen echten `https://`-Ursprung, um sich überhaupt aus der Ferne zu verbinden.
+
+Ein Zertifikat bekommen:
+
+* **Sie besitzen bereits eine Domain, die auf diesen Server zeigt** - nutzen Sie [Let's Encrypt](https://letsencrypt.org/) (zum Beispiel über [Certbot](https://certbot.eff.org/)) für ein echtes, von Browsern und Android vertrauenswürdiges Zertifikat, kostenlos und automatisch erneuerbar. Verweisen Sie `TLS_CERT_PATH` / `TLS_KEY_PATH` auf die entstehenden `fullchain.pem` / `privkey.pem`. Sobald echtes HTTPS läuft, fügen Sie denselben Domain-Ursprung (`https://ihre-domain.example`) zu `ARMOR_STUDIO_ORIGIN` hinzu, damit Studios eigene CORS-Prüfung ihn akzeptiert.
+* **Lokales Testen, ohne Domain** - ein selbstsigniertes Zertifikat reicht aus, um den HTTPS/WSS-Codepfad zu prüfen (Browser und die meisten HTTP-Clients werden warnen oder ein explizites Vertrauen verlangen, was für Tests normal und in Ordnung ist):
+  ```bash
+  openssl req -x509 -newkey rsa:2048 -nodes \
+    -keyout key.pem -out cert.pem -days 365 -subj "/CN=localhost"
+  ```
+  Setzen Sie dann `TLS_CERT_PATH=./cert.pem` und `TLS_KEY_PATH=./key.pem`.
+
+Für eine reine LAN-Bereitstellung, die lieber kein Zertifikat direkt verwaltet, stellt das eigene Compose-Profil `tls` von `ARMOR-DEVOPS` einen Caddy-Reverse-Proxy (mit eigener lokaler Zertifizierungsstelle) vor Studio - siehe `docs/BACKUP_AND_TLS.md` dieses Repositorys. Die beiden Ansätze sind unabhängig voneinander: `TLS_CERT_PATH`/`TLS_KEY_PATH` dieses Servers ist derjenige, der mit einem echten, öffentlich vertrauenswürdigen Zertifikat für echten Fernzugriff funktioniert.
 
 ## 📂 Struktur des Repositorys
 

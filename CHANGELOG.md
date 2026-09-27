@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.2] - Native HTTPS/WSS, ported from HYDRA-UMC-SERVER
+
+- **Real gap, found while investigating why the operator's phone and browser both refuse a public-IP connection:** this server only ever created a plain `http.Server` - `ARMOR-ANDROID-CONTROL`'s own client deliberately refuses to send its password over plain HTTP to anything outside a private LAN address, and reaching Studio from outside its default CORS allow-list needs a real origin added to `ARMOR_STUDIO_ORIGIN` either way. Neither app was wrong: this server genuinely had no way to serve real HTTPS.
+- `TLS_CERT_PATH`/`TLS_KEY_PATH` now switch the shared REST + `/api/v1/events` WebSocket listener to `https.createServer()`/WSS, the same environment-variable convention HYDRA-UMC-SERVER's own already-real TLS support uses - off (today's plain HTTP) unless both are set. Stricter than that version in one way: setting only one of the two is a configuration error at start-up rather than a silent fallback to plain HTTP, so a typo'd variable name can never leave an operator believing the server is on HTTPS when it is not.
+- Documented in all 7 README languages: how to get a real, publicly-trusted certificate via Let's Encrypt/Certbot for genuine remote access, and how this is independent of `ARMOR-DEVOPS`'s own Caddy-based `tls` Compose profile (a LAN-only, self-signed-CA alternative for whoever would rather not manage a certificate directly).
+- **Tests:** 3 new (`tests/tls.test.ts`) - both variables must be set together, a path that does not exist is refused at configuration time, and a real self-signed certificate generated on the fly makes the shared listener genuinely answer over HTTPS. Never run yet with a real publicly-trusted certificate on real hardware.
+
 ## [0.3.1]
 
 - A GitHub Actions CI baseline (`.github/workflows/ci.yml`): validates the manifest, the version, CHANGELOG.md's heading, the seven README translations' structure and its own local Markdown links, then runs this project's real build/test through `tools/armor_project_tool.py build-test .` (vendored from ARMOR-COMMON, alongside `tools/armor_ci_validate.py` and `tools/_armor_readme_parity.py`, which do the manifest/docs checking).
