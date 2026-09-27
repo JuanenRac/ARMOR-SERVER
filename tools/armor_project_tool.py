@@ -317,7 +317,7 @@ def run_project(project: Path, manifest: dict[str, object]) -> None:
         command(project, [NPM, "run", "dev"], environment)
     elif name == "ARMOR-DEVOPS":
         command(project, ["docker", "compose", "up", "--build"])
-    elif name in {"ARMOR-RADAR", "ARMOR-ANDROID-CONTROL", "ARMOR-HARDWARE", "ARMOR-DOCS", "ARMOR-UPDATER"}:
+    elif name in {"ARMOR-RADAR", "ARMOR-SOLAR", "ARMOR-ELECTRICAL", "ARMOR-ANDROID-CONTROL", "ARMOR-HARDWARE", "ARMOR-DOCS", "ARMOR-UPDATER"}:
         print(f"{name} has no safe generic runtime command. Use build-test to validate it, then follow its project documentation for hardware or IDE deployment.")
     else:
         raise RuntimeError(f"no run rule registered for {name}")
