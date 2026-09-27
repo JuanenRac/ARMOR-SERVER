@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.1]
+
+- A GitHub Actions CI baseline (`.github/workflows/ci.yml`): validates the manifest, the version, CHANGELOG.md's heading, the seven README translations' structure and its own local Markdown links, then runs this project's real build/test through `tools/armor_project_tool.py build-test .` (vendored from ARMOR-COMMON, alongside `tools/armor_ci_validate.py` and `tools/_armor_readme_parity.py`, which do the manifest/docs checking).
+
 ## [0.3.0] - The local network
 
 - **The state of the network from the ARMOR-NETWORK nodes:** `POST /api/v1/network/state` (the ingest token) and the MQTT topic `armor/network/+/state` take the `network` message of ARMOR-COMMON 0.2.5, parsed strictly like the shared vectors say (a node that names another node in its body is refused, a device and an event are named once, an event names what it is about). The store keeps the latest state of every node (stale after ninety seconds without a message), a history of the internet (its state, latency and loss) and of the interface's traffic, the outages (kept in `network-outages.json`, so a restart does not forget them) and the latest events, told once each however many times a node repeats them; the backlog of a node the server has just met is history, not news.

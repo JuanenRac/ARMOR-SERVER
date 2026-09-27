@@ -1,0 +1,77 @@
+# =============================================================================
+# A.R.M.O.R. - CI baseline workflow
+# Copyright (C) 2026 JuanenRac (Electro Hobby 3D)
+# GPL-3.0-or-later - see LICENSE
+# =============================================================================
+# CANONICAL TEMPLATE. Vendored as .github/workflows/ci.yml into every
+# A.R.M.O.R. repository by ARMOR-DOCS/tools/sync_ci_tools.py. Edit here,
+# then re-run that script - do not hand-edit a vendored copy.
+#
+# Every step's toolchain setup is conditional on the file that stack always
+# carries (package.json, gradlew, a CMakeLists.txt under tests/, an
+# armor.project.json stack string containing "OpenSCAD", a docker-compose
+# file, or none of those for a pure-Python or pure-Markdown repository), so
+# one workflow file serves all fourteen A.R.M.O.R. repositories plus
+# ARMOR-UPDATER without fourteen bespoke copies. The real build/test
+# dispatch itself lives in armor_project_tool.py (vendored alongside this
+# file), not duplicated into YAML.
+name: A.R.M.O.R. CI baseline
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    name: Validate manifest, docs and run the real build/test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Validate manifest, version, changelog and README parity
+        run: python tools/armor_ci_validate.py
+
+      - name: Set up Node.js
+        if: ${{ hashFiles('package.json') != '' }}
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Set up Java for the Android client
+        if: ${{ hashFiles('gradlew') != '' }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Make the Gradle wrapper executable
+        if: ${{ hashFiles('gradlew') != '' }}
+        run: chmod +x gradlew
+
+      - name: Set up CMake and a C++ compiler for the field-node core tests
+        if: ${{ hashFiles('tests/CMakeLists.txt') != '' }}
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.28"
+
+      - name: Install OpenSCAD for the parametric enclosure
+        if: ${{ hashFiles('scad/node_enclosure.scad') != '' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes openscad
+
+      - name: Run this project's real build and test
+        run: python tools/armor_project_tool.py build-test .
+        env:
+          PYTHONPATH: src
