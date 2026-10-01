@@ -50,3 +50,14 @@ test("the alarms of the network say which device, which address, which MAC, whic
   assert.equal(byCode.network_arp_conflict?.mac_now, "11:22:33:44:55:66");
   assert.equal(byCode.network_arp_conflict?.mac_before, "aa:bb:cc:00:00:02");
 });
+
+test("disarming ends the intrusion alarms and settles them: they go to the record, not on waiting for a second click", () => {
+  const alarms = centre();
+  const rules = new AlarmRules(alarms, () => "armed");
+  alarms.raise("door", { source: { type: "device", id: "d1" }, severity: "high", code: "door_open" });
+  alarms.raise("intr", { source: { type: "node", id: "n1" }, severity: "critical", code: "intrusion" });
+  alarms.raise("net", { source: { type: "network", id: "n" }, severity: "warning", code: "network_port_opened" });
+  rules.handleEvent({ type: "mode", mode: "disarmed" } as never);
+  assert.deepEqual(alarms.active().map(alarm => alarm.code), ["network_port_opened"], "the others are not about the mode: they stay");
+  assert.deepEqual(alarms.recent().map(alarm => [alarm.code, alarm.acknowledged_by]).sort(), [["door_open", "disarm"], ["intrusion", "disarm"]]);
+});

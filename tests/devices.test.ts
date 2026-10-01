@@ -145,12 +145,14 @@ test("registry, state and alarms over HTTP: a door while armed, smoke at any tim
     alarms = (await call(running.base, cookie, "GET", "/api/v1/alarms")).body;
     assert.equal(alarms.recent.length, 1);
     assert.equal(alarms.recent[0].acknowledged_by, "admin");
-    // disarming ends the intrusion alarm
+    // disarming ends the intrusion alarm and settles it: it goes to the record without a second click
     await call(running.base, cookie, "POST", "/api/v1/mode", { mode: "disarmed" });
     alarms = (await call(running.base, cookie, "GET", "/api/v1/alarms")).body;
-    assert.ok(alarms.active[0].cleared_at, "the door alarm ended with the disarm");
-    assert.equal((await call(running.base, cookie, "POST", "/api/v1/alarms/acknowledge")).body.acknowledged, 1);
-    assert.equal((await call(running.base, cookie, "GET", "/api/v1/alarms")).body.active.length, 0);
+    assert.equal(alarms.active.length, 0, "the door alarm ended with the disarm and was settled");
+    const doorAlarm = alarms.recent.find((alarm: { code: string }) => alarm.code === "door_open");
+    assert.equal(doorAlarm?.acknowledged_by, "disarm");
+    assert.ok(doorAlarm?.cleared_at);
+    assert.equal((await call(running.base, cookie, "POST", "/api/v1/alarms/acknowledge")).body.acknowledged, 0);
     assert.equal((await call(running.base, cookie, "POST", "/api/v1/alarms/alm-99999/acknowledge")).status, 404);
     assert.equal((await call(running.base, cookie, "POST", "/api/v1/mode", { mode: "loud" })).status, 400);
     // it all reached the history

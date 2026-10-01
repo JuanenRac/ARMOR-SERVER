@@ -131,6 +131,13 @@ export class AlarmCentre {
     return alarm;
   }
 
+  /** Acknowledge the alarms that match (those somebody has not yet), on behalf of `by`. */
+  acknowledgeMatching(test: (alarm: Alarm) => boolean, by: string): number {
+    let count = 0;
+    for (const alarm of this.#alarms) if (!alarm.acknowledged_at && test(alarm) && this.acknowledge(alarm.id, by)) count += 1;
+    return count;
+  }
+
   acknowledgeAll(by: string): number {
     let count = 0;
     for (const alarm of this.#alarms) if (!alarm.acknowledged_at && this.acknowledge(alarm.id, by)) count += 1;
@@ -206,7 +213,12 @@ export class AlarmRules {
         break;
       case "mode":
         // Disarming ends every intrusion alarm: nothing is being defended any more.
-        if (event.mode === "disarmed") this.centre.clearMatching(alarm => armedOnlyCodes.has(alarm.code) || alarm.code === "node_down" || alarm.code === "camera_down");
+        if (event.mode === "disarmed") {
+          const ends = (alarm: Alarm) => armedOnlyCodes.has(alarm.code) || alarm.code === "node_down" || alarm.code === "camera_down";
+          this.centre.clearMatching(ends);
+          // Whoever disarms has dealt with them: they do not wait for a second click to leave the list (they go to the record, with "disarm" as who).
+          this.centre.acknowledgeMatching(ends, "disarm");
+        }
         break;
       default: break;
     }
