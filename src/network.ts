@@ -30,10 +30,16 @@ export type NetworkInternet = {
   state: InternetState; since_ms?: number; gateway_ok?: boolean; latency_ms?: number; loss_percent?: number; probes?: NetworkProbe[];
   last_outage?: { started_ms: number; ended_ms: number; duration_s: number }; outages_24h?: number; downtime_24h_s?: number;
 };
+/** What the internet sees of the connection, asked of a public service by the node now and then. */
+export type NetworkPublic = { ip: string; hostname?: string; city?: string; region?: string; country?: string; org?: string; timezone?: string; checked_ms: number; changed_ms?: number };
+export const COMMAND_TYPES = ["scan_now", "ping", "traceroute", "wake", "ports", "http"] as const;
+export type CommandType = (typeof COMMAND_TYPES)[number];
+/** What a node did with a manual order the server handed it. */
+export type NetworkResult = { id: string; type: CommandType; ok: boolean; finished_ms: number; device_id?: string; output?: string; ports?: NetworkPort[]; latency_ms?: number };
 export type NetworkMessage = {
   kind: "network"; node_id: string; timestamp_ms: number;
   interface: { name: string; ip: string; cidr: string; gateway?: string; rx_bps?: number; tx_bps?: number };
-  internet: NetworkInternet; devices: NetworkDevice[]; events?: NetworkEvent[]; scan?: { last_ms: number; hosts: number; duration_ms?: number };
+  internet: NetworkInternet; devices: NetworkDevice[]; events?: NetworkEvent[]; scan?: { last_ms: number; hosts: number; duration_ms?: number }; public?: NetworkPublic; results?: NetworkResult[];
 };
 
 const OCTET = "(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])";
@@ -150,9 +156,37 @@ function parseEvent(raw: unknown, index: number): NetworkEvent {
   return event as unknown as NetworkEvent;
 }
 
+function parsePublic(value: unknown): NetworkPublic {
+  const item = record(value, "public");
+  onlyKnown(item, ["ip", "hostname", "city", "region", "country", "org", "timezone", "checked_ms", "changed_ms"], "public");
+  for (const key of ["ip", "checked_ms"]) if (!(key in item)) throw new Error(`the public block is missing ${key}`);
+  if (!text(item.ip, 1, 45)) throw new Error("invalid public.ip");
+  for (const [key, max] of [["hostname", 128], ["city", 64], ["region", 64], ["country", 64], ["org", 128], ["timezone", 64]] as const) if (key in item && !text(item[key], 1, max)) throw new Error(`invalid public.${key}`);
+  if (!whole(item.checked_ms, 0) || ("changed_ms" in item && !whole(item.changed_ms, 0))) throw new Error("invalid time of public");
+  return item as unknown as NetworkPublic;
+}
+
+function parseResult(raw: unknown, index: number): NetworkResult {
+  const item = record(raw, `result ${index}`);
+  onlyKnown(item, ["id", "type", "ok", "finished_ms", "device_id", "output", "ports", "latency_ms"], `result ${index}`);
+  for (const key of ["id", "type", "ok", "finished_ms"]) if (!(key in item)) throw new Error(`result ${index} is missing ${key}`);
+  if (typeof item.id !== "string" || !EVENT_ID.test(item.id)) throw new Error(`invalid result ${index}.id`);
+  if (typeof item.type !== "string" || !(COMMAND_TYPES as readonly string[]).includes(item.type)) throw new Error(`invalid result ${index}.type`);
+  if (typeof item.ok !== "boolean") throw new Error(`invalid result ${index}.ok`);
+  if (!whole(item.finished_ms, 0)) throw new Error(`invalid result ${index}.finished_ms`);
+  if ("device_id" in item && (typeof item.device_id !== "string" || !DEVICE_ID.test(item.device_id))) throw new Error(`invalid result ${index}.device_id`);
+  if ("output" in item && (typeof item.output !== "string" || length(item.output) > 2000)) throw new Error(`invalid result ${index}.output`);
+  if ("latency_ms" in item && !bounded(item.latency_ms, 0, 600_000)) throw new Error(`invalid result ${index}.latency_ms`);
+  if ("ports" in item) {
+    if (!Array.isArray(item.ports) || item.ports.length > 64) throw new Error(`invalid ports of result ${index}`);
+    item.ports.forEach((port, at) => parsePort(port, index, at));
+  }
+  return item as unknown as NetworkResult;
+}
+
 export function parseNetworkMessage(value: unknown): NetworkMessage {
   const body = record(value, "network message");
-  onlyKnown(body, ["kind", "node_id", "timestamp_ms", "interface", "internet", "devices", "events", "scan"], "network message");
+  onlyKnown(body, ["kind", "node_id", "timestamp_ms", "interface", "internet", "devices", "events", "scan", "public", "results"], "network message");
   for (const key of ["kind", "node_id", "timestamp_ms", "interface", "internet", "devices"]) if (!(key in body)) throw new Error(`the network message is missing ${key}`);
   if (body.kind !== "network") throw new Error("invalid kind");
   const node = readNodeId(body), timestamp = readTimestamp(body);
@@ -173,7 +207,15 @@ export function parseNetworkMessage(value: unknown): NetworkMessage {
     if (!whole(item.last_ms, 0) || !whole(item.hosts, 0, 1024) || ("duration_ms" in item && !whole(item.duration_ms, 0))) throw new Error("invalid scan");
     scan = item as unknown as NetworkMessage["scan"];
   }
-  return { kind: "network", node_id: node, timestamp_ms: timestamp, interface: iface, internet, devices, ...(events ? { events } : {}), ...(scan ? { scan } : {}) };
+  let publicInfo: NetworkPublic | undefined;
+  if ("public" in body) publicInfo = parsePublic(body.public);
+  let results: NetworkResult[] | undefined;
+  if ("results" in body) {
+    if (!Array.isArray(body.results) || body.results.length > 16) throw new Error("invalid results");
+    results = body.results.map(parseResult);
+    if (new Set(results.map(result => result.id)).size !== results.length) throw new Error("a result id must appear once");
+  }
+  return { kind: "network", node_id: node, timestamp_ms: timestamp, interface: iface, internet, devices, ...(events ? { events } : {}), ...(scan ? { scan } : {}), ...(publicInfo ? { public: publicInfo } : {}), ...(results ? { results } : {}) };
 }
 
 /** armor/network/{node_id}/state as node_id, or undefined when the topic is not one. */
@@ -185,7 +227,7 @@ export function networkTopic(topic: string): string | undefined {
 
 // ---- what an operator knows about a device -------------------------------------------------------------------------------------------------
 
-export type DeviceNote = { name?: string; notes?: string; trusted?: boolean; kind?: DeviceKind; updated_at: string };
+export type DeviceNote = { name?: string; notes?: string; trusted?: boolean; kind?: DeviceKind; /** Left out of the list (still known to the node). */ hidden?: boolean; /** Tell me the next time it comes onto the network (once). */ watch?: boolean; updated_at: string };
 export class NoteInvalid extends Error {}
 
 /** The names, notes and "known" marks an operator gives devices, by device id, kept in a file. The nodes never see them. */
@@ -207,16 +249,27 @@ export class DeviceNotes {
   get(id: string): DeviceNote | undefined { return this.#notes.get(id); }
   all(): Record<string, DeviceNote> { return Object.fromEntries(this.#notes); }
   isTrusted(id: string): boolean { return this.#notes.get(id)?.trusted === true; }
+  isWatched(id: string): boolean { return this.#notes.get(id)?.watch === true; }
+  /** A watched device came back: the watch is spent (it is asked for again when wanted). */
+  spendWatch(id: string): void {
+    const note = this.#notes.get(id);
+    if (!note?.watch) return;
+    delete note.watch; note.updated_at = this.#now().toISOString();
+    this.#save();
+  }
 
   /** Change what is kept about a device. Only the fields given change; an empty name or note removes it. Refuses what does not look like a note. */
   set(id: string, changes: unknown): DeviceNote {
     if (!DEVICE_ID.test(id)) throw new NoteInvalid("invalid device id");
     const input = record(changes, "the notes");
-    onlyKnown(input, ["name", "notes", "trusted", "kind"], "the notes");
+    onlyKnown(input, ["name", "notes", "trusted", "kind", "hidden", "watch"], "the notes");
     const next: DeviceNote = { ...(this.#notes.get(id) ?? { updated_at: "" }), updated_at: this.#now().toISOString() };
     if ("name" in input) { if (typeof input.name !== "string" || length(input.name) > 48) throw new NoteInvalid("the name is up to 48 characters"); if (input.name.trim()) next.name = input.name.trim(); else delete next.name; }
     if ("notes" in input) { if (typeof input.notes !== "string" || length(input.notes) > 300) throw new NoteInvalid("the notes are up to 300 characters"); if (input.notes.trim()) next.notes = input.notes.trim(); else delete next.notes; }
     if ("trusted" in input) { if (typeof input.trusted !== "boolean") throw new NoteInvalid("trusted is true or false"); if (input.trusted) next.trusted = true; else delete next.trusted; }
+    for (const flag of ["hidden", "watch"] as const) {
+      if (flag in input) { if (typeof input[flag] !== "boolean") throw new NoteInvalid(`${flag} is true or false`); if (input[flag]) next[flag] = true; else delete next[flag]; }
+    }
     if ("kind" in input) { if (input.kind === "" || input.kind === null) delete next.kind; else if (typeof input.kind !== "string" || !(DEVICE_KINDS as readonly string[]).includes(input.kind)) throw new NoteInvalid("unknown kind of device"); else next.kind = input.kind as DeviceKind; }
     if (!this.#notes.has(id) && this.#notes.size >= DeviceNotes.MAX) throw new NoteInvalid("too many devices with notes");
     this.#notes.set(id, next);

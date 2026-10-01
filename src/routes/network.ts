@@ -9,13 +9,14 @@ import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { hasBearer } from "../http/auth.js";
 import { NoteInvalid, parseNetworkMessage } from "../network.js";
+import { CommandInvalid } from "../network_commands.js";
 import { MAX_SITE_BYTES, SiteConflict, SiteInvalid } from "../site.js";
 
 const NODE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const DEVICE = /^[a-z0-9][a-z0-9:._-]{0,63}$/;
 
 export function registerNetworkRoutes(app: Express, context: AppContext): void {
-  const { config, networkNodes, networkNotes, network, alarmRules, audit, requireOperator, requireAdmin, studioUser } = context;
+  const { config, networkNodes, networkNotes, networkCommands, network, alarmRules, audit, requireOperator, requireAdmin, studioUser } = context;
   const ingestLimit = rateLimit({ windowMs: 60_000, limit: 1_200, standardHeaders: "draft-8", legacyHeaders: false });
   const actor = (request: Parameters<typeof studioUser>[0]): string => studioUser(request)?.username ?? "operator";
   const body = (request: { body?: unknown }): Record<string, unknown> => (typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {});
@@ -23,17 +24,23 @@ export function registerNetworkRoutes(app: Express, context: AppContext): void {
   app.post("/api/v1/network/state", ingestLimit, (request, response) => {
     if (!hasBearer(request, config.ingestToken)) return response.sendStatus(401);
     try {
-      networkNodes.ingest(parseNetworkMessage(request.body));
-      return response.status(202).json({ accepted: true });
+      const message = parseNetworkMessage(request.body);
+      networkNodes.ingest(message);
+      networkCommands.record(message.node_id, message.results);
+      // The answer carries the manual orders waiting for this node (handed out once); a node that does not look for them simply ignores the field.
+      return response.status(202).json({ accepted: true, commands: networkCommands.take(message.node_id) });
     } catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "invalid network message" }); }
   });
 
   // What an operator sees: every node with its devices (each with the note an operator gave it, if any), the sums, the latest events and the outages.
-  app.get("/api/v1/network", requireOperator, (_request, response) => {
+  app.get("/api/v1/network", requireOperator, (request, response) => {
     const notes = networkNotes.all();
+    const showHidden = request.query.hidden === "1";
     const nodes = networkNodes.list().map(view => ({
       node_id: view.node_id, received_at: view.received_at, stale: view.stale, interface: view.state.interface, internet: view.state.internet, ...(view.state.scan ? { scan: view.state.scan } : {}),
-      devices: view.state.devices.map(device => ({ ...device, ...(notes[device.id] ? { note: notes[device.id] } : {}) })),
+      ...(view.state.public ? { public: view.state.public } : {}),
+      devices: view.state.devices.filter(device => showHidden || !notes[device.id]?.hidden).map(device => ({ ...device, ...(notes[device.id] ? { note: notes[device.id] } : {}) })),
+      hidden: view.state.devices.filter(device => notes[device.id]?.hidden).length,
     }));
     response.json({ nodes, totals: networkNodes.totals(), events: networkNodes.events(100), outages: networkNodes.outages().slice(0, 50) });
   });
@@ -48,10 +55,40 @@ export function registerNetworkRoutes(app: Express, context: AppContext): void {
     return response.json({ node_id: node, minutes, samples });
   });
 
+  // ---- manual orders for a node: a sweep now, a ping, a traceroute, a wake-up, the ports or the web page of one device ----
+  const commandLimit = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "too many orders" } });
+  const commandView = (record: ReturnType<typeof networkCommands.get>) => record && ({ id: record.command.id, node_id: record.node_id, type: record.command.type, device_id: record.command.device_id, status: record.status, by: record.by, created_at: record.created_at, ...(record.result ? { result: record.result } : {}) });
+  app.post("/api/v1/network/commands", requireOperator, commandLimit, (request, response) => {
+    const input = body(request);
+    const nodes = networkNodes.list();
+    const nodeId = typeof input.node_id === "string" ? input.node_id : nodes[0]?.node_id;
+    const node = nodes.find(item => item.node_id === nodeId);
+    if (!node) return response.status(404).json({ error: "no such network node", code: "unknown_node" });
+    if (node.stale) return response.status(409).json({ error: "the network node is not reporting", code: "node_offline" });
+    const deviceId = typeof input.device_id === "string" ? input.device_id : "";
+    if (deviceId && !DEVICE.test(deviceId)) return response.status(400).json({ error: "invalid device id", code: "invalid_device" });
+    try {
+      const record = networkCommands.enqueue(node.node_id, input, deviceId ? networkNodes.device(node.node_id, deviceId) : undefined, actor(request));
+      audit.record({ action: "network.command", outcome: "allowed", actor: actor(request), target: `${node.node_id}/${record.command.device_id ?? "-"}`, detail: record.command.type });
+      return response.status(202).json(commandView(record));
+    } catch (error) {
+      if (error instanceof CommandInvalid) return response.status(400).json({ error: error.message, code: error.code });
+      return response.status(500).json({ error: "internal error" });
+    }
+  });
+  app.get("/api/v1/network/commands", requireOperator, (_request, response) => response.json({ commands: networkCommands.recent().map(commandView) }));
+  app.get("/api/v1/network/commands/:id", requireOperator, (request, response) => {
+    const record = networkCommands.get(String(request.params.id));
+    return record ? response.json(commandView(record)) : response.status(404).json({ error: "no such order", code: "not_found" });
+  });
+
   // The names, notes and "known" marks of the devices. Marking a device as known is a decision about security (it silences the alarm of a new device), so it is an administrator's.
-  app.put("/api/v1/network/devices/:id", requireAdmin, (request, response) => {
+  app.put("/api/v1/network/devices/:id", requireOperator, (request, response) => {
     const id = String(request.params.id);
     if (!DEVICE.test(id)) return response.status(400).json({ error: "invalid device id", code: "invalid_device" });
+    // Naming a device, hiding it or asking to be told when it comes back is for a signed-in operator (not the service token); "known" is a decision about security.
+    if (!studioUser(request)) return response.sendStatus(401);
+    if ("trusted" in body(request) && studioUser(request)?.role !== "admin") return response.status(403).json({ error: "an administrator is required to mark a device as known", code: "forbidden" });
     try {
       const note = networkNotes.set(id, body(request));
       if (note.trusted) alarmRules.handleNetworkTrust(id);

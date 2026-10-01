@@ -26,6 +26,7 @@ import { SolarStore } from "./solar.js";
 import { ElectricalStore } from "./electrical.js";
 import { SwitchingService } from "./electrical_switching.js";
 import { DeviceNotes, NetworkStore } from "./network.js";
+import { NetworkCommands } from "./network_commands.js";
 import { SolarRegistry } from "./solar_registry.js";
 import { AlertNotifier } from "./notify.js";
 import { FileStatePersistence } from "./persistence.js";
@@ -56,6 +57,8 @@ export type AppContext = {
   /** What the ARMOR-NETWORK nodes see on the local network, the names an operator gave the devices, and the network design drawn in Studio. */
   networkNodes: NetworkStore;
   networkNotes: DeviceNotes;
+  /** The manual orders waiting for an ARMOR-NETWORK node and what it reported of them. */
+  networkCommands: NetworkCommands;
   network: SiteStore;
   /** The one way a command reaches an electrical node's switch: off unless the operator turned it on (see electrical_switching.ts). */
   electricalSwitching: SwitchingService;
@@ -88,8 +91,11 @@ export type ContextOverrides = Partial<Pick<AppContext, "audit">> & { broadcast?
 export function createContext(config: ArmorConfig, overrides: ContextOverrides = {}): AppContext {
   const audit = overrides.audit ?? createAuditLog(config.dataDir);
   const warn = (message: string) => console.warn(message);
-  const studioSessions = new SessionStore({ cookieName: "armor_studio_session", cookiePath: "/", ttlMs: config.studioSessionTtlMs, secure: config.cookieSecure, file: path.join(config.dataDir, "sessions.json") });
-  const operatorSessions = new SessionStore({ cookieName: "armor_operator_session", cookiePath: "/api/v1", ttlMs: config.operatorSessionTtlMs, secure: config.cookieSecure });
+  // The name of a session cookie depends on whether the server speaks HTTPS: a browser that once met this server over HTTPS keeps its Secure cookie for the
+  // host, and a page over plain HTTP is not allowed to replace a Secure cookie of the same name - the login seemed to work and then nothing stuck (found for real
+  // after the HTTPS trial was undone). Different names for the two cases cannot shadow each other.
+  const studioSessions = new SessionStore({ cookieName: config.cookieSecure ? "__Host-armor_studio_sid" : "armor_studio_sid", cookiePath: "/", ttlMs: config.studioSessionTtlMs, secure: config.cookieSecure, file: path.join(config.dataDir, "sessions.json") });
+  const operatorSessions = new SessionStore({ cookieName: config.cookieSecure ? "__Secure-armor_operator_sid" : "armor_operator_sid", cookiePath: "/api/v1", ttlMs: config.operatorSessionTtlMs, secure: config.cookieSecure });
   if (config.cameraKeyIsFallback) warn("ARMOR_CAMERA_CONFIG_KEY is not set; using the migration fallback derived from ARMOR_CONTROL_TOKEN");
   const vault = new CameraVault({
     file: path.join(config.dataDir, "cameras.json"),
@@ -135,18 +141,27 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const electricalNodes = new ElectricalStore({ now: overrides.now, onMessage: message => alarmRules.handleElectrical(message), onStale: (node, stale) => alarmRules.handleElectricalStale(node, stale) });
   const electrical = new SiteStore(path.join(config.dataDir, "electrical.json"), () => new Date(), "electrical design");
   const networkNotes = new DeviceNotes(path.join(config.dataDir, "network-devices.json"));
+  const networkCommands = new NetworkCommands(overrides.now ? () => new Date(overrides.now!()) : undefined);
+  // What a person needs to know about the device an alarm is about: the name they gave it (or the one it announces), where it is and who made it.
+  const describeNetworkDevice = (node: string, id: string): Record<string, unknown> => {
+    const device = networkNodes.device(node, id), note = networkNotes.get(id);
+    return {
+      device: note?.name ?? device?.hostname ?? device?.vendor ?? id, ip: device?.ip, mac: device?.mac ?? id, vendor: device?.vendor, hostname: device?.hostname,
+      kind: note?.kind ?? device?.kind, os: device?.os, online: device?.online,
+      open_ports: (device?.ports ?? []).slice(0, 16).map(port => `${port.port}/${port.proto}${port.service ? ` ${port.service}` : ""}`).join(", "),
+    };
+  };
   const networkNodes = new NetworkStore({
     now: overrides.now, notes: networkNotes, outagesFile: path.join(config.dataDir, "network-outages.json"),
     onMessage: message => alarmRules.handleNetwork(message),
-    onEvent: (node, event) => alarmRules.handleNetworkEvent(node, event, id => networkNotes.isTrusted(id), id => {
-      // What a person needs to know about the device an alarm is about: the name they gave it (or the one it announces), where it is and who made it.
-      const device = networkNodes.device(node, id), note = networkNotes.get(id);
-      return {
-        device: note?.name ?? device?.hostname ?? device?.vendor ?? id, ip: device?.ip, mac: device?.mac ?? id, vendor: device?.vendor, hostname: device?.hostname,
-        kind: note?.kind ?? device?.kind, os: device?.os, online: device?.online,
-        open_ports: (device?.ports ?? []).slice(0, 16).map(port => `${port.port}/${port.proto}${port.service ? ` ${port.service}` : ""}`).join(", "),
-      };
-    }),
+    onEvent: (node, event) => {
+      alarmRules.handleNetworkEvent(node, event, id => networkNotes.isTrusted(id), id => describeNetworkDevice(node, id));
+      // A device somebody asked to be told about came onto the network: say so once.
+      if (event.kind === "device_online" && event.device_id && networkNotes.isWatched(event.device_id)) {
+        alarmRules.handleNetworkWatched(node, event, id => describeNetworkDevice(node, id));
+        networkNotes.spendWatch(event.device_id);
+      }
+    },
     onStale: (node, stale) => alarmRules.handleNetworkStale(node, stale),
   });
   const network = new SiteStore(path.join(config.dataDir, "network.json"), () => new Date(), "network design");
@@ -181,7 +196,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(studioUser(request) ? 403 : 401).json({ error: "an administrator is required" });
   };
   return {
-    config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, networkNodes, networkNotes, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, networkNodes, networkNotes, networkCommands, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

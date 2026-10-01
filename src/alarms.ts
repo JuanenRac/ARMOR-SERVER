@@ -346,6 +346,13 @@ export class AlarmRules {
     else if (event.kind === "device_offline") this.centre.clear(`${base}:arp`);
   }
 
+  /** A device an operator asked to be told about came onto the network. */
+  handleNetworkWatched(node: string, event: NetworkEvent, describe: (deviceId: string) => Record<string, unknown>): void {
+    if (!event.device_id) return;
+    const id = `${node}/${event.device_id}`;
+    this.centre.raise(`network:${id}:watch:${event.id}`, { source: { type: "network", id }, severity: "warning", code: "network_watched_online", detail: { node, ...describe(event.device_id), came_at: new Date(event.at_ms).toISOString() } });
+  }
+
   /** An operator marked a device as known: its "new device" alarm has no reason left. */
   handleNetworkTrust(deviceId: string): void { this.centre.clearMatching(alarm => alarm.code === "network_new_device" && alarm.source.type === "network" && alarm.source.id.endsWith(`/${deviceId}`)); }
 
