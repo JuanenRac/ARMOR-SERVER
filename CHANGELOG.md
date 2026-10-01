@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.3] - Sessions that last, versions of the designs, alarms that say what they are about
+
+- **A signed-in console keeps its session.** A session in use is renewed once half of its life is gone (the cookie is set again with it), and the default life of a Studio session is 7 days instead of 8 hours (`ARMOR_STUDIO_SESSION_TTL_MS`, up to 30 days). One nobody uses still ends at its time. Found for real: the administrator kept losing the role in the Users tab.
+- **Nothing a design held is lost to a later save.** Before a save changes the site, electrical or network design, the design as it was is kept as a version (at most one every five minutes, and always when the save takes a lot away): the latest 48 plus the last of each of the past 30 days, in `<file>.history/`. `GET .../versions` lists them and `GET .../versions/{id}` returns one whole, to be taken back by saving it as the current one.
+- **Alarms carry the facts.** Every alarm of the network says which device (the name it was given, its address, MAC, maker, kind, open ports), which port opened and whether it is a risky one, which two MACs claim one address, and what the line was doing (latency, loss, which probes failed); the facts of an open alarm are kept up to date while it goes on.
+- **A slow or lossy line is no longer an alarm for the first minutes.** `network_degraded` is raised once the line has been so for 3 minutes (it was raised the moment it flipped, 32 times in three days on a connection that was fine).
+- **Alarms can be taken off the list.** `DELETE /api/v1/alarms/{id}` takes one away; `DELETE /api/v1/alarms` clears every alarm somebody has acknowledged, ended or not (it only took the ones both acknowledged and ended, so what was being lived with never went), and is the operator's to use (it was an administrator's and did nothing, without a word, when the role was missing).
+- 9 new tests (205 in all).
+
 ## [0.3.2] - Native HTTPS/WSS, ported from HYDRA-UMC-SERVER
 
 - **Real gap, found while investigating why the operator's phone and browser both refuse a public-IP connection:** this server only ever created a plain `http.Server` - `ARMOR-ANDROID-CONTROL`'s own client deliberately refuses to send its password over plain HTTP to anything outside a private LAN address, and reaching Studio from outside its default CORS allow-list needs a real origin added to `ARMOR_STUDIO_ORIGIN` either way. Neither app was wrong: this server genuinely had no way to serve real HTTPS.

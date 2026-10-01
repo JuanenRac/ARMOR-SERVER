@@ -60,6 +60,9 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     skip: request => (request.method === "POST" && (request.path === "/api/v1/telemetry" || request.path === "/api/v1/health" || request.path === "/api/v1/solar" || request.path === "/api/v1/electrical/readings" || request.path === "/api/v1/network/state")) || context.operatorAuthorized(request),
   }));
 
+  // A signed-in console that keeps working keeps its session: the cookie is renewed once half of its life has gone.
+  app.use((request, response, next) => { context.studioSessions.renew(request, response); context.operatorSessions.renew(request, response); next(); });
+
   registerIngestRoutes(app, context, Date.now(), version);
   registerSessionRoutes(app, context);
   registerUserRoutes(app, context);
