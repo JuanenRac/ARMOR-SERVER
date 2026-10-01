@@ -43,6 +43,7 @@
 * **Users:** names and passwords (scrypt hashes), an `admin` role that manages users and an `operator` role that operates; a changed password or role ends that user's other sessions.
 * **Devices, alarms and automations:** smoke, gas, flood, door, window, motion, climate, plug, light, siren and lock devices over MQTT or an authenticated push, with normalised state, availability and commands; alarms with a raised / acknowledged / cleared lifecycle; rules that switch devices when something happens; arm and disarm from a signed-in session; and the site design kept on the server for every client.
 * **Solar readings:** inverters and battery stacks (with each cell and the capacities) arrive by HTTP or MQTT, are validated by the shared contract, kept with a history (a sample every 30 s for a day) and totals, marked stale after two minutes, and raise four alarms (inverter fault, battery low, battery alarm, device silent).
+* **The machine, the network and the panel:** `GET /api/v1/system/metrics` (CPU, memory, disks, temperature, network and a short history of the machine it runs on), `GET/PUT /api/v1/system/connection` (the address and ports it listens on, an administrator's, applied at the next start), `GET /api/v1/panel/summary` (a few hundred bytes for small screens) and, for the network node, the logins an administrator keeps for a device's web administration: encrypted (AES-256-GCM), never sent back, and handed over only inside the one `inspect` order that needs them.
 
 ## 🔄 Architecture
 

@@ -3,6 +3,7 @@
 All notable changes to this project are documented here.
 
 ## [0.3.8] - Logins kept for the devices of the network
+- Documentation: the seven READMEs describe the machine metrics, the connection settings, the panel summary and the device logins.
 
 - **`PUT/DELETE /api/v1/network/devices/:id/login`** (administrators only): the user and password of a device's web administration are kept encrypted (AES-256-GCM) and never sent back; device listings only say whether there is a login and its user.
 - **`inspect` order:** the login travels only inside the answer to the node that must use it, once, and the order is refused (409) if none is kept.
