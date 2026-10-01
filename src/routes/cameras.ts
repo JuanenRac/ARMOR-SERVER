@@ -99,6 +99,7 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
   app.post("/api/v1/cameras/:id/stream-ticket", requireOperator, (request, response) => {
     const camera = withCamera(request, response);
     if (!camera) return;
+    relays.warm(camera);
     const grant = tickets.issue(camera.id);
     return response.status(201).json({ path: `/api/v1/cameras/${encodeURIComponent(camera.id)}/mjpeg?ticket=${encodeURIComponent(grant.ticket)}`, expiresAt: grant.expiresAt });
   });
