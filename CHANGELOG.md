@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.0] - Live video that starts faster
+
+- **Live video:** FFmpeg no longer spends seconds looking at the stream before it shows anything (a short probe and no input buffering), the pictures are 15 a second instead of 10, a viewer that joins gets the last picture of the camera at once instead of waiting for the next one, viewers only receive whole pictures, and a camera's relay stays warm for a minute after the last viewer leaves, so going to another menu and back does not start it over.
+- 2 new tests (229 in all).
+
 ## [0.3.9] - The services of the system, running or not
 
 - **`GET /api/v1/system/services`:** every service of the system - the programs of the machine (the server, Studio, the MQTT broker, the network node, and the AI and voice services when they are installed), read from `systemctl show` (state, process, memory, restarts, when it started, whether it starts at boot), and the field nodes (radars and electrical nodes, online or not). A program that is not installed is listed as such; where there is no systemd the programs show as unknown. Read only.
