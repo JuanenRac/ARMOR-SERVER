@@ -65,6 +65,11 @@ export class RelayManager {
     };
   }
 
+  /** Start a camera's relay ahead of its first viewer (one asked for a stream address, so a viewer is about to come): the picture is there when it connects. */
+  warm(camera: CameraConnection): void {
+    try { this.#stopWhenUnused(camera.id, this.#relayFor(camera)); } catch { /* no capacity, no FFmpeg or no complete address: the viewer will be told when it connects */ }
+  }
+
   /** Stop a camera's relay now (its connection was removed or changed). */
   stop(cameraId: string): void { this.#relays.get(cameraId)?.process.kill("SIGTERM"); }
 
@@ -96,7 +101,7 @@ export class RelayManager {
 
   #stopWhenUnused(cameraId: string, relay: Relay): void {
     if (relay.subscribers.size || relay.stopTimer) return;
-    relay.stopTimer = setTimeout(() => { if (!relay.subscribers.size) relay.process.kill("SIGTERM"); }, this.#options.idleStopMs ?? 60_000);
+    relay.stopTimer = setTimeout(() => { if (!relay.subscribers.size) relay.process.kill("SIGTERM"); }, this.#options.idleStopMs ?? 120_000);
   }
 
   #close(cameraId: string, relay: Relay): void {

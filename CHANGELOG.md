@@ -4,7 +4,8 @@ All notable changes to this project are documented here.
 
 ## [0.4.0] - Live video that starts faster
 
-- **Live video:** FFmpeg no longer spends seconds looking at the stream before it shows anything (a short probe and no input buffering), the pictures are 15 a second instead of 10, a viewer that joins gets the last picture of the camera at once instead of waiting for the next one, viewers only receive whole pictures, and a camera's relay stays warm for a minute after the last viewer leaves, so going to another menu and back does not start it over.
+- **Live video:** FFmpeg no longer spends seconds looking at the stream before it shows anything (a short probe and no input buffering), the pictures are 15 a second instead of 10, a viewer that joins gets the last picture of the camera at once instead of waiting for the next one, viewers only receive whole pictures, and a camera's relay stays warm after the last viewer leaves, so going to another menu and back does not start it over.
+- **A stream address warms the camera:** asking for one (which Studio does for the cameras on screen and the ones next to the large view) starts the camera's relay ahead of its first viewer, and a relay stays a couple of minutes after the last one leaves.
 - 2 new tests (229 in all).
 
 ## [0.3.9] - The services of the system, running or not
