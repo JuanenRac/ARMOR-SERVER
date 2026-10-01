@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "ecosystem": "A.R.M.O.R.",
   "name": "ARMOR-SERVER",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "role": "Central event coordinator and web API",
   "stack": "Node.js 22+ / TypeScript / Docker Compose",
   "technologies": [
@@ -16,7 +16,7 @@
   "maturity": "functional",
   "family": "Core Services",
   "parent": null,
-  "native_version": "0.3.8",
+  "native_version": "0.3.9",
   "build": "npm run typecheck && npm test && npm run build",
   "notes": "Provides a secured development API, WebSocket state relay and deterministic event reducer. Native HTTPS/WSS (TLS_CERT_PATH/TLS_KEY_PATH, same convention as HYDRA-UMC-SERVER's own) is real and tested against a real self-signed certificate, but has never been run with a real publicly-trusted certificate on real hardware. Broker, camera and field-device adapters remain separately validated deployment work."
 }
