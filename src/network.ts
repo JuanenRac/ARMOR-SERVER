@@ -32,7 +32,7 @@ export type NetworkInternet = {
 };
 /** What the internet sees of the connection, asked of a public service by the node now and then. */
 export type NetworkPublic = { ip: string; hostname?: string; city?: string; region?: string; country?: string; org?: string; timezone?: string; checked_ms: number; changed_ms?: number };
-export const COMMAND_TYPES = ["scan_now", "ping", "traceroute", "wake", "ports", "http"] as const;
+export const COMMAND_TYPES = ["scan_now", "ping", "traceroute", "wake", "ports", "http", "inspect"] as const;
 export type CommandType = (typeof COMMAND_TYPES)[number];
 /** What a node did with a manual order the server handed it. */
 export type NetworkResult = { id: string; type: CommandType; ok: boolean; finished_ms: number; device_id?: string; output?: string; ports?: NetworkPort[]; latency_ms?: number };

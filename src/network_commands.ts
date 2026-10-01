@@ -8,15 +8,15 @@
 import { randomBytes } from "node:crypto";
 import { COMMAND_TYPES, type CommandType, type NetworkDevice, type NetworkResult } from "./network.js";
 
-export type NetworkCommand = { id: string; type: CommandType; device_id?: string; ip?: string; mac?: string; port?: number };
+export type NetworkCommand = { id: string; type: CommandType; device_id?: string; ip?: string; mac?: string; port?: number; /** An `inspect` is done with the login kept for the device: the login is put in only when the order is handed to the node. */ login?: boolean };
 export type CommandStatus = "queued" | "sent" | "done" | "expired";
 export type CommandRecord = { command: NetworkCommand; node_id: string; by: string; created_at: string; status: CommandStatus; sent_at?: string; result?: NetworkResult };
 export class CommandInvalid extends Error { constructor(message: string, readonly code = "invalid_command") { super(message); } }
 
 const MAX_QUEUE_PER_NODE = 16, TAKE_AT_ONCE = 4, WAIT_MS = 120_000, SENT_MS = 180_000, KEEP = 100;
 /** The orders that are about one device need it; a sweep is about the whole network. */
-const NEEDS_DEVICE: readonly CommandType[] = ["ping", "wake", "ports", "http"];
-const PORT_ORDERS: readonly CommandType[] = ["http"];
+const NEEDS_DEVICE: readonly CommandType[] = ["ping", "wake", "ports", "http", "inspect"];
+const PORT_ORDERS: readonly CommandType[] = ["http", "inspect"];
 
 export class NetworkCommands {
   readonly #records: CommandRecord[] = [];
@@ -38,6 +38,7 @@ export class NetworkCommands {
       if (typeof input.port !== "number" || !Number.isInteger(input.port) || input.port < 1 || input.port > 65_535) throw new CommandInvalid("the port is a number from 1 to 65535");
       command.port = input.port;
     }
+    if (kind === "inspect" && input.login === true) command.login = true;
     const record: CommandRecord = { command, node_id: nodeId, by: by.slice(0, 60), created_at: this.#now().toISOString(), status: "queued" };
     this.#records.push(record);
     if (this.#records.length > KEEP * 2) this.#records.splice(0, this.#records.length - KEEP * 2);

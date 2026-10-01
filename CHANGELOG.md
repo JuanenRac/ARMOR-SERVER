@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.8] - Logins kept for the devices of the network
+
+- **`PUT/DELETE /api/v1/network/devices/:id/login`** (administrators only): the user and password of a device's web administration are kept encrypted (AES-256-GCM) and never sent back; device listings only say whether there is a login and its user.
+- **`inspect` order:** the login travels only inside the answer to the node that must use it, once, and the order is refused (409) if none is kept.
+- 3 new tests (221 in all).
+
 ## [0.3.7] - A summary for small screens
 
 - **`GET /api/v1/panel/summary`.** A few hundred bytes for the screens that cannot take the whole state (the touch panel of ARMOR-HMI, a watch): the mode, the nodes online and the alarms that need a person, newest first and the ones nobody has acknowledged first, six at most. Any signed-in operator; it is in the OpenAPI description.

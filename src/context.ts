@@ -27,6 +27,7 @@ import { ElectricalStore } from "./electrical.js";
 import { SwitchingService } from "./electrical_switching.js";
 import { DeviceNotes, NetworkStore } from "./network.js";
 import { NetworkCommands } from "./network_commands.js";
+import { DeviceCredentials } from "./device_credentials.js";
 import { SystemMonitor } from "./system_metrics.js";
 import { SolarRegistry } from "./solar_registry.js";
 import { AlertNotifier } from "./notify.js";
@@ -60,6 +61,8 @@ export type AppContext = {
   networkNotes: DeviceNotes;
   /** The manual orders waiting for an ARMOR-NETWORK node and what it reported of them. */
   networkCommands: NetworkCommands;
+  /** The logins kept for the web administration of the devices of the network, encrypted (see device_credentials.ts). */
+  deviceCredentials: DeviceCredentials;
   /** How the machine is doing (processor, memory, temperatures, disks, network cards): sampled while the server runs, see system_metrics.ts. */
   systemMonitor: SystemMonitor;
   network: SiteStore;
@@ -145,6 +148,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const electrical = new SiteStore(path.join(config.dataDir, "electrical.json"), () => new Date(), "electrical design");
   const networkNotes = new DeviceNotes(path.join(config.dataDir, "network-devices.json"));
   const systemMonitor = new SystemMonitor();
+  const deviceCredentials = new DeviceCredentials({ file: path.join(config.dataDir, "network-logins.json"), secret: config.cameraConfigKey });
   const networkCommands = new NetworkCommands(overrides.now ? () => new Date(overrides.now!()) : undefined);
   // What a person needs to know about the device an alarm is about: the name they gave it (or the one it announces), where it is and who made it.
   const describeNetworkDevice = (node: string, id: string): Record<string, unknown> => {
@@ -200,7 +204,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(studioUser(request) ? 403 : 401).json({ error: "an administrator is required" });
   };
   return {
-    config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, networkNodes, networkNotes, networkCommands, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

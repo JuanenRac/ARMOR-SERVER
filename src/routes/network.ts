@@ -10,13 +10,14 @@ import type { AppContext } from "../context.js";
 import { hasBearer } from "../http/auth.js";
 import { NoteInvalid, parseNetworkMessage } from "../network.js";
 import { CommandInvalid } from "../network_commands.js";
+import { CredentialsInvalid } from "../device_credentials.js";
 import { MAX_SITE_BYTES, SiteConflict, SiteInvalid } from "../site.js";
 
 const NODE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const DEVICE = /^[a-z0-9][a-z0-9:._-]{0,63}$/;
 
 export function registerNetworkRoutes(app: Express, context: AppContext): void {
-  const { config, networkNodes, networkNotes, networkCommands, network, alarmRules, audit, requireOperator, requireAdmin, studioUser } = context;
+  const { config, networkNodes, networkNotes, networkCommands, deviceCredentials, network, alarmRules, audit, requireOperator, requireAdmin, studioUser } = context;
   const ingestLimit = rateLimit({ windowMs: 60_000, limit: 1_200, standardHeaders: "draft-8", legacyHeaders: false });
   const actor = (request: Parameters<typeof studioUser>[0]): string => studioUser(request)?.username ?? "operator";
   const body = (request: { body?: unknown }): Record<string, unknown> => (typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {});
@@ -28,7 +29,13 @@ export function registerNetworkRoutes(app: Express, context: AppContext): void {
       networkNodes.ingest(message);
       networkCommands.record(message.node_id, message.results);
       // The answer carries the manual orders waiting for this node (handed out once); a node that does not look for them simply ignores the field.
-      return response.status(202).json({ accepted: true, commands: networkCommands.take(message.node_id) });
+      const commands = networkCommands.take(message.node_id).map(command => {
+        if (!command.login || !command.device_id) return command;
+        const login = deviceCredentials.get(command.device_id);
+        const { login: _asked, ...rest } = command;
+        return login ? { ...rest, auth: { user: login.user, password: login.password } } : rest;   // without a login kept, the node looks without one
+      });
+      return response.status(202).json({ accepted: true, commands });
     } catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "invalid network message" }); }
   });
 
@@ -39,7 +46,7 @@ export function registerNetworkRoutes(app: Express, context: AppContext): void {
     const nodes = networkNodes.list().map(view => ({
       node_id: view.node_id, received_at: view.received_at, stale: view.stale, interface: view.state.interface, internet: view.state.internet, ...(view.state.scan ? { scan: view.state.scan } : {}),
       ...(view.state.public ? { public: view.state.public } : {}),
-      devices: view.state.devices.filter(device => showHidden || !notes[device.id]?.hidden).map(device => ({ ...device, ...(notes[device.id] ? { note: notes[device.id] } : {}) })),
+      devices: view.state.devices.filter(device => showHidden || !notes[device.id]?.hidden).map(device => ({ ...device, ...(notes[device.id] ? { note: notes[device.id] } : {}), ...(deviceCredentials.summary(device.id) ? { login: deviceCredentials.summary(device.id) } : {}) })),
       hidden: view.state.devices.filter(device => notes[device.id]?.hidden).length,
     }));
     response.json({ nodes, totals: networkNodes.totals(), events: networkNodes.events(100), outages: networkNodes.outages().slice(0, 50) });
@@ -67,6 +74,7 @@ export function registerNetworkRoutes(app: Express, context: AppContext): void {
     if (node.stale) return response.status(409).json({ error: "the network node is not reporting", code: "node_offline" });
     const deviceId = typeof input.device_id === "string" ? input.device_id : "";
     if (deviceId && !DEVICE.test(deviceId)) return response.status(400).json({ error: "invalid device id", code: "invalid_device" });
+    if (input.type === "inspect" && input.login === true && !deviceCredentials.summary(deviceId)) return response.status(409).json({ error: "no login is kept for that device", code: "no_login" });
     try {
       const record = networkCommands.enqueue(node.node_id, input, deviceId ? networkNodes.device(node.node_id, deviceId) : undefined, actor(request));
       audit.record({ action: "network.command", outcome: "allowed", actor: actor(request), target: `${node.node_id}/${record.command.device_id ?? "-"}`, detail: record.command.type });
@@ -98,6 +106,23 @@ export function registerNetworkRoutes(app: Express, context: AppContext): void {
       if (error instanceof NoteInvalid || error instanceof Error) return response.status(400).json({ error: error.message, code: "invalid_note" });
       return response.status(500).json({ error: "internal error" });
     }
+  });
+
+  // The login kept for the web administration of a device (an administrator's): the password goes in and never comes out.
+  app.put("/api/v1/network/devices/:id/login", requireAdmin, (request, response) => {
+    const id = String(request.params.id);
+    try {
+      deviceCredentials.set(id, body(request));
+      audit.record({ action: "network.device.login", outcome: "allowed", actor: actor(request), target: id, detail: "kept" });
+      return response.json({ id, login: deviceCredentials.summary(id) });
+    } catch (error) { return response.status(400).json({ error: error instanceof CredentialsInvalid ? error.message : "invalid login", code: "invalid_login" }); }
+  });
+  app.delete("/api/v1/network/devices/:id/login", requireAdmin, (request, response) => {
+    const id = String(request.params.id);
+    if (!DEVICE.test(id)) return response.status(400).json({ error: "invalid device id", code: "invalid_device" });
+    const removed = deviceCredentials.remove(id);
+    audit.record({ action: "network.device.login", outcome: removed ? "allowed" : "failed", actor: actor(request), target: id, detail: "forgotten" });
+    return removed ? response.sendStatus(204) : response.status(404).json({ error: "no login is kept for that device", code: "not_found" });
   });
 
   app.delete("/api/v1/network/devices/:id", requireAdmin, (request, response) => {
