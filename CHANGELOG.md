@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.4] - Orders for the network node, devices to hide and to watch, the public address, cookies that cannot shadow each other
+
+- **Manual orders for an ARMOR-NETWORK node.** `POST /api/v1/network/commands` queues a sweep now, a ping, a traceroute, a wake-up, a look at the ports or at the web page of one device; the node gets it in the answer to its next message (never over MQTT, each order handed out once, at most four at a time, forgotten after two minutes if not taken), does it and reports in `results`; `GET /api/v1/network/commands[/{id}]` shows the status and the result. Bounded, audited and rate limited; refused when the node is not reporting.
+- **Devices can be hidden from the list and watched.** A device note gains `hidden` (left out of `GET /api/v1/network` unless `?hidden=1`, the count is told) and `watch` (an alarm `network_watched_online`, with the device's facts, the next time it comes onto the network; the watch is spent once it has told). Naming, hiding and watching are for any signed-in operator; marking a device as known stays an administrator's.
+- **The public address.** The `public` block of a node (public address, provider, city, when it last changed) is accepted and served with the node, with the strict parser of ARMOR-COMMON 0.2.9.
+- **Session cookies named by scheme.** A browser that once met the server over HTTPS keeps its Secure cookie for the host, and a page over plain HTTP is not allowed to replace a Secure cookie of the same name: after the HTTPS trial was undone the login seemed to work and then nothing stuck, and the Users tab did not recognise the administrator. The cookies are now `armor_studio_sid` / `armor_operator_sid` over HTTP and `__Host-armor_studio_sid` / `__Secure-armor_operator_sid` over HTTPS, so they cannot shadow each other (everyone signs in once more).
+- 3 new tests (208 in all): the queue of orders, the round trip through the routes, hiding and watching.
+
 ## [0.3.3] - Sessions that last, versions of the designs, alarms that say what they are about
 
 - **A signed-in console keeps its session.** A session in use is renewed once half of its life is gone (the cookie is set again with it), and the default life of a Studio session is 7 days instead of 8 hours (`ARMOR_STUDIO_SESSION_TTL_MS`, up to 30 days). One nobody uses still ends at its time. Found for real: the administrator kept losing the role in the Users tab.
