@@ -125,8 +125,11 @@ test("the alarms: the internet, a device that is not known, two machines for one
   assert.deepEqual(codes(), ["network_internet_down:high:network-1"]);
   rules.handleNetwork(message({ internet: { state: "lan_down" } }));
   assert.deepEqual(codes(), ["network_lan_down:high:network-1"]);       // the router is gone too: the local one replaces the provider's
-  rules.handleNetwork(message({ internet: { state: "degraded" } }));
+  rules.handleNetwork(message({ internet: { state: "degraded", since_ms: NOW } }));
+  assert.deepEqual(codes(), [], "a slow line is not news for the first minutes");
+  rules.handleNetwork(message({ timestamp_ms: NOW + 4 * 60_000, internet: { state: "degraded", since_ms: NOW, latency_ms: 450, loss_percent: 30 } }));
   assert.deepEqual(codes(), ["network_degraded:warning:network-1"]);
+  assert.equal(centre.active()[0].detail?.loss_percent, 30, "the alarm says what the line was doing");
   rules.handleNetwork(message());
   assert.deepEqual(codes(), []);
   // a device nobody knew

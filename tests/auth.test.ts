@@ -57,3 +57,22 @@ test("closing a session invalidates its cookie", () => {
   store.close(cookie, response);
   assert.equal(store.has(cookie), false);
 });
+
+test("a session in use is renewed once half of its life has gone, and one nobody uses is not", () => {
+  let now = 1_000_000;
+  const store = new SessionStore({ cookieName: "s", cookiePath: "/", ttlMs: 60_000, secure: false }, () => now);
+  const { response, calls } = fakeResponse();
+  store.open(response, "user-1");
+  const request = requestWith({ cookie: `s=${calls[0].value}` });
+  now += 20_000;   // a third of its life: nothing to renew
+  assert.equal(store.renew(request, fakeResponse().response), false);
+  now += 20_000;   // past half of it (40 s of 60)
+  const second = fakeResponse();
+  assert.equal(store.renew(request, second.response), true);
+  assert.equal(second.calls.length, 1, "the cookie is set again with its new life");
+  now += 59_000;   // would have ended at 60 s after the opening: it is alive because it was renewed
+  assert.equal(store.has(request), true);
+  now += 2_000;    // and a full life after the renewal it does end
+  assert.equal(store.has(request), false);
+  assert.equal(store.renew(request, fakeResponse().response), false);
+});

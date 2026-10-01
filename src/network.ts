@@ -278,6 +278,9 @@ export class NetworkStore {
 
   get notes(): DeviceNotes | undefined { return this.#options.notes; }
 
+  /** A device as the latest message of a node lists it (what an alarm about it should say). */
+  device(node: string, id: string): NetworkDevice | undefined { return this.#entries.get(node)?.state.devices.find(device => device.id === id); }
+
   /** Keep a message and tell the events in it that were not told before. Refuses (throws) a new node when the store is full. */
   ingest(message: NetworkMessage): void {
     const now = this.#options.now();

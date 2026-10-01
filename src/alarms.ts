@@ -21,6 +21,22 @@ export type Alarm = {
   /** What happened, as a stable code the client translates: intrusion, node_down, camera_down, smoke, water_leak, door_open, tamper, low_battery, device_offline ... */
   code: string;
   raised_at: string; acknowledged_at?: string; acknowledged_by?: string; cleared_at?: string;
+  /** What a person needs to act on it, as plain facts the client labels: which device (name, address, MAC, maker), which port, what the numbers were. */
+  detail?: AlarmDetail;
+};
+export type AlarmDetail = Record<string, string | number | boolean>;
+const MAX_DETAIL_FIELDS = 24, MAX_DETAIL_VALUE = 200;
+/** Only short plain values, a bounded number of them: a node's text is never trusted to be small. */
+export const cleanDetail = (detail: Record<string, unknown> | undefined): AlarmDetail | undefined => {
+  if (!detail) return undefined;
+  const clean: AlarmDetail = {};
+  for (const [key, value] of Object.entries(detail).slice(0, MAX_DETAIL_FIELDS)) {
+    if (!/^[a-z][a-z0-9_]{0,31}$/.test(key)) continue;
+    if (typeof value === "string") { if (value !== "") clean[key] = value.slice(0, MAX_DETAIL_VALUE); }
+    else if (typeof value === "number" && Number.isFinite(value)) clean[key] = value;
+    else if (typeof value === "boolean") clean[key] = value;
+  }
+  return Object.keys(clean).length ? clean : undefined;
 };
 
 const MAX_KEPT = 400;
@@ -69,9 +85,10 @@ export class AlarmCentre {
   #open(key: string): Alarm | undefined { return this.#alarms.find(alarm => alarm.key === key && !alarm.cleared_at); }
 
   /** Raise an alarm unless one for the same cause is already open. */
-  raise(key: string, info: { source: AlarmSource; severity: Severity; code: string }): Alarm | undefined {
+  raise(key: string, info: { source: AlarmSource; severity: Severity; code: string; detail?: Record<string, unknown> }): Alarm | undefined {
     if (this.#open(key)) return undefined;
-    const alarm: Alarm = { id: `alm-${String(this.#counter).padStart(5, "0")}`, key, source: info.source, severity: info.severity, code: info.code, raised_at: this.#now().toISOString() };
+    const detail = cleanDetail(info.detail);
+    const alarm: Alarm = { id: `alm-${String(this.#counter).padStart(5, "0")}`, key, source: info.source, severity: info.severity, code: info.code, raised_at: this.#now().toISOString(), ...(detail ? { detail } : {}) };
     this.#counter += 1;
     this.#alarms.push(alarm);
     if (this.#alarms.length > MAX_KEPT) this.#alarms.splice(0, this.#alarms.length - MAX_KEPT);
@@ -79,6 +96,15 @@ export class AlarmCentre {
     this.#emit(alarm, "raised");
     this.#options.onRaised?.(alarm);
     return alarm;
+  }
+
+  /** The facts of an alarm that is still open, kept up to date while it goes on (the loss and the latency of a slow line, say). */
+  update(key: string, detail: Record<string, unknown>): void {
+    const alarm = this.#open(key);
+    const clean = cleanDetail(detail);
+    if (!alarm || !clean) return;
+    alarm.detail = { ...alarm.detail, ...clean };
+    this.#save();
   }
 
   /** The cause ended: the alarm stays on the list until it is acknowledged. */
@@ -115,6 +141,26 @@ export class AlarmCentre {
   active(): Alarm[] { return this.#alarms.filter(alarm => !alarm.acknowledged_at || !alarm.cleared_at).reverse(); }
   /** Closed (acknowledged and ended): the record. Newest first. */
   recent(limit = 50): Alarm[] { return this.#alarms.filter(alarm => alarm.acknowledged_at && alarm.cleared_at).reverse().slice(0, limit); }
+  /**
+   * Take one alarm off the list altogether (open or closed). If its cause is still going on it simply is not on the list any more: the
+   * alarm for the same cause is raised again only when the cause happens again (a port that opens anew, the line going bad anew).
+   */
+  remove(id: string): Alarm | undefined {
+    const index = this.#alarms.findIndex(alarm => alarm.id === id);
+    if (index < 0) return undefined;
+    const [alarm] = this.#alarms.splice(index, 1);
+    this.#save();
+    return alarm;
+  }
+
+  /** Delete every alarm someone has acknowledged, whether its cause has ended or not (the record, and what was seen and is being lived with). The ones nobody has seen stay. */
+  clearAcknowledged(): number {
+    const before = this.#alarms.length;
+    this.#alarms = this.#alarms.filter(alarm => !alarm.acknowledged_at);
+    this.#save();
+    return before - this.#alarms.length;
+  }
+
   /** Delete the closed alarms (an administrator clearing the record). */
   deleteRecent(): number {
     const before = this.#alarms.length;
@@ -126,6 +172,8 @@ export class AlarmCentre {
 
 const armedOnlyCodes = new Set(["intrusion", "door_open", "window_open", "motion", "glass_break", "vibration"]);
 const DEVICE_CODE: Record<string, string> = { smoke: "smoke", co: "co", gas: "gas", water_leak: "water_leak", panic_button: "panic", door: "door_open", window: "window_open", motion: "motion", glass_break: "glass_break", vibration: "vibration" };
+/** How long a slow or lossy line has to stay so before it is worth an alarm. */
+export const NETWORK_DEGRADED_DWELL_MS = 3 * 60_000;
 const LOW_BATTERY = 15, BATTERY_OK = 20;
 const SOLAR_LOW = 20, SOLAR_OK = 30;
 /** The mains voltage an AC channel of an electrical node may have (about 230 V less 15 % and plus 10 %), with the margin at which a raised alarm ends; below GRID_LOST the channel has no supply at all. */
@@ -261,11 +309,24 @@ export class AlarmRules {
    * (the router does not answer either), or the internet is degraded. They end when the node says they have. None depends on the security mode.
    */
   handleNetwork(message: NetworkMessage): void {
-    const node = message.node_id, source: AlarmSource = { type: "network", id: node }, base = `network:${node}`;
+    const base = `network:${message.node_id}`, source: AlarmSource = { type: "network", id: message.node_id };
     const state = message.internet.state;
-    if (state === "down") this.centre.raise(`${base}:internet`, { source, severity: "high", code: "network_internet_down" }); else this.centre.clear(`${base}:internet`);
-    if (state === "lan_down") this.centre.raise(`${base}:lan`, { source, severity: "high", code: "network_lan_down" }); else this.centre.clear(`${base}:lan`);
-    if (state === "degraded") this.centre.raise(`${base}:degraded`, { source, severity: "warning", code: "network_degraded" }); else this.centre.clear(`${base}:degraded`);
+    const facts = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+      node: message.node_id, interface: message.interface.name, router: message.interface.gateway ?? "",
+      ...(message.internet.latency_ms !== undefined ? { latency_ms: message.internet.latency_ms } : {}),
+      ...(message.internet.loss_percent !== undefined ? { loss_percent: message.internet.loss_percent } : {}),
+      ...(message.internet.since_ms !== undefined ? { since: new Date(message.internet.since_ms).toISOString() } : {}),
+      failing: (message.internet.probes ?? []).filter(probe => !probe.ok).map(probe => `${probe.kind} ${probe.target}`).join(", "),
+      ...extra,
+    });
+    if (state === "down") this.centre.raise(`${base}:internet`, { source, severity: "high", code: "network_internet_down", detail: facts({ router_answers: message.internet.gateway_ok ?? "" }) }); else this.centre.clear(`${base}:internet`);
+    if (state === "lan_down") this.centre.raise(`${base}:lan`, { source, severity: "high", code: "network_lan_down", detail: facts() }); else this.centre.clear(`${base}:lan`);
+    // A line that is slow or loses packets for a moment is not news: the warning is raised once it has gone on for NETWORK_DEGRADED_DWELL_MS, and kept up to date while it lasts.
+    if (state === "degraded") {
+      const since = message.internet.since_ms ?? message.timestamp_ms;
+      if (message.timestamp_ms - since >= NETWORK_DEGRADED_DWELL_MS) this.centre.raise(`${base}:degraded`, { source, severity: "warning", code: "network_degraded", detail: facts() });
+      else this.centre.update(`${base}:degraded`, facts());
+    } else this.centre.clear(`${base}:degraded`);
   }
 
   /**
@@ -273,12 +334,14 @@ export class AlarmRules {
    * place, or a mistake), and a port that opened (a high alarm when it is one a house rarely wants open, such as Telnet or a remote desktop) raise an alarm; a port that closed
    * or a device that went away ends the one about it. Being offline or online again is news for the list of events, not an alarm.
    */
-  handleNetworkEvent(node: string, event: NetworkEvent, isKnown: (deviceId: string) => boolean): void {
+  handleNetworkEvent(node: string, event: NetworkEvent, isKnown: (deviceId: string) => boolean, describe: (deviceId: string) => Record<string, unknown> = () => ({})): void {
     if (!event.device_id) return;
     const id = `${node}/${event.device_id}`, source: AlarmSource = { type: "network", id }, base = `network:${id}`;
-    if (event.kind === "new_device" && !isKnown(event.device_id)) this.centre.raise(`${base}:new`, { source, severity: "warning", code: "network_new_device" });
-    else if (event.kind === "arp_conflict") this.centre.raise(`${base}:arp`, { source, severity: "high", code: "network_arp_conflict" });
-    else if (event.kind === "port_opened" && event.port !== undefined) this.centre.raise(`${base}:port:${event.port}`, { source, severity: RISKY_PORTS.has(event.port) ? "high" : "warning", code: "network_port_opened" });
+    const facts = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({ node, ...describe(event.device_id!), ...extra });
+    const conflict = /answered by ([0-9a-f:]{17}); before by ([0-9a-f:]{17})/i.exec(event.detail ?? "");
+    if (event.kind === "new_device" && !isKnown(event.device_id)) this.centre.raise(`${base}:new`, { source, severity: "warning", code: "network_new_device", detail: facts({ first_seen: new Date(event.at_ms).toISOString() }) });
+    else if (event.kind === "arp_conflict") this.centre.raise(`${base}:arp`, { source, severity: "high", code: "network_arp_conflict", detail: facts(conflict ? { mac_now: conflict[1].toLowerCase(), mac_before: conflict[2].toLowerCase() } : { what_happened: event.detail ?? "" }) });
+    else if (event.kind === "port_opened" && event.port !== undefined) this.centre.raise(`${base}:port:${event.port}`, { source, severity: RISKY_PORTS.has(event.port) ? "high" : "warning", code: "network_port_opened", detail: facts({ port: event.port, risky: RISKY_PORTS.has(event.port), opened_at: new Date(event.at_ms).toISOString() }) });
     else if (event.kind === "port_closed" && event.port !== undefined) this.centre.clear(`${base}:port:${event.port}`);
     else if (event.kind === "device_offline") this.centre.clear(`${base}:arp`);
   }

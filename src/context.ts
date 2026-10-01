@@ -138,7 +138,15 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const networkNodes = new NetworkStore({
     now: overrides.now, notes: networkNotes, outagesFile: path.join(config.dataDir, "network-outages.json"),
     onMessage: message => alarmRules.handleNetwork(message),
-    onEvent: (node, event) => alarmRules.handleNetworkEvent(node, event, id => networkNotes.isTrusted(id)),
+    onEvent: (node, event) => alarmRules.handleNetworkEvent(node, event, id => networkNotes.isTrusted(id), id => {
+      // What a person needs to know about the device an alarm is about: the name they gave it (or the one it announces), where it is and who made it.
+      const device = networkNodes.device(node, id), note = networkNotes.get(id);
+      return {
+        device: note?.name ?? device?.hostname ?? device?.vendor ?? id, ip: device?.ip, mac: device?.mac ?? id, vendor: device?.vendor, hostname: device?.hostname,
+        kind: note?.kind ?? device?.kind, os: device?.os, online: device?.online,
+        open_ports: (device?.ports ?? []).slice(0, 16).map(port => `${port.port}/${port.proto}${port.service ? ` ${port.service}` : ""}`).join(", "),
+      };
+    }),
     onStale: (node, stale) => alarmRules.handleNetworkStale(node, stale),
   });
   const network = new SiteStore(path.join(config.dataDir, "network.json"), () => new Date(), "network design");

@@ -166,7 +166,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     ingestToken, controlToken, operatorToken, cameraConfigKey,
     cameraKeyIsFallback: !configuredKey,
     studioUsername, studioPassword, passwordMinLength: isLoopbackHost(host) ? 8 : 12, resetStudioPassword: env.ARMOR_STUDIO_RESET_PASSWORD === "1",
-    studioSessionTtlMs: integer(env, "ARMOR_STUDIO_SESSION_TTL_MS", 28_800_000, 60_000, 7 * 86_400_000),
+    studioSessionTtlMs: integer(env, "ARMOR_STUDIO_SESSION_TTL_MS", 7 * 86_400_000, 60_000, 30 * 86_400_000),
     operatorSessionTtlMs: integer(env, "ARMOR_OPERATOR_SESSION_TTL_MS", 28_800_000, 60_000, 7 * 86_400_000),
     studioOrigins: [...origins],
     cookieSecure: env.ARMOR_COOKIE_SECURE === "1",

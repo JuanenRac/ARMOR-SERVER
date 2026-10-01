@@ -124,6 +124,23 @@ export class SessionStore {
     return true;
   }
 
+  /**
+   * A session in use does not run out: once more than half of its life is gone, the next request that carries it gets a full life again
+   * (and the cookie is set again with it). A session nobody uses still ends at its time. Returns whether it was renewed.
+   */
+  renew(request: HeaderSource, response: Response): boolean {
+    const id = requestCookies(request)[this.#options.cookieName];
+    const session = id ? this.#sessions.get(keyOf(id)) : undefined;
+    const now = this.#now();
+    if (!id || !session || session.expiry <= now || session.expiry - now > this.#options.ttlMs / 2) return false;
+    session.expiry = now + this.#options.ttlMs;
+    this.#save();
+    response.cookie(this.#options.cookieName, id, {
+      httpOnly: true, sameSite: "strict", secure: this.#options.secure, maxAge: this.#options.ttlMs, path: this.#options.cookiePath,
+    });
+    return true;
+  }
+
   /** The user a valid session belongs to. */
   userId(request: HeaderSource): string | undefined {
     return this.has(request) ? this.#sessions.get(keyOf(requestCookies(request)[this.#options.cookieName]))?.userId : undefined;

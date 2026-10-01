@@ -75,6 +75,12 @@ export function registerNetworkRoutes(app: Express, context: AppContext): void {
   const bigJson = express.json({ limit: MAX_SITE_BYTES + 4096, type: "application/json" });
   const view = (doc: ReturnType<typeof network.get>) => ({ revision: doc.revision, updated_at: doc.updated_at, updated_by: doc.updated_by, network: doc.site });
   app.get("/api/v1/network/design", requireOperator, (_request, response) => response.json(view(network.get())));
+  app.get("/api/v1/network/design/versions", requireOperator, (_request, response) => response.json({ versions: network.versions() }));
+  app.get("/api/v1/network/design/versions/:id", requireOperator, (request, response) => {
+    const doc = network.version(String(request.params.id));
+    if (!doc) return response.status(404).json({ error: "no such version", code: "not_found" });
+    return response.json({ revision: doc.revision, updated_at: doc.updated_at, updated_by: doc.updated_by, network: doc.site });
+  });
   app.put("/api/v1/network/design", requireOperator, bigJson, (request, response) => {
     const input = body(request);
     try {

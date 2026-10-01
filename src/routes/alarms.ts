@@ -38,10 +38,18 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
     audit.record({ action: "alarm.acknowledge", outcome: "allowed", actor: actor(request), target: alarm.id });
     return response.json(alarm);
   });
-  app.delete("/api/v1/alarms", context.requireAdmin, (request, response) => {
-    const deleted = alarms.deleteRecent();
+  // Clearing the record is the operator's too (it used to need an administrator and, when the role was missing, silently did nothing): it takes away every alarm
+  // somebody has acknowledged - ended or not, since what is being lived with is not news - and leaves the ones nobody has seen.
+  app.delete("/api/v1/alarms", requireOperator, (request, response) => {
+    const deleted = alarms.clearAcknowledged();
     audit.record({ action: "alarm.clear_record", outcome: "allowed", actor: actor(request), detail: String(deleted) });
     return response.json({ deleted });
+  });
+  app.delete("/api/v1/alarms/:id", requireOperator, (request, response) => {
+    const removed = alarms.remove(String(request.params.id));
+    if (!removed) return response.status(404).json({ error: "no such alarm", code: "not_found" });
+    audit.record({ action: "alarm.delete", outcome: "allowed", actor: actor(request), target: removed.id, detail: removed.code });
+    return response.json(removed);
   });
 
   // ---- automations ----
@@ -90,6 +98,16 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
       return response.status(500).json({ error: "internal error" });
     }
   });
+
+  // The versions kept of each design (see site.ts): a list, and one whole, to be taken back by saving it as the current one.
+  for (const [prefix, store, key] of [["/api/v1/site", site, "site"], ["/api/v1/electrical/design", electrical, "electrical"]] as const) {
+    app.get(`${prefix}/versions`, requireOperator, (_request, response) => response.json({ versions: store.versions() }));
+    app.get(`${prefix}/versions/:id`, requireOperator, (request, response) => {
+      const doc = store.version(String(request.params.id));
+      if (!doc) return response.status(404).json({ error: "no such version", code: "not_found" });
+      return response.json({ revision: doc.revision, updated_at: doc.updated_at, updated_by: doc.updated_by, [key]: doc.site });
+    });
+  }
 
   // ---- the electrical design (the house's electrical diagram, drawn in Studio's Electrical Designer) ----
   const electricalView = (doc: ReturnType<typeof electrical.get>) => ({ revision: doc.revision, updated_at: doc.updated_at, updated_by: doc.updated_by, electrical: doc.site });
