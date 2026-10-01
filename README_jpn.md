@@ -76,25 +76,6 @@ flowchart LR
 * `.env.example` を `.env`（Git は無視）にコピーするか、`run.bat` / `run.sh` に初回実行でランダムなシークレットを生成させます。
 * 必須：`ARMOR_INGEST_TOKEN` と `ARMOR_CONTROL_TOKEN`（24 文字以上、すべて異なる）、および `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD`（最初の管理者）。
 * よく使う：`ARMOR_HOST` / `ARMOR_PORT`、`ARMOR_DATA_DIR`、`ARMOR_FFMPEG_PATH`（ライブ映像と撮影）、`ARMOR_MQTT_URL`、`ARMOR_STUDIO_ORIGIN`、`ARMOR_NODE_STALE_AFTER_S`、`ARMOR_CAMERA_CHECK_S`、`ARMOR_ALERT_DWELL_MS`、`ARMOR_ALERT_WEBHOOK_URL`、`ARMOR_COOKIE_SECURE`（TLS の背後では `1`）。
-* `TLS_CERT_PATH` / `TLS_KEY_PATH` - **両方**を設定すると、サーバー（REST API と、同じリスナーを共有する `/api/v1/events` の WebSocket）が平文の HTTP/WS から HTTPS/WSS に切り替わります。下記の「TLS / HTTPS」を参照してください。両方とも未設定のままなら、今日と同じ平文 HTTP の挙動が変わりません。片方だけ設定した場合は、黙って HTTP のままになるのではなく、起動時に拒否されます。
-
-### 🔐 TLS / HTTPS
-
-デフォルトでは無効です - このサーバーは常に信頼できる LAN 内で平文の HTTP/WS として動作してきており、オプトインしない限りそのままです。`TLS_CERT_PATH` と `TLS_KEY_PATH` に PEM 証明書とそれに対応する秘密鍵を設定すると、共有の REST + WebSocket リスナーが Node 自身の `https.createServer()` に切り替わります - `/api/v1/events` も別途設定なしで自動的に WSS になります。設定されているのに読み取れない、存在しない、または無効な証明書/鍵のパスは、平文 HTTP へ静かにフォールバックするのではなく、起動を大きな音で（実際のエラーとして）失敗させます。
-
-これは特に、このサーバーが完全に信頼できる LAN の外からアクセス可能になった場合（たとえばルーターのポート転送で実際のリモートアクセス用に公開した場合など）に重要です - 平文 HTTP では、Studio のログイン、制御トークン、そしてすべてのカメラ/アラームコマンドがネットワーク上を平文のまま流れます。`ARMOR-ANDROID-CONTROL` クライアント自体も、まさにこの理由からプライベート LAN アドレス以外への平文 HTTP 通信をすでに拒否しています - リモートで接続するには本物の `https://` オリジンが必要です。
-
-証明書の入手方法：
-
-* **このサーバーを指すドメインをすでに持っている場合** - [Let's Encrypt](https://letsencrypt.org/)（たとえば [Certbot](https://certbot.eff.org/) 経由）を使えば、ブラウザや Android から信頼される本物の証明書を無料かつ自動更新で取得できます。生成された `fullchain.pem` / `privkey.pem` を `TLS_CERT_PATH` / `TLS_KEY_PATH` に指定してください。本物の HTTPS が有効になったら、同じドメインのオリジン（`https://your-domain.example`）を `ARMOR_STUDIO_ORIGIN` に追加し、Studio 自身の CORS チェックがそれを受け入れるようにしてください。
-* **ドメインなしのローカルテスト** - 自己署名証明書があれば HTTPS/WSS のコードパスを検証するには十分です（ブラウザやほとんどの HTTP クライアントは警告を出すか明示的な信頼を求めますが、テストとしては正常で問題ありません）：
-  ```bash
-  openssl req -x509 -newkey rsa:2048 -nodes \
-    -keyout key.pem -out cert.pem -days 365 -subj "/CN=localhost"
-  ```
-  その後 `TLS_CERT_PATH=./cert.pem` と `TLS_KEY_PATH=./key.pem` を設定してください。
-
-証明書を直接管理したくない LAN 限定のデプロイでは、`ARMOR-DEVOPS` 自身の Compose `tls` プロファイルが（独自のローカル認証局を持つ）Caddy リバースプロキシを Studio の手前に配置します - そのリポジトリの `docs/BACKUP_AND_TLS.md` を参照してください。この2つの方法は互いに独立しています。本物の、公的に信頼された証明書を使った本当のリモートアクセスに対応するのは、このサーバー自身の `TLS_CERT_PATH`/`TLS_KEY_PATH` の方です。
 
 ## 📂 リポジトリの構成
 
@@ -133,6 +114,7 @@ CM5 テストベンチ（他のすべてのプロジェクトから隔離され�
 * **[ARMOR-RADAR](https://github.com/JuanenRac/ARMOR-RADAR)** - ESP32-S3 用フィールドノードのファームウェア。レーダー 3 基と独自の Web パネル付き
 * **[ARMOR-SOLAR](https://github.com/JuanenRac/ARMOR-SOLAR)** - 太陽光インバーターとバッテリーのプロトコル、およびゲートウェイノードのメッセージ
 * **[ARMOR-ELECTRICAL](https://github.com/JuanenRac/ARMOR-ELECTRICAL)** - 電気ノード：電力量計、電力網の計測メッセージ、開閉のルール
+* **[ARMOR-HMI](https://github.com/JuanenRac/ARMOR-HMI)** - タッチパネル：壁面ディスプレイでのシステム状態表示、警戒・確認操作、音声アシスタントの拠点
 * **[ARMOR-NETWORK](https://github.com/JuanenRac/ARMOR-NETWORK)** - ローカルネットワーク：機器、インターネット、そして変化
 * **ARMOR-SERVER** (このリポジトリ) - 中央コーディネーター：テレメトリ、アラーム、デバイス、太陽光の測定値、カメラ
 * **[ARMOR-STUDIO](https://github.com/JuanenRac/ARMOR-STUDIO)** - Web コンソール：カメラ、レーダー、アラーム、太陽光発電、2D/3D サイト設計

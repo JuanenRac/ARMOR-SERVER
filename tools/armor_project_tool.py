@@ -123,14 +123,16 @@ def test_project(project: Path, manifest: dict[str, object]) -> None:
         test_solar(project)
     elif name == "ARMOR-ELECTRICAL":
         test_electrical(project)
+    elif name == "ARMOR-HMI":
+        test_hmi(project)
     elif name == "ARMOR-ANDROID-CONTROL":
         gradle = "gradlew.bat" if os.name == "nt" and (project / "gradlew.bat").is_file() else ("./gradlew" if (project / "gradlew").is_file() else check_tool("gradle", "Gradle or the project wrapper is required; open the project in Android Studio once to generate/restore it"))
         command(project, [gradle, "test", "assembleDebug"])
     elif name == "ARMOR-HARDWARE":
         openscad = check_tool("openscad", "OpenSCAD is required to validate the parametric enclosure")
-        output = project / "build" / "node_enclosure.stl"
+        output = project / "build" / "node_enclosure_radar.stl"
         output.parent.mkdir(exist_ok=True)
-        command(project, [openscad, "-o", str(output), "scad/node_enclosure.scad"])
+        command(project, [openscad, "-o", str(output), "scad/node_enclosure_radar.scad"])
     elif name == "ARMOR-DEVOPS":
         check_tool("docker", "Docker Compose is required to validate ARMOR-DEVOPS")
         # `docker compose config` only checks the topology is well formed; it
@@ -198,6 +200,17 @@ def test_electrical(project: Path) -> None:
     checker = subprocess.run([sys.executable, "tests/check_samples.py"], cwd=project, input=emitter.stdout, text=True, check=False)
     if checker.returncode:
         raise RuntimeError("the electrical messages do not have the fields of contract version 0")
+
+
+def test_hmi(project: Path) -> None:
+    """Build and run ARMOR-HMI's host tests (the panel's settings, what it knows of the server, the voice conversation, the board's pins and the screen's words). Needs CMake and a C++17 compiler."""
+    cmake = check_tool("cmake", "CMake and a C++17 compiler are required to test ARMOR-HMI (use Linux, WSL or MSYS2)")
+    build = project / "build" / "host"
+    command(project, [cmake, "-S", "tests", "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug"])
+    command(project, [cmake, "--build", str(build)])
+    suffix = ".exe" if os.name == "nt" else ""
+    for test in ("test_config", "test_view", "test_voice", "test_board"):
+        command(project, [str(build / f"{test}{suffix}")])
 
 
 def validate_markdown_links(project: Path) -> None:
@@ -317,7 +330,7 @@ def run_project(project: Path, manifest: dict[str, object]) -> None:
         command(project, [NPM, "run", "dev"], environment)
     elif name == "ARMOR-DEVOPS":
         command(project, ["docker", "compose", "up", "--build"])
-    elif name in {"ARMOR-RADAR", "ARMOR-SOLAR", "ARMOR-ELECTRICAL", "ARMOR-ANDROID-CONTROL", "ARMOR-HARDWARE", "ARMOR-DOCS", "ARMOR-UPDATER"}:
+    elif name in {"ARMOR-RADAR", "ARMOR-SOLAR", "ARMOR-ELECTRICAL", "ARMOR-HMI", "ARMOR-ANDROID-CONTROL", "ARMOR-HARDWARE", "ARMOR-DOCS", "ARMOR-UPDATER"}:
         print(f"{name} has no safe generic runtime command. Use build-test to validate it, then follow its project documentation for hardware or IDE deployment.")
     else:
         raise RuntimeError(f"no run rule registered for {name}")
