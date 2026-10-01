@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.7] - A summary for small screens
+
+- **`GET /api/v1/panel/summary`.** A few hundred bytes for the screens that cannot take the whole state (the touch panel of ARMOR-HMI, a watch): the mode, the nodes online and the alarms that need a person, newest first and the ones nobody has acknowledged first, six at most. Any signed-in operator; it is in the OpenAPI description.
+- A test of the route (it needs a sign-in, and an answer has only the fields the panel reads). 218 tests in all.
+- The tests no longer carry a real public address: the examples of a public address use the documentation ranges.
+
 ## [0.3.6] - Address and ports from Studio
 
 - **`GET/PUT /api/v1/system/connection` (administrator).** Where the server listens (address, port) and the port Studio is served on are saved in `connection.json` beside the data and win over the environment at the next start; a missing, broken or nonsensical file is ignored so a wrong value typed in a page can never stop the server from starting. The origin Studio is allowed from follows its new port. Refuses a non-loopback address while the administrator password is shorter than 12 characters.

@@ -28,6 +28,21 @@ export function registerSystemRoutes(app: Express, context: AppContext, version:
   // How the machine is doing, as a task manager shows it: the latest sample and the last few minutes of it.
   app.get("/api/v1/system/metrics", requireOperator, (_request, response) => response.json({ ...systemMonitor.current, history: systemMonitor.history }));
 
+  // A small summary for the screens that cannot take the whole state (the touch panel, a watch): the mode, how many nodes are there and the alarms that need a person, newest first,
+  // the ones nobody has acknowledged first. Always a few hundred bytes, whatever the installation holds.
+  app.get("/api/v1/panel/summary", requireOperator, (_request, response) => {
+    const state = store.snapshot(), nodes = Object.values(state.nodes), active = alarms.active();
+    const order = [...active].sort((a, b) => Number(Boolean(a.acknowledged_at)) - Number(Boolean(b.acknowledged_at)) || b.raised_at.localeCompare(a.raised_at));
+    response.json({
+      mode: state.mode, revision: state.revision, time_ms: Date.now(),
+      nodes: { online: nodes.filter(node => node.online).length, total: nodes.length },
+      alarms: {
+        active: active.length, unacknowledged: active.filter(alarm => !alarm.acknowledged_at).length,
+        items: order.slice(0, 6).map(alarm => ({ id: alarm.id, code: alarm.code, severity: alarm.severity, source_type: alarm.source.type, source_id: alarm.source.id.slice(0, 48), raised_at: alarm.raised_at, acknowledged: Boolean(alarm.acknowledged_at) })),
+      },
+    });
+  });
+
   // Where the server listens and where Studio is served (an administrator). The change is kept in a file and takes effect when the server is started again.
   const connectionState = () => {
     const saved = readConnection(config.dataDir);

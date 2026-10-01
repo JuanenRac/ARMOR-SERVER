@@ -76,25 +76,6 @@ flowchart LR
 * Copiez `.env.example` vers `.env` (ignoré par Git), ou laissez `run.bat` / `run.sh` générer des secrets aléatoires au premier lancement.
 * Obligatoires : `ARMOR_INGEST_TOKEN` et `ARMOR_CONTROL_TOKEN` (24 caractères ou plus, tous différents) et `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD` (le premier administrateur).
 * Courantes : `ARMOR_HOST` / `ARMOR_PORT`, `ARMOR_DATA_DIR`, `ARMOR_FFMPEG_PATH` (vidéo en direct et capture), `ARMOR_MQTT_URL`, `ARMOR_STUDIO_ORIGIN`, `ARMOR_NODE_STALE_AFTER_S`, `ARMOR_CAMERA_CHECK_S`, `ARMOR_ALERT_DWELL_MS`, `ARMOR_ALERT_WEBHOOK_URL` et `ARMOR_COOKIE_SECURE` (à `1` derrière TLS).
-* `TLS_CERT_PATH` / `TLS_KEY_PATH` - définissez **les deux** pour faire passer le serveur (l'API REST + le WebSocket `/api/v1/events`, qui partagent le même listener) du HTTP/WS en clair vers HTTPS/WSS. Voir « TLS / HTTPS » ci-dessous. Laisser les deux non définies garde le comportement HTTP actuel inchangé ; n'en définir qu'une seule est refusé au démarrage plutôt que de rester silencieusement en HTTP.
-
-### 🔐 TLS / HTTPS
-
-Désactivé par défaut - ce serveur a toujours tourné en HTTP/WS en clair sur un LAN de confiance, et continue ainsi tant que vous n'activez pas l'option. Définissez `TLS_CERT_PATH` et `TLS_KEY_PATH` avec un certificat PEM et sa clé privée correspondante, et le listener partagé REST + WebSocket bascule vers le propre `https.createServer()` de Node - `/api/v1/events` devient automatiquement WSS en même temps, sans configuration séparée. Un chemin de certificat/clé défini mais illisible, manquant ou invalide fait échouer le démarrage bruyamment (une vraie erreur) plutôt que de retomber silencieusement en HTTP.
-
-Cela compte surtout dès que ce serveur est joignable au-delà d'un LAN totalement de confiance (par exemple exposé via la redirection de port d'un routeur pour un accès distant réel) - le HTTP en clair signifie que la connexion Studio, le jeton de contrôle et chaque commande caméra/alarme traversent le réseau en clair. Le client `ARMOR-ANDROID-CONTROL` lui-même refuse déjà de parler en HTTP en clair à tout ce qui est hors d'une adresse LAN privée, précisément pour cette raison - il lui faut une vraie origine `https://` pour se connecter à distance.
-
-Obtenir un certificat :
-
-* **Vous possédez déjà un domaine pointant vers ce serveur** - utilisez [Let's Encrypt](https://letsencrypt.org/) (par exemple via [Certbot](https://certbot.eff.org/)) pour un certificat réel, reconnu par les navigateurs et Android, gratuit et renouvelé automatiquement. Pointez `TLS_CERT_PATH` / `TLS_KEY_PATH` vers les `fullchain.pem` / `privkey.pem` obtenus. Une fois le vrai HTTPS actif, ajoutez cette même origine de domaine (`https://votre-domaine.example`) à `ARMOR_STUDIO_ORIGIN` pour que la vérification CORS de Studio l'accepte.
-* **Test local, sans domaine** - un certificat auto-signé suffit pour exercer le chemin de code HTTPS/WSS (les navigateurs et la plupart des clients HTTP avertiront ou demanderont une confiance explicite, ce qui est normal et acceptable pour des tests) :
-  ```bash
-  openssl req -x509 -newkey rsa:2048 -nodes \
-    -keyout key.pem -out cert.pem -days 365 -subj "/CN=localhost"
-  ```
-  Définissez ensuite `TLS_CERT_PATH=./cert.pem` et `TLS_KEY_PATH=./key.pem`.
-
-Pour un déploiement uniquement LAN qui préfère ne pas gérer de certificat directement, le propre profil Compose `tls` d'`ARMOR-DEVOPS` place un proxy inverse Caddy (avec sa propre autorité de certification locale) devant Studio - voir `docs/BACKUP_AND_TLS.md` de ce dépôt. Les deux approches sont indépendantes : le propre `TLS_CERT_PATH`/`TLS_KEY_PATH` de ce serveur est celui qui fonctionne avec un certificat réel, reconnu publiquement, pour un accès distant véritable.
 
 ## 📂 Structure du dépôt
 
@@ -133,6 +114,7 @@ Pour installer sur le banc d'essai CM5 (isolé de tout autre projet, avec utilis
 * **[ARMOR-RADAR](https://github.com/JuanenRac/ARMOR-RADAR)** - Firmware du nœud de terrain pour ESP32-S3 avec trois radars et son propre panneau web
 * **[ARMOR-SOLAR](https://github.com/JuanenRac/ARMOR-SOLAR)** - Protocoles des onduleurs et batteries solaires et messages d'un nœud passerelle
 * **[ARMOR-ELECTRICAL](https://github.com/JuanenRac/ARMOR-ELECTRICAL)** - Nœud électrique : compteurs, le message des mesures du réseau et les règles de commutation
+* **[ARMOR-HMI](https://github.com/JuanenRac/ARMOR-HMI)** - Panneau tactile : l'état du système sur un écran mural, armer et acquitter, et la maison de l'assistant vocal
 * **[ARMOR-NETWORK](https://github.com/JuanenRac/ARMOR-NETWORK)** - Le réseau local : ses appareils, internet et ce qui change
 * **ARMOR-SERVER** (ce dépôt) - Coordinateur central : télémétrie, alarmes, appareils, relevés solaires et caméras
 * **[ARMOR-STUDIO](https://github.com/JuanenRac/ARMOR-STUDIO)** - Console web : caméras, radar, alarmes, énergie solaire et concepteur de site 2D/3D

@@ -76,25 +76,6 @@ flowchart LR
 * 把 `.env.example` 复制为 `.env`（Git 会忽略它），或让 `run.bat` / `run.sh` 在首次运行时生成随机机密。
 * 必填：`ARMOR_INGEST_TOKEN` 和 `ARMOR_CONTROL_TOKEN`（24 个字符或更长，且互不相同）以及 `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD`（第一个管理员）。
 * 常用：`ARMOR_HOST` / `ARMOR_PORT`、`ARMOR_DATA_DIR`、`ARMOR_FFMPEG_PATH`（实时视频和抓拍）、`ARMOR_MQTT_URL`、`ARMOR_STUDIO_ORIGIN`、`ARMOR_NODE_STALE_AFTER_S`、`ARMOR_CAMERA_CHECK_S`、`ARMOR_ALERT_DWELL_MS`、`ARMOR_ALERT_WEBHOOK_URL` 和 `ARMOR_COOKIE_SECURE`（在 TLS 之后设为 `1`）。
-* `TLS_CERT_PATH` / `TLS_KEY_PATH` —— **两者都设置**才能把服务器（REST API + 共用同一个监听器的 `/api/v1/events` WebSocket）从明文 HTTP/WS 切换为 HTTPS/WSS。见下方的“TLS / HTTPS”。两者都不设置则保持今天的明文 HTTP 行为不变；只设置其中一个会在启动时被拒绝，而不是悄悄停留在 HTTP 上。
-
-### 🔐 TLS / HTTPS
-
-默认关闭 —— 本服务器一直在受信任的局域网内以明文 HTTP/WS 运行，除非你主动开启，否则会继续如此。同时设置 `TLS_CERT_PATH` 和 `TLS_KEY_PATH` 指向一份 PEM 证书及其匹配的私钥，共用的 REST + WebSocket 监听器就会切换为 Node 自身的 `https.createServer()`——`/api/v1/events` 会随之自动变为 WSS，无需额外配置。已设置但不可读、缺失或无效的证书/私钥路径会让启动过程直接、明确地失败（一个真实的错误），而不是悄悄退回明文 HTTP。
-
-这一点在服务器可以从完全受信任的局域网之外访问时尤其重要（例如通过路由器端口转发实现真正的远程访问）——明文 HTTP 意味着 Studio 登录、控制令牌以及每一条摄像头/报警指令都会在网络上以明文传输。`ARMOR-ANDROID-CONTROL` 客户端自身正是因为这个原因，已经拒绝向任何局域网私有地址以外的目标发送明文 HTTP——它需要一个真正的 `https://` 源才能进行远程连接。
-
-获取证书：
-
-* **你已经有一个指向本服务器的域名** —— 使用 [Let's Encrypt](https://letsencrypt.org/)（例如通过 [Certbot](https://certbot.eff.org/)）获取一份真正的、被浏览器和 Android 信任的证书，免费且可自动续期。将 `TLS_CERT_PATH` / `TLS_KEY_PATH` 指向生成的 `fullchain.pem` / `privkey.pem`。真正的 HTTPS 生效后，把同一个域名源（`https://your-domain.example`）加入 `ARMOR_STUDIO_ORIGIN`，让 Studio 自身的 CORS 检查接受它。
-* **本地测试，没有域名** —— 一份自签名证书足以验证 HTTPS/WSS 的代码路径（浏览器和大多数 HTTP 客户端会警告或要求显式信任，这在测试时是正常且可以接受的）：
-  ```bash
-  openssl req -x509 -newkey rsa:2048 -nodes \
-    -keyout key.pem -out cert.pem -days 365 -subj "/CN=localhost"
-  ```
-  然后设置 `TLS_CERT_PATH=./cert.pem` 和 `TLS_KEY_PATH=./key.pem`。
-
-对于只在局域网内部署、不想直接管理证书的情况，`ARMOR-DEVOPS` 自身的 Compose `tls` 配置文件会在 Studio 前面放置一个 Caddy 反向代理（带有自己的本地证书颁发机构）——见该仓库的 `docs/BACKUP_AND_TLS.md`。这两种方式相互独立：本服务器自身的 `TLS_CERT_PATH`/`TLS_KEY_PATH` 才是配合真正的、公开信任证书实现真实远程访问的那一种。
 
 ## 📂 仓库结构
 
@@ -133,6 +114,7 @@ npm run build       # dist/server.mjs
 * **[ARMOR-RADAR](https://github.com/JuanenRac/ARMOR-RADAR)** - 适用于 ESP32-S3 的现场节点固件，带三个雷达和自带网页面板
 * **[ARMOR-SOLAR](https://github.com/JuanenRac/ARMOR-SOLAR)** - 太阳能逆变器与电池的协议，以及网关节点的消息
 * **[ARMOR-ELECTRICAL](https://github.com/JuanenRac/ARMOR-ELECTRICAL)** - 电气节点：电表、电网读数消息和开关规则
+* **[ARMOR-HMI](https://github.com/JuanenRac/ARMOR-HMI)** - 触摸面板：墙面屏幕上的系统状态、布防与确认，以及语音助手的所在
 * **[ARMOR-NETWORK](https://github.com/JuanenRac/ARMOR-NETWORK)** - 本地网络：其设备、互联网以及变化
 * **ARMOR-SERVER** (本仓库) - 中央协调器：遥测、报警、设备、太阳能读数和摄像头
 * **[ARMOR-STUDIO](https://github.com/JuanenRac/ARMOR-STUDIO)** - 网页控制台：摄像头、雷达、报警、太阳能和 2D/3D 场地设计器

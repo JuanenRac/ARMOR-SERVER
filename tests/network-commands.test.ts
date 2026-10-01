@@ -65,7 +65,7 @@ test("a device can be hidden from the list, and a watched device tells once when
     const headers = { "Content-Type": "application/json", cookie };
     const put = (body: unknown) => fetch(`${running.base}/api/v1/network/devices/aa:bb:cc:00:00:01`, { method: "PUT", headers, body: JSON.stringify(body) });
     const listed = async (hidden = false) => (await (await fetch(`${running.base}/api/v1/network${hidden ? "?hidden=1" : ""}`, { headers: { cookie } })).json()) as { nodes: Array<{ devices: unknown[]; hidden: number }> };
-    await ingest(state({ public: { ip: "95.60.192.108", org: "AS3352 TELEFONICA", checked_ms: NOW } }));
+    await ingest(state({ public: { ip: "203.0.113.9", org: "AS64496 EXAMPLE", checked_ms: NOW } }));
     assert.equal((await listed()).nodes[0].devices.length, 1);
     assert.equal((await put({ hidden: true })).status, 200);
     let view = await listed();
