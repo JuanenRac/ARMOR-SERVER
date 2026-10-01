@@ -22,7 +22,9 @@ export function tailLines(file: string, limit: number, maxBytes = 512 * 1024): s
 }
 
 export function registerSystemRoutes(app: Express, context: AppContext, version: string): void {
-  const { config, store, devices, alarms, automations, users, vault, events, evidence, requireOperator, requireAdmin } = context;
+  const { config, store, devices, alarms, automations, users, vault, events, evidence, systemMonitor, requireOperator, requireAdmin } = context;
+  // How the machine is doing, as a task manager shows it: the latest sample and the last few minutes of it.
+  app.get("/api/v1/system/metrics", requireOperator, (_request, response) => response.json({ ...systemMonitor.current, history: systemMonitor.history }));
 
   app.get("/api/v1/system", requireOperator, async (_request, response) => {
     const state = store.snapshot(), nodes = Object.values(state.nodes), all = devices.list();

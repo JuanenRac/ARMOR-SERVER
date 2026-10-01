@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.5] - The machine, live
+
+- **`GET /api/v1/system/metrics`.** How the computer the server runs on is doing, as a task manager shows it: processor use, load and clock, memory and swap, every temperature the board reports, the disks that hold files (told apart as card/eMMC, USB or SATA, and NVMe over PCIe), each network card with its link and traffic, and the last five minutes of it, sampled every two seconds. Read from `/proc` and `/sys` on Linux (the CM5 and the Jetson); anything else gets what Node can say, and what is not there is left out. Read only, for any signed-in operator.
+- 6 new tests (214 in all): the readers of `/proc`, the kind of disk and the bounded history.
+
 ## [0.3.4] - Orders for the network node, devices to hide and to watch, the public address, cookies that cannot shadow each other
 
 - **Manual orders for an ARMOR-NETWORK node.** `POST /api/v1/network/commands` queues a sweep now, a ping, a traceroute, a wake-up, a look at the ports or at the web page of one device; the node gets it in the answer to its next message (never over MQTT, each order handed out once, at most four at a time, forgotten after two minutes if not taken), does it and reports in `results`; `GET /api/v1/network/commands[/{id}]` shows the status and the result. Bounded, audited and rate limited; refused when the node is not reporting.

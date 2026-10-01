@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "ecosystem": "A.R.M.O.R.",
   "name": "ARMOR-SERVER",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "role": "Central event coordinator and web API",
   "stack": "Node.js 22+ / TypeScript / Docker Compose",
   "technologies": [
