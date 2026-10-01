@@ -5,6 +5,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Express } from "express";
+import { checkConnection, readConnection, writeConnection } from "../connection.js";
+import { isLoopbackHost } from "../config.js";
 import type { AppContext } from "../context.js";
 
 /** The last `limit` lines of a text file, without reading all of a large one. */
@@ -25,6 +27,21 @@ export function registerSystemRoutes(app: Express, context: AppContext, version:
   const { config, store, devices, alarms, automations, users, vault, events, evidence, systemMonitor, requireOperator, requireAdmin } = context;
   // How the machine is doing, as a task manager shows it: the latest sample and the last few minutes of it.
   app.get("/api/v1/system/metrics", requireOperator, (_request, response) => response.json({ ...systemMonitor.current, history: systemMonitor.history }));
+
+  // Where the server listens and where Studio is served (an administrator). The change is kept in a file and takes effect when the server is started again.
+  const connectionState = () => {
+    const saved = readConnection(config.dataDir);
+    return { active: { host: config.host, port: config.port, tls: Boolean(config.tls), studio_origins: config.studioOrigins }, saved, restart_required: (saved.host !== undefined && saved.host !== config.host) || (saved.port !== undefined && saved.port !== config.port) || saved.studio_port !== undefined };
+  };
+  app.get("/api/v1/system/connection", requireAdmin, (_request, response) => response.json(connectionState()));
+  app.put("/api/v1/system/connection", requireAdmin, (request, response) => {
+    const checked = checkConnection(request.body);
+    if (!checked.ok) return void response.status(400).json({ error: checked.error });
+    if (checked.value.host && !isLoopbackHost(checked.value.host) && config.studioPassword.length < 12) return void response.status(400).json({ error: "the administrator password must have at least 12 characters before the server is reachable from the network" });
+    writeConnection(config.dataDir, checked.value);
+    context.audit.record({ action: "system.connection", outcome: "allowed", actor: context.studioUser(request)?.username ?? "admin", detail: JSON.stringify(checked.value) });
+    response.json(connectionState());
+  });
 
   app.get("/api/v1/system", requireOperator, async (_request, response) => {
     const state = store.snapshot(), nodes = Object.values(state.nodes), all = devices.list();

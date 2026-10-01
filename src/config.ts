@@ -5,6 +5,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { originsWithStudioPort, readConnection } from "./connection.js";
 
 export const MIN_SECRET_LENGTH = 24;
 
@@ -160,17 +161,21 @@ export function readConfig(env: Env = process.env): ArmorConfig {
   const tls = tlsCertPath && tlsKeyPath ? { certPath: tlsCertPath, keyPath: tlsKeyPath } : null;
 
   const mqttUrl = env.ARMOR_MQTT_URL?.trim();
+  // What an administrator set from Studio (the address, the port, the port of Studio) wins over the environment; see connection.ts.
+  const dataDir = path.resolve(env.ARMOR_DATA_DIR ?? "data");
+  const saved = readConnection(dataDir);
+  const effectiveHost = saved.host && (isLoopbackHost(saved.host) || studioPassword.length >= 12) ? saved.host : host;
   return {
-    host,
-    port: integer(env, "ARMOR_PORT", 8080, 1, 65535),
+    host: effectiveHost,
+    port: saved.port ?? integer(env, "ARMOR_PORT", 8080, 1, 65535),
     ingestToken, controlToken, operatorToken, cameraConfigKey,
     cameraKeyIsFallback: !configuredKey,
-    studioUsername, studioPassword, passwordMinLength: isLoopbackHost(host) ? 8 : 12, resetStudioPassword: env.ARMOR_STUDIO_RESET_PASSWORD === "1",
+    studioUsername, studioPassword, passwordMinLength: isLoopbackHost(effectiveHost) ? 8 : 12, resetStudioPassword: env.ARMOR_STUDIO_RESET_PASSWORD === "1",
     studioSessionTtlMs: integer(env, "ARMOR_STUDIO_SESSION_TTL_MS", 7 * 86_400_000, 60_000, 30 * 86_400_000),
     operatorSessionTtlMs: integer(env, "ARMOR_OPERATOR_SESSION_TTL_MS", 28_800_000, 60_000, 7 * 86_400_000),
-    studioOrigins: [...origins],
+    studioOrigins: originsWithStudioPort([...origins], saved.studio_port),
     cookieSecure: env.ARMOR_COOKIE_SECURE === "1",
-    dataDir: path.resolve(env.ARMOR_DATA_DIR ?? "data"),
+    dataDir,
     ffmpegPath: env.ARMOR_FFMPEG_PATH?.trim() ?? "",
     maxMjpegRelays: integer(env, "ARMOR_MAX_MJPEG_RELAYS", 8, 1, 64),
     maxMediaBytes: integer(env, "ARMOR_MEDIA_MAX_BYTES", 20 * 1024 ** 3, 64 * 1024 ** 2, Number.MAX_SAFE_INTEGER),
