@@ -8,6 +8,7 @@ import type { Express } from "express";
 import { checkConnection, readConnection, writeConnection } from "../connection.js";
 import { isLoopbackHost } from "../config.js";
 import type { AppContext } from "../context.js";
+import { listServices, systemctlReader, type FieldNode, type UnitReader } from "../services.js";
 
 /** The last `limit` lines of a text file, without reading all of a large one. */
 export function tailLines(file: string, limit: number, maxBytes = 512 * 1024): string[] {
@@ -23,10 +24,20 @@ export function tailLines(file: string, limit: number, maxBytes = 512 * 1024): s
   } catch { return []; }
 }
 
-export function registerSystemRoutes(app: Express, context: AppContext, version: string): void {
+export function registerSystemRoutes(app: Express, context: AppContext, version: string, readUnits: UnitReader = systemctlReader): void {
   const { config, store, devices, alarms, automations, users, vault, events, evidence, systemMonitor, requireOperator, requireAdmin } = context;
   // How the machine is doing, as a task manager shows it: the latest sample and the last few minutes of it.
   app.get("/api/v1/system/metrics", requireOperator, (_request, response) => response.json({ ...systemMonitor.current, history: systemMonitor.history }));
+
+  // Every service of the system, running or not: the programs of this machine (from systemd) and the field nodes (from what they last said). Read only.
+  app.get("/api/v1/system/services", requireOperator, async (_request, response) => {
+    const nodes: FieldNode[] = [
+      ...Object.values(store.snapshot().nodes).map(node => ({ id: node.node_id, kind: "radar", online: node.online, last_ms: node.timestamp_ms || null })),
+      ...context.electricalNodes.list().map(node => ({ id: node.node_id, kind: "electrical", online: !node.stale, last_ms: Date.parse(node.received_at) || null })),
+    ];
+    const { systemd, services } = await listServices(readUnits, nodes);
+    response.json({ time_ms: Date.now(), systemd, services });
+  });
 
   // A small summary for the screens that cannot take the whole state (the touch panel, a watch): the mode, how many nodes are there and the alarms that need a person, newest first,
   // the ones nobody has acknowledged first. Always a few hundred bytes, whatever the installation holds.

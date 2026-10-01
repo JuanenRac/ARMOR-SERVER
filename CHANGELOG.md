@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.9] - The services of the system, running or not
+
+- **`GET /api/v1/system/services`:** every service of the system - the programs of the machine (the server, Studio, the MQTT broker, the network node, and the AI and voice services when they are installed), read from `systemctl show` (state, process, memory, restarts, when it started, whether it starts at boot), and the field nodes (radars and electrical nodes, online or not). A program that is not installed is listed as such; where there is no systemd the programs show as unknown. Read only.
+- 6 new tests (227 in all).
+
 ## [0.3.8] - Logins kept for the devices of the network
 - Documentation: the seven READMEs describe the machine metrics, the connection settings, the panel summary and the device logins.
 
