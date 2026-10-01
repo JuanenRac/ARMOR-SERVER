@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.6] - Address and ports from Studio
+
+- **`GET/PUT /api/v1/system/connection` (administrator).** Where the server listens (address, port) and the port Studio is served on are saved in `connection.json` beside the data and win over the environment at the next start; a missing, broken or nonsensical file is ignored so a wrong value typed in a page can never stop the server from starting. The origin Studio is allowed from follows its new port. Refuses a non-loopback address while the administrator password is shorter than 12 characters.
+- 3 new tests (217 in all).
+
 ## [0.3.5] - The machine, live
 
 - **`GET /api/v1/system/metrics`.** How the computer the server runs on is doing, as a task manager shows it: processor use, load and clock, memory and swap, every temperature the board reports, the disks that hold files (told apart as card/eMMC, USB or SATA, and NVMe over PCIe), each network card with its link and traffic, and the last five minutes of it, sampled every two seconds. Read from `/proc` and `/sys` on Linux (the CM5 and the Jetson); anything else gets what Node can say, and what is not there is left out. Read only, for any signed-in operator.
