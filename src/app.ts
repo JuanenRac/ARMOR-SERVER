@@ -26,6 +26,7 @@ import { networkTopic, parseNetworkMessage } from "./network.js";
 import { electricalTopic, parseElectricalMessage, parseElectricalResult } from "./electrical.js";
 import { parseSolarMessage, solarTopic } from "./solar.js";
 import { registerMediaRoutes } from "./routes/media.js";
+import { registerPreferencesRoutes } from "./routes/preferences.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerSystemRoutes } from "./routes/system.js";
 import { registerUserRoutes } from "./routes/users.js";
@@ -66,6 +67,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerIngestRoutes(app, context, Date.now(), version);
   registerSessionRoutes(app, context);
   registerUserRoutes(app, context);
+  registerPreferencesRoutes(app, context);
   registerDeviceRoutes(app, context);
   registerSolarRoutes(app, context);
   registerElectricalRoutes(app, context);
