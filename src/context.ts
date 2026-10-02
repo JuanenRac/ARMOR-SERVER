@@ -34,6 +34,7 @@ import { AlertNotifier } from "./notify.js";
 import { FileStatePersistence } from "./persistence.js";
 import { RulesFile } from "./rules.js";
 import { ArmorStore, type SystemState } from "./store.js";
+import { PreferencesStore } from "./preferences.js";
 import path from "node:path";
 
 export type AppContext = {
@@ -48,6 +49,8 @@ export type AppContext = {
   studioSessions: SessionStore;
   operatorSessions: SessionStore;
   users: UserStore;
+  /** Language, theme and the saved weather place, kept per account rather than per browser or address. */
+  preferences: PreferencesStore;
   devices: DeviceRegistry;
   alarms: AlarmCentre;
   alarmRules: AlarmRules;
@@ -190,6 +193,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     file: path.join(config.dataDir, "users.json"), seed: { username: config.studioUsername, password: config.studioPassword },
     minPasswordLength: config.passwordMinLength, resetSeedPassword: config.resetStudioPassword, warn,
   });
+  const preferences = new PreferencesStore(path.join(config.dataDir, "preferences.json"));
   const studioUser = (request: HeaderSource): PublicUser | undefined => { const id = studioSessions.userId(request); return id ? users.get(id) : undefined; };
   const operatorAuthorized = (request: HeaderSource): boolean =>
     hasBearer(request, config.operatorToken) || operatorSessions.has(request) || Boolean(studioUser(request));
@@ -204,7 +208,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(studioUser(request) ? 403 : 401).json({ error: "an administrator is required" });
   };
   return {
-    config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

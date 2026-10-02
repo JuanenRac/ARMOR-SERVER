@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.1] - Preferences that follow the account
+
+- **`GET`/`PUT /api/v1/preferences`:** language, theme and the saved weather place, kept per signed-in user (`data/preferences.json`). Added because Studio's own browser storage made these look reset every time someone reached the server from a different address - now the account's own choice, once saved, wins regardless of which network or IP was used.
+
 ## [0.4.0] - Live video that starts faster
 
 - **Live video:** FFmpeg no longer spends seconds looking at the stream before it shows anything (a short probe and no input buffering), the pictures are 15 a second instead of 10, a viewer that joins gets the last picture of the camera at once instead of waiting for the next one, viewers only receive whole pictures, and a camera's relay stays warm after the last viewer leaves, so going to another menu and back does not start it over.
