@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.3] - One failed pass of the clock no longer ends the server
+
+- The 2-second pass that expires silent devices, nodes and sessions is wrapped: if one of its steps throws, the server logs `ARMOR_SWEEP=FAILED` once (and again after a pass that worked) and carries on, instead of ending the process with an uncaught exception.
+
+
 ## [0.4.2] - Administration from Studio, alarms that stay dealt with, and live video that keeps up
 
 - **Real bug, found on the bench:** an alarm that somebody deleted (or that was cleared from the record) while its cause was still going on came straight back with the next report of the same condition. It is now kept quiet until the cause ends and happens again; an alarm that was only acknowledged was never duplicated.

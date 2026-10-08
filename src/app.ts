@@ -162,7 +162,17 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     });
   }
   // Silence and dwell time are time-driven: they need a clock, not a message.
-  const sweeper = setInterval(() => { context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.networkNodes.sweep(); }, 2_000);
+  // A failure of one pass must not take the process down (an uncaught exception in a timer would); it is said once, and again only after a pass that worked.
+  let sweepFailing = false;
+  const sweeper = setInterval(() => {
+    try {
+      context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.networkNodes.sweep();
+      sweepFailing = false;
+    } catch (error) {
+      if (!sweepFailing) console.warn("ARMOR_SWEEP=FAILED", error instanceof Error ? error.message : "unknown error");
+      sweepFailing = true;
+    }
+  }, 2_000);
   sweeper.unref();
   // The camera watchdog: a first pass shortly after start, then on a fixed interval.
   const watchdogs: NodeJS.Timeout[] = [];
