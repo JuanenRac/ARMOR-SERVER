@@ -6,6 +6,7 @@
  */
 import type { RequestHandler } from "express";
 import { unixTransport, type AdminAgent } from "./admin.js";
+import { FirmwareService } from "./firmware.js";
 import { createAuditLog, type AuditLog } from "./audit.js";
 import { CameraVault } from "./cameras/vault.js";
 import { DiscoveryGate } from "./cameras/discovery.js";
@@ -76,6 +77,8 @@ export type AppContext = {
   switchLink: { publish?: (topic: string, payload: string) => void };
   /** The way to the admin agent, or null when there is none (see admin.ts). */
   admin: AdminAgent | null;
+  /** Updating the firmware of field nodes from Studio (see firmware.ts). */
+  firmware: FirmwareService;
   /** The solar inverters and batteries the gateway nodes report. */
   solar: SolarStore;
   /** The solar equipment an operator declared, kept in a file. */
@@ -98,7 +101,7 @@ export type AppContext = {
   viewCamera(camera: CameraConnection): ReturnType<typeof cameraView>;
 };
 
-export type ContextOverrides = Partial<Pick<AppContext, "audit" | "admin">> & { broadcast?: (state: SystemState) => void; now?: () => number };
+export type ContextOverrides = Partial<Pick<AppContext, "audit" | "admin" | "firmware">> & { broadcast?: (state: SystemState) => void; now?: () => number };
 
 export function createContext(config: ArmorConfig, overrides: ContextOverrides = {}): AppContext {
   const audit = overrides.audit ?? createAuditLog(config.dataDir);
@@ -211,6 +214,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(studioUser(request) ? 403 : 401).json({ error: "an administrator is required" });
   };
   return {
+    firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
