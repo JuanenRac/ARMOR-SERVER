@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.4] - Firmware of the field nodes, updated from Studio
+
+- **`/api/v1/admin/firmware/...` (administrators):** the server updates the firmware of field nodes - one, or every node of a kind (radar, solar, electrical, HMI) - one after another. The image is a file uploaded to the server (`uploads`, at most 4 MB, kept an hour) or the newest release of the node's repository on GitHub, downloaded here (following GitHub's redirect) and checked against the SHA-256 the release publishes in `<image>.sha256`; a release without it, or whose image does not match it, is never used. Each node is signed in to with the login of its own panel (given for the job, held only by the job and never written in the audit trail), sent the image on its own update route, and waited for until it answers again with the new version (the hash the node reports for what it received must be the one sent). `probe` asks nodes for their id, version and board; `jobs` starts a job and answers at once, `jobs/{id}` says how every node stands. Only local addresses are accepted. Works for every kind of node, also one with no route to the Internet. 243 tests (6 new).
+
 ## [0.4.3] - One failed pass of the clock no longer ends the server
 
 - The 2-second pass that expires silent devices, nodes and sessions is wrapped: if one of its steps throws, the server logs `ARMOR_SWEEP=FAILED` once (and again after a pass that worked) and carries on, instead of ending the process with an uncaught exception.

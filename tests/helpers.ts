@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createArmorApp, type ArmorApp } from "../src/app.js";
+import type { ContextOverrides } from "../src/context.js";
 import { readConfig, type ArmorConfig } from "../src/config.js";
 
 export const SECRETS = {
@@ -23,9 +24,9 @@ export function testConfig(extra: Record<string, string> = {}): ArmorConfig {
 
 export type Running = { app: ArmorApp; base: string; config: ArmorConfig; stop: () => Promise<void> };
 
-export async function startServer(extra: Record<string, string> = {}): Promise<Running> {
+export async function startServer(extra: Record<string, string> = {}, overrides: ContextOverrides = {}): Promise<Running> {
   const config = testConfig(extra);
-  const app = createArmorApp(config, "test");
+  const app = createArmorApp(config, "test", overrides);
   await new Promise<void>(resolve => app.server.listen(0, "127.0.0.1", resolve));
   const address = app.server.address();
   const base = `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`;
