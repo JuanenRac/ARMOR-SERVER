@@ -5,6 +5,7 @@
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import type { RequestHandler } from "express";
+import { unixTransport, type AdminAgent } from "./admin.js";
 import { createAuditLog, type AuditLog } from "./audit.js";
 import { CameraVault } from "./cameras/vault.js";
 import { DiscoveryGate } from "./cameras/discovery.js";
@@ -73,6 +74,8 @@ export type AppContext = {
   electricalSwitching: SwitchingService;
   /** Where its commands are published; set when the broker is connected (never retained, at most once). */
   switchLink: { publish?: (topic: string, payload: string) => void };
+  /** The way to the admin agent, or null when there is none (see admin.ts). */
+  admin: AdminAgent | null;
   /** The solar inverters and batteries the gateway nodes report. */
   solar: SolarStore;
   /** The solar equipment an operator declared, kept in a file. */
@@ -95,7 +98,7 @@ export type AppContext = {
   viewCamera(camera: CameraConnection): ReturnType<typeof cameraView>;
 };
 
-export type ContextOverrides = Partial<Pick<AppContext, "audit">> & { broadcast?: (state: SystemState) => void; now?: () => number };
+export type ContextOverrides = Partial<Pick<AppContext, "audit" | "admin">> & { broadcast?: (state: SystemState) => void; now?: () => number };
 
 export function createContext(config: ArmorConfig, overrides: ContextOverrides = {}): AppContext {
   const audit = overrides.audit ?? createAuditLog(config.dataDir);
@@ -114,7 +117,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     warn,
   });
   const evidence = new EvidenceLibrary({ root: path.join(config.dataDir, "media"), ffmpegPath: config.ffmpegPath, maxBytes: config.maxMediaBytes, retentionMs: config.mediaRetentionMs, warn });
-  const relays = new RelayManager({ ffmpegPath: config.ffmpegPath, maxRelays: config.maxMjpegRelays });
+  const relays = new RelayManager({ ffmpegPath: config.ffmpegPath, maxRelays: config.maxMjpegRelays, fps: config.liveFps, width: config.liveWidth });
   const events = new EventLog({ file: path.join(config.dataDir, "events.log") });
   const rules = new RulesFile(path.join(config.dataDir, "rules.json"), config.alertDwellMs, warn);
   const notifier = new AlertNotifier({ webhookUrl: config.alertWebhookUrl ?? undefined, webhookSecret: config.alertWebhookSecret || undefined, audit });
@@ -208,6 +211,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(studioUser(request) ? 403 : 401).json({ error: "an administrator is required" });
   };
   return {
+    admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),

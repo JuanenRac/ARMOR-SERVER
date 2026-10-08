@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.2] - Administration from Studio, alarms that stay dealt with, and live video that keeps up
+
+- **Real bug, found on the bench:** an alarm that somebody deleted (or that was cleared from the record) while its cause was still going on came straight back with the next report of the same condition. It is now kept quiet until the cause ends and happens again; an alarm that was only acknowledged was never duplicated.
+- **Administration (administrators only, every action in the audit trail):** `/api/v1/admin/...` lists the A.R.M.O.R. services and starts, stops or restarts them; reads and writes their settings files (the value of every secret is hidden, and a hidden line keeps its real value when the file is saved); makes and removes the accounts of the MQTT broker (the password is shown once); and adopts a node in one step - makes its broker account and writes the broker and that account into the node's own panel with the node's login, which is used once and never kept. All of it goes through the admin agent of ARMOR-DEVOPS over a Unix socket (`ARMOR_ADMIN_SOCKET`, `ARMOR_ADMIN_TOKEN`); this server stays without privileges, and without the agent these routes answer that it is not installed.
+- **Live video:** the live picture can use a lighter second stream of the camera (`previewPath`, filled in by *Discover streams* when the camera has one), and falls back to the main stream if that one gives nothing; the pictures a second and the width are settings (`ARMOR_LIVE_FPS`, default 12, and `ARMOR_LIVE_WIDTH`, default 960; a picture is never enlarged); and a viewer on a slow link is skipped instead of making the server keep every picture it could not send, which made the picture fall further and further behind.
+
 ## [0.4.1] - Preferences that follow the account
 
 - **`GET`/`PUT /api/v1/preferences`:** language, theme and the saved weather place, kept per signed-in user (`data/preferences.json`). Added because Studio's own browser storage made these look reset every time someone reached the server from a different address - now the account's own choice, once saved, wins regardless of which network or IP was used.

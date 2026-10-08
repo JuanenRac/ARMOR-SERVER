@@ -9,7 +9,7 @@ import type { ServerResponse } from "node:http";
 import { mediaError } from "../cameras/errors.js";
 import { rtspUrl, type CameraConnection } from "../cameras/model.js";
 
-type Relay = { process: ChildProcess; subscribers: Set<ServerResponse>; stopTimer?: ReturnType<typeof setTimeout>; splitter: FrameSplitter };
+type Relay = { process: ChildProcess; subscribers: Set<ServerResponse>; stopTimer?: ReturnType<typeof setTimeout>; splitter: FrameSplitter; frames: number; preview: boolean };
 
 const BOUNDARY = Buffer.from("--armorframe");
 const MAX_PENDING_BYTES = 8 * 1024 * 1024;
@@ -42,10 +42,28 @@ export class FrameSplitter {
   }
 }
 
-export type RelayOptions = { ffmpegPath: string; maxRelays: number; idleStopMs?: number };
+/** `fps` and `width` shape the live picture (a console tile does not need more than a dozen pictures a second at under a thousand points wide, and every one costs the machine its decoding). */
+/**
+ * Send one picture to every viewer, skipping a viewer that has not yet taken what it was sent. A viewer on a slow link would otherwise make the server
+ * keep every picture it could not send yet, and its live picture would fall further and further behind (and the memory would grow): it gets the
+ * next picture it can take instead, which is what "live" means. Returns how many viewers were skipped.
+ */
+export function deliver(frame: Buffer, viewers: Iterable<Pick<ServerResponse, "write" | "writableEnded" | "writableNeedDrain">>): number {
+  let skipped = 0;
+  for (const viewer of viewers) {
+    if (viewer.writableEnded) continue;
+    if (viewer.writableNeedDrain) { skipped += 1; continue; }
+    viewer.write(frame);
+  }
+  return skipped;
+}
+
+export type RelayOptions = { ffmpegPath: string; maxRelays: number; idleStopMs?: number; fps?: number; width?: number };
 
 export class RelayManager {
   readonly #relays = new Map<string, Relay>();
+  /** Cameras whose lighter stream gave nothing (it does not exist on that camera): their live picture uses the main stream from now on. */
+  readonly #previewFailed = new Set<string>();
   readonly #options: RelayOptions;
   constructor(options: RelayOptions) { this.#options = options; }
 
@@ -80,18 +98,24 @@ export class RelayManager {
       return existing;
     }
     if (this.#relays.size >= this.#options.maxRelays) throw mediaError("the local live-video relay capacity is currently exhausted");
-    const source = rtspUrl(camera);
+    const preview = Boolean(camera.previewPath) && !this.#previewFailed.has(camera.id);
+    const source = rtspUrl(camera, preview);
     if (!source) throw mediaError("camera RTSP path and complete credentials are required");
     if (!this.#options.ffmpegPath) throw mediaError("FFmpeg is not configured");
+    const fps = Math.max(1, Math.min(30, Math.round(this.#options.fps ?? 12))), width = Math.max(160, Math.min(1920, Math.round(this.#options.width ?? 960)));
     const child = spawn(this.#options.ffmpegPath, [
       "-hide_banner", "-loglevel", "error", "-fflags", "nobuffer+discardcorrupt", "-flags", "low_delay", "-probesize", "262144", "-analyzeduration", "500000",
       "-rtsp_transport", "tcp", "-i", source,
-      "-an", "-vf", "fps=15,scale=960:-2", "-q:v", "5", "-f", "mpjpeg", "-boundary_tag", "armorframe", "pipe:1",
+      // Never enlarge a picture (min), and drop to the wanted rate before scaling: the scaler then works on fewer pictures.
+      "-an", "-sn", "-dn", "-vf", `fps=${fps},scale='min(${width},iw)':-2`, "-q:v", "6", "-f", "mpjpeg", "-boundary_tag", "armorframe", "pipe:1",
     ], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
-    const relay: Relay = { process: child, subscribers: new Set(), splitter: new FrameSplitter() };
+    const relay: Relay = { process: child, subscribers: new Set(), splitter: new FrameSplitter(), frames: 0, preview };
     this.#relays.set(camera.id, relay);
     child.stdout?.on("data", (chunk: Buffer) => {
-      for (const frame of relay.splitter.push(chunk)) for (const client of relay.subscribers) if (!client.writableEnded) client.write(frame);
+      for (const frame of relay.splitter.push(chunk)) {
+        relay.frames += 1;
+        deliver(frame, relay.subscribers);
+      }
     });
     const close = () => this.#close(camera.id, relay);
     child.once("error", close);
@@ -106,6 +130,7 @@ export class RelayManager {
 
   #close(cameraId: string, relay: Relay): void {
     if (this.#relays.get(cameraId) !== relay) return;
+    if (relay.preview && relay.frames === 0) this.#previewFailed.add(cameraId);   // the viewers that reconnect get the main stream
     if (relay.stopTimer) clearTimeout(relay.stopTimer);
     this.#relays.delete(cameraId);
     for (const client of relay.subscribers) if (!client.writableEnded) client.end();

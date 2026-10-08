@@ -12,6 +12,9 @@ import { clientMessage } from "../cameras/errors.js";
 import { parseCameraInput, type CameraConnection } from "../cameras/model.js";
 import { discoverRtspPaths } from "../cameras/rtsp.js";
 
+/** The paths that cameras of the common families give to their lighter second stream (Hi3510 12, Hikvision 102, Dahua subtype 1). */
+const SUB_STREAM = /^\/(12|13|stream2)$|Channels\/(2|102|202)$|subtype=1/;
+
 const param = (request: Request, name: string): string => {
   const value = request.params[name];
   return typeof value === "string" ? value : "";
@@ -90,7 +93,13 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
     if (!camera) return;
     if (!camera.secrets?.username || !camera.secrets.password) return response.status(409).json({ error: "complete camera credentials are required" });
     const paths = await discoverRtspPaths(camera);
-    if (paths[0]) { camera.rtspPath = paths[0].replace(/^\/+/, ""); vault.save(camera); }
+    if (paths[0]) {
+      camera.rtspPath = paths[0].replace(/^\/+/, "");
+      // The same camera usually offers a lighter second stream; the live picture of the console uses it and the recordings keep the main one.
+      const light = paths.find(path => path !== paths[0] && SUB_STREAM.test(path));
+      if (light) camera.previewPath = light.replace(/^\/+/, "");
+      vault.save(camera);
+    }
     audit.record({ action: "camera.discover-rtsp", outcome: "allowed", target: camera.id, detail: `${paths.length} path(s)` });
     return response.json({ paths, camera: context.publicCamera(camera) });
   });

@@ -31,6 +31,9 @@ export type ArmorConfig = {
   dataDir: string;
   ffmpegPath: string;
   maxMjpegRelays: number;
+  /** Pictures a second and widest picture of the live video the console shows (see media/relay.ts). */
+  liveFps: number;
+  liveWidth: number;
   maxMediaBytes: number;
   mediaRetentionMs: number;
   discoveryCidr: string | null;
@@ -46,6 +49,8 @@ export type ArmorConfig = {
   alertWebhookSecret: string;
   /** Whether this server may send a command to the switch of an electrical node. Off unless ARMOR_ELECTRICAL_SWITCHING=1; even then the node has to allow it too. */
   electricalSwitching: boolean;
+  /** The admin agent (ARMOR-DEVOPS): where its Unix socket is and the token it wants; null when this install has no agent, and Studio then cannot administer services. */
+  admin: { socketPath: string; token: string } | null;
   /** Set only when both TLS_CERT_PATH and TLS_KEY_PATH are configured - see readConfig's own check. Switches the shared REST+WebSocket listener to HTTPS/WSS (app.ts); off (plain HTTP/WS) by default, unchanged from before this existed. */
   tls: { certPath: string; keyPath: string } | null;
   /** Problems that do not stop a loopback-only server but should be fixed. */
@@ -138,6 +143,9 @@ export function readConfig(env: Env = process.env): ArmorConfig {
   if (alertWebhookUrl && !alertWebhookSecret) warnings.push("ARMOR_ALERT_WEBHOOK_SECRET is not set; alarm calls will not be signed");
   if (alertWebhookSecret) secret(env, "ARMOR_ALERT_WEBHOOK_SECRET");
 
+  const adminSocket = env.ARMOR_ADMIN_SOCKET?.trim() ?? "", adminToken = env.ARMOR_ADMIN_TOKEN?.trim() ?? "";
+  if (adminSocket && adminToken.length < MIN_SECRET_LENGTH) throw new Error(`ARMOR_ADMIN_TOKEN must be at least ${MIN_SECRET_LENGTH} characters when ARMOR_ADMIN_SOCKET is set`);
+  const admin = adminSocket ? { socketPath: adminSocket, token: adminToken } : null;
   const electricalSwitching = env.ARMOR_ELECTRICAL_SWITCHING === "1";
   if (electricalSwitching) warnings.push("ARMOR_ELECTRICAL_SWITCHING=1: this server may send commands to the switches of electrical nodes; that is only for a bench, a lamp and a person present, until the installation has its own protections");
 
@@ -178,6 +186,8 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     dataDir,
     ffmpegPath: env.ARMOR_FFMPEG_PATH?.trim() ?? "",
     maxMjpegRelays: integer(env, "ARMOR_MAX_MJPEG_RELAYS", 8, 1, 64),
+    liveFps: integer(env, "ARMOR_LIVE_FPS", 12, 1, 30),
+    liveWidth: integer(env, "ARMOR_LIVE_WIDTH", 960, 160, 1920),
     maxMediaBytes: integer(env, "ARMOR_MEDIA_MAX_BYTES", 20 * 1024 ** 3, 64 * 1024 ** 2, Number.MAX_SAFE_INTEGER),
     mediaRetentionMs: integer(env, "ARMOR_MEDIA_RETENTION_DAYS", 30, 0, 3650) * 86_400_000,
     discoveryCidr: cidr,
@@ -185,7 +195,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     nodeStaleAfterS: integer(env, "ARMOR_NODE_STALE_AFTER_S", 30, 5, 3600),
     alertDwellMs: integer(env, "ARMOR_ALERT_DWELL_MS", 2000, 0, 60_000),
     cameraCheckS: integer(env, "ARMOR_CAMERA_CHECK_S", 20, 0, 3600),
-    alertWebhookUrl, alertWebhookSecret, electricalSwitching,
+    alertWebhookUrl, alertWebhookSecret, electricalSwitching, admin,
     tls,
     warnings,
   };

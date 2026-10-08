@@ -7,7 +7,7 @@ import { createConnection } from "node:net";
 import { answerChallenge } from "./digest.js";
 import type { CameraConnection } from "./model.js";
 
-export const RTSP_PATH_CANDIDATES = ["/11", "/12", "/profile0", "/live", "/h264", "/stream1", "/Streaming/Channels/1", "/cam/realmonitor?channel=1&subtype=0"];
+export const RTSP_PATH_CANDIDATES = ["/11", "/12", "/profile0", "/live", "/h264", "/stream1", "/stream2", "/Streaming/Channels/1", "/Streaming/Channels/101", "/Streaming/Channels/102", "/cam/realmonitor?channel=1&subtype=0", "/cam/realmonitor?channel=1&subtype=1"];
 
 /** The status code of an RTSP DESCRIBE, answering one Basic/Digest challenge if needed. */
 export function rtspDescribe(camera: CameraConnection, requestPath: string, timeoutMs = 2_500): Promise<number> {
