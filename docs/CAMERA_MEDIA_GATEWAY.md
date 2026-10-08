@@ -21,9 +21,19 @@ Every denied attempt and every sensitive action is written to `data/audit.log`.
 ## Live video
 
 With `ARMOR_FFMPEG_PATH` set, one FFmpeg process per active camera converts RTSP
-to MJPEG (10 fps, 960 px wide) and every viewer of that camera shares it. The
-relay closes five seconds after its last viewer leaves and the number of relays
-is capped by `ARMOR_MAX_MJPEG_RELAYS`. Without FFmpeg the server answers `503`
+to MJPEG (`ARMOR_LIVE_FPS` pictures a second, 12 by default, and never wider than
+`ARMOR_LIVE_WIDTH`, 960 by default; a picture is never enlarged) and every viewer of
+that camera shares it. The relay closes two minutes after its last viewer leaves and
+the number of relays is capped by `ARMOR_MAX_MJPEG_RELAYS`. A viewer that has not yet
+taken the last picture it was sent is skipped for the next one, so a slow link never
+falls behind the camera.
+
+The decoding is what costs: a camera's main stream can be several times the size of
+its second one. A camera can therefore carry a `previewPath`, the lighter stream
+(often `12`, or `Streaming/Channels/102`), which only the live picture uses -
+snapshots and recordings keep the main `rtspPath`. *Discover streams* fills it in
+when the camera has one, and if that stream gives no picture the relay falls back
+to the main one. Without FFmpeg the server answers `503`
 instead of pretending video exists, and `409` when the RTSP path or a complete
 credential pair is missing. The RTSP source is built in memory and never logged.
 

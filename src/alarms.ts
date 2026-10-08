@@ -49,15 +49,18 @@ export class AlarmCentre {
   readonly #now: () => Date;
   #alarms: Alarm[] = [];
   #counter = 1;
+  /** Causes whose alarm somebody took off the list while they were still going on: they stay quiet until the cause ends (clear) and happens again. */
+  #muted = new Set<string>();
   #timer: NodeJS.Timeout | undefined;
 
   constructor(options: AlarmCentreOptions) {
     this.#options = options;
     this.#now = options.now ?? (() => new Date());
     try {
-      const raw = JSON.parse(fs.readFileSync(options.file, "utf8")) as { alarms?: Alarm[]; counter?: number };
+      const raw = JSON.parse(fs.readFileSync(options.file, "utf8")) as { alarms?: Alarm[]; counter?: number; muted?: string[] };
       if (Array.isArray(raw.alarms)) this.#alarms = raw.alarms.filter(alarm => typeof alarm?.id === "string" && typeof alarm.key === "string" && typeof alarm.raised_at === "string").slice(-MAX_KEPT);
       if (typeof raw.counter === "number") this.#counter = raw.counter;
+      if (Array.isArray(raw.muted)) this.#muted = new Set(raw.muted.filter(key => typeof key === "string").slice(-MAX_KEPT));
     } catch { /* nothing kept yet */ }
   }
 
@@ -72,7 +75,7 @@ export class AlarmCentre {
     try {
       fs.mkdirSync(path.dirname(this.#options.file), { recursive: true });
       const temporary = `${this.#options.file}.${process.pid}.tmp`;
-      fs.writeFileSync(temporary, JSON.stringify({ schema: 1, counter: this.#counter, alarms: this.#alarms }), { encoding: "utf8", mode: 0o600 });
+      fs.writeFileSync(temporary, JSON.stringify({ schema: 1, counter: this.#counter, alarms: this.#alarms, muted: [...this.#muted] }), { encoding: "utf8", mode: 0o600 });
       fs.renameSync(temporary, this.#options.file);
     } catch (error) { this.#options.warn?.(`the alarms file could not be written: ${(error as Error).message}`); }
   }
@@ -86,7 +89,7 @@ export class AlarmCentre {
 
   /** Raise an alarm unless one for the same cause is already open. */
   raise(key: string, info: { source: AlarmSource; severity: Severity; code: string; detail?: Record<string, unknown> }): Alarm | undefined {
-    if (this.#open(key)) return undefined;
+    if (this.#open(key) || this.#muted.has(key)) return undefined;
     const detail = cleanDetail(info.detail);
     const alarm: Alarm = { id: `alm-${String(this.#counter).padStart(5, "0")}`, key, source: info.source, severity: info.severity, code: info.code, raised_at: this.#now().toISOString(), ...(detail ? { detail } : {}) };
     this.#counter += 1;
@@ -109,6 +112,7 @@ export class AlarmCentre {
 
   /** The cause ended: the alarm stays on the list until it is acknowledged. */
   clear(key: string): void {
+    if (this.#muted.delete(key)) this.#save();   // the cause ended: if it happens again it is news again
     const alarm = this.#open(key);
     if (!alarm) return;
     alarm.cleared_at = this.#now().toISOString();
@@ -156,6 +160,8 @@ export class AlarmCentre {
     const index = this.#alarms.findIndex(alarm => alarm.id === id);
     if (index < 0) return undefined;
     const [alarm] = this.#alarms.splice(index, 1);
+    // The cause is still going on (nobody cleared it): the same condition reported again must not bring the alarm back.
+    if (!alarm.cleared_at) this.#muted.add(alarm.key);
     this.#save();
     return alarm;
   }
@@ -163,6 +169,7 @@ export class AlarmCentre {
   /** Delete every alarm someone has acknowledged, whether its cause has ended or not (the record, and what was seen and is being lived with). The ones nobody has seen stay. */
   clearAcknowledged(): number {
     const before = this.#alarms.length;
+    for (const alarm of this.#alarms) if (alarm.acknowledged_at && !alarm.cleared_at) this.#muted.add(alarm.key);
     this.#alarms = this.#alarms.filter(alarm => !alarm.acknowledged_at);
     this.#save();
     return before - this.#alarms.length;

@@ -61,3 +61,19 @@ test("disarming ends the intrusion alarms and settles them: they go to the recor
   assert.deepEqual(alarms.active().map(alarm => alarm.code), ["network_port_opened"], "the others are not about the mode: they stay");
   assert.deepEqual(alarms.recent().map(alarm => [alarm.code, alarm.acknowledged_by]).sort(), [["door_open", "disarm"], ["intrusion", "disarm"]]);
 });
+
+test("an alarm taken off the list while its cause goes on does not come back until the cause ends and happens again", () => {
+  const alarms = centre();
+  const info = { source: { type: "network", id: "n" } as const, severity: "warning" as const, code: "network_port_opened" };
+  const first = alarms.raise("k", info)!;
+  alarms.acknowledge(first.id, "admin");
+  assert.equal(alarms.raise("k", info), undefined, "acknowledged and still going on: one alarm, not two");
+  assert.equal(alarms.remove(first.id)?.id, first.id);
+  assert.equal(alarms.raise("k", info), undefined, "deleted while the cause goes on: the same report does not bring it back");
+  alarms.clear("k");
+  assert.ok(alarms.raise("k", info), "the cause ended and happened again: it is news again");
+  const second = alarms.active()[0];
+  alarms.acknowledge(second.id, "admin");
+  assert.equal(alarms.clearAcknowledged(), 1);
+  assert.equal(alarms.raise("k", info), undefined, "clearing the record does not bring back what is still going on either");
+});

@@ -147,3 +147,12 @@ test("RTSP discovery keeps every path that answers 200 and needs credentials", a
   assert.deepEqual(found, ["/a", "/c"]);
   assert.deepEqual(await discoverRtspPaths({ ...camera, secrets: undefined }, ["/a"], 0), []);
 });
+
+test("a camera can have a lighter stream for the live picture, which only the live picture uses", () => {
+  const camera = parseCameraInput({ id: "gate-cam", name: "Gate", host: "192.168.0.203", username: "u", password: "p", rtspPath: "/11", previewPath: "//12" })!;
+  assert.equal(camera.previewPath, "12");
+  assert.match(rtspUrl(camera)!, /\/11$/, "recordings and snapshots keep the main stream");
+  assert.match(rtspUrl(camera, true)!, /\/12$/, "the live picture uses the lighter one");
+  const plain = parseCameraInput({ id: "gate-cam", name: "Gate", host: "192.168.0.203", username: "u", password: "p", rtspPath: "11" })!;
+  assert.match(rtspUrl(plain, true)!, /\/11$/, "without a lighter stream the live picture uses the main one");
+});

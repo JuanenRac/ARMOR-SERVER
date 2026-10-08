@@ -7,6 +7,8 @@ export type CameraSecrets = { username: string; password: string };
 
 export type CameraConnection = {
   id: string; name: string; host: string; snapshotUrl: string; rtspPath: string;
+  /** A lighter stream of the same camera (its sub-stream) for the live picture in the console, when it has one; empty: the live picture uses `rtspPath`. */
+  previewPath?: string;
   onvifPort: number; rtspPort: number; secrets?: CameraSecrets;
 };
 /** What an authorised operator sees: everything except the password. */
@@ -56,15 +58,17 @@ export function parseCameraInput(body: unknown, existing?: CameraConnection): Ca
   return {
     id, name: name.slice(0, 80), host, snapshotUrl: text("snapshotUrl").slice(0, 500),
     rtspPath: text("rtspPath").replace(/^\/+/, "").slice(0, 500),
+    previewPath: text("previewPath").replace(/^\/+/, "").slice(0, 500),
     onvifPort: validPort(input.onvifPort, 80), rtspPort: validPort(input.rtspPort, 554),
     secrets,
   };
 }
 
-/** The RTSP source URL, built only in memory when it is needed. */
-export function rtspUrl(camera: CameraConnection): string | null {
-  if (!camera.secrets?.username || !camera.secrets.password || !camera.rtspPath) return null;
+/** The RTSP source URL, built only in memory when it is needed. `preview` asks for the lighter stream of the live picture when the camera has one. */
+export function rtspUrl(camera: CameraConnection, preview = false): string | null {
+  const path = preview && camera.previewPath ? camera.previewPath : camera.rtspPath;
+  if (!camera.secrets?.username || !camera.secrets.password || !path) return null;
   const user = encodeURIComponent(camera.secrets.username);
   const password = encodeURIComponent(camera.secrets.password);
-  return `rtsp://${user}:${password}@${camera.host}:${camera.rtspPort}/${camera.rtspPath.replace(/^\/+/, "")}`;
+  return `rtsp://${user}:${password}@${camera.host}:${camera.rtspPort}/${path.replace(/^\/+/, "")}`;
 }
