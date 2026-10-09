@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [0.5.1] - A paused service says so
 
+- **A node that has no clock yet is heard anyway.** A radar, health or info message whose time is not a date (the time since the node started, which is what a node sends while it has no clock) is stamped with the moment the server receives it; a real date is kept as it came.
+- **The battery and inverter messages take the new optional fields of the contract**: `power_w`, `balancing`, `protecting`, `charge_mos` and `discharge_mos` of a battery stack (what a battery management system adds) and `bus_v` of an inverter. The example readings carry them, so the menus can be tried without a node.
 - **A node with newer firmware is no longer refused for a field the server does not know.** The readings of solar, electrical and network nodes (over MQTT and over HTTP) are read forgivingly: a field that is not in this server's contract is dropped and listed, and everything the server does know is checked exactly as before. What can move a switch (commands, results, the objects of a switch, a field called command) is still read exactly.
 - **`GET /api/v1/system/ingest`** says, for every topic, how many messages were taken and refused, which unknown fields were ignored and the last refusal with the start of what was sent, so a node that does not show up has a reason to look at. The refusals were only a line in the server's own log before.
 - **The history of solar and electrical readings survives a restart** (kept in `solar-history.json` and `electrical-history.json`, written once a minute) and reaches back a month: past a day the charts get five-minute averages (`minutes` up to 43200 in `/solar/history` and `/electrical/history`).

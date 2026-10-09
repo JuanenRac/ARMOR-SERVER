@@ -28,6 +28,13 @@ export function bodyMatchesTopic(topic: string, body: { node_id: string }): bool
   return topicNode(topic) === body.node_id;
 }
 
+/**
+ * A node whose clock is not set yet (no time server reached) tells the time since it started instead of a date, so that it never falls silent for want of a clock. That is not a date:
+ * anything before the year 2001 in milliseconds is replaced by the moment the server received the message. A real date is kept as it came.
+ */
+export const WALL_CLOCK_FROM_MS = 1_000_000_000_000;
+export const stampOf = (timestampMs: number, receivedMs: number): number => (timestampMs < WALL_CLOCK_FROM_MS ? receivedMs : timestampMs);
+
 export function attachMqtt(store: ArmorStore, brokerUrl: string, username?: string, password?: string, log?: IngestLog): MqttClient {
   const client = connect(brokerUrl, { username, password, reconnectPeriod: 2_000, clean: true, protocolVersion: 5 });
   client.on("connect", () => client.subscribe(["armor/node/+/telemetry", "armor/node/+/health", "armor/node/+/info"], { qos: 1 }));
@@ -36,7 +43,8 @@ export function attachMqtt(store: ArmorStore, brokerUrl: string, username?: stri
       const kind = topicKind(topic);
       if (!kind) return;
       const body: unknown = JSON.parse(raw.toString("utf8"));
-      const message = kind === "telemetry" ? parseTelemetry(body) : kind === "info" ? parseInfo(body) : parseHealth(body);
+      const parsed = kind === "telemetry" ? parseTelemetry(body) : kind === "info" ? parseInfo(body) : parseHealth(body);
+      const message = { ...parsed, timestamp_ms: stampOf(parsed.timestamp_ms, Date.now()) };
       if (!bodyMatchesTopic(topic, message)) throw new Error("node_id does not match the topic");
       if (kind === "telemetry") store.telemetry(message as ReturnType<typeof parseTelemetry>);
       else if (kind === "info") store.info(message as ReturnType<typeof parseInfo>);

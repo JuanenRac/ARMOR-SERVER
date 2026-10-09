@@ -12,27 +12,27 @@ const inverter = (extra: Record<string, unknown> = {}) => ({
 });
 
 test("a field of a newer firmware is dropped and reported, and everything else is still checked", () => {
-  const body = inverter({ bus_v: 380, units: [{ unit: 0, mode: "line", extra_unit_field: 1 }] });
+  const body = inverter({ future_gauge: 380, units: [{ unit: 0, mode: "line", extra_unit_field: 1 }] });
   assert.throws(() => parseSolarMessage(structuredClone(body)), /unknown field/);                    // the plain parser stays strict (the conformance tests use it)
   const { value, ignored } = forwardCompatible(() => parseSolarMessage(structuredClone(body)));
-  assert.deepEqual(ignored.sort(), ["inverter.bus_v", "unit 0.extra_unit_field"]);
-  assert.equal("bus_v" in value, false);
-  assert.throws(() => forwardCompatible(() => parseSolarMessage(inverter({ bus_v: 1, pv_w: -5 }))), /pv_w/);   // an unknown field never excuses a wrong known one
+  assert.deepEqual(ignored.sort(), ["inverter.future_gauge", "unit 0.extra_unit_field"]);
+  assert.equal("future_gauge" in value, false);
+  assert.throws(() => forwardCompatible(() => parseSolarMessage(inverter({ future_gauge: 1, pv_w: -5 }))), /pv_w/);   // an unknown field never excuses a wrong known one
   assert.throws(() => forwardCompatible(() => parseSolarMessage({ ...inverter(), mode: "sleeping" })), /mode/);
-  assert.throws(() => parseSolarMessage(inverter({ bus_v: 1 })), /unknown field/);                    // and the collector is off again afterwards
+  assert.throws(() => parseSolarMessage(inverter({ future_gauge: 1 })), /unknown field/);                    // and the collector is off again afterwards
 });
 
 test("the log counts what was taken and refused, and keeps the last refusal", () => {
   let now = Date.parse("2026-10-10T10:00:00Z");
   const log = new IngestLog(() => now);
-  log.ok("armor/solar/a/b/state", ["inverter.bus_v"]);
-  log.ok("armor/solar/a/b/state", ["inverter.bus_v", "inverter.fw"]);
+  log.ok("armor/solar/a/b/state", ["inverter.future_gauge"]);
+  log.ok("armor/solar/a/b/state", ["inverter.future_gauge", "inverter.fw"]);
   now += 1000;
   log.rejected("armor/solar/a/b/state", "invalid pv_w", "x".repeat(900));
   const [entry] = log.list();
   assert.equal(entry.accepted, 2);
   assert.equal(entry.rejected, 1);
-  assert.deepEqual(entry.ignored_fields, ["inverter.bus_v", "inverter.fw"]);
+  assert.deepEqual(entry.ignored_fields, ["inverter.future_gauge", "inverter.fw"]);
   assert.equal(entry.last_error, "invalid pv_w");
   assert.ok(entry.last_payload!.length <= 401);
   assert.equal(entry.last_error_at, "2026-10-10T10:00:01.000Z");
@@ -44,15 +44,15 @@ test("the route takes a message with an unknown field, and an operator reads the
   const running = await startServer();
   try {
     const post = (body: unknown) => fetch(`${running.base}/api/v1/solar`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SECRETS.ARMOR_INGEST_TOKEN}` }, body: JSON.stringify(body) });
-    const answer = await post(inverter({ bus_v: 380 }));
+    const answer = await post(inverter({ future_gauge: 380 }));
     assert.equal(answer.status, 202);
-    assert.deepEqual(((await answer.json()) as { ignored: string[] }).ignored, ["inverter.bus_v"]);
+    assert.deepEqual(((await answer.json()) as { ignored: string[] }).ignored, ["inverter.future_gauge"]);
     assert.equal((await post(inverter({ pv_w: -1 }))).status, 400);
     assert.equal((await fetch(`${running.base}/api/v1/system/ingest`)).status, 401);
     const cookie = await studioCookie(running.base);
     const { topics } = await (await fetch(`${running.base}/api/v1/system/ingest`, { headers: { cookie } })).json() as { topics: Array<{ topic: string; accepted: number; rejected: number; ignored_fields: string[]; last_error: string | null }> };
     const ok = topics.find(topic => topic.topic === "http:solar/solar-1/axpert-1")!;
-    assert.deepEqual([ok.accepted, ok.ignored_fields], [1, ["inverter.bus_v"]]);
+    assert.deepEqual([ok.accepted, ok.ignored_fields], [1, ["inverter.future_gauge"]]);
     assert.match(topics.find(topic => topic.topic === "http:solar")!.last_error ?? "", /pv_w/);
   } finally { await running.stop(); }
 });

@@ -194,7 +194,7 @@ export function exampleReading(registration: SolarRegistration, now: number, pha
       kind: "inverter", node_id: registration.node_id, device: registration.device, timestamp_ms: now, mode: "line",
       grid_v: Math.round((230 + jitter(2, 4)) * 10) / 10, grid_hz: 50, out_v: 230, out_hz: 50, out_va: Math.round(load * 1.1), out_w: Math.round(load), load_percent: Math.round(load / 50),
       battery_v: batteryV, battery_a: current, battery_percent: soc, pv_v: pvV, pv_a: pvV ? Math.round((sun / pvV) * 10) / 10 : 0, pv_w: Math.round(sun),
-      heatsink_c: Math.round(34 + load / 90 + sun / 300), ac_charging: false, pv_charging: sun > load, load_on: true, warnings: [],
+      heatsink_c: Math.round(34 + load / 90 + sun / 300), bus_v: Math.round((381 + jitter(2, 8)) * 10) / 10, ac_charging: false, pv_charging: sun > load, load_on: true, warnings: [],
     });
   }
   const shape = batteryShape(registration.model);
@@ -218,5 +218,6 @@ export function exampleReading(registration: SolarRegistration, now: number, pha
     cell_min_v: Math.min(...all), cell_max_v: Math.max(...all), soc_percent: soc, alarm: false, model: shape.label,
     capacity_ah: Math.round(totalAh * soc) / 100, full_capacity_ah: totalAh, energy_kwh: Math.round(totalAh * soc / 100 * voltage / 10) / 100, cycles: 181,
     health_percent: Math.round(stack.reduce((sum, module) => sum + module.health_percent, 0) / stack.length), stack,
+    power_w: Math.round(voltage * current), balancing: soc > 90 ? 2 : 0,
   });
 }
