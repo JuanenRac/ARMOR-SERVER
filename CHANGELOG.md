@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.6] - Written and spoken commands
+
+- **`POST /api/v1/voice/command`** (a signed-in operator): takes what the person said as text (`text`, at most 200 characters, `language` one of the seven, `confirmation` for the second turn), asks the voice gateway (`ARMOR_VOICE_URL` and `ARMOR_VOICE_TOKEN`; ARMOR-VOICE-AI, on this machine) which of its four closed commands it is, and carries out what is accepted with the session of the person: **arm** and **disarm** (they need a second turn with the confirmation token the first answer carries), the **status** (the mode, the active alarms and the nodes online, said in the person's language) and **silence** (acknowledges the active alarms). The answer says what was understood, whether it was carried out, what to say, and the token when one is needed. `GET /api/v1/voice/status` tells whether the gateway is set up. The audit trail holds the command and the person, never the words. Without a gateway the route says `voice_unavailable`; one that does not answer, `voice_not_answering`. 247 tests (4 new).
+
 ## [0.4.5] - How far each node is in a firmware update
 
 - A firmware job now says, for every node, `progress` (0-100), `sent` and `total` (the bytes of the image that have gone out) and `waited_s` (the seconds since the node was told to restart). The image goes out as a stream that counts what has been taken, so the number moves while it is being sent.
