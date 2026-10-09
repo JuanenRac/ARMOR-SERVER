@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.8] - Alarms to Telegram and Home Assistant
+
+- **Telegram:** `ARMOR_TELEGRAM_BOT_TOKEN` and `ARMOR_TELEGRAM_CHAT_IDS` (one to ten chats, numbers or `@channel`) send every alarm to those chats through a bot of the installation. **Home Assistant:** `ARMOR_HOMEASSISTANT_URL` and `ARMOR_HOMEASSISTANT_WEBHOOK_ID` post the alarm (the same JSON as the webhook, plus `title` and `text`) to a webhook an automation of Home Assistant listens on. Both are tried again after 1, 4 and 15 seconds, a client error (a wrong token) is not retried, and every end is in the audit trail (`alert.telegram`, `alert.homeassistant`) without the token or the webhook id, which are also masked in the settings file.
+- **The sentences** of Telegram and Home Assistant are told in `ARMOR_ALERT_LANGUAGE` (seven languages, Spanish by default): *ALERTA en el nodo nodo-radar-1: 3 personas detectadas con el sistema armado.*
+- **`GET /api/v1/admin/notifications`** says which places are set up (never their secrets) and **`POST /api/v1/admin/notifications/test`** sends a test message to all of them, or to one, and says what each answered (administrators). The values are checked when the server starts. How to get the token, the chat id and the webhook id is in `docs/INTEGRATION.md`. 253 tests (6 new).
+
 ## [0.4.7] - The services list finds the voice gateway
 
 - **Real bug, reported on the bench:** the list of services (Studio's Services menu and the phone's) looked for the voice gateway as `armor-voice-ai.service`, but the installer makes `armor-voice.service`, so it showed as not running while it was. The catalogue now names the unit the installer makes and its port (18090).

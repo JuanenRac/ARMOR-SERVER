@@ -3,6 +3,8 @@
  * every value and refuses to start on a weak or inconsistent one.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
+import { isAlertLanguage, type AlertLanguage } from "./alert_text.js";
+import { validTelegramChat, validTelegramToken, validWebhookId } from "./channels.js";
 import fs from "node:fs";
 import path from "node:path";
 import { originsWithStudioPort, readConnection } from "./connection.js";
@@ -47,6 +49,12 @@ export type ArmorConfig = {
   /** Where alarms are POSTed (signed with `alertWebhookSecret` when set); null when unused. */
   alertWebhookUrl: string | null;
   alertWebhookSecret: string;
+  /** A Telegram chat that gets the alarms, through a bot of the installation; null when unused. */
+  telegram: { token: string; chatIds: string[] } | null;
+  /** Home Assistant: its address and the id of the webhook an automation listens on; null when unused. */
+  homeAssistant: { url: string; webhookId: string } | null;
+  /** The language the alarm sentences (Telegram, Home Assistant) are told in. */
+  alertLanguage: AlertLanguage;
   /** Whether this server may send a command to the switch of an electrical node. Off unless ARMOR_ELECTRICAL_SWITCHING=1; even then the node has to allow it too. */
   electricalSwitching: boolean;
   /** The admin agent (ARMOR-DEVOPS): where its Unix socket is and the token it wants; null when this install has no agent, and Studio then cannot administer services. */
@@ -141,6 +149,28 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     }
     alertWebhookUrl = parsed.toString();
   }
+  const telegramToken = env.ARMOR_TELEGRAM_BOT_TOKEN?.trim() ?? "";
+  const telegramChats = (env.ARMOR_TELEGRAM_CHAT_IDS ?? "").split(",").map(item => item.trim()).filter(Boolean);
+  let telegram: ArmorConfig["telegram"] = null;
+  if (telegramToken || telegramChats.length > 0) {
+    if (!validTelegramToken(telegramToken)) throw new ConfigError("ARMOR_TELEGRAM_BOT_TOKEN must be the token BotFather gave (digits, a colon and letters)");
+    if (telegramChats.length === 0 || telegramChats.length > 10 || !telegramChats.every(validTelegramChat)) throw new ConfigError("ARMOR_TELEGRAM_CHAT_IDS must be one to ten chat ids (numbers) or @channel names, separated by commas");
+    telegram = { token: telegramToken, chatIds: telegramChats };
+  }
+  const haUrlRaw = env.ARMOR_HOMEASSISTANT_URL?.trim() ?? "", haWebhookId = env.ARMOR_HOMEASSISTANT_WEBHOOK_ID?.trim() ?? "";
+  let homeAssistant: ArmorConfig["homeAssistant"] = null;
+  if (haUrlRaw || haWebhookId) {
+    let parsed: URL | undefined;
+    try { parsed = new URL(haUrlRaw); } catch { /* reported below */ }
+    if (!parsed || (parsed.protocol !== "http:" && parsed.protocol !== "https:") || parsed.username || parsed.password || parsed.hash || parsed.search || (parsed.pathname !== "/" && parsed.pathname !== "")) {
+      throw new ConfigError("ARMOR_HOMEASSISTANT_URL must be the plain address of Home Assistant, such as http://192.168.0.20:8123");
+    }
+    if (!validWebhookId(haWebhookId)) throw new ConfigError("ARMOR_HOMEASSISTANT_WEBHOOK_ID must be the id of a Home Assistant webhook (letters, digits, - and _, 8 to 128 characters)");
+    homeAssistant = { url: parsed.origin, webhookId: haWebhookId };
+  }
+  const languageRaw = env.ARMOR_ALERT_LANGUAGE?.trim().toLowerCase() ?? "es";
+  if (!isAlertLanguage(languageRaw)) throw new ConfigError("ARMOR_ALERT_LANGUAGE must be one of en, es, de, fr, it, ja, zh");
+  const alertLanguage: AlertLanguage = languageRaw;
   const alertWebhookSecret = env.ARMOR_ALERT_WEBHOOK_SECRET?.trim() ?? "";
   if (alertWebhookUrl && !alertWebhookSecret) warnings.push("ARMOR_ALERT_WEBHOOK_SECRET is not set; alarm calls will not be signed");
   if (alertWebhookSecret) secret(env, "ARMOR_ALERT_WEBHOOK_SECRET");
@@ -200,7 +230,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     nodeStaleAfterS: integer(env, "ARMOR_NODE_STALE_AFTER_S", 30, 5, 3600),
     alertDwellMs: integer(env, "ARMOR_ALERT_DWELL_MS", 2000, 0, 60_000),
     cameraCheckS: integer(env, "ARMOR_CAMERA_CHECK_S", 20, 0, 3600),
-    alertWebhookUrl, alertWebhookSecret, electricalSwitching, admin, voice,
+    alertWebhookUrl, alertWebhookSecret, telegram, homeAssistant, alertLanguage, electricalSwitching, admin, voice,
     tls,
     warnings,
   };
