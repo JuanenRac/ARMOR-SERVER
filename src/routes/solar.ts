@@ -6,6 +6,7 @@ import type { Express, Response } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { hasBearer } from "../http/auth.js";
+import { forwardCompatible } from "../contracts.js";
 import { parseSolarMessage } from "../solar.js";
 import { ANT_CELL_COUNTS, ANT_CURRENTS, BATTERY_MODELS, CONNECTIONS, INVERTER_FAMILIES, INVERTER_MODELS, SolarRegistryError, exampleReading, modelLabel } from "../solar_registry.js";
 
@@ -20,9 +21,15 @@ export function registerSolarRoutes(app: Express, context: AppContext): void {
   app.post("/api/v1/solar", ingestLimit, (request, response) => {
     if (!hasBearer(request, config.ingestToken)) return response.sendStatus(401);
     try {
-      solar.ingest(parseSolarMessage(request.body));
-      return response.status(202).json({ accepted: true });
-    } catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "invalid solar message" }); }
+      const { value, ignored } = forwardCompatible(() => parseSolarMessage(request.body));
+      solar.ingest(value);
+      context.ingestLog.ok(`http:solar/${value.node_id}/${value.device}`, ignored);
+      return response.status(202).json({ accepted: true, ...(ignored.length ? { ignored } : {}) });
+    } catch (error) {
+      const why = error instanceof Error ? error.message : "invalid solar message";
+      context.ingestLog.rejected("http:solar", why, JSON.stringify(request.body ?? null));
+      return response.status(400).json({ error: why });
+    }
   });
 
   app.get("/api/v1/solar", requireOperator, (_request, response) => {
@@ -73,12 +80,19 @@ export function registerSolarRoutes(app: Express, context: AppContext): void {
     } catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "could not make the example" }); }
   });
 
+  // What the panels made, the load used and the battery took and gave, day by day (the last `days`, at most a year), in kilowatt-hours.
+  app.get("/api/v1/solar/energy", requireOperator, (request, response) => {
+    const asked = Number(request.query.days ?? 30);
+    const days = Number.isFinite(asked) ? Math.min(400, Math.max(1, Math.round(asked))) : 30;
+    return response.json({ days: solar.energy(days) });
+  });
+
   app.get("/api/v1/solar/history", requireOperator, (request, response) => {
     const node = typeof request.query.node === "string" ? request.query.node : "";
     const device = typeof request.query.device === "string" ? request.query.device : "";
     if (!NODE.test(node) || !DEVICE.test(device)) return response.status(400).json({ error: "node and device are required" });
     const asked = Number(request.query.minutes ?? 60);
-    const minutes = Number.isFinite(asked) ? Math.min(1440, Math.max(1, Math.round(asked))) : 60;
+    const minutes = Number.isFinite(asked) ? Math.min(43_200, Math.max(1, Math.round(asked))) : 60;
     const history = solar.history(node, device, minutes);
     if (!history) return response.status(404).json({ error: "unknown solar device" });
     return response.json({ node_id: node, device, kind: history.kind, minutes, samples: history.samples });

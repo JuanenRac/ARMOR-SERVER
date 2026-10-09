@@ -39,6 +39,7 @@ import { FileStatePersistence } from "./persistence.js";
 import { RulesFile } from "./rules.js";
 import { ArmorStore, type SystemState } from "./store.js";
 import { PreferencesStore } from "./preferences.js";
+import { IngestLog } from "./ingest_log.js";
 import path from "node:path";
 
 export type AppContext = {
@@ -89,6 +90,8 @@ export type AppContext = {
   solar: SolarStore;
   /** The solar equipment an operator declared, kept in a file. */
   solarRegistry: SolarRegistry;
+  /** What the broker and the ingest routes handed over: taken, refused and ignored fields per topic. */
+  ingestLog: IngestLog;
   /** The MQTT side of devices: set once the broker client exists. */
   deviceLink: { publish?: (topic: string, payload: string) => void; resubscribe?: () => void };
   sendDeviceCommand(id: string, command: Command): ReturnType<typeof sendCommand>;
@@ -197,6 +200,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     enabled: config.electricalSwitching, nodes: electricalNodes, audit, now: overrides.now,
     publish: (topic, payload) => { if (!switchLink.publish) throw new Error("the MQTT broker is not connected"); switchLink.publish(topic, payload); },
   });
+  const ingestLog = new IngestLog(overrides.now);
   const solarRegistry = new SolarRegistry(path.join(config.dataDir, "solar-devices.json"), overrides.now ? () => new Date(overrides.now!()) : undefined);
   const solar = new SolarStore({ now: overrides.now, onMessage: message => alarmRules.handleSolar(message), onStale: (node, device, stale) => alarmRules.handleSolarStale(node, device, stale) });
   const persistence = new FileStatePersistence(path.join(config.dataDir, "state.json"), { warn });
@@ -232,7 +236,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     ai: overrides.ai ?? new AiGateway({ ffmpegPath: config.ffmpegPath ?? "" }), requireAi,
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
-    config, store, events, rules, notifier, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    config, store, events, rules, notifier, ingestLog, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

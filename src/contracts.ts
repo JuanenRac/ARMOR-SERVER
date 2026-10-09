@@ -21,10 +21,31 @@ export const record = (value: unknown, what: string): Record<string, unknown> =>
   return value as Record<string, unknown>;
 };
 
-/** Refuse any field the contract does not define (additionalProperties: false). */
+/** While a message from a node is read for live use (see `forwardCompatible`), the fields this server does not know are collected here instead of refusing the message. */
+let ignoredFields: string[] | null = null;
+
+/** Refuse any field the contract does not define (additionalProperties: false); in forward-compatible reading, drop it and say so instead. */
+/** (What can move a switch is never read forgivingly: a field called command or commands, the objects of a switch, and commands and results are always exact.) */
+const ALWAYS_EXACT = /^switch |command$|result$/;
 export const onlyKnown = (body: Record<string, unknown>, allowed: readonly string[], what: string): void => {
-  for (const key of Object.keys(body)) if (!allowed.includes(key)) throw new Error(`${what} has an unknown field: ${key}`);
+  for (const key of Object.keys(body)) {
+    if (allowed.includes(key)) continue;
+    if (ignoredFields === null || key === "command" || key === "commands" || ALWAYS_EXACT.test(what)) throw new Error(`${what} has an unknown field: ${key}`);
+    ignoredFields.push(`${what}.${key}`);
+    delete body[key];
+  }
 };
+
+/**
+ * Reads a message of a node for live use: a field this server's contract does not define (a node with newer firmware than the server) is dropped and reported in `ignored`
+ * instead of making the whole message refused. Everything the server does know is checked exactly as always, so a missing field, a wrong type or a number out of range is still refused.
+ * The conformance tests use the plain parsers, which stay strict.
+ */
+export function forwardCompatible<T>(read: () => T): { value: T; ignored: string[] } {
+  const outer = ignoredFields;
+  ignoredFields = [];
+  try { const value = read(); return { value, ignored: ignoredFields }; } finally { ignoredFields = outer; }
+}
 
 export const readNodeId = (body: Record<string, unknown>): string => {
   if (typeof body.node_id !== "string" || !nodeId.test(body.node_id)) throw new Error("invalid node_id");

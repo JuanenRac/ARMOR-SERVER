@@ -4,6 +4,7 @@
  */
 import { connect, type MqttClient } from "mqtt";
 import { parseHealth, parseInfo, parseTelemetry } from "./contracts.js";
+import type { IngestLog } from "./ingest_log.js";
 import { ArmorStore } from "./store.js";
 
 export function topicKind(topic: string): "telemetry" | "health" | "info" | undefined {
@@ -27,7 +28,7 @@ export function bodyMatchesTopic(topic: string, body: { node_id: string }): bool
   return topicNode(topic) === body.node_id;
 }
 
-export function attachMqtt(store: ArmorStore, brokerUrl: string, username?: string, password?: string): MqttClient {
+export function attachMqtt(store: ArmorStore, brokerUrl: string, username?: string, password?: string, log?: IngestLog): MqttClient {
   const client = connect(brokerUrl, { username, password, reconnectPeriod: 2_000, clean: true, protocolVersion: 5 });
   client.on("connect", () => client.subscribe(["armor/node/+/telemetry", "armor/node/+/health", "armor/node/+/info"], { qos: 1 }));
   client.on("message", (topic, raw) => {
@@ -40,7 +41,9 @@ export function attachMqtt(store: ArmorStore, brokerUrl: string, username?: stri
       if (kind === "telemetry") store.telemetry(message as ReturnType<typeof parseTelemetry>);
       else if (kind === "info") store.info(message as ReturnType<typeof parseInfo>);
       else store.health(message as ReturnType<typeof parseHealth>);
+      log?.ok(topic);
     } catch (error) {
+      log?.rejected(topic, error instanceof Error ? error.message : "invalid payload", raw);
       console.warn("ARMOR_MQTT=REJECTED", error instanceof Error ? error.message : "invalid payload");
     }
   });

@@ -29,6 +29,9 @@ export function registerSystemRoutes(app: Express, context: AppContext, version:
   // How the machine is doing, as a task manager shows it: the latest sample and the last few minutes of it.
   app.get("/api/v1/system/metrics", requireOperator, (_request, response) => response.json({ ...systemMonitor.current, history: systemMonitor.history }));
 
+  // What the nodes sent that the server took, refused or partly ignored (fields of a newer firmware), per topic, with the start of the last refused message.
+  app.get("/api/v1/system/ingest", requireOperator, (_request, response) => response.json({ topics: context.ingestLog.list() }));
+
   // Every service of the system, running or not: the programs of this machine (from systemd) and the field nodes (from what they last said). Read only.
   app.get("/api/v1/system/services", requireOperator, async (_request, response) => {
     const nodes: FieldNode[] = [

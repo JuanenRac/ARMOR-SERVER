@@ -8,6 +8,7 @@ import express, { type Express } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { hasBearer } from "../http/auth.js";
+import { forwardCompatible } from "../contracts.js";
 import { NoteInvalid, parseNetworkMessage } from "../network.js";
 import { CommandInvalid } from "../network_commands.js";
 import { CredentialsInvalid } from "../device_credentials.js";
@@ -25,8 +26,9 @@ export function registerNetworkRoutes(app: Express, context: AppContext): void {
   app.post("/api/v1/network/state", ingestLimit, (request, response) => {
     if (!hasBearer(request, config.ingestToken)) return response.sendStatus(401);
     try {
-      const message = parseNetworkMessage(request.body);
+      const { value: message, ignored } = forwardCompatible(() => parseNetworkMessage(request.body));
       networkNodes.ingest(message);
+      context.ingestLog.ok(`http:network/${message.node_id}`, ignored);
       networkCommands.record(message.node_id, message.results);
       // The answer carries the manual orders waiting for this node (handed out once); a node that does not look for them simply ignores the field.
       const commands = networkCommands.take(message.node_id).map(command => {
@@ -36,7 +38,11 @@ export function registerNetworkRoutes(app: Express, context: AppContext): void {
         return login ? { ...rest, auth: { user: login.user, password: login.password } } : rest;   // without a login kept, the node looks without one
       });
       return response.status(202).json({ accepted: true, commands });
-    } catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "invalid network message" }); }
+    } catch (error) {
+      const why = error instanceof Error ? error.message : "invalid network message";
+      context.ingestLog.rejected("http:network", why, JSON.stringify(request.body ?? null));
+      return response.status(400).json({ error: why });
+    }
   });
 
   // What an operator sees: every node with its devices (each with the note an operator gave it, if any), the sums, the latest events and the outages.

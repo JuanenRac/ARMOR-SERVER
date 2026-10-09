@@ -7,6 +7,7 @@ import type { Express } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { hasBearer } from "../http/auth.js";
+import { forwardCompatible } from "../contracts.js";
 import { SWITCH_ACTIONS, parseElectricalMessage, type SwitchAction } from "../electrical.js";
 import { SwitchingError } from "../electrical_switching.js";
 
@@ -21,9 +22,15 @@ export function registerElectricalRoutes(app: Express, context: AppContext): voi
   app.post("/api/v1/electrical/readings", ingestLimit, (request, response) => {
     if (!hasBearer(request, config.ingestToken)) return response.sendStatus(401);
     try {
-      electricalNodes.ingest(parseElectricalMessage(request.body));
-      return response.status(202).json({ accepted: true });
-    } catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "invalid electrical message" }); }
+      const { value, ignored } = forwardCompatible(() => parseElectricalMessage(request.body));
+      electricalNodes.ingest(value);
+      context.ingestLog.ok(`http:electrical/${value.node_id}`, ignored);
+      return response.status(202).json({ accepted: true, ...(ignored.length ? { ignored } : {}) });
+    } catch (error) {
+      const why = error instanceof Error ? error.message : "invalid electrical message";
+      context.ingestLog.rejected("http:electrical", why, JSON.stringify(request.body ?? null));
+      return response.status(400).json({ error: why });
+    }
   });
 
   app.get("/api/v1/electrical/readings", requireOperator, (_request, response) => response.json({ nodes: electricalNodes.list(), totals: electricalNodes.totals() }));
@@ -53,7 +60,7 @@ export function registerElectricalRoutes(app: Express, context: AppContext): voi
     const channel = typeof request.query.channel === "string" ? request.query.channel : "";
     if (!NODE.test(node) || !CHANNEL.test(channel)) return response.status(400).json({ error: "node and channel are required" });
     const asked = Number(request.query.minutes ?? 60);
-    const minutes = Number.isFinite(asked) ? Math.min(1440, Math.max(1, Math.round(asked))) : 60;
+    const minutes = Number.isFinite(asked) ? Math.min(43_200, Math.max(1, Math.round(asked))) : 60;
     const samples = electricalNodes.history(node, channel, minutes);
     if (!samples) return response.status(404).json({ error: "unknown electrical channel" });
     return response.json({ node_id: node, channel, minutes, samples });
