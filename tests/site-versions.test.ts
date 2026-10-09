@@ -68,3 +68,19 @@ test("old versions are pruned: the latest 48 stay, and one of each past day", ()
   const kept = instance.versions();
   assert.ok(kept.length >= 48 && kept.length <= 52, `kept ${kept.length}`);
 });
+
+test("a version can be forgotten one at a time or all together, and the current design stays", () => {
+  const { instance, advance } = store();
+  let saved = instance.save(house(10), 0, "admin");
+  for (let index = 0; index < 3; index += 1) { advance(6 * 60_000); saved = instance.save(house(11 + index), saved.revision, "admin"); }
+  const [newest, ...others] = instance.versions();
+  assert.equal(others.length, 2);
+  assert.equal(instance.deleteVersion(newest.id), true);
+  assert.equal(instance.deleteVersion(newest.id), false);          // already gone
+  assert.equal(instance.deleteVersion("../site"), false);          // not an id of a version
+  assert.equal(instance.versions().length, 2);
+  assert.equal(instance.deleteVersions(), 2);
+  assert.equal(instance.versions().length, 0);
+  assert.equal(instance.deleteVersions(), 0);
+  assert.equal((instance.get().site?.openings as unknown[]).length, 13);   // the design itself was not touched
+});

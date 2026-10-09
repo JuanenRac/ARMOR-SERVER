@@ -143,6 +143,16 @@ export function registerNetworkRoutes(app: Express, context: AppContext): void {
     if (!doc) return response.status(404).json({ error: "no such version", code: "not_found" });
     return response.json({ revision: doc.revision, updated_at: doc.updated_at, updated_by: doc.updated_by, network: doc.site });
   });
+  app.delete("/api/v1/network/design/versions", requireOperator, (request, response) => {
+    const removed = network.deleteVersions();
+    audit.record({ action: "network.versions.clear", outcome: "allowed", actor: actor(request), detail: `${removed} versions` });
+    return response.json({ removed });
+  });
+  app.delete("/api/v1/network/design/versions/:id", requireOperator, (request, response) => {
+    const removed = network.deleteVersion(String(request.params.id));
+    audit.record({ action: "network.version.delete", outcome: removed ? "allowed" : "failed", actor: actor(request), target: String(request.params.id).slice(0, 60) });
+    return removed ? response.sendStatus(204) : response.status(404).json({ error: "no such version", code: "not_found" });
+  });
   app.put("/api/v1/network/design", requireOperator, bigJson, (request, response) => {
     const input = body(request);
     try {

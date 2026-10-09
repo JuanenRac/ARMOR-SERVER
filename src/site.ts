@@ -100,6 +100,24 @@ export class SiteStore {
     } catch { return []; }
   }
 
+  /** Forget one version kept (false when there is none by that id). The current design is not touched. */
+  deleteVersion(id: string): boolean {
+    if (!/^[0-9TZ-]+_r\d+$/.test(id)) return false;
+    const file = path.join(this.#historyDir, `${id}.json`);
+    if (!fs.existsSync(file)) return false;
+    fs.rmSync(file, { force: true });
+    return true;
+  }
+
+  /** Forget every version kept; returns how many there were. The current design is not touched. */
+  deleteVersions(): number {
+    let removed = 0;
+    try {
+      for (const name of fs.readdirSync(this.#historyDir)) if (/^[0-9TZ-]+_r\d+\.json$/.test(name)) { fs.rmSync(path.join(this.#historyDir, name), { force: true }); removed += 1; }
+    } catch { /* no versions kept yet */ }
+    return removed;
+  }
+
   /** One version, whole (null when there is none by that id). */
   version(id: string): SiteDocument | null {
     if (!/^[0-9TZ-]+_r\d+$/.test(id)) return null;
