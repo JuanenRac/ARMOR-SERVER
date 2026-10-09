@@ -8,11 +8,13 @@ import { createHmac } from "node:crypto";
 import type { AuditLog } from "./audit.js";
 import type { ArmorEvent } from "./events.js";
 import type { SecurityMode } from "./store.js";
+import { alertText, type AlertLanguage } from "./alert_text.js";
+import type { NotifyChannel } from "./channels.js";
 
 export const ALERT_TOPIC = "armor/server/alert";
 export type AlertMessage = {
   service: "armor-server";
-  event: "alert.raised" | "alert.cleared" | "node.offline" | "node.stale" | "camera.offline" | "alarm.raised" | "automation.notify";
+  event: "alert.raised" | "alert.cleared" | "node.offline" | "node.stale" | "camera.offline" | "alarm.raised" | "automation.notify" | "alert.test";
   at: string;
   mode: SecurityMode;
   node_id?: string;
@@ -60,7 +62,13 @@ export type NotifierOptions = {
   /** Waits before each retry; the number of entries is the number of retries. */
   retryDelaysMs?: number[];
   timeoutMs?: number;
+  /** Other places the alarms go (Telegram, Home Assistant), and the language their sentences are told in. */
+  channels?: NotifyChannel[];
+  language?: AlertLanguage;
 };
+
+/** What a test of one place came to. */
+export type ChannelTest = { channel: string; ok: boolean; detail: string };
 
 const MAX_QUEUE = 100;
 
@@ -83,7 +91,33 @@ export class AlertNotifier {
   /** Connect the MQTT output once the broker client exists. */
   setPublisher(publish: (topic: string, payload: string) => void): void { this.#publish = publish; }
 
-  get enabled(): boolean { return Boolean(this.#options.webhookUrl || this.#publish); }
+  get enabled(): boolean { return Boolean(this.#options.webhookUrl || this.#publish || this.#channels.length > 0); }
+
+  get #channels(): NotifyChannel[] { return this.#options.channels ?? []; }
+  get #language(): AlertLanguage { return this.#options.language ?? "es"; }
+
+  /** Which places the alarms are sent to (nothing secret). */
+  status(): { webhook: boolean; mqtt: boolean; telegram: boolean; homeassistant: boolean; language: AlertLanguage } {
+    return { webhook: Boolean(this.#options.webhookUrl), mqtt: Boolean(this.#publish), telegram: this.#channels.some(channel => channel.id === "telegram"), homeassistant: this.#channels.some(channel => channel.id === "homeassistant"), language: this.#language };
+  }
+
+  /** Sends one test message to every place (or to the one asked for), once and at once, and says what each came to. */
+  async test(mode: SecurityMode, only?: string): Promise<ChannelTest[]> {
+    const message: AlertMessage = { service: "armor-server", event: "alert.test", at: new Date().toISOString(), mode };
+    const text = alertText(message, this.#language);
+    const results: ChannelTest[] = [];
+    if ((!only || only === "webhook") && this.#options.webhookUrl) { const attempt = await this.#postWebhook(message); results.push({ channel: "webhook", ok: attempt.ok, detail: attempt.detail }); }
+    if ((!only || only === "mqtt") && this.#publish) {
+      try { this.#publish(ALERT_TOPIC, JSON.stringify(message)); results.push({ channel: "mqtt", ok: true, detail: ALERT_TOPIC }); } catch { results.push({ channel: "mqtt", ok: false, detail: "the broker did not take it" }); }
+    }
+    for (const channel of this.#channels) {
+      if (only && only !== channel.id) continue;
+      const attempt = await channel.deliver(message, text, this.#language, AbortSignal.timeout(this.#options.timeoutMs ?? 5_000));
+      results.push({ channel: channel.id, ok: attempt.ok, detail: attempt.detail });
+    }
+    this.#options.audit.record({ action: "alert.test", outcome: results.length > 0 && results.every(item => item.ok) ? "allowed" : "failed", detail: results.map(item => `${item.channel}:${item.ok ? "ok" : item.detail}`).join(" ") || "no place configured" });
+    return results;
+  }
 
   notify(event: ArmorEvent, mode: SecurityMode): void {
     const message = alertMessageFor(event, mode);
@@ -94,7 +128,7 @@ export class AlertNotifier {
   send(message: AlertMessage): void {
     if (this.#closed) return;
     try { this.#publish?.(ALERT_TOPIC, JSON.stringify(message)); } catch { /* MQTT down: the webhook still goes out. */ }
-    if (!this.#options.webhookUrl) return;
+    if (!this.#options.webhookUrl && this.#channels.length === 0) return;
     if (this.#queue.length >= MAX_QUEUE) {
       this.#queue.shift();
       this.#options.audit.record({ action: "alert.webhook", outcome: "failed", detail: "queue full, oldest message dropped" });
@@ -122,26 +156,38 @@ export class AlertNotifier {
     } finally { this.#running = false; }
   }
 
-  async #deliver(message: AlertMessage): Promise<void> {
-    const { webhookUrl, webhookSecret, audit } = this.#options;
-    if (!webhookUrl) return;
+  async #postWebhook(message: AlertMessage): Promise<{ ok: boolean; detail: string; final?: boolean }> {
+    const { webhookUrl, webhookSecret } = this.#options;
     const body = JSON.stringify(message);
     const headers: Record<string, string> = { "Content-Type": "application/json", "User-Agent": "armor-server" };
     if (webhookSecret) headers["X-Armor-Signature"] = signBody(webhookSecret, body);
+    try {
+      const response = await this.#fetch(webhookUrl as string, { method: "POST", headers, body, redirect: "error", signal: AbortSignal.timeout(this.#options.timeoutMs ?? 5_000) });
+      if (response.ok) return { ok: true, detail: `HTTP ${response.status}` };
+      // A client error will not get better by retrying; a server error or rate limit might.
+      return { ok: false, detail: `HTTP ${response.status}`, final: response.status >= 400 && response.status < 500 && response.status !== 429 };
+    } catch (error) { return { ok: false, detail: error instanceof Error ? error.name : "network error" }; }
+  }
+
+  /** Tries until it is delivered, a client error says it never will be, or the retries are spent; every end is in the audit trail. */
+  async #withRetries(action: string, message: AlertMessage, attemptOnce: () => Promise<{ ok: boolean; detail: string; final?: boolean }>): Promise<void> {
     let detail = "no attempt";
     for (let attempt = 0; attempt <= this.#delays.length; attempt += 1) {
       if (this.#closed) return;
-      try {
-        const response = await this.#fetch(webhookUrl, { method: "POST", headers, body, redirect: "error", signal: AbortSignal.timeout(this.#options.timeoutMs ?? 5_000) });
-        if (response.ok) { audit.record({ action: "alert.webhook", outcome: "allowed", target: message.event }); return; }
-        detail = `HTTP ${response.status}`;
-        // A client error will not get better by retrying; a server error or rate limit might.
-        if (response.status >= 400 && response.status < 500 && response.status !== 429) break;
-      } catch (error) {
-        detail = error instanceof Error ? error.name : "network error";
-      }
+      const result = await attemptOnce();
+      if (result.ok) { this.#options.audit.record({ action, outcome: "allowed", target: message.event }); return; }
+      detail = result.detail;
+      if (result.final) break;
       if (attempt < this.#delays.length) await new Promise<void>(resolve => { this.#timer = setTimeout(resolve, this.#delays[attempt]); this.#timer.unref(); });
     }
-    audit.record({ action: "alert.webhook", outcome: "failed", target: message.event, detail });
+    this.#options.audit.record({ action, outcome: "failed", target: message.event, detail });
+  }
+
+  async #deliver(message: AlertMessage): Promise<void> {
+    if (this.#options.webhookUrl) await this.#withRetries("alert.webhook", message, () => this.#postWebhook(message));
+    const text = alertText(message, this.#language);
+    for (const channel of this.#channels) {
+      await this.#withRetries(`alert.${channel.id}`, message, () => channel.deliver(message, text, this.#language, AbortSignal.timeout(this.#options.timeoutMs ?? 5_000)));
+    }
   }
 }

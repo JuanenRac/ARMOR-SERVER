@@ -36,7 +36,7 @@ export function unixTransport(socketPath: string, token: string, timeoutMs = 70_
 }
 
 export const MASK = "********";
-const SECRET_KEY = /(PASSWORD|SECRET|TOKEN|KEY|PASS)/i;
+const SECRET_KEY = /(PASSWORD|SECRET|TOKEN|KEY|PASS|WEBHOOK_ID)/i;
 
 /** The text of an environment file with the value of every secret replaced by a mask: an administrator sees which exist, never what they are. */
 export function maskEnv(content: string): string {

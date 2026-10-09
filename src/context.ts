@@ -33,6 +33,7 @@ import { DeviceCredentials } from "./device_credentials.js";
 import { SystemMonitor } from "./system_metrics.js";
 import { SolarRegistry } from "./solar_registry.js";
 import { AlertNotifier } from "./notify.js";
+import { homeAssistantChannel, telegramChannel, type NotifyChannel } from "./channels.js";
 import { FileStatePersistence } from "./persistence.js";
 import { RulesFile } from "./rules.js";
 import { ArmorStore, type SystemState } from "./store.js";
@@ -123,7 +124,11 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const relays = new RelayManager({ ffmpegPath: config.ffmpegPath, maxRelays: config.maxMjpegRelays, fps: config.liveFps, width: config.liveWidth });
   const events = new EventLog({ file: path.join(config.dataDir, "events.log") });
   const rules = new RulesFile(path.join(config.dataDir, "rules.json"), config.alertDwellMs, warn);
-  const notifier = new AlertNotifier({ webhookUrl: config.alertWebhookUrl ?? undefined, webhookSecret: config.alertWebhookSecret || undefined, audit });
+  // The other places the alarms go. The address of Telegram can only be changed by the environment, for the tests that stand in for it.
+  const channels: NotifyChannel[] = [];
+  if (config.telegram) channels.push(telegramChannel({ token: config.telegram.token, chatIds: config.telegram.chatIds, api: process.env.ARMOR_TELEGRAM_API || undefined }));
+  if (config.homeAssistant) channels.push(homeAssistantChannel({ url: config.homeAssistant.url, webhookId: config.homeAssistant.webhookId }));
+  const notifier = new AlertNotifier({ webhookUrl: config.alertWebhookUrl ?? undefined, webhookSecret: config.alertWebhookSecret || undefined, audit, channels, language: config.alertLanguage });
   const deviceLink: AppContext["deviceLink"] = {};
   // Everything that happens goes through one place: written to the history, announced, checked for alarms, offered to the automations.
   const record = (body: ArmorEventBody): void => {
