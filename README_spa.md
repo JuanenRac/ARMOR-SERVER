@@ -20,13 +20,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-259%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-260%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="Maturity">
 </p>
 
 ---
 
-**Comprobación de honestidad - qué funciona hoy:** Cada ruta, sesión, cifrado y regla de evidencias de abajo es real y está cubierta por pruebas (`npm test`, 259 pruebas, con una suite completa de integración HTTP contra un servidor aislado). Ha funcionado con un broker MQTT real en la CM5 (con scripts y con dos nodos radar reales), y ha emitido vídeo en vivo, guardado una captura y grabado desde cinco cámaras IP reales mediante FFmpeg. Lo que **aún no está probado**: ONVIF con una cámara ONVIF real, PTZ en cada firmware de cámara (funciona en la unidad Hi3510), cualquier hardware Jetson y las rutas solares con un nodo pasarela real (se prueban con lecturas generadas).
+**Comprobación de honestidad - qué funciona hoy:** Cada ruta, sesión, cifrado y regla de evidencias de abajo es real y está cubierta por pruebas (`npm test`, 260 pruebas, con una suite completa de integración HTTP contra un servidor aislado). Ha funcionado con un broker MQTT real en la CM5 (con scripts y con dos nodos radar reales), y ha emitido vídeo en vivo, guardado una captura y grabado desde cinco cámaras IP reales mediante FFmpeg. Lo que **aún no está probado**: ONVIF con una cámara ONVIF real, PTZ en cada firmware de cámara (funciona en la unidad Hi3510), cualquier hardware Jetson y las rutas solares con un nodo pasarela real (se prueban con lecturas generadas).
 
 ---
 
@@ -101,7 +101,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 259 tests: unit + full HTTP integration
+npm test            # 260 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```

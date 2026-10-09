@@ -1,13 +1,14 @@
 /**
  * The services of the A.R.M.O.R. system, running or not: the programs of the machine (the server, Studio, the MQTT broker, the network node, the AI and voice services when they
  * are installed), read from systemd, and the field nodes (radars, electrical nodes, the network node's own reports), read from what they last said. Studio draws them as a list by
- * family, like HYDRA-UMC's services menu. Read only: nothing here starts, stops or changes anything. Where there is no systemd (a development machine) the programs are shown
+ * family, like HYDRA-UMC's services menu. The list itself only reads: starting, stopping, restarting and pausing go through the administration routes. Where there is no systemd (a development machine) the programs are shown
  * as "unknown" and the field nodes are still listed.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 
-export type ServiceState = "running" | "stopped" | "failed" | "starting" | "not_installed" | "online" | "offline" | "unknown";
+export type ServiceState = "running" | "paused" | "stopped" | "failed" | "starting" | "not_installed" | "online" | "offline" | "unknown";
 export type ServiceView = {
   id: string;
   name: string;
@@ -37,7 +38,7 @@ export const CATALOG: readonly CatalogEntry[] = [
   { id: "broker", name: "MQTT broker", family: "Core", description: "Where the field nodes publish what they read", unit: "armor-mosquitto.service", port: 18883 },
   { id: "network", name: "ARMOR-NETWORK", family: "Network", description: "Watches the local network: devices, internet and what changes", unit: "armor-network.service" },
   { id: "server-ai", name: "ARMOR-SERVER-AI", family: "AI and voice", description: "Decides what a camera detection means (day and night, movement first)", unit: "armor-server-ai.service" },
-  { id: "voice-ai", name: "ARMOR-VOICE-AI", family: "AI and voice", description: "Written and spoken commands (a closed list of four, confirmed in two turns)", unit: "armor-voice.service", port: 18090 },
+  { id: "voice-ai", name: "ARMOR-VOICE-AI", family: "AI and voice", description: "Written and spoken commands (a closed list of fifteen commands, arm and disarm confirmed in two turns)", unit: "armor-voice.service", port: 18090 },
 ];
 
 const PROPERTIES = ["Id", "Description", "LoadState", "ActiveState", "SubState", "UnitFileState", "MainPID", "ActiveEnterTimestampMonotonic", "ExecMainStartTimestamp", "MemoryCurrent", "NRestarts"] as const;
@@ -87,7 +88,14 @@ export function stateOf(info: UnitInfo | undefined): ServiceState {
   }
 }
 
-export function serviceFromUnit(entry: CatalogEntry, info: UnitInfo | undefined): ServiceView {
+/** True when the process is frozen by a signal (state T in /proc/<pid>/stat): systemd still calls such a service active, Studio calls it paused. */
+export type PausedReader = (pid: number) => boolean;
+export const procPausedReader: PausedReader = pid => {
+  if (process.platform !== "linux" || !Number.isInteger(pid) || pid <= 0) return false;
+  try { const text = readFileSync(`/proc/${pid}/stat`, "utf8"); return text[text.lastIndexOf(")") + 2] === "T"; } catch { return false; }
+};
+
+export function serviceFromUnit(entry: CatalogEntry, info: UnitInfo | undefined, paused: PausedReader = () => false): ServiceView {
   const view: ServiceView = { id: entry.id, name: entry.name, family: entry.family, description: entry.description, kind: "systemd", state: stateOf(info), unit: entry.unit };
   if (entry.port !== undefined) view.port = entry.port;
   if (!info || info.LoadState === "not-found") return view;
@@ -95,6 +103,7 @@ export function serviceFromUnit(entry: CatalogEntry, info: UnitInfo | undefined)
   const flag = info.UnitFileState;
   view.enabled = flag ? ["enabled", "enabled-runtime", "static", "alias", "linked"].includes(flag) : null;
   view.pid = numberOrNull(info.MainPID) || null;
+  if (view.state === "running" && view.pid && paused(view.pid)) view.state = "paused";
   view.since_ms = view.state === "running" || view.state === "starting" ? parseSystemdTime(info.ExecMainStartTimestamp) : null;
   view.memory_bytes = numberOrNull(info.MemoryCurrent);
   view.restarts = numberOrNull(info.NRestarts);
@@ -116,9 +125,9 @@ export function fieldNodeView(node: FieldNode): ServiceView {
   return { id: `node:${node.kind}:${node.id}`, name: node.id, family: "Field nodes", description: node.kind, kind: "field-node", state, since_ms: node.last_ms };
 }
 
-export async function listServices(read: UnitReader, nodes: readonly FieldNode[]): Promise<{ systemd: boolean; services: ServiceView[] }> {
+export async function listServices(read: UnitReader, nodes: readonly FieldNode[], paused: PausedReader = procPausedReader): Promise<{ systemd: boolean; services: ServiceView[] }> {
   const text = await read(CATALOG.map(entry => entry.unit));
   const parsed = text === null ? null : parseSystemctlShow(text);
-  const services = CATALOG.map(entry => serviceFromUnit(entry, parsed?.get(entry.unit)));
+  const services = CATALOG.map(entry => serviceFromUnit(entry, parsed?.get(entry.unit), paused));
   return { systemd: parsed !== null, services: [...services, ...nodes.map(fieldNodeView)] };
 }

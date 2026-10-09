@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.1] - A paused service says so
+
+- `GET /api/v1/system/services` reports a program whose process is frozen by a signal (state T in `/proc/<pid>/stat`) as `paused`; systemd still calls it active. The administration route accepts the two new actions `pause` and `resume` (the agent refuses to pause the server and Studio). The voice service's line in the catalogue says fifteen commands, not four. 260 tests.
+
 ## [0.5.0] - The voice commands that ask, and the lights
 
 - **`/api/v1/voice/command` carries out the ten new commands of the gateway** and answers in the language of the person: the active alarms (and how many are serious), the nodes online (and which are not), the cameras that answer (and which do not), the people the radars see, the solar system (panels, consumption, battery), what the house draws from the grid, the state of the internet and the devices of the network, the time, and a help that says what can be asked. *Lights on* and *lights off* send the command to every light of the house, name the ones that did not answer and are in the audit trail with the person. Nothing here reads more than the person could read in the console. 258 tests.
