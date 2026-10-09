@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.9] - The observation service's routes
+
+- **`/api/v1/ai/...`** with its own token (`ARMOR_AI_TOKEN`, which opens these and nothing else - not even an operator's token does, and this one cannot arm or read anything): `context` (the mode, the radar nodes with their tracks and light, the cameras that can be looked at), `cameras/{id}/frame` (one 64 x 36 grey frame taken straight from the camera's stream with FFmpeg - its lighter sub-stream when it has one - never stored, and what goes wrong is told without the camera's address or password) and `observations` (movement seen: it raises a `camera_motion` alarm only while the system is armed, once until it is closed). The movement alarm is announced like the others, with its camera, to the notifications, Telegram and Home Assistant. 258 tests (5 new).
+
 ## [0.4.8] - Alarms to Telegram and Home Assistant
 
 - **Telegram:** `ARMOR_TELEGRAM_BOT_TOKEN` and `ARMOR_TELEGRAM_CHAT_IDS` (one to ten chats, numbers or `@channel`) send every alarm to those chats through a bot of the installation. **Home Assistant:** `ARMOR_HOMEASSISTANT_URL` and `ARMOR_HOMEASSISTANT_WEBHOOK_ID` post the alarm (the same JSON as the webhook, plus `title` and `text`) to a webhook an automation of Home Assistant listens on. Both are tried again after 1, 4 and 15 seconds, a client error (a wrong token) is not retried, and every end is in the audit trail (`alert.telegram`, `alert.homeassistant`) without the token or the webhook id, which are also masked in the settings file.

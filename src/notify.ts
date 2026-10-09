@@ -46,6 +46,8 @@ export function alertMessageFor(event: ArmorEvent, mode: SecurityMode): AlertMes
   // Nodes and cameras already have their own messages above; a device alarm (smoke, a door, a flood...) is announced here.
   if (event.type === "alarm" && event.state === "raised" && event.source_type === "device") return { ...base, event: "alarm.raised", alarm_id: event.alarm_id, severity: event.severity, code: event.code, device_id: event.source };
   // Solar equipment: an inverter fault, a battery that is low or protecting itself, or equipment that went silent (the alarm centre raises each once until it clears).
+  // A camera that saw movement (the observation service): told with the camera; "camera_down" has its own message above.
+  if (event.type === "alarm" && event.state === "raised" && event.source_type === "camera" && event.code === "camera_motion") return { ...base, event: "alarm.raised", alarm_id: event.alarm_id, severity: event.severity, code: event.code, camera_id: event.source };
   if (event.type === "alarm" && event.state === "raised" && event.source_type === "solar") return { ...base, event: "alarm.raised", alarm_id: event.alarm_id, severity: event.severity, code: event.code, solar_id: event.source };
   // An electrical node: a meter's alarm, the mains out of range, the grid lost or a node that went silent.
   if (event.type === "alarm" && event.state === "raised" && event.source_type === "electrical") return { ...base, event: "alarm.raised", alarm_id: event.alarm_id, severity: event.severity, code: event.code, electrical_id: event.source };
