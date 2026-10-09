@@ -247,8 +247,8 @@ test("the history survives a restart, reaches back past a day with five-minute a
   assert.ok(Math.abs(energy.pv_kwh - 1.0) < 0.03, `pv ${energy.pv_kwh}`);            // 1000 W for an hour
   assert.ok(Math.abs(energy.load_kwh - 0.4) < 0.03, `load ${energy.load_kwh}`);
   assert.ok(Math.abs(energy.battery_in_kwh - 0.25) < 0.02 && Math.abs(energy.battery_out_kwh - 0.1) < 0.02, `${energy.battery_in_kwh} ${energy.battery_out_kwh}`);   // from the inverter's own battery figures
-  const day = store.history("solar-1", "axpert-1", 1440).samples.length;
-  const coarse = store.history("solar-1", "axpert-1", 4320).samples;
+  const day = store.history("solar-1", "axpert-1", 1440)!.samples.length;
+  const coarse = store.history("solar-1", "axpert-1", 4320)!.samples;
   assert.ok(coarse.length >= 10 && coarse.length < day);                              // five-minute averages: far fewer than the fine samples
   // a restart: a new store reads what the old one wrote and gives it to the device when it reports again
   const saved = JSON.parse(JSON.stringify(store.exportHistory())) as ReturnType<SolarStore["exportHistory"]>;
@@ -256,7 +256,7 @@ test("the history survives a restart, reaches back past a day with five-minute a
   next.importHistory(saved);
   assert.equal(next.history("solar-1", "axpert-1", 60), undefined);                   // not reported yet: nothing to show
   next.ingest(inverter());
-  assert.equal(next.history("solar-1", "axpert-1", 1440).samples.length, day + 1);
+  assert.equal(next.history("solar-1", "axpert-1", 1440)!.samples.length, day + 1);
   assert.deepEqual(next.energy(1)[0].date, "2026-10-10");
   next.importHistory({ devices: { "../x/y": { samples: [], coarse: [] } }, energy: { "not-a-date": { pv: 1, load: 1, bin: 1, bout: 1, ibin: 1, ibout: 1 } } });   // a damaged file adds nothing
   assert.equal(next.energy(400).length, 1);
