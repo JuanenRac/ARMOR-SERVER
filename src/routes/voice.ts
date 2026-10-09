@@ -8,6 +8,7 @@ import type { Express, Request } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { askVoice, isVoiceLanguage, spokenResult, VoiceError, type VoiceLanguage } from "../voice.js";
+import { ANSWERED_HERE, carryOut } from "../voice_actions.js";
 
 const MAX_TEXT = 200;
 
@@ -49,6 +50,9 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
         const acknowledged = alarms.acknowledgeAll(actor(request));
         audit.record({ action: "alarm.acknowledge", outcome: "allowed", actor: actor(request), detail: `voice, all (${acknowledged})` });
         executed = true; speech = spokenResult(language, { intent: "silence", acknowledged }); result = { acknowledged };
+      } else if (answer.accepted && answer.intent && ANSWERED_HERE.has(answer.intent)) {
+        const done = await carryOut(answer.intent, language, context, actor(request));
+        if (done) { executed = true; speech = done.speech; result = done.result; }
       }
       // What was said is never written down here: the audit trail holds the command and its outcome, not the words.
       audit.record({ action: "voice.command", outcome: executed ? "allowed" : "denied", actor: actor(request), detail: `${answer.intent ?? "none"}: ${answer.outcome ?? ""}` });
