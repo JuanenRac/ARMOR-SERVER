@@ -102,6 +102,16 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
   // The versions kept of each design (see site.ts): a list, and one whole, to be taken back by saving it as the current one.
   for (const [prefix, store, key] of [["/api/v1/site", site, "site"], ["/api/v1/electrical/design", electrical, "electrical"]] as const) {
     app.get(`${prefix}/versions`, requireOperator, (_request, response) => response.json({ versions: store.versions() }));
+    app.delete(`${prefix}/versions`, requireOperator, (request, response) => {
+      const removed = store.deleteVersions();
+      audit.record({ action: `${key}.versions.clear`, outcome: "allowed", actor: actor(request), detail: `${removed} versions` });
+      return response.json({ removed });
+    });
+    app.delete(`${prefix}/versions/:id`, requireOperator, (request, response) => {
+      const removed = store.deleteVersion(String(request.params.id));
+      audit.record({ action: `${key}.version.delete`, outcome: removed ? "allowed" : "failed", actor: actor(request), target: String(request.params.id).slice(0, 60) });
+      return removed ? response.sendStatus(204) : response.status(404).json({ error: "no such version", code: "not_found" });
+    });
     app.get(`${prefix}/versions/:id`, requireOperator, (request, response) => {
       const doc = store.version(String(request.params.id));
       if (!doc) return response.status(404).json({ error: "no such version", code: "not_found" });

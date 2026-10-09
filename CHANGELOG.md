@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [0.5.1] - A paused service says so
 
+- **Versions of a design can be forgotten:** `DELETE /api/v1/site/versions/{id}` (also `/electrical/design/...` and `/network/design/...`) removes one kept version and `DELETE .../versions` removes all of them, so old copies that no one needs do not pile up. The current design is never touched; each deletion is written to the audit log.
 - `GET /api/v1/system/services` reports a program whose process is frozen by a signal (state T in `/proc/<pid>/stat`) as `paused`; systemd still calls it active. The administration route accepts the two new actions `pause` and `resume` (the agent refuses to pause the server and Studio). The voice service's line in the catalogue says fifteen commands, not four.
 - **The address of a node's panel is kept in the state file** (it used to be forgotten at every restart). A node that is switched off when the server restarts is still known by its address, so Studio's search for nodes in the network no longer offers the radar nodes that are already added; forgetting a node forgets its address too. A damaged entry of the file is dropped without losing the nodes.
 - The firmware probe also returns the node's `kind` when the node says it (radar, solar, electrical, hmi), which Studio uses to keep each menu's search to its own kind of node. 262 tests.
