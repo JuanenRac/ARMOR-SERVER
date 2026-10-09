@@ -31,6 +31,7 @@ import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerFirmwareRoutes } from "./routes/firmware.js";
 import { registerVoiceRoutes } from "./routes/voice.js";
+import { registerAiRoutes } from "./routes/ai.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
 import { registerSystemRoutes } from "./routes/system.js";
 import { registerUserRoutes } from "./routes/users.js";
@@ -81,6 +82,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerAdminRoutes(app, context);
   registerFirmwareRoutes(app, context);
   registerVoiceRoutes(app, context);
+  registerAiRoutes(app, context);
   registerNotificationRoutes(app, context);
   registerHistoryRoutes(app, context);
   registerCameraRoutes(app, context);

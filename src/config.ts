@@ -61,6 +61,8 @@ export type ArmorConfig = {
   admin: { socketPath: string; token: string } | null;
   /** The voice gateway (ARMOR-VOICE-AI): its address on this machine and the token it wants; null when this install has none, and written and spoken commands then say so. */
   voice: { url: string; token: string } | null;
+  /** The token of the observation service (ARMOR-SERVER-AI); it opens only the /api/v1/ai routes. Null when this install has none. */
+  aiToken: string | null;
   /** Set only when both TLS_CERT_PATH and TLS_KEY_PATH are configured - see readConfig's own check. Switches the shared REST+WebSocket listener to HTTPS/WSS (app.ts); off (plain HTTP/WS) by default, unchanged from before this existed. */
   tls: { certPath: string; keyPath: string } | null;
   /** Problems that do not stop a loopback-only server but should be fixed. */
@@ -181,6 +183,9 @@ export function readConfig(env: Env = process.env): ArmorConfig {
   const voiceUrl = env.ARMOR_VOICE_URL?.trim() ?? "", voiceToken = env.ARMOR_VOICE_TOKEN?.trim() ?? "";
   if (voiceUrl && voiceToken.length < MIN_SECRET_LENGTH) throw new Error(`ARMOR_VOICE_TOKEN must be at least ${MIN_SECRET_LENGTH} characters when ARMOR_VOICE_URL is set`);
   const voice = voiceUrl ? { url: voiceUrl, token: voiceToken } : null;
+  const aiTokenRaw = env.ARMOR_AI_TOKEN?.trim() ?? "";
+  if (aiTokenRaw && aiTokenRaw.length < MIN_SECRET_LENGTH) throw new ConfigError(`ARMOR_AI_TOKEN must be at least ${MIN_SECRET_LENGTH} characters`);
+  const aiToken = aiTokenRaw || null;
   const electricalSwitching = env.ARMOR_ELECTRICAL_SWITCHING === "1";
   if (electricalSwitching) warnings.push("ARMOR_ELECTRICAL_SWITCHING=1: this server may send commands to the switches of electrical nodes; that is only for a bench, a lamp and a person present, until the installation has its own protections");
 
@@ -230,7 +235,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     nodeStaleAfterS: integer(env, "ARMOR_NODE_STALE_AFTER_S", 30, 5, 3600),
     alertDwellMs: integer(env, "ARMOR_ALERT_DWELL_MS", 2000, 0, 60_000),
     cameraCheckS: integer(env, "ARMOR_CAMERA_CHECK_S", 20, 0, 3600),
-    alertWebhookUrl, alertWebhookSecret, telegram, homeAssistant, alertLanguage, electricalSwitching, admin, voice,
+    alertWebhookUrl, alertWebhookSecret, telegram, homeAssistant, alertLanguage, electricalSwitching, admin, voice, aiToken,
     tls,
     warnings,
   };

@@ -39,7 +39,7 @@ const fill = (text: string, ...values: Array<string | number>) => text.replace(/
 /** The one line a person reads for an alarm, in the language asked for. */
 export function alertText(message: AlertMessage, language: AlertLanguage): string {
   const words = WORDS[language];
-  const where = message.device_id ?? message.solar_id ?? message.electrical_id ?? message.node_id ?? "";
+  const where = message.device_id ?? message.solar_id ?? message.electrical_id ?? message.camera_id ?? message.node_id ?? "";
   const how = message.severity === "critical" ? words.critical : message.severity === "high" ? words.high : words.warning;
   const text = (() => {
     switch (message.event) {
