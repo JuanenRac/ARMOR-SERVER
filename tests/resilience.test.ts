@@ -268,3 +268,31 @@ test("a decommissioned node can be forgotten, once, by an operator", async () =>
     assert.deepEqual(Object.keys(state.nodes), []);
   } finally { await running.stop(); }
 });
+
+test("the address of a node's panel survives a restart, so a node that is switched off is still known by it", () => {
+  const dir = tempDir();
+  const file = path.join(dir, "state.json");
+  let now = 1_000_000;
+  const first = new ArmorStore(undefined, { now: () => now, persistence: new FileStatePersistence(file, { delayMs: 0 }) });
+  first.telemetry(telemetry("north-1", 5, [{ x: 1, y: 1 }]));
+  first.info({ node_id: "north-1", timestamp_ms: 11, name: "North gate", firmware: "0.5.6", ip: "192.168.0.235", port: 80 });
+  first.info({ node_id: "not-seen-yet", timestamp_ms: 12, name: "Other", firmware: "0.5.6", ip: "192.168.0.236", port: 80 });   // no observation yet: the address is kept anyway
+  first.flush();
+  now += 60_000;
+  const second = new ArmorStore(undefined, { now: () => now, persistence: new FileStatePersistence(file) });
+  const state = second.snapshot();
+  assert.equal(state.nodes["north-1"].stale, true);
+  assert.deepEqual(state.nodes["north-1"].panel, { name: "North gate", firmware: "0.5.6", ip: "192.168.0.235", port: 80 });
+  // forgetting the node forgets its address too
+  assert.equal(second.removeNode("north-1"), true);
+  second.flush();
+  const third = new ArmorStore(undefined, { now: () => now, persistence: new FileStatePersistence(file) });
+  assert.equal(third.snapshot().nodes["north-1"], undefined);
+});
+
+test("a state file with a damaged panel entry keeps the nodes and drops only that entry", () => {
+  const good = { node_id: "a-1", online: true, timestamp_ms: 1, lux: null, target_count: 0, alert_level: "normal", received_at_ms: 1, status: "online", high_since_ms: null };
+  const parsed = parsePersisted(JSON.stringify({ schema: 1, mode: "armed", revision: 3, nodes: [good], panels: { "a-1": { name: "A", firmware: "1", ip: "10.0.0.5", port: 80 }, "b-2": { name: 3 } } }));
+  assert.deepEqual(Object.keys(parsed?.panels ?? {}), ["a-1"]);
+  assert.equal(parsed?.nodes.length, 1);
+});

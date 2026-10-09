@@ -20,13 +20,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-260%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-262%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="Maturity">
 </p>
 
 ---
 
-**正直さのチェック - 今日動いているもの:** 以下のすべてのルート、セッション、暗号化、証拠の規則は実在し、テストで網羅されています（`npm test`、260 件。隔離したサーバーに対する完全な HTTP 統合テストを含む）。CM5 上の実際の MQTT ブローカーに対して動作し（スクリプトと 2 台の実際のレーダーノードによる）、5 台の実際の IP カメラから FFmpeg でライブ映像の配信、スナップショットの保存、録画を行いました。**まだ実証されていないもの：** 実際の ONVIF カメラでの ONVIF、すべてのカメラファームウェアでの PTZ（Hi3510 の機種では動作します）、Jetson ハードウェア全般、そして実際のゲートウェイノードでの太陽光ルート（生成した測定値でテストしています）。
+**正直さのチェック - 今日動いているもの:** 以下のすべてのルート、セッション、暗号化、証拠の規則は実在し、テストで網羅されています（`npm test`、262 件。隔離したサーバーに対する完全な HTTP 統合テストを含む）。CM5 上の実際の MQTT ブローカーに対して動作し（スクリプトと 2 台の実際のレーダーノードによる）、5 台の実際の IP カメラから FFmpeg でライブ映像の配信、スナップショットの保存、録画を行いました。**まだ実証されていないもの：** 実際の ONVIF カメラでの ONVIF、すべてのカメラファームウェアでの PTZ（Hi3510 の機種では動作します）、Jetson ハードウェア全般、そして実際のゲートウェイノードでの太陽光ルート（生成した測定値でテストしています）。
 
 ---
 
@@ -101,7 +101,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 260 tests: unit + full HTTP integration
+npm test            # 262 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```

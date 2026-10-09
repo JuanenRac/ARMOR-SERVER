@@ -12,7 +12,9 @@ export type PersistedNode = {
   target_count: number; alert_level: "normal" | "review" | "high"; received_at_ms: number;
   status: "online" | "offline" | "stale"; high_since_ms: number | null;
 };
-export type PersistedState = { schema: 1; mode: "disarmed" | "armed"; revision: number; nodes: PersistedNode[] };
+/** Where a node's own web panel is, as the node said itself: kept so that a node switched off while the server restarts is still known by its address. */
+export type PersistedPanel = { name: string; firmware: string; ip: string; port: number };
+export type PersistedState = { schema: 1; mode: "disarmed" | "armed"; revision: number; nodes: PersistedNode[]; panels?: Record<string, PersistedPanel> };
 
 export interface StatePersistence {
   load(): PersistedState | undefined;
@@ -37,7 +39,15 @@ export function parsePersisted(text: string): PersistedState | undefined {
     const value = JSON.parse(text) as Record<string, unknown>;
     if (value.schema !== 1 || (value.mode !== "armed" && value.mode !== "disarmed") || !Number.isInteger(value.revision) || !Array.isArray(value.nodes)) return undefined;
     if (!value.nodes.every(isNode)) return undefined;
-    return value as unknown as PersistedState;
+    // The addresses of the panels are an extra: an entry that is not well formed is dropped, never the whole file.
+    const panels: Record<string, PersistedPanel> = {};
+    if (value.panels && typeof value.panels === "object") {
+      for (const [id, panel] of Object.entries(value.panels as Record<string, unknown>)) {
+        const item = panel as Record<string, unknown> | null;
+        if (NODE_ID.test(id) && item && typeof item.name === "string" && typeof item.firmware === "string" && typeof item.ip === "string" && Number.isInteger(item.port)) panels[id] = { name: item.name, firmware: item.firmware, ip: item.ip, port: item.port as number };
+      }
+    }
+    return { ...(value as unknown as PersistedState), panels };
   } catch { return undefined; }
 }
 

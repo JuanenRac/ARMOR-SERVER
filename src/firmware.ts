@@ -156,13 +156,13 @@ export class FirmwareService {
     return `http://${address}${port > 0 ? `:${port}` : ""}`;
   }
 
-  /** What a node says about itself without a login: its id, its version and its board. */
-  async probe(address: string): Promise<{ address: string; reachable: boolean; node_id?: string; version?: string; board?: string }> {
+  /** What a node says about itself without a login: its id, its version, its board and, from the firmware that says it, its kind (radar, solar, electrical, hmi). */
+  async probe(address: string): Promise<{ address: string; reachable: boolean; node_id?: string; version?: string; board?: string; kind?: string }> {
     try {
       const reply = await fetch(`${this.#base(address)}/api/v1/session`, { signal: AbortSignal.timeout(4_000) });
       if (!reply.ok) return { address, reachable: false };
-      const data = await reply.json() as { node_id?: string; version?: string; board?: string };
-      return { address, reachable: true, node_id: data.node_id, version: data.version, board: data.board };
+      const data = await reply.json() as { node_id?: string; version?: string; board?: string; kind?: string };
+      return { address, reachable: true, node_id: data.node_id, version: data.version, board: data.board, ...(typeof data.kind === "string" ? { kind: data.kind } : {}) };
     } catch { return { address, reachable: false }; }
   }
 
