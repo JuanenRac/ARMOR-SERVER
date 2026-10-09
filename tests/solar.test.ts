@@ -261,3 +261,17 @@ test("the history survives a restart, reaches back past a day with five-minute a
   next.importHistory({ devices: { "../x/y": { samples: [], coarse: [] } }, energy: { "not-a-date": { pv: 1, load: 1, bin: 1, bout: 1, ibin: 1, ibout: 1 } } });   // a damaged file adds nothing
   assert.equal(next.energy(400).length, 1);
 });
+
+test("solar parsing agrees with every shared conformance vector", () => {
+  const directory = path.resolve(import.meta.dirname, "..", "..", "ARMOR-COMMON", "conformance");
+  for (const kind of ["solar_inverter", "solar_battery"]) {
+    const file = path.join(directory, `${kind}.json`);
+    if (!fs.existsSync(file)) continue;   // ARMOR-COMMON is not checked out next to this repository
+    const { vectors } = JSON.parse(fs.readFileSync(file, "utf8")) as { vectors: Array<{ name: string; valid: boolean; payload: unknown }> };
+    assert.ok(vectors.length > 20, kind);
+    for (const vector of vectors) {
+      if (vector.valid) assert.doesNotThrow(() => parseSolarMessage(structuredClone(vector.payload)), `${kind} should accept: ${vector.name}`);
+      else assert.throws(() => parseSolarMessage(structuredClone(vector.payload)), `${kind} should reject: ${vector.name}`);
+    }
+  }
+});

@@ -16,6 +16,8 @@ export type SolarInverter = {
   ac_charging: boolean; pv_charging: boolean; load_on: boolean; warnings: string[];
   /** A second PV input (pv_w is already the sum of both) and, for a parallel system, the totals and the units the node reads (QPGS). */
   pv2_v?: number; pv2_a?: number; pv2_w?: number;
+  /** The DC bus voltage inside the inverter, when the dialect says it. */
+  bus_v?: number;
   total_out_w?: number; total_out_va?: number; total_load_percent?: number; total_charging_a?: number;
   units?: SolarUnit[];
 };
@@ -32,6 +34,8 @@ export type SolarBattery = {
   state?: "charging" | "discharging" | "idle"; voltage_v?: number; current_a?: number; temperature_min_c?: number; temperature_max_c?: number;
   cell_min_v?: number; cell_max_v?: number; soc_percent?: number; alarm?: boolean;
   model?: string; capacity_ah?: number; full_capacity_ah?: number; energy_kwh?: number; cycles?: number; health_percent?: number;
+  /** What a battery management system adds: its own power reading (negative while discharging), the cells being balanced, a protection active and the status codes of its MOSFETs. */
+  power_w?: number; balancing?: number; protecting?: boolean; charge_mos?: number; discharge_mos?: number;
 };
 export type SolarMessage = SolarInverter | SolarBattery;
 
@@ -39,9 +43,9 @@ const deviceName = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 const warningName = /^[a-z][a-z0-9_]{0,39}$/;
 const INVERTER_KEYS = ["kind", "node_id", "device", "timestamp_ms", "mode", "grid_v", "grid_hz", "out_v", "out_hz", "out_va", "out_w", "load_percent", "battery_v", "battery_a", "battery_percent",
   "pv_v", "pv_a", "pv_w", "heatsink_c", "ac_charging", "pv_charging", "load_on", "warnings"] as const;
-const INVERTER_OPTIONAL_KEYS = ["pv2_v", "pv2_a", "pv2_w", "total_out_w", "total_out_va", "total_load_percent", "total_charging_a", "units"] as const;
+const INVERTER_OPTIONAL_KEYS = ["bus_v", "pv2_v", "pv2_a", "pv2_w", "total_out_w", "total_out_va", "total_load_percent", "total_charging_a", "units"] as const;
 const INVERTER_OPTIONAL_RANGES: Record<string, readonly [number, number]> = {
-  pv2_v: [0, 1500], pv2_a: [0, 500], pv2_w: [0, 100_000], total_out_w: [0, 1_000_000], total_out_va: [0, 1_000_000], total_load_percent: [0, 200], total_charging_a: [0, 10_000],
+  bus_v: [0, 1500], pv2_v: [0, 1500], pv2_a: [0, 500], pv2_w: [0, 100_000], total_out_w: [0, 1_000_000], total_out_va: [0, 1_000_000], total_load_percent: [0, 200], total_charging_a: [0, 10_000],
 };
 const UNIT_KEYS = ["unit", "serial", "mode", "fault_code", "grid_v", "out_v", "out_va", "out_w", "load_percent", "battery_v", "battery_percent", "pv_v", "charging_a"] as const;
 const UNIT_RANGES: Record<string, readonly [number, number]> = {
@@ -110,7 +114,7 @@ function parseModule(value: unknown, index: number): SolarModule {
 
 export function parseSolarBattery(value: unknown): SolarBattery {
   const body = record(value, "battery");
-  onlyKnown(body, ["kind", "node_id", "device", "timestamp_ms", "modules", "stack", "state", "voltage_v", "current_a", "temperature_min_c", "temperature_max_c", "cell_min_v", "cell_max_v", "soc_percent", "alarm", "model", "capacity_ah", "full_capacity_ah", "energy_kwh", "cycles", "health_percent"], "battery");
+  onlyKnown(body, ["kind", "node_id", "device", "timestamp_ms", "modules", "stack", "state", "voltage_v", "current_a", "temperature_min_c", "temperature_max_c", "cell_min_v", "cell_max_v", "soc_percent", "alarm", "model", "capacity_ah", "full_capacity_ah", "energy_kwh", "cycles", "health_percent", "power_w", "balancing", "protecting", "charge_mos", "discharge_mos"], "battery");
   for (const key of ["kind", "node_id", "device", "timestamp_ms", "modules", "stack"]) if (!(key in body)) throw new Error(`battery is missing ${key}`);
   if (body.kind !== "battery") throw new Error("invalid kind");
   const node = readNodeId(body), device = readDevice(body), timestamp = readTimestamp(body);
@@ -125,6 +129,10 @@ export function parseSolarBattery(value: unknown): SolarBattery {
   for (const [key, high] of [["capacity_ah", 100_000], ["full_capacity_ah", 100_000], ["energy_kwh", 10_000]] as const) if (key in body && !inRange(body[key], 0, high)) throw new Error(`invalid ${key}`);
   if ("cycles" in body && (!integer(body.cycles) || body.cycles < 0 || body.cycles > 1_000_000)) throw new Error("invalid cycles");
   if ("health_percent" in body && (!integer(body.health_percent) || body.health_percent < 0 || body.health_percent > 100)) throw new Error("invalid health_percent");
+  if ("power_w" in body && !inRange(body.power_w, -1_000_000, 1_000_000)) throw new Error("invalid power_w");
+  if ("balancing" in body && (!integer(body.balancing) || body.balancing < 0 || body.balancing > 64)) throw new Error("invalid balancing");
+  if ("protecting" in body && typeof body.protecting !== "boolean") throw new Error("invalid protecting");
+  for (const key of ["charge_mos", "discharge_mos"]) if (key in body && (!integer(body[key]) || (body[key] as number) < 0 || (body[key] as number) > 255)) throw new Error(`invalid ${key}`);
   return { ...(body as unknown as SolarBattery), node_id: node, device, timestamp_ms: timestamp, stack };
 }
 
