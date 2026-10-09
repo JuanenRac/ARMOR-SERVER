@@ -12,7 +12,7 @@ export type SecurityMode = "disarmed" | "armed";
 export type AlertLevel = "normal" | "review" | "high";
 /** A target as the radar last reported it (in the radar's own frame, millimetres); `counted` is false when an ignore zone covers it. */
 export type TargetView = RadarTrack & { counted: boolean };
-/** Where a node's own web panel is, as the node said itself (not stored: the node repeats it). */
+/** Where a node's own web panel is, as the node said itself (kept in the state file, and the node repeats it). */
 export type PanelInfo = { name: string; firmware: string; ip: string; port: number };
 export type NodeState = {
   node_id: string;
@@ -154,7 +154,7 @@ export class ArmorStore {
   }
 
   /**
-   * What a node says about itself. It does not make a node appear (only telemetry and health do) and is not persisted: the node repeats it
+   * What a node says about itself. It does not make a node appear (only telemetry and health do) and is kept in the state file (so that a node that is switched off is still known by its address): the node repeats it
    * when it connects and now and then. Nothing changes, and no revision is spent, when it says what it said before.
    */
   info(message: Info): SystemState {
@@ -163,13 +163,15 @@ export class ArmorStore {
     const next: PanelInfo = { name: message.name, firmware: message.firmware, ip: message.ip, port: message.port };
     if (known && known.name === next.name && known.firmware === next.firmware && known.ip === next.ip && known.port === next.port) return this.snapshot();
     this.#panels.set(message.node_id, next);
-    return this.#nodes.has(message.node_id) ? this.#bump(false) : this.snapshot();
+    if (this.#nodes.has(message.node_id)) return this.#bump(false);
+    this.#persistence?.save(this.#persisted(), false);   // no node to show yet: the address is still worth keeping
+    return this.snapshot();
   }
 
   /** Forget a decommissioned node. Returns false when the node is unknown. A node that speaks again is simply new. */
   removeNode(nodeId: string): boolean {
-    this.#panels.delete(nodeId);
-    if (!this.#nodes.delete(nodeId)) return false;
+    const hadPanel = this.#panels.delete(nodeId);
+    if (!this.#nodes.delete(nodeId)) { if (hadPanel) this.#persistence?.save(this.#persisted(), false); return false; }
     this.#bump(false);
     return true;
   }
@@ -204,7 +206,7 @@ export class ArmorStore {
 
   #persisted(): PersistedState {
     // Positions are only meaningful live: they are not written to disk.
-    return { schema: 1, mode: this.#mode, revision: this.#revision, nodes: [...this.#nodes.values()].map(node => ({ ...node, targets: [] })) };
+    return { schema: 1, mode: this.#mode, revision: this.#revision, nodes: [...this.#nodes.values()].map(node => ({ ...node, targets: [] })), panels: Object.fromEntries(this.#panels) };
   }
 
   #restore(state: PersistedState | undefined): void {
@@ -212,6 +214,7 @@ export class ArmorStore {
     this.#mode = state.mode;
     this.#revision = state.revision;
     for (const node of state.nodes) this.#nodes.set(node.node_id, { ...node, targets: [] });
+    for (const [id, panel] of Object.entries(state.panels ?? {})) if (this.#panels.size < MAX_NODES) this.#panels.set(id, panel);
     this.#updatedAt = new Date(this.#now()).toISOString();
   }
 }

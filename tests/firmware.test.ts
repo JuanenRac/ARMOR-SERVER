@@ -25,7 +25,7 @@ async function fakeNode(options: { password?: string; version?: string; newVersi
       const url = `${request.method} ${request.url}`;
       if (url === "GET /api/v1/session") {
         if (state.reboot > 0 && Date.now() < state.reboot) { response.destroy(); return; }
-        return send(200, { node_id: "nodo-radar-2", version: state.version, board: "s3-eth" });
+        return send(200, { node_id: "nodo-radar-2", kind: "radar", version: state.version, board: "s3-eth" });
       }
       if (url === "POST /api/v1/login") {
         const input = JSON.parse(raw.toString("utf8")) as { password?: string };
@@ -104,7 +104,7 @@ test("an uploaded image updates a node: it signs in, sends the image, and waits 
       assert.deepEqual([uploaded.body.bytes, uploaded.body.sha256, uploaded.body.name], [bytes.length, sha(bytes), "armor_radar_0.5.4.bin"]);
 
       const probe = await call(running, cookie, "POST", "/api/v1/admin/firmware/probe", { addresses: ["127.0.0.1"] });
-      assert.deepEqual([probe.body.nodes[0].reachable, probe.body.nodes[0].version, probe.body.nodes[0].node_id], [true, "0.5.0", "nodo-radar-2"]);
+      assert.deepEqual([probe.body.nodes[0].reachable, probe.body.nodes[0].version, probe.body.nodes[0].node_id, probe.body.nodes[0].kind], [true, "0.5.0", "nodo-radar-2", "radar"]);
 
       const started = await call(running, cookie, "POST", "/api/v1/admin/firmware/jobs", { kind: "radar", source: "upload", upload_id: uploaded.body.id, targets: [{ address: "127.0.0.1", node_id: "nodo-radar-2" }], panel_user: "admin", panel_password: "node-pass" });
       assert.equal(started.status, 202);
