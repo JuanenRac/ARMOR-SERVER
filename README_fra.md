@@ -20,13 +20,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-168%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-259%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="Maturity">
 </p>
 
 ---
 
-**Vérification d'honnêteté - ce qui fonctionne aujourd'hui:** Chaque route, session, chiffrement et règle de preuves ci-dessous est réel et couvert par des tests (`npm test`, 168 tests, dont une suite d'intégration HTTP complète face à un serveur isolé). Il a fonctionné avec un vrai broker MQTT sur la CM5 (avec des scripts, pas avec un firmware de nœud de terrain), a diffusé de la vidéo en direct, enregistré une capture et filmé depuis cinq vraies caméras IP via FFmpeg. Ce qui n'est **pas encore prouvé** : ONVIF avec une vraie caméra ONVIF, le PTZ sur chaque firmware de caméra (il marche sur l'unité Hi3510), tout matériel Jetson et les routes solaires avec un vrai nœud passerelle (elles sont testées avec des relevés générés).
+**Vérification d'honnêteté - ce qui fonctionne aujourd'hui:** Chaque route, session, chiffrement et règle de preuves ci-dessous est réel et couvert par des tests (`npm test`, 259 tests, dont une suite d'intégration HTTP complète face à un serveur isolé). Il a fonctionné avec un vrai broker MQTT sur la CM5 (avec des scripts, pas avec un firmware de nœud de terrain), a diffusé de la vidéo en direct, enregistré une capture et filmé depuis cinq vraies caméras IP via FFmpeg. Ce qui n'est **pas encore prouvé** : ONVIF avec une vraie caméra ONVIF, le PTZ sur chaque firmware de caméra (il marche sur l'unité Hi3510), tout matériel Jetson et les routes solaires avec un vrai nœud passerelle (elles sont testées avec des relevés générés).
 
 ---
 
@@ -77,6 +77,7 @@ flowchart LR
 * Copiez `.env.example` vers `.env` (ignoré par Git), ou laissez `run.bat` / `run.sh` générer des secrets aléatoires au premier lancement.
 * Obligatoires : `ARMOR_INGEST_TOKEN` et `ARMOR_CONTROL_TOKEN` (24 caractères ou plus, tous différents) et `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD` (le premier administrateur).
 * Courantes : `ARMOR_HOST` / `ARMOR_PORT`, `ARMOR_DATA_DIR`, `ARMOR_FFMPEG_PATH` (vidéo en direct et capture), `ARMOR_MQTT_URL`, `ARMOR_STUDIO_ORIGIN`, `ARMOR_NODE_STALE_AFTER_S`, `ARMOR_CAMERA_CHECK_S`, `ARMOR_ALERT_DWELL_MS`, `ARMOR_ALERT_WEBHOOK_URL` et `ARMOR_COOKIE_SECURE` (à `1` derrière TLS).
+* **Micrologiciel, avis et voix :** le serveur met à jour le micrologiciel des nœuds de terrain (un fichier ou la version GitHub, un nœud ou tous ceux d'un type, avec progression et vérification du SHA-256), envoie les alarmes à Telegram et à Home Assistant (avec reprises et une ligne d'audit sans secrets, dans les sept langues) et exécute quinze commandes écrites ou parlées via la passerelle vocale (l'état, les alarmes, les nœuds, les caméras, les radars, les systèmes solaire et électrique, le réseau, l'heure, l'aide et les lumières ; armer et désarmer se confirment en un second tour). Le service d'observation lève `camera_motion` avec son propre jeton. Voir [micrologiciel des nœuds](docs/NODE_FIRMWARE.md) et [intégration](docs/INTEGRATION.md).
 
 ## 📂 Structure du dépôt
 
@@ -100,7 +101,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 168 tests: unit + full HTTP integration
+npm test            # 259 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```

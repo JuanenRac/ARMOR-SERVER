@@ -20,13 +20,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-168%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-259%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="Maturity">
 </p>
 
 ---
 
-**诚实性检查 - 今天真正能运行的部分:** 下面的每条路由、会话、加密和证据规则都是真实的，并有测试覆盖（`npm test`，168 个测试，其中包括针对隔离服务器的完整 HTTP 集成测试）。它已在 CM5 上对着真实的 MQTT 代理运行过（用的是脚本，不是现场节点固件），并通过 FFmpeg 从五台真实 IP 摄像头推送过实时视频、保存过快照并录过像。**尚未证实的：** 对真实 ONVIF 摄像头的 ONVIF、每种摄像头固件上的 PTZ（在 Hi3510 设备上可用）、任何 Jetson 硬件，以及对真实网关节点的太阳能路由（它们用生成的读数测试）。
+**诚实性检查 - 今天真正能运行的部分:** 下面的每条路由、会话、加密和证据规则都是真实的，并有测试覆盖（`npm test`，259 个测试，其中包括针对隔离服务器的完整 HTTP 集成测试）。它已在 CM5 上对着真实的 MQTT 代理运行过（用的是脚本，不是现场节点固件），并通过 FFmpeg 从五台真实 IP 摄像头推送过实时视频、保存过快照并录过像。**尚未证实的：** 对真实 ONVIF 摄像头的 ONVIF、每种摄像头固件上的 PTZ（在 Hi3510 设备上可用）、任何 Jetson 硬件，以及对真实网关节点的太阳能路由（它们用生成的读数测试）。
 
 ---
 
@@ -77,6 +77,7 @@ flowchart LR
 * 把 `.env.example` 复制为 `.env`（Git 会忽略它），或让 `run.bat` / `run.sh` 在首次运行时生成随机机密。
 * 必填：`ARMOR_INGEST_TOKEN` 和 `ARMOR_CONTROL_TOKEN`（24 个字符或更长，且互不相同）以及 `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD`（第一个管理员）。
 * 常用：`ARMOR_HOST` / `ARMOR_PORT`、`ARMOR_DATA_DIR`、`ARMOR_FFMPEG_PATH`（实时视频和抓拍）、`ARMOR_MQTT_URL`、`ARMOR_STUDIO_ORIGIN`、`ARMOR_NODE_STALE_AFTER_S`、`ARMOR_CAMERA_CHECK_S`、`ARMOR_ALERT_DWELL_MS`、`ARMOR_ALERT_WEBHOOK_URL` 和 `ARMOR_COOKIE_SECURE`（在 TLS 之后设为 `1`）。
+* **固件、通知与语音：** 服务器可更新现场节点的固件（文件或 GitHub 发布版，单个节点或某一类型的全部节点，带进度并校验 SHA-256），把警报发送到 Telegram 和 Home Assistant（带重试，审计行不含机密，支持七种语言），并通过语音网关执行十五条书面或语音命令（状态、警报、节点、摄像头、雷达、太阳能与电气系统、网络、时间、帮助和灯光；布防与撤防需在第二轮确认）。观察服务使用自己的令牌触发 `camera_motion`。见[节点固件](docs/NODE_FIRMWARE.md)和[集成](docs/INTEGRATION.md)。
 
 ## 📂 仓库结构
 
@@ -100,7 +101,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 168 tests: unit + full HTTP integration
+npm test            # 259 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```
