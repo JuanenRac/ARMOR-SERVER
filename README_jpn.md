@@ -20,13 +20,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-168%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-259%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="Maturity">
 </p>
 
 ---
 
-**正直さのチェック - 今日動いているもの:** 以下のすべてのルート、セッション、暗号化、証拠の規則は実在し、テストで網羅されています（`npm test`、168 件。隔離したサーバーに対する完全な HTTP 統合テストを含む）。CM5 上の実際の MQTT ブローカーに対して動作し（スクリプトによるもので、フィールドノードのファームウェアではありません）、5 台の実際の IP カメラから FFmpeg でライブ映像の配信、スナップショットの保存、録画を行いました。**まだ実証されていないもの：** 実際の ONVIF カメラでの ONVIF、すべてのカメラファームウェアでの PTZ（Hi3510 の機種では動作します）、Jetson ハードウェア全般、そして実際のゲートウェイノードでの太陽光ルート（生成した測定値でテストしています）。
+**正直さのチェック - 今日動いているもの:** 以下のすべてのルート、セッション、暗号化、証拠の規則は実在し、テストで網羅されています（`npm test`、259 件。隔離したサーバーに対する完全な HTTP 統合テストを含む）。CM5 上の実際の MQTT ブローカーに対して動作し（スクリプトによるもので、フィールドノードのファームウェアではありません）、5 台の実際の IP カメラから FFmpeg でライブ映像の配信、スナップショットの保存、録画を行いました。**まだ実証されていないもの：** 実際の ONVIF カメラでの ONVIF、すべてのカメラファームウェアでの PTZ（Hi3510 の機種では動作します）、Jetson ハードウェア全般、そして実際のゲートウェイノードでの太陽光ルート（生成した測定値でテストしています）。
 
 ---
 
@@ -77,6 +77,7 @@ flowchart LR
 * `.env.example` を `.env`（Git は無視）にコピーするか、`run.bat` / `run.sh` に初回実行でランダムなシークレットを生成させます。
 * 必須：`ARMOR_INGEST_TOKEN` と `ARMOR_CONTROL_TOKEN`（24 文字以上、すべて異なる）、および `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD`（最初の管理者）。
 * よく使う：`ARMOR_HOST` / `ARMOR_PORT`、`ARMOR_DATA_DIR`、`ARMOR_FFMPEG_PATH`（ライブ映像と撮影）、`ARMOR_MQTT_URL`、`ARMOR_STUDIO_ORIGIN`、`ARMOR_NODE_STALE_AFTER_S`、`ARMOR_CAMERA_CHECK_S`、`ARMOR_ALERT_DWELL_MS`、`ARMOR_ALERT_WEBHOOK_URL`、`ARMOR_COOKIE_SECURE`（TLS の背後では `1`）。
+* **ファームウェア、通知、音声：** サーバーは現場ノードのファームウェアを更新し（ファイルまたは GitHub のリリース、1 台または種類ごとの全ノード、進捗表示と SHA-256 の確認付き）、アラームを Telegram と Home Assistant に送り（再試行あり、秘密を含まない監査行、7 言語）、音声ゲートウェイ経由で 15 個の文字または音声のコマンド（状態、アラーム、ノード、カメラ、レーダー、太陽光と電気のシステム、ネットワーク、時刻、ヘルプ、照明。警戒と解除は 2 回目のターンで確認）を実行します。観測サービスは専用のトークンで `camera_motion` を上げます。[ノードのファームウェア](docs/NODE_FIRMWARE.md)と[統合](docs/INTEGRATION.md)を参照。
 
 ## 📂 リポジトリの構成
 
@@ -100,7 +101,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 168 tests: unit + full HTTP integration
+npm test            # 259 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```
