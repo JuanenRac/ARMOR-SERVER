@@ -26,7 +26,8 @@ const MAX_JOBS = 20;
 const MAX_TARGETS = 20;
 
 export type TargetState = "waiting" | "checking" | "signing_in" | "uploading" | "restarting" | "done" | "failed";
-export type JobTarget = { address: string; node_id?: string; state: TargetState; version_before?: string; version_after?: string; error?: string };
+/** `progress` is 0-100 for this node (the steps weigh what they take: the picture goes from 15 to 80, the restart from 80 to 98), `sent` and `total` are bytes of the picture, `waited_s` the seconds since the node was told to restart. */
+export type JobTarget = { address: string; node_id?: string; state: TargetState; version_before?: string; version_after?: string; error?: string; progress?: number; sent?: number; total?: number; waited_s?: number };
 export type FirmwareJob = {
   id: string; kind: NodeKind; source: "github" | "upload"; state: "preparing" | "running" | "done" | "failed";
   version?: string; bytes?: number; sha256?: string; error?: string; targets: JobTarget[]; started: number; finished?: number;
@@ -62,6 +63,18 @@ export function parseChecksum(text: string): string | undefined {
   return match ? match[1].toLowerCase() : undefined;
 }
 
+/** How far a node is, 0-100: the quick steps count a little, sending the picture most of it, and the restart fills the end. */
+function progressOf(target: JobTarget): number {
+  switch (target.state) {
+    case "waiting": return 0;
+    case "checking": return 5;
+    case "signing_in": return 12;
+    case "uploading": return 15 + 65 * (target.total ? Math.min(1, (target.sent ?? 0) / target.total) : 0);
+    case "restarting": return 80 + Math.min(18, target.waited_s ?? 0);
+    default: return target.progress ?? 0;
+  }
+}
+
 export class FirmwareService {
   readonly #uploads = new Map<string, { info: UploadInfo; image: Image; at: number }>();
   readonly #jobs = new Map<string, FirmwareJob>();
@@ -72,6 +85,7 @@ export class FirmwareService {
   readonly #pollMs: number;
   readonly #settleMs: number;
   #running = false;
+  readonly #restartedAt = new WeakMap<JobTarget, number>();
 
   constructor(options: FirmwareOptions = {}) {
     this.#now = options.now ?? Date.now;
@@ -168,15 +182,30 @@ export class FirmwareService {
     if (!signIn.ok || !cookie) throw new FirmwareError("panel_login_failed");
 
     set("uploading");
+    // The image goes as a stream that counts what has been taken, so the console can show how far it is (a node needs the length: it does not read chunked bodies).
+    const total = image.bytes.length;
+    let offset = 0;
+    target.total = total; target.sent = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (offset >= total) { controller.close(); return; }
+        const end = Math.min(offset + 16_384, total);
+        controller.enqueue(new Uint8Array(image.bytes.subarray(offset, end)));
+        offset = end; target.sent = offset;
+      },
+    });
     const sent = await fetch(`${base}/api/v1/ota`, {
-      method: "POST", headers: { Cookie: cookie, "X-Requested-With": "armor", "Content-Type": "application/octet-stream" }, body: new Uint8Array(image.bytes), signal: AbortSignal.timeout(240_000),
-    }).catch(() => undefined);
+      method: "POST", headers: { Cookie: cookie, "X-Requested-With": "armor", "Content-Type": "application/octet-stream", "Content-Length": String(total) },
+      body: stream, duplex: "half", signal: AbortSignal.timeout(240_000),
+    } as RequestInit & { duplex: "half" }).catch(() => undefined);
     if (!sent) throw new FirmwareError("upload_failed");
     const answer = await sent.json().catch(() => ({})) as { error?: string; version?: string; sha256?: string };
     if (!sent.ok) throw new FirmwareError(answer.error ? `node_${answer.error}` : `node_http_${sent.status}`);
     if (answer.sha256 && answer.sha256.toLowerCase() !== image.sha256) throw new FirmwareError("hash_mismatch");
 
+    target.sent = total;
     set("restarting");
+    this.#restartedAt.set(target, this.#now());
     const expected = answer.version ?? image.version;
     await sleep(this.#settleMs);
     const deadline = this.#now() + this.#restartWaitMs;
@@ -231,5 +260,17 @@ export class FirmwareService {
     if (job.state === "failed") job.error = "some_nodes_failed";
   }
 
-  job(id: string): FirmwareJob | undefined { return this.#jobs.get(id); }
+  /** A job as it stands now, with the progress of every node worked out. */
+  job(id: string): FirmwareJob | undefined {
+    const job = this.#jobs.get(id);
+    if (!job) return undefined;
+    for (const target of job.targets) {
+      const since = this.#restartedAt.get(target);
+      if (since !== undefined) target.waited_s = Math.max(0, Math.round((this.#now() - since) / 1000));
+      if (target.state === "done") target.progress = 100;
+      else if (target.state === "failed") target.progress = target.progress ?? 0;
+      else target.progress = Math.round(progressOf(target));
+    }
+    return job;
+  }
 }
