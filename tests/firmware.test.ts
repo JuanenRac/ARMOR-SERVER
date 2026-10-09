@@ -111,6 +111,7 @@ test("an uploaded image updates a node: it signs in, sends the image, and waits 
       const job = await finished(running, cookie, started.body.id);
       assert.equal(job.state, "done");
       assert.deepEqual([job.targets[0].state, job.targets[0].version_before, job.targets[0].version_after], ["done", "0.5.0", "0.5.4"]);
+      assert.deepEqual([job.targets[0].progress, job.targets[0].sent, job.targets[0].total], [100, bytes.length, bytes.length], "the console is told how far the picture got");
       assert.deepEqual(node.seen.map(item => [item.cookie, item.requestedWith, item.bytes, item.sha256]), [["armor_session=abc123", "armor", bytes.length, sha(bytes)]]);
 
       // the login of the node is not in what the job says about itself, nor in the audit trail
