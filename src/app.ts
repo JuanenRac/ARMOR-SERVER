@@ -3,6 +3,7 @@
  * test can build an isolated server on an ephemeral port.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
+import path from "node:path";
 import cors from "cors";
 import express from "express";
 import rateLimit from "express-rate-limit";
@@ -25,6 +26,10 @@ import { registerNetworkRoutes } from "./routes/network.js";
 import { networkTopic, parseNetworkMessage } from "./network.js";
 import { electricalTopic, parseElectricalMessage, parseElectricalResult } from "./electrical.js";
 import { parseSolarMessage, solarTopic } from "./solar.js";
+import { forwardCompatible } from "./contracts.js";
+import { JsonFile } from "./history.js";
+import type { ElectricalHistoryFile } from "./electrical.js";
+import type { SolarHistoryFile } from "./solar.js";
 import { registerMediaRoutes } from "./routes/media.js";
 import { registerPreferencesRoutes } from "./routes/preferences.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
@@ -113,7 +118,13 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     return clients.handleUpgrade(request, socket, head, client => clients.emit("connection", client, request));
   });
 
-  const mqtt = config.mqtt ? attachMqtt(context.store, config.mqtt.url, config.mqtt.username, config.mqtt.password) : null;
+  const mqtt = config.mqtt ? attachMqtt(context.store, config.mqtt.url, config.mqtt.username, config.mqtt.password, context.ingestLog) : null;
+  /** A message of a node that was refused: said in the log and kept (with the start of what was sent) for Studio's System menu. */
+  const rejected = (topic: string, raw: Buffer, error: unknown, fallback: string): void => {
+    const why = error instanceof Error ? error.message : fallback;
+    context.ingestLog.rejected(topic, why, raw);
+    console.warn("ARMOR_MQTT=REJECTED", why);
+  };
   if (mqtt) context.notifier.setPublisher((topic, payload) => { if (mqtt.connected) mqtt.publish(topic, payload, { qos: 1 }); });
   if (mqtt) {
     // Devices speak over the same broker: subscribe to their topics (again whenever the list changes), hand their messages to the registry, and publish commands.
@@ -132,10 +143,11 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       const named = networkTopic(topic);
       if (!named) return;
       try {
-        const message = parseNetworkMessage(JSON.parse(raw.toString("utf8")));
+        const { value: message, ignored } = forwardCompatible(() => parseNetworkMessage(JSON.parse(raw.toString("utf8"))));
         if (message.node_id !== named) throw new Error("node_id does not match the topic");
         context.networkNodes.ingest(message);
-      } catch (error) { console.warn("ARMOR_MQTT=REJECTED", error instanceof Error ? error.message : "invalid network payload"); }
+        context.ingestLog.ok(topic, ignored);
+      } catch (error) { rejected(topic, raw, error, "invalid network payload"); }
     });
     // What a node answers to a command to its switch. A command is never retained and is sent at most once: an old one must never be delivered later, and a node that
     // was away misses it (the node's own arm and token make a late one harmless anyway).
@@ -145,30 +157,44 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       const named = electricalTopic(topic, "result");
       if (!named) return;
       try {
-        const result = parseElectricalResult(JSON.parse(raw.toString("utf8")));
+        const { value: result, ignored } = forwardCompatible(() => parseElectricalResult(JSON.parse(raw.toString("utf8"))));
         if (result.node_id !== named) throw new Error("node_id does not match the topic");
         context.electricalSwitching.handleResult(result, named);
-      } catch (error) { console.warn("ARMOR_MQTT=REJECTED", error instanceof Error ? error.message : "invalid electrical result"); }
+        context.ingestLog.ok(topic, ignored);
+      } catch (error) { rejected(topic, raw, error, "invalid electrical result"); }
     });
     mqtt.on("message", (topic, raw) => {
       const named = electricalTopic(topic);
       if (!named) return;
       try {
-        const message = parseElectricalMessage(JSON.parse(raw.toString("utf8")));
+        const { value: message, ignored } = forwardCompatible(() => parseElectricalMessage(JSON.parse(raw.toString("utf8"))));
         if (message.node_id !== named) throw new Error("node_id does not match the topic");
         context.electricalNodes.ingest(message);
-      } catch (error) { console.warn("ARMOR_MQTT=REJECTED", error instanceof Error ? error.message : "invalid electrical payload"); }
+        context.ingestLog.ok(topic, ignored);
+      } catch (error) { rejected(topic, raw, error, "invalid electrical payload"); }
     });
     mqtt.on("message", (topic, raw) => {
       const named = solarTopic(topic);
       if (!named) return;
       try {
-        const message = parseSolarMessage(JSON.parse(raw.toString("utf8")));
+        const { value: message, ignored } = forwardCompatible(() => parseSolarMessage(JSON.parse(raw.toString("utf8"))));
         if (message.node_id !== named[0] || message.device !== named[1]) throw new Error("node_id and device do not match the topic");
         context.solar.ingest(message);
-      } catch (error) { console.warn("ARMOR_MQTT=REJECTED", error instanceof Error ? error.message : "invalid solar payload"); }
+        context.ingestLog.ok(topic, ignored);
+      } catch (error) { rejected(topic, raw, error, "invalid solar payload"); }
     });
   }
+  // The history of the readings outlives a restart: it is read back now and written once a minute and on the way out.
+  const solarHistoryFile = new JsonFile<SolarHistoryFile>(path.join(config.dataDir, "solar-history.json"));
+  const electricalHistoryFile = new JsonFile<ElectricalHistoryFile>(path.join(config.dataDir, "electrical-history.json"));
+  context.solar.importHistory(solarHistoryFile.read());
+  context.electricalNodes.importHistory(electricalHistoryFile.read());
+  const saveHistory = (): void => {
+    try { solarHistoryFile.write(context.solar.exportHistory()); electricalHistoryFile.write(context.electricalNodes.exportHistory()); }
+    catch (error) { console.warn("ARMOR_HISTORY=NOT_SAVED", error instanceof Error ? error.message : "unknown error"); }
+  };
+  const historySaver = setInterval(saveHistory, 60_000);
+  historySaver.unref();
   // Silence and dwell time are time-driven: they need a clock, not a message.
   // A failure of one pass must not take the process down (an uncaught exception in a timer would); it is said once, and again only after a pass that worked.
   let sweepFailing = false;
@@ -193,6 +219,8 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     server, context,
     close: async () => {
       clearInterval(sweeper);
+      clearInterval(historySaver);
+      saveHistory();
       for (const timer of watchdogs) clearTimeout(timer);
       context.store.flush();
       context.studioSessions.flush();

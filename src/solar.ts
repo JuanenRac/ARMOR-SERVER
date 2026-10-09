@@ -5,6 +5,7 @@
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import { finite, integer, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
+import { CoarseTier, type Sample } from "./history.js";
 
 export type SolarMode = "power_on" | "standby" | "line" | "battery" | "fault" | "power_saving" | "shutdown" | "unknown";
 export const SOLAR_MODES: readonly SolarMode[] = ["power_on", "standby", "line", "battery", "fault", "power_saving", "shutdown", "unknown"];
@@ -161,6 +162,13 @@ export type SolarTotals = {
   mode: SolarMode | null;
 };
 export type SolarSample = { t: number } & Record<string, number | string>;
+/** What one local day added up to, in watt-hours: the panels, the load, and the battery taking charge or giving it (read from the battery stacks, and from the inverters as a second opinion). */
+export type EnergyDay = { pv: number; load: number; bin: number; bout: number; ibin: number; ibout: number };
+export type SolarEnergyDay = { date: string; pv_kwh: number; load_kwh: number; battery_in_kwh: number; battery_out_kwh: number };
+/** What is kept of the history of the devices and of the energy between runs. */
+export type SolarHistoryFile = { devices: Record<string, { samples: SolarSample[]; coarse: SolarSample[] }>; energy: Record<string, EnergyDay> };
+const KEEP_ENERGY_DAYS = 400, MAX_ENERGY_GAP_MS = 120_000;
+const dateOf = (ms: number): string => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
 export type SolarStoreOptions = {
   now?: () => number;
@@ -176,12 +184,15 @@ export type SolarStoreOptions = {
   onStale?: (node: string, device: string, stale: boolean) => void;
 };
 
-type Entry = { reading: SolarMessage; receivedAtMs: number; stale: boolean; samples: SolarSample[]; lastSampleMs: number; example: boolean };
+type Entry = { reading: SolarMessage; receivedAtMs: number; stale: boolean; samples: SolarSample[]; coarse: CoarseTier; lastSampleMs: number; example: boolean };
 
 const round = (value: number, places = 1): number => Math.round(value * 10 ** places) / 10 ** places;
 
 export class SolarStore {
   readonly #entries = new Map<string, Entry>();
+  /** History read from the file before the device has reported again: it is given to the device when it does. */
+  readonly #pending = new Map<string, { samples: SolarSample[]; coarse: SolarSample[] }>();
+  readonly #energy = new Map<string, EnergyDay>();
   readonly #options: Required<Pick<SolarStoreOptions, "now" | "staleAfterMs" | "sampleEveryMs" | "keepSamples" | "maxDevices">> & SolarStoreOptions;
 
   constructor(options: SolarStoreOptions = {}) {
@@ -202,18 +213,23 @@ export class SolarStore {
     let entry = this.#entries.get(key);
     if (!entry) {
       if (this.#entries.size >= this.#options.maxDevices) throw new Error("too many solar devices");
-      entry = { reading: message, receivedAtMs: now, stale: false, samples: [], lastSampleMs: 0, example: options.example === true };
+      entry = { reading: message, receivedAtMs: now, stale: false, samples: [], coarse: new CoarseTier(), lastSampleMs: 0, example: options.example === true };
+      const kept = this.#pending.get(key);
+      if (kept && options.example !== true) { entry.samples = kept.samples; entry.coarse.load(kept.coarse); this.#pending.delete(key); }
       this.#entries.set(key, entry);
     }
     const wasStale = entry.stale;
+    if (options.example !== true && !entry.example && !wasStale) this.#addEnergy(message, now - entry.receivedAtMs, now);
     const modeChanged = entry.reading.kind === "inverter" && message.kind === "inverter" && entry.reading.mode !== message.mode;
-    if (entry.example && options.example !== true) { entry.samples = []; entry.lastSampleMs = 0; }   // the first real reading replaces the example, history included
+    if (entry.example && options.example !== true) { entry.samples = []; entry.coarse = new CoarseTier(); entry.lastSampleMs = 0; }   // the first real reading replaces the example, history included
     entry.example = options.example === true;
     entry.reading = message;
     entry.receivedAtMs = now;
     entry.stale = false;
     if (modeChanged || now - entry.lastSampleMs >= this.#options.sampleEveryMs) {
-      entry.samples.push(sampleOf(message, now));
+      const sample = sampleOf(message, now);
+      entry.samples.push(sample);
+      if (options.example !== true) entry.coarse.add(sample);
       entry.lastSampleMs = now;
       if (entry.samples.length > this.#options.keepSamples) entry.samples.splice(0, entry.samples.length - this.#options.keepSamples);
     }
@@ -283,17 +299,71 @@ export class SolarStore {
     };
   }
 
-  /** The recent samples of one device, oldest first; `minutes` bounds how far back. */
+  /** The recent samples of one device, oldest first; `minutes` bounds how far back. Past a day the five-minute averages answer. */
   history(node: string, device: string, minutes: number): { kind: "inverter" | "battery"; samples: SolarSample[] } | undefined {
     const entry = this.#entries.get(`${node}/${device}`);
     if (!entry) return undefined;
     const since = this.#options.now() - minutes * 60_000;
-    return { kind: entry.reading.kind, samples: entry.samples.filter(sample => sample.t >= since) };
+    return { kind: entry.reading.kind, samples: (minutes > 1440 ? entry.coarse.all() : entry.samples).filter(sample => sample.t >= since) };
+  }
+
+  /** Adds what the last stretch of time was worth (the reading times the time since the one before, when that was not long ago) to the day it belongs to. */
+  #addEnergy(message: SolarMessage, gapMs: number, now: number): void {
+    if (!(gapMs > 0) || gapMs > MAX_ENERGY_GAP_MS) return;
+    const date = dateOf(now);
+    let day = this.#energy.get(date);
+    if (!day) {
+      day = { pv: 0, load: 0, bin: 0, bout: 0, ibin: 0, ibout: 0 };
+      this.#energy.set(date, day);
+      const keep = [...this.#energy.keys()].sort();
+      for (const old of keep.slice(0, Math.max(0, keep.length - KEEP_ENERGY_DAYS))) this.#energy.delete(old);
+    }
+    const hours = gapMs / 3_600_000;
+    if (message.kind === "inverter") {
+      day.pv += Math.max(0, message.pv_w) * hours; day.load += Math.max(0, message.out_w) * hours;
+      const battery = message.battery_v * message.battery_a;
+      if (battery > 0) day.ibin += battery * hours; else day.ibout += -battery * hours;
+    } else if (message.voltage_v !== undefined && message.current_a !== undefined) {
+      const power = message.voltage_v * message.current_a;
+      if (power > 0) day.bin += power * hours; else day.bout += -power * hours;
+    }
+  }
+
+  /** The energy of each of the last `days` days (today included), oldest first; the battery's figures come from the stacks when there are any and from the inverters otherwise. */
+  energy(days: number): SolarEnergyDay[] {
+    const kwh = (wh: number): number => Math.round(wh) / 1000;
+    return [...this.#energy.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(-Math.max(1, days)).map(([date, day]) => {
+      const stacks = day.bin + day.bout > 0;
+      return { date, pv_kwh: kwh(day.pv), load_kwh: kwh(day.load), battery_in_kwh: kwh(stacks ? day.bin : day.ibin), battery_out_kwh: kwh(stacks ? day.bout : day.ibout) };
+    });
+  }
+
+  /** What has to be kept between runs: the history of every device (real ones only) and the energy of the days. */
+  exportHistory(): SolarHistoryFile {
+    const devices: SolarHistoryFile["devices"] = {};
+    for (const [key, entry] of this.#entries) if (!entry.example) devices[key] = { samples: entry.samples, coarse: entry.coarse.all() };
+    for (const [key, kept] of this.#pending) if (!(key in devices)) devices[key] = kept;
+    return { devices, energy: Object.fromEntries(this.#energy) };
+  }
+
+  /** Takes back what `exportHistory` made. It only gives the history to devices as they report again. */
+  importHistory(file: SolarHistoryFile | undefined): void {
+    if (!file || typeof file !== "object") return;
+    const good = (list: unknown): SolarSample[] => (Array.isArray(list) ? list.filter((s): s is SolarSample => typeof s === "object" && s !== null && finite((s as { t?: unknown }).t)) : []);
+    for (const [key, value] of Object.entries(file.devices ?? {})) {
+      if (!/^[a-z0-9_-]+\/[a-z0-9_-]+$/.test(key) || this.#pending.size >= this.#options.maxDevices) continue;
+      this.#pending.set(key, { samples: good(value?.samples).slice(-this.#options.keepSamples), coarse: good(value?.coarse) });
+    }
+    for (const [date, day] of Object.entries(file.energy ?? {})) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || typeof day !== "object" || day === null) continue;
+      const read = (value: unknown): number => (finite(value) && value >= 0 ? value : 0);
+      this.#energy.set(date, { pv: read(day.pv), load: read(day.load), bin: read(day.bin), bout: read(day.bout), ibin: read(day.ibin), ibout: read(day.ibout) });
+    }
   }
 }
 
 /** The few numbers of a message that are worth a curve. */
-function sampleOf(message: SolarMessage, t: number): SolarSample {
+function sampleOf(message: SolarMessage, t: number): Sample {
   if (message.kind === "inverter") {
     return { t, pv_w: message.pv_w, out_w: message.out_w, battery_v: message.battery_v, battery_a: message.battery_a, battery_percent: message.battery_percent, grid_v: message.grid_v, mode: message.mode };
   }

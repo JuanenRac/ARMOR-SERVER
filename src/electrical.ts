@@ -5,6 +5,7 @@
  * switch and of the node's answer. Nothing in this file sends anything: the command path is electrical_switching.ts, and it is off unless the operator turned it on.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
+import { CoarseTier } from "./history.js";
 import { finite, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
 
 export type ElectricalChannel = {
@@ -158,11 +159,15 @@ export type ElectricalStoreOptions = {
   onMessage?: (message: ElectricalMessage) => void;
   onStale?: (node: string, stale: boolean) => void;
 };
-type Entry = { reading: ElectricalMessage; receivedAtMs: number; stale: boolean; samples: Map<string, ElectricalSample[]>; lastSampleMs: Map<string, number> };
+type Entry = { reading: ElectricalMessage; receivedAtMs: number; stale: boolean; samples: Map<string, ElectricalSample[]>; coarse: Map<string, CoarseTier>; lastSampleMs: Map<string, number> };
+/** What is kept of the history of the channels between runs, by node and channel. */
+export type ElectricalHistoryFile = { nodes: Record<string, Record<string, { samples: ElectricalSample[]; coarse: ElectricalSample[] }>> };
 const round = (value: number, places = 1): number => Math.round(value * 10 ** places) / 10 ** places;
 
 export class ElectricalStore {
   readonly #entries = new Map<string, Entry>();
+  /** History read from the file before the node has reported again: it is given to the node when it does. */
+  readonly #pending = new Map<string, Record<string, { samples: ElectricalSample[]; coarse: ElectricalSample[] }>>();
   readonly #options: Required<Pick<ElectricalStoreOptions, "now" | "staleAfterMs" | "sampleEveryMs" | "keepSamples" | "maxNodes">> & ElectricalStoreOptions;
 
   constructor(options: ElectricalStoreOptions = {}) {
@@ -175,7 +180,15 @@ export class ElectricalStore {
     let entry = this.#entries.get(message.node_id);
     if (!entry) {
       if (this.#entries.size >= this.#options.maxNodes) throw new Error("too many electrical nodes");
-      entry = { reading: message, receivedAtMs: now, stale: false, samples: new Map(), lastSampleMs: new Map() };
+      entry = { reading: message, receivedAtMs: now, stale: false, samples: new Map(), coarse: new Map(), lastSampleMs: new Map() };
+      const kept = this.#pending.get(message.node_id);
+      if (kept) {
+        for (const [channel, value] of Object.entries(kept)) {
+          entry.samples.set(channel, value.samples.slice(-this.#options.keepSamples));
+          const tier = new CoarseTier(); tier.load(value.coarse); entry.coarse.set(channel, tier);
+        }
+        this.#pending.delete(message.node_id);
+      }
       this.#entries.set(message.node_id, entry);
     }
     const wasStale = entry.stale;
@@ -188,6 +201,9 @@ export class ElectricalStore {
       const sample: ElectricalSample = { t: now };
       for (const key of ["voltage_v", "current_a", "power_w", "energy_kwh"] as const) if (channel[key] !== undefined) sample[key] = channel[key];
       samples.push(sample);
+      const tier = entry.coarse.get(channel.id) ?? new CoarseTier();
+      tier.add(sample as ElectricalSample & Record<string, number>);
+      entry.coarse.set(channel.id, tier);
       if (samples.length > this.#options.keepSamples) samples.splice(0, samples.length - this.#options.keepSamples);
       entry.samples.set(channel.id, samples);
       entry.lastSampleMs.set(channel.id, now);
@@ -232,12 +248,37 @@ export class ElectricalStore {
     return { nodes: this.#entries.size, channels, stale, grid_w: grid === null ? null : round(grid, 0), grid_kwh: gridEnergy === null ? null : round(gridEnergy, 2), alarms };
   }
 
-  /** The recent samples of one channel, oldest first; `minutes` bounds how far back. */
+  /** The recent samples of one channel, oldest first; `minutes` bounds how far back. Past a day the five-minute averages answer. */
   history(node: string, channel: string, minutes: number): ElectricalSample[] | undefined {
     const entry = this.#entries.get(node);
     if (!entry || !entry.reading.channels.some(item => item.id === channel)) return undefined;
     const since = this.#options.now() - minutes * 60_000;
-    return (entry.samples.get(channel) ?? []).filter(sample => sample.t >= since);
+    const source = minutes > 1440 ? (entry.coarse.get(channel)?.all() ?? []) as ElectricalSample[] : entry.samples.get(channel) ?? [];
+    return source.filter(sample => sample.t >= since);
+  }
+
+  /** What has to be kept between runs: the history of every channel of every node. */
+  exportHistory(): ElectricalHistoryFile {
+    const nodes: ElectricalHistoryFile["nodes"] = {};
+    for (const [node, entry] of this.#entries) {
+      const channels: ElectricalHistoryFile["nodes"][string] = {};
+      for (const [channel, samples] of entry.samples) channels[channel] = { samples, coarse: (entry.coarse.get(channel)?.all() ?? []) as ElectricalSample[] };
+      nodes[node] = channels;
+    }
+    for (const [node, kept] of this.#pending) if (!(node in nodes)) nodes[node] = kept;
+    return { nodes };
+  }
+
+  /** Takes back what `exportHistory` made; each node gets its history when it reports again. */
+  importHistory(file: ElectricalHistoryFile | undefined): void {
+    if (!file || typeof file !== "object" || typeof file.nodes !== "object" || file.nodes === null) return;
+    const good = (list: unknown): ElectricalSample[] => (Array.isArray(list) ? list.filter((s): s is ElectricalSample => typeof s === "object" && s !== null && Number.isFinite((s as { t?: unknown }).t)) : []);
+    for (const [node, channels] of Object.entries(file.nodes)) {
+      if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(node) || typeof channels !== "object" || channels === null || this.#pending.size >= this.#options.maxNodes) continue;
+      const kept: Record<string, { samples: ElectricalSample[]; coarse: ElectricalSample[] }> = {};
+      for (const [channel, value] of Object.entries(channels)) if (/^[a-z0-9_-]{1,32}$/.test(channel)) kept[channel] = { samples: good(value?.samples), coarse: good(value?.coarse) };
+      this.#pending.set(node, kept);
+    }
   }
 }
 

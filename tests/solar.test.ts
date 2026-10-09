@@ -141,7 +141,7 @@ test("the routes: a node posts with the ingest token, an operator reads, the his
     assert.equal((await history("?node=Solar&device=x")).status, 400);
     assert.equal((await history("?node=solar-1&device=nobody")).status, 404);
     const ok = await (await history("?node=solar-1&device=axpert-1&minutes=99999")).json() as { minutes: number; kind: string; samples: unknown[] };
-    assert.deepEqual([ok.kind, ok.minutes, ok.samples.length], ["inverter", 1440, 1]);
+    assert.deepEqual([ok.kind, ok.minutes, ok.samples.length], ["inverter", 43200, 1]);
     assert.equal((await fetch(`${running.base}/api/v1/solar/history?node=solar-1&device=axpert-1`)).status, 401);
   } finally { await running.stop(); }
 });
@@ -234,4 +234,30 @@ test("the registry survives a restart and ignores a damaged file", () => {
   fs.writeFileSync(file, "{ not json");
   assert.deepEqual(new SolarRegistry(file).list(), []);
   assert.equal(slug("  Ñandú / Casa 2 "), "nandu-casa-2");
+});
+
+test("the history survives a restart, reaches back past a day with five-minute averages, and the energy of the days is added up", () => {
+  let now = new Date(2026, 9, 10, 10, 0, 0).getTime();
+  const store = new SolarStore({ now: () => now, sampleEveryMs: 30_000 });
+  store.ingest(inverter({ pv_w: 1000, out_w: 400, battery_v: 50, battery_a: 10 }));
+  for (let step = 0; step < 120; step += 1) { now += 30_000; store.ingest(inverter({ pv_w: 1000, out_w: 400, battery_v: 50, battery_a: step < 60 ? 10 : -4 })); }   // an hour: half of it charging, then the same discharging
+  store.ingest(battery({ voltage_v: 50, current_a: 2 }));
+  const energy = store.energy(1)[0];
+  assert.equal(energy.date, "2026-10-10");
+  assert.ok(Math.abs(energy.pv_kwh - 1.0) < 0.03, `pv ${energy.pv_kwh}`);            // 1000 W for an hour
+  assert.ok(Math.abs(energy.load_kwh - 0.4) < 0.03, `load ${energy.load_kwh}`);
+  assert.ok(Math.abs(energy.battery_in_kwh - 0.25) < 0.02 && Math.abs(energy.battery_out_kwh - 0.1) < 0.02, `${energy.battery_in_kwh} ${energy.battery_out_kwh}`);   // from the inverter's own battery figures
+  const day = store.history("solar-1", "axpert-1", 1440).samples.length;
+  const coarse = store.history("solar-1", "axpert-1", 4320).samples;
+  assert.ok(coarse.length >= 10 && coarse.length < day);                              // five-minute averages: far fewer than the fine samples
+  // a restart: a new store reads what the old one wrote and gives it to the device when it reports again
+  const saved = JSON.parse(JSON.stringify(store.exportHistory())) as ReturnType<SolarStore["exportHistory"]>;
+  const next = new SolarStore({ now: () => now, sampleEveryMs: 30_000 });
+  next.importHistory(saved);
+  assert.equal(next.history("solar-1", "axpert-1", 60), undefined);                   // not reported yet: nothing to show
+  next.ingest(inverter());
+  assert.equal(next.history("solar-1", "axpert-1", 1440).samples.length, day + 1);
+  assert.deepEqual(next.energy(1)[0].date, "2026-10-10");
+  next.importHistory({ devices: { "../x/y": { samples: [], coarse: [] } }, energy: { "not-a-date": { pv: 1, load: 1, bin: 1, bout: 1, ibin: 1, ibout: 1 } } });   // a damaged file adds nothing
+  assert.equal(next.energy(400).length, 1);
 });
