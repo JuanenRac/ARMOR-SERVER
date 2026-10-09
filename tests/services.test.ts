@@ -22,7 +22,7 @@ MainPID=0
 MemoryCurrent=[not set]
 NRestarts=3
 
-Id=armor-voice-ai.service
+Id=armor-voice.service
 LoadState=not-found
 ActiveState=inactive
 SubState=dead
@@ -40,7 +40,7 @@ test("the state is told in the words a person uses", () => {
   const units = parseSystemctlShow(SHOW);
   assert.equal(stateOf(units.get("armor-server.service")), "running");
   assert.equal(stateOf(units.get("armor-network.service")), "failed");
-  assert.equal(stateOf(units.get("armor-voice-ai.service")), "not_installed");
+  assert.equal(stateOf(units.get("armor-voice.service")), "not_installed");
   assert.equal(stateOf(undefined), "unknown");
   assert.equal(stateOf({ ActiveState: "active", SubState: "exited" }), "stopped");   // a one-shot that has finished
   assert.equal(stateOf({ ActiveState: "activating" }), "starting");
@@ -53,7 +53,7 @@ test("a service carries its process, memory, restarts and when it started", () =
   assert.equal(server.since_ms, Date.UTC(2026, 9, 1, 14, 41, 48));
   const network = serviceFromUnit(CATALOG.find(entry => entry.id === "network")!, units.get("armor-network.service"));
   assert.equal(network.state, "failed"); assert.equal(network.memory_bytes, null); assert.equal(network.restarts, 3); assert.equal(network.pid, null); assert.equal(network.since_ms, null);
-  const missing = serviceFromUnit(CATALOG.find(entry => entry.id === "voice-ai")!, units.get("armor-voice-ai.service"));
+  const missing = serviceFromUnit(CATALOG.find(entry => entry.id === "voice-ai")!, units.get("armor-voice.service"));
   assert.equal(missing.state, "not_installed"); assert.equal(missing.pid, undefined);
 });
 
@@ -90,4 +90,9 @@ test("the services route needs a sign-in and lists the catalogue and the field n
     assert.ok(CATALOG.every(entry => body.services.some(service => service.id === entry.id)));
     assert.equal(body.services.find(service => service.id === "node:radar:node-a")?.state, "online");
   } finally { await running.stop(); }
+});
+
+test("the voice gateway is the unit the installer makes, on the port it listens on", () => {
+  const voice = CATALOG.find(entry => entry.id === "voice-ai");
+  assert.deepEqual([voice?.unit, voice?.port], ["armor-voice.service", 18090]);
 });
