@@ -96,3 +96,13 @@ test("the voice gateway is the unit the installer makes, on the port it listens 
   const voice = CATALOG.find(entry => entry.id === "voice-ai");
   assert.deepEqual([voice?.unit, voice?.port], ["armor-voice.service", 18090]);
 });
+
+test("a service whose process is frozen is called paused, and only then", async () => {
+  const units = parseSystemctlShow(SHOW);
+  const server = CATALOG.find(entry => entry.id === "server")!;
+  assert.equal(serviceFromUnit(server, units.get("armor-server.service"), pid => pid === 1234).state, "paused");
+  assert.equal(serviceFromUnit(server, units.get("armor-server.service"), () => false).state, "running");
+  const listed = await listServices(async () => SHOW, [], pid => pid === 1234);
+  assert.equal(listed.services.find(item => item.id === "server")?.state, "paused");
+  assert.equal(listed.services.find(item => item.id === "network")?.state, "failed");   // a service that is not running is never "paused"
+});
