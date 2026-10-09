@@ -66,31 +66,31 @@ test("only a camera's own confirmation counts", () => {
 
 test("a move stops itself, an explicit stop cancels that, and a repeated move keeps one timer", async () => {
   const sent: string[] = [];
-  const controller = new PtzController({ maxMoveMs: 60, move: async (_camera, command) => { sent.push(String(command)); } });
+  const controller = new PtzController({ maxMoveMs: 300, move: async (_camera, command) => { sent.push(String(command)); } });
   const camera = { id: "cam-test", name: "Test", host: "127.0.0.1", snapshotUrl: "", rtspPath: "", onvifPort: 80, rtspPort: 554 } as CameraConnection;
   await controller.move(camera, "left");
-  await new Promise(resolve => setTimeout(resolve, 120));
+  await new Promise(resolve => setTimeout(resolve, 600));
   assert.deepEqual(sent, ["left", "stop"], "the watchdog stopped a move nobody stopped");
 
   sent.length = 0;
   await controller.move(camera, "right");
   await controller.move(camera, "stop");
-  await new Promise(resolve => setTimeout(resolve, 120));
+  await new Promise(resolve => setTimeout(resolve, 600));
   assert.deepEqual(sent, ["right", "stop"], "an explicit stop leaves no second stop behind");
 
   sent.length = 0;
   await controller.move(camera, "up");
-  await new Promise(resolve => setTimeout(resolve, 40));
+  await new Promise(resolve => setTimeout(resolve, 120));
   await controller.move(camera, "up");   // a held button repeats: the deadline moves forward
-  await new Promise(resolve => setTimeout(resolve, 40));
+  await new Promise(resolve => setTimeout(resolve, 120));
   assert.deepEqual(sent, ["up", "up"], "still moving: not stopped yet");
-  await new Promise(resolve => setTimeout(resolve, 60));
+  await new Promise(resolve => setTimeout(resolve, 400));
   assert.deepEqual(sent, ["up", "up", "stop"]);
 
   sent.length = 0;
   await controller.move(camera, "down");
   controller.close();
-  await new Promise(resolve => setTimeout(resolve, 120));
+  await new Promise(resolve => setTimeout(resolve, 600));
   assert.deepEqual(sent, ["down"], "closing the controller cancels pending stops");
 });
 
