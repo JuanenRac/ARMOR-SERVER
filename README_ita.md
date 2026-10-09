@@ -26,7 +26,7 @@
 
 ---
 
-**Controllo di onestà - cosa funziona oggi:** Ogni rotta, sessione, cifratura e regola delle prove qui sotto è reale e coperta da test (`npm test`, 259 test, con una suite di integrazione HTTP completa contro un server isolato). Ha funzionato con un vero broker MQTT sulla CM5 (con script, non con il firmware di un nodo di campo), ha trasmesso video dal vivo, salvato un'istantanea e registrato da cinque vere telecamere IP tramite FFmpeg. Ciò che **non è ancora provato**: ONVIF con una vera telecamera ONVIF, il PTZ su ogni firmware di telecamera (funziona sull'unità Hi3510), qualunque hardware Jetson e le rotte solari con un vero nodo gateway (sono testate con letture generate).
+**Controllo di onestà - cosa funziona oggi:** Ogni rotta, sessione, cifratura e regola delle prove qui sotto è reale e coperta da test (`npm test`, 259 test, con una suite di integrazione HTTP completa contro un server isolato). Ha funzionato con un vero broker MQTT sulla CM5 (con script e con due nodi radar reali), ha trasmesso video dal vivo, salvato un'istantanea e registrato da cinque vere telecamere IP tramite FFmpeg. Ciò che **non è ancora provato**: ONVIF con una vera telecamera ONVIF, il PTZ su ogni firmware di telecamera (funziona sull'unità Hi3510), qualunque hardware Jetson e le rotte solari con un vero nodo gateway (sono testate con letture generate).
 
 ---
 

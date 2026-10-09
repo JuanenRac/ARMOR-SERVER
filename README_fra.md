@@ -26,7 +26,7 @@
 
 ---
 
-**Vérification d'honnêteté - ce qui fonctionne aujourd'hui:** Chaque route, session, chiffrement et règle de preuves ci-dessous est réel et couvert par des tests (`npm test`, 259 tests, dont une suite d'intégration HTTP complète face à un serveur isolé). Il a fonctionné avec un vrai broker MQTT sur la CM5 (avec des scripts, pas avec un firmware de nœud de terrain), a diffusé de la vidéo en direct, enregistré une capture et filmé depuis cinq vraies caméras IP via FFmpeg. Ce qui n'est **pas encore prouvé** : ONVIF avec une vraie caméra ONVIF, le PTZ sur chaque firmware de caméra (il marche sur l'unité Hi3510), tout matériel Jetson et les routes solaires avec un vrai nœud passerelle (elles sont testées avec des relevés générés).
+**Vérification d'honnêteté - ce qui fonctionne aujourd'hui:** Chaque route, session, chiffrement et règle de preuves ci-dessous est réel et couvert par des tests (`npm test`, 259 tests, dont une suite d'intégration HTTP complète face à un serveur isolé). Il a fonctionné avec un vrai broker MQTT sur la CM5 (avec des scripts et avec deux vrais nœuds radar), a diffusé de la vidéo en direct, enregistré une capture et filmé depuis cinq vraies caméras IP via FFmpeg. Ce qui n'est **pas encore prouvé** : ONVIF avec une vraie caméra ONVIF, le PTZ sur chaque firmware de caméra (il marche sur l'unité Hi3510), tout matériel Jetson et les routes solaires avec un vrai nœud passerelle (elles sont testées avec des relevés générés).
 
 ---
 

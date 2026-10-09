@@ -26,7 +26,7 @@
 
 ---
 
-**Honesty check - what runs today:** Every route, session, encryption and evidence rule below is real and covered by tests (`npm test`, 259 tests, including a full HTTP integration suite against an isolated server). It has run against a real MQTT broker on the CM5 (with scripts, not field-node firmware), and has streamed live video, saved a snapshot and recorded from five real IP cameras through FFmpeg. What is **not** proven yet: ONVIF against a real ONVIF camera, PTZ on every camera firmware (it works on the Hi3510 unit), any Jetson hardware, and the solar routes against a real gateway node (they are tested with generated readings).
+**Honesty check - what runs today:** Every route, session, encryption and evidence rule below is real and covered by tests (`npm test`, 259 tests, including a full HTTP integration suite against an isolated server). It has run against a real MQTT broker on the CM5 (with scripts and with two real radar nodes), and has streamed live video, saved a snapshot and recorded from five real IP cameras through FFmpeg. What is **not** proven yet: ONVIF against a real ONVIF camera, PTZ on every camera firmware (it works on the Hi3510 unit), any Jetson hardware, and the solar routes against a real gateway node (they are tested with generated readings).
 
 ---
 
