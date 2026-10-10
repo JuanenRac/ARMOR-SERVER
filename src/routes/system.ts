@@ -8,7 +8,7 @@ import type { Express } from "express";
 import { checkConnection, readConnection, writeConnection } from "../connection.js";
 import { isLoopbackHost } from "../config.js";
 import type { AppContext } from "../context.js";
-import { listServices, systemctlReader, type FieldNode, type UnitReader } from "../services.js";
+import { listServices, procPausedReader, programVersions, systemctlReader, type FieldNode, type UnitReader } from "../services.js";
 
 /** The last `limit` lines of a text file, without reading all of a large one. */
 export function tailLines(file: string, limit: number, maxBytes = 512 * 1024): string[] {
@@ -32,13 +32,15 @@ export function registerSystemRoutes(app: Express, context: AppContext, version:
   // What the nodes sent that the server took, refused or partly ignored (fields of a newer firmware), per topic, with the start of the last refused message.
   app.get("/api/v1/system/ingest", requireOperator, (_request, response) => response.json({ topics: context.ingestLog.list() }));
 
+  const versionReader = programVersions(version);
+
   // Every service of the system, running or not: the programs of this machine (from systemd) and the field nodes (from what they last said). Read only.
   app.get("/api/v1/system/services", requireOperator, async (_request, response) => {
     const nodes: FieldNode[] = [
-      ...Object.values(store.snapshot().nodes).map(node => ({ id: node.node_id, kind: "radar", online: node.online, last_ms: node.timestamp_ms || null })),
+      ...Object.values(store.snapshot().nodes).map(node => ({ id: node.node_id, kind: "radar", online: node.online, last_ms: node.timestamp_ms || null, firmware: node.panel?.firmware ?? null })),
       ...context.electricalNodes.list().map(node => ({ id: node.node_id, kind: "electrical", online: !node.stale, last_ms: Date.parse(node.received_at) || null })),
     ];
-    const { systemd, services } = await listServices(readUnits, nodes);
+    const { systemd, services } = await listServices(readUnits, nodes, procPausedReader, versionReader);
     response.json({ time_ms: Date.now(), systemd, services });
   });
 

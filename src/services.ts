@@ -7,6 +7,7 @@
  */
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
+import path from "node:path";
 
 export type ServiceState = "running" | "paused" | "stopped" | "failed" | "starting" | "not_installed" | "online" | "offline" | "unknown";
 export type ServiceView = {
@@ -27,6 +28,8 @@ export type ServiceView = {
   memory_bytes?: number | null;
   restarts?: number | null;
   port?: number | null;
+  /** The version of the program (or the firmware of a field node), when it can be told; absent when it cannot. */
+  version?: string | null;
 };
 
 export type CatalogEntry = { id: string; name: string; family: string; description: string; unit: string; port?: number };
@@ -41,7 +44,7 @@ export const CATALOG: readonly CatalogEntry[] = [
   { id: "voice-ai", name: "ARMOR-VOICE-AI", family: "AI and voice", description: "Written and spoken commands (a closed list of fifteen commands, arm and disarm confirmed in two turns)", unit: "armor-voice.service", port: 18090 },
 ];
 
-const PROPERTIES = ["Id", "Description", "LoadState", "ActiveState", "SubState", "UnitFileState", "MainPID", "ActiveEnterTimestampMonotonic", "ExecMainStartTimestamp", "MemoryCurrent", "NRestarts"] as const;
+const PROPERTIES = ["Id", "Description", "LoadState", "ActiveState", "SubState", "UnitFileState", "MainPID", "ActiveEnterTimestampMonotonic", "ExecMainStartTimestamp", "MemoryCurrent", "NRestarts", "ExecStart", "WorkingDirectory", "Environment"] as const;
 
 export type UnitInfo = Record<string, string>;
 
@@ -118,16 +121,96 @@ export const systemctlReader: UnitReader = units => new Promise(resolve => {
   execFile("systemctl", ["show", `--property=${PROPERTIES.join(",")}`, ...units], { timeout: 4000, maxBuffer: 256 * 1024 }, (error, stdout) => resolve(error && !stdout ? null : stdout));
 });
 
-export type FieldNode = { id: string; kind: string; online: boolean; last_ms: number | null };
+export type FieldNode = { id: string; kind: string; online: boolean; last_ms: number | null; firmware?: string | null };
 
 export function fieldNodeView(node: FieldNode): ServiceView {
   const state: ServiceState = node.online ? "online" : "offline";
-  return { id: `node:${node.kind}:${node.id}`, name: node.id, family: "Field nodes", description: node.kind, kind: "field-node", state, since_ms: node.last_ms };
+  const view: ServiceView = { id: `node:${node.kind}:${node.id}`, name: node.id, family: "Field nodes", description: node.kind, kind: "field-node", state, since_ms: node.last_ms };
+  if (node.firmware) view.version = node.firmware;
+  return view;
 }
 
-export async function listServices(read: UnitReader, nodes: readonly FieldNode[], paused: PausedReader = procPausedReader): Promise<{ systemd: boolean; services: ServiceView[] }> {
+// ---- the version of each program ---------------------------------------------------------------------------------------------------------------
+
+/** Tells the version of a program of this machine, or null when it cannot. It never throws. */
+export type VersionReader = (entry: CatalogEntry, info: UnitInfo | undefined) => Promise<string | null>;
+
+const VERSION = /^\d+\.\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?$/;
+
+/** The program and its arguments from systemd's `ExecStart` property: `{ path=/usr/bin/python3 ; argv[]=/usr/bin/python3 -m armor_voice_ai.service --port 1 ; ignore_errors=no ; ... }`. */
+export function execOf(text: string | undefined): { program: string; args: string[] } | null {
+  const argv = /argv\[\]=(.*?)\s;\s/.exec(text ?? "");
+  if (!argv?.[1]) return null;
+  const words = argv[1].trim().split(/\s+/);
+  return words[0] ? { program: words[0], args: words.slice(1) } : null;
+}
+
+/** The directories a Python program is found in: its PYTHONPATH, then its working directory and the `src` under it. */
+export function pythonDirs(info: UnitInfo): string[] {
+  const dirs: string[] = [];
+  for (const assignment of (info.Environment ?? "").split(/\s+/)) if (assignment.startsWith("PYTHONPATH=")) dirs.push(...assignment.slice(11).split(":").filter(Boolean));
+  const work = info.WorkingDirectory;
+  if (work && work.startsWith("/")) dirs.push(work, path.posix.join(work, "src"));
+  return dirs;
+}
+
+/** `__version__ = "0.2.3"` of a Python package's `__init__.py`. */
+export function pythonPackageVersion(source: string): string | null {
+  const match = /^__version__\s*=\s*["']([^"']+)["']/m.exec(source);
+  return match && VERSION.test(match[1]!) ? match[1]! : null;
+}
+
+/** The first line `mosquitto -h` prints: "mosquitto version 2.0.18". */
+export function mosquittoVersion(output: string): string | null {
+  const match = /mosquitto version (\d+\.\d+\.\d+)/i.exec(output);
+  return match ? match[1]! : null;
+}
+
+async function fetchStudioVersion(port: number): Promise<string | null> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/version.json`, { signal: AbortSignal.timeout(1500) });
+    if (!response.ok) return null;
+    const body = await response.json() as { version?: unknown };
+    return typeof body.version === "string" && VERSION.test(body.version) ? body.version : null;
+  } catch { return null; }
+}
+
+function runMosquitto(program: string): Promise<string | null> {
+  return new Promise(resolve => execFile(program, ["-h"], { timeout: 3000, maxBuffer: 64 * 1024 }, (_error, stdout, stderr) => resolve(mosquittoVersion(`${stdout}\n${stderr}`))));
+}
+
+/**
+ * The real reader. The server knows its own version; Studio publishes `version.json` next to its pages; the Python services carry `__version__` in their package, found
+ * where systemd says the program runs; the broker says it when asked.
+ */
+export function programVersions(ownVersion: string): VersionReader {
+  return async (entry, info) => {
+    try {
+      if (entry.id === "server") return ownVersion;
+      if (!info || info.LoadState === "not-found") return null;
+      if (entry.id === "studio") return entry.port ? await fetchStudioVersion(entry.port) : null;
+      const exec = execOf(info.ExecStart);
+      if (entry.id === "broker") return exec ? await runMosquitto(exec.program) : null;
+      const at = exec ? exec.args.indexOf("-m") : -1;
+      const module = at >= 0 ? ((exec!.args[at + 1] ?? "").split(".")[0] ?? "") : "";
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(module)) return null;
+      for (const dir of pythonDirs(info)) {
+        try { const found = pythonPackageVersion(readFileSync(path.posix.join(dir, module, "__init__.py"), "utf8")); if (found) return found; } catch { /* not there: the next directory */ }
+      }
+    } catch { /* a version that cannot be told is simply not shown */ }
+    return null;
+  };
+}
+
+export async function listServices(read: UnitReader, nodes: readonly FieldNode[], paused: PausedReader = procPausedReader, versions: VersionReader = async () => null): Promise<{ systemd: boolean; services: ServiceView[] }> {
   const text = await read(CATALOG.map(entry => entry.unit));
   const parsed = text === null ? null : parseSystemctlShow(text);
-  const services = CATALOG.map(entry => serviceFromUnit(entry, parsed?.get(entry.unit), paused));
+  const services = await Promise.all(CATALOG.map(async entry => {
+    const info = parsed?.get(entry.unit);
+    const view = serviceFromUnit(entry, info, paused);
+    const version = await versions(entry, info);
+    if (version) view.version = version;
+    return view;
+  }));
   return { systemd: parsed !== null, services: [...services, ...nodes.map(fieldNodeView)] };
 }
