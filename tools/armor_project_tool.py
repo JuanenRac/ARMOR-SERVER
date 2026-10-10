@@ -123,6 +123,8 @@ def test_project(project: Path, manifest: dict[str, object]) -> None:
         test_solar(project)
     elif name == "ARMOR-ELECTRICAL":
         test_electrical(project)
+    elif name == "ARMOR-ALARM":
+        test_alarm(project)
     elif name == "ARMOR-HMI":
         test_hmi(project)
     elif name == "ARMOR-ANDROID-CONTROL":
@@ -200,6 +202,16 @@ def test_electrical(project: Path) -> None:
     checker = subprocess.run([sys.executable, "tests/check_samples.py"], cwd=project, input=emitter.stdout, text=True, check=False)
     if checker.returncode:
         raise RuntimeError("the electrical messages do not have the fields of contract version 0")
+
+
+def test_alarm(project: Path) -> None:
+    """Build and run ARMOR-ALARM's host tests (the zones, the wired loop and the panel's rules). Needs CMake and a C++17 compiler."""
+    cmake = check_tool("cmake", "CMake and a C++17 compiler are required to test ARMOR-ALARM (use Linux, WSL or MSYS2)")
+    build = project / "build" / "host"
+    command(project, [cmake, "-S", "tests", "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug"])
+    command(project, [cmake, "--build", str(build)])
+    suffix = ".exe" if os.name == "nt" else ""
+    command(project, [str(build / f"test_alarm{suffix}")])
 
 
 def test_hmi(project: Path) -> None:
@@ -330,7 +342,7 @@ def run_project(project: Path, manifest: dict[str, object]) -> None:
         command(project, [NPM, "run", "dev"], environment)
     elif name == "ARMOR-DEVOPS":
         command(project, ["docker", "compose", "up", "--build"])
-    elif name in {"ARMOR-RADAR", "ARMOR-SOLAR", "ARMOR-ELECTRICAL", "ARMOR-HMI", "ARMOR-ANDROID-CONTROL", "ARMOR-HARDWARE", "ARMOR-DOCS", "ARMOR-UPDATER"}:
+    elif name in {"ARMOR-RADAR", "ARMOR-SOLAR", "ARMOR-ELECTRICAL", "ARMOR-ALARM", "ARMOR-HMI", "ARMOR-ANDROID-CONTROL", "ARMOR-HARDWARE", "ARMOR-DOCS", "ARMOR-UPDATER"}:
         print(f"{name} has no safe generic runtime command. Use build-test to validate it, then follow its project documentation for hardware or IDE deployment.")
     else:
         raise RuntimeError(f"no run rule registered for {name}")
