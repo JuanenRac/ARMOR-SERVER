@@ -69,7 +69,7 @@ flowchart LR
 ## 🌐 API
 
 * 公開：`GET /healthz`。オペレーター向け：状態、情報、カメラ、メディア、履歴、規則、デバイス、アラーム、自動化、サイト設計、履歴付きの `GET /api/v1/solar`。
-* フィールドノードとゲートウェイ向け：取り込みトークンを使う `POST /api/v1/telemetry`、`/health`、`/solar`、`/electrical/readings` と、MQTT トピック `armor/node/#`、`armor/solar/#`、`armor/electrical/#`。イベントは WebSocket `/api/v1/events` でコンソールに届きます。
+* フィールドノードとゲートウェイ向け：取り込みトークンを使う `POST /api/v1/telemetry`、`/health`、`/solar`、`/electrical/readings`、`/alarm/state` と、MQTT トピック `armor/node/#`、`armor/solar/#`、`armor/electrical/#`、`armor/alarm/#`。管理者は `POST /api/v1/alarm/command` で警報ノードの警報盤を警戒セット・解除できますが、`ARMOR_ALARM_COMMANDS=1`（かつノードとブローカーも許可）でなければ拒否されます。イベントは WebSocket `/api/v1/events` でコンソールに届きます。
 * すべてのルート、そのアクセス規則、スキーマは [ARMOR-COMMON](https://github.com/JuanenRac/ARMOR-COMMON) の OpenAPI ファイルにあり、漏れがないことをテストが確認します。
 
 ## ⚙️ 設定

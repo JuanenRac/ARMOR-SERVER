@@ -28,6 +28,8 @@ import { SiteStore } from "./site.js";
 import { SolarStore } from "./solar.js";
 import { ElectricalStore } from "./electrical.js";
 import { SwitchingService } from "./electrical_switching.js";
+import { AlarmStore } from "./alarm.js";
+import { AlarmCommands } from "./alarm_commands.js";
 import { DeviceNotes, NetworkStore } from "./network.js";
 import { NetworkCommands } from "./network_commands.js";
 import { DeviceCredentials } from "./device_credentials.js";
@@ -81,6 +83,12 @@ export type AppContext = {
   electricalSwitching: SwitchingService;
   /** Where its commands are published; set when the broker is connected (never retained, at most once). */
   switchLink: { publish?: (topic: string, payload: string) => void };
+  /** What the ARMOR-ALARM nodes say about the house's alarm. */
+  alarmNodes: AlarmStore;
+  /** The one way a command reaches an alarm node's panel: off unless the operator turned it on (see alarm_commands.ts). */
+  alarmCommands: AlarmCommands;
+  /** Where its commands are published; set when the broker is connected (never retained, at most once). */
+  alarmLink: { publish?: (topic: string, payload: string) => void };
   /** The way to the admin agent, or null when there is none (see admin.ts). */
   admin: AdminAgent | null;
   /** Updating the firmware of field nodes from Studio (see firmware.ts). */
@@ -204,6 +212,12 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     enabled: config.electricalSwitching, nodes: electricalNodes, audit, now: overrides.now,
     publish: (topic, payload) => { if (!switchLink.publish) throw new Error("the MQTT broker is not connected"); switchLink.publish(topic, payload); },
   });
+  const alarmNodes = new AlarmStore({ now: overrides.now, onMessage: (message, previous) => alarmRules.handleAlarmNode(message, previous), onStale: (node, stale) => alarmRules.handleAlarmNodeStale(node, stale) });
+  const alarmLink: AppContext["alarmLink"] = {};
+  const alarmCommands = new AlarmCommands({
+    enabled: config.alarmCommands, nodes: alarmNodes, audit, now: overrides.now,
+    publish: (topic, payload) => { if (!alarmLink.publish) throw new Error("the MQTT broker is not connected"); alarmLink.publish(topic, payload); },
+  });
   const ingestLog = new IngestLog(overrides.now);
   const solarRegistry = new SolarRegistry(path.join(config.dataDir, "solar-devices.json"), overrides.now ? () => new Date(overrides.now!()) : undefined);
   const solar = new SolarStore({ now: overrides.now, onMessage: message => alarmRules.handleSolar(message), onStale: (node, device, stale) => alarmRules.handleSolarStale(node, device, stale) });
@@ -240,7 +254,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     ai: overrides.ai ?? new AiGateway({ ffmpegPath: config.ffmpegPath ?? "" }), requireAi,
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
-    config, store, events, rules, notifier, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    config, store, events, rules, notifier, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

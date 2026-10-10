@@ -4,7 +4,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import test from "node:test";
-import { FirmwareService, parseChecksum } from "../src/firmware.js";
+import { FirmwareService, imageNames, NODE_KINDS, parseChecksum, RELEASE_SOURCES } from "../src/firmware.js";
 import { startServer, studioCookie, type Running } from "./helpers.js";
 
 const json = { "Content-Type": "application/json" };
@@ -194,4 +194,42 @@ test("every kind of node can be updated; the checks of the routes refuse what is
       assert.equal((await call(running, cookie, "GET", "/api/v1/admin/firmware/jobs/none")).status, 404);
     });
   } finally { await node.close(); }
+});
+
+test("each board gets the image built for it, and the plain name only serves the default board", async () => {
+  const eth = image(0x11), wifi = image(0x22), plain = image(0x33);
+  const serve = async (names: Record<string, Buffer>) => {
+    const server = http.createServer((request, response) => {
+      const url = request.url ?? "", base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+      if (/^\/repos\/[^/]+\/[^/]+\/releases\/latest$/.test(url)) {
+        const assets = Object.keys(names).flatMap(name => [{ name, browser_download_url: `${base}/dl/${name}` }, { name: `${name}.sha256`, browser_download_url: `${base}/dl/${name}.sha256` }]);
+        response.writeHead(200, json); response.end(JSON.stringify({ tag_name: "v1.2.3", assets })); return;
+      }
+      const name = decodeURIComponent(url.replace(/^\/dl\//, "").replace(/\.sha256$/, ""));
+      if (names[name] && url.endsWith(".sha256")) { response.writeHead(200); response.end(`${sha(names[name])}  ${name}\n`); return; }
+      if (names[name]) { response.writeHead(200); response.end(names[name]); return; }
+      response.writeHead(404); response.end();
+    });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    return { api: `http://127.0.0.1:${(server.address() as { port: number }).port}`, close: () => new Promise<void>(resolve => server.close(() => resolve())) };
+  };
+  const both = await serve({ "armor_electrical-s3-eth.bin": eth, "armor_electrical-s3-wifi.bin": wifi, "armor_electrical.bin": plain });
+  const old = await serve({ "armor_electrical.bin": plain });
+  try {
+    const service = (github: { api: string }) => new FirmwareService({ releaseApi: () => github.api });
+    assert.equal((await service(both).fetchRelease("electrical", "s3-wifi")).sha256, sha(wifi));    // its own, never the plain one
+    assert.equal((await service(both).fetchRelease("electrical", "s3-eth")).sha256, sha(eth));      // the one built for it before the plain name
+    assert.equal((await service(both).fetchRelease("electrical")).sha256, sha(plain));              // a board not known: the plain name, as before
+    assert.equal((await service(old).fetchRelease("electrical", "s3-eth")).sha256, sha(plain));     // a release from before the naming still serves the default board
+    await assert.rejects(service(old).fetchRelease("electrical", "s3-wifi"), (error: unknown) => (error as { code?: string }).code === "no_image_for_board");   // and never another board
+    await assert.rejects(service(both).fetchRelease("hmi", "lcd7box"), (error: unknown) => (error as { code?: string }).code === "no_image_in_release");
+  } finally { await both.close(); await old.close(); }
+});
+
+test("the kinds of node and the names of their images", () => {
+  assert.deepEqual(imageNames("radar", "s3-wifi").image, ["armor_radar-s3-wifi.bin"]);
+  assert.deepEqual(imageNames("radar", "s3-eth").image, ["armor_radar-s3-eth.bin", "armor_radar.bin"]);
+  assert.deepEqual(imageNames("hmi", "lcd7box").image, ["armor_hmi-lcd7box.bin", "armor_hmi.bin"]);
+  assert.deepEqual(imageNames("alarm").image, ["armor_alarm.bin"]);
+  assert.ok((NODE_KINDS as readonly string[]).includes("alarm") && RELEASE_SOURCES.alarm.repo === "JuanenRac/ARMOR-ALARM");
 });

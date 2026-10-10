@@ -69,7 +69,7 @@ flowchart LR
 ## 🌐 API
 
 * 公开：`GET /healthz`。对操作员：状态、信息、摄像头、媒体、历史、规则、设备、报警、自动化、场地设计，以及带历史的 `GET /api/v1/solar`。
-* 对现场节点和网关：使用摄取令牌的 `POST /api/v1/telemetry`、`/health`、`/solar` 和 `/electrical/readings`，以及 MQTT 主题 `armor/node/#`、`armor/solar/#` 和 `armor/electrical/#`。事件通过 WebSocket `/api/v1/events` 到达控制台。
+* 对现场节点和网关：使用摄取令牌的 `POST /api/v1/telemetry`、`/health`、`/solar`、`/electrical/readings` 和 `/alarm/state`，以及 MQTT 主题 `armor/node/#`、`armor/solar/#`、`armor/electrical/#` 和 `armor/alarm/#`。管理员可用 `POST /api/v1/alarm/command` 对报警节点的主机布防和撤防，除非设置 `ARMOR_ALARM_COMMANDS=1`（且节点和代理也允许）否则会被拒绝。事件通过 WebSocket `/api/v1/events` 到达控制台。
 * 每条路由、其访问规则和模式都在 [ARMOR-COMMON](https://github.com/JuanenRac/ARMOR-COMMON) 的 OpenAPI 文件中，并有测试确保没有遗漏的路由。
 
 ## ⚙️ 配置
