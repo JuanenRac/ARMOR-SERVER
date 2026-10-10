@@ -8,6 +8,7 @@ import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { hasBearer } from "../http/auth.js";
 import { forwardCompatible } from "../contracts.js";
+import { kindInfo } from "../devices/catalog.js";
 import { SWITCH_ACTIONS, parseElectricalMessage, type SwitchAction } from "../electrical.js";
 import { SwitchingError } from "../electrical_switching.js";
 
@@ -31,6 +32,25 @@ export function registerElectricalRoutes(app: Express, context: AppContext): voi
       context.ingestLog.rejected("http:electrical", why, JSON.stringify(request.body ?? null));
       return response.status(400).json({ error: why });
     }
+  });
+
+  // The devices of the house that measure or switch electricity (a Zigbee plug or breaker, a meter, a smart light): what they say, whether they can be switched and how much it matters.
+  // They are the same "electrical elements" as the channels of the nodes' meters, seen from the device registry.
+  app.get("/api/v1/electrical/devices", requireOperator, (_request, response) => {
+    const items = context.devices.list().filter(device => ["smart_breaker", "energy_meter", "smart_plug", "smart_switch", "smart_light"].includes(device.kind) || ["power_w", "energy_kwh", "voltage_v", "current_a"].some(field => field in device.state));
+    const elements = items.map(device => ({
+      id: device.id, name: device.name, kind: device.kind, protocol: device.protocol, location: device.location, online: device.online, last_seen: device.last_seen, risk: device.risk,
+      ...(typeof device.state.on === "boolean" ? { on: device.state.on } : {}),
+      ...(typeof device.state.power_w === "number" ? { power_w: device.state.power_w } : {}), ...(typeof device.state.voltage_v === "number" ? { voltage_v: device.state.voltage_v } : {}),
+      ...(typeof device.state.current_a === "number" ? { current_a: device.state.current_a } : {}), ...(typeof device.state.energy_kwh === "number" ? { energy_kwh: device.state.energy_kwh } : {}),
+      switchable: Boolean(device.commands.mqtt || device.commands.http) && kindInfo(device.kind).commands.length > 0,
+    }));
+    const live = elements.filter(item => item.online);
+    return response.json({
+      elements,
+      totals: { elements: elements.length, online: live.length, on: live.filter(item => item.on === true).length, power_w: Math.round(live.reduce((sum, item) => sum + (item.power_w ?? 0), 0) * 10) / 10,
+        energy_kwh: Math.round(elements.reduce((sum, item) => sum + (item.energy_kwh ?? 0), 0) * 100) / 100 },
+    });
   });
 
   app.get("/api/v1/electrical/readings", requireOperator, (_request, response) => response.json({ nodes: electricalNodes.list(), totals: electricalNodes.totals() }));

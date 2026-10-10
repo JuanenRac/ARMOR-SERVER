@@ -6,7 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { cleanState, isKind, isProtocol, isTriggered, kindInfo, type DeviceKind, type DeviceState, type Protocol } from "./catalog.js";
+import { cleanState, defaultRisk, isKind, isProtocol, isRisk, isTriggered, kindInfo, type DeviceKind, type DeviceState, type Protocol, type Risk } from "./catalog.js";
 import { cleanMap, parsePayload, stateFromPayload, type MapEntry } from "./mapping.js";
 
 export type DeviceSource =
@@ -23,9 +23,11 @@ export type Device = {
   source: DeviceSource; commands: DeviceCommands;
   /** Seconds without a report after which the device counts as offline; 0 = never check. */
   expected_interval_s: number;
+  /** How much it matters to switch it from afar (see `Risk`); what asks for a confirmation. */
+  risk: Risk;
   state: DeviceState; online: boolean; last_seen: string | null; created_at: string;
 };
-export type DeviceInput = Partial<Pick<Device, "name" | "kind" | "protocol" | "location" | "source" | "commands" | "expected_interval_s">>;
+export type DeviceInput = Partial<Pick<Device, "name" | "kind" | "protocol" | "location" | "source" | "commands" | "expected_interval_s" | "risk">>;
 
 export const DEVICE_ID = /^[a-z0-9][a-z0-9_-]{1,63}$/;
 export const MAX_DEVICES = 300;
@@ -129,7 +131,7 @@ export class DeviceRegistry {
     }
     if (kindInfo(kind).category === "sensor" && (commands.mqtt || commands.http)) { delete commands.mqtt; delete commands.http; }
     const interval = typeof input.expected_interval_s === "number" && Number.isFinite(input.expected_interval_s) ? Math.min(7 * 86400, Math.max(0, Math.round(input.expected_interval_s))) : 0;
-    return { id, name, kind, protocol, location: text(input.location, 80), source, commands, expected_interval_s: interval, state: {}, online: false, last_seen: null, created_at: createdAt ?? this.#now().toISOString() };
+    return { id, name, kind, protocol, location: text(input.location, 80), source, commands, expected_interval_s: interval, risk: isRisk(input.risk) ? input.risk : defaultRisk(kind), state: {}, online: false, last_seen: null, created_at: createdAt ?? this.#now().toISOString() };
   }
 
   list(): Device[] { return [...this.#devices.values()]; }

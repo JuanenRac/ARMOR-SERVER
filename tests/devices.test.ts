@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import path from "node:path";
 import test from "node:test";
-import { cleanState, isTriggered } from "../src/devices/catalog.js";
+import { cleanState, defaultRisk, isTriggered } from "../src/devices/catalog.js";
 import { cleanMap, readPath, stateFromPayload, toBoolean } from "../src/devices/mapping.js";
 import { DeviceError, DeviceRegistry, isLanUrl } from "../src/devices/registry.js";
 import { alertMessageFor } from "../src/notify.js";
@@ -308,5 +308,45 @@ test("the electrical design is kept on the server, apart from the site design, w
     assert.equal((await call(running.base, cookie, "PUT", "/api/v1/electrical/design", { revision: 2, electrical: { blob: "x".repeat(800_000) } })).status, 413);
     // the refused saves left the last accepted one in place
     assert.equal((await call(running.base, cookie, "GET", "/api/v1/electrical/design")).body.revision, 2);
+  } finally { await running.stop(); }
+});
+
+test("electrical devices: a breaker and a meter report voltage, current, power and energy, and switching one that matters asks first", async () => {
+  assert.deepEqual(cleanState({ voltage_v: 231.456, current_a: 4.5, power_w: 1040, energy_kwh: 12.3, evil: 1, voltage_v2: 3 }), { voltage_v: 231.46, current_a: 4.5, power_w: 1040, energy_kwh: 12.3 });
+  assert.deepEqual(cleanState({ voltage_v: 5000, current_a: -1 }), {});
+  assert.equal(defaultRisk("smart_breaker"), "circuit");
+  assert.equal(defaultRisk("smart_plug"), "low");
+  const running = await startServer();
+  try {
+    const cookie = await studioCookie(running.base);
+    const operatorToken = { Authorization: `Bearer ${SECRETS.ARMOR_OPERATOR_TOKEN}` };
+    const make = (id: string, extra: Record<string, unknown>) => call(running.base, cookie, "POST", "/api/v1/devices", { id, name: id, protocol: "zigbee", commands: { mqtt: { topic: `armor/device/${id}/set`, on: "ON", off: "OFF" } }, source: { type: "push" }, ...extra });
+    assert.equal((await make("breaker-ac", { kind: "smart_breaker" })).body.risk, "circuit");       // a breaker asks by default
+    assert.equal((await make("plug-lamp", { kind: "smart_plug" })).body.risk, "low");
+    assert.equal((await make("freezer", { kind: "smart_breaker", risk: "critical" })).body.risk, "critical");
+    assert.equal((await make("meter-house", { kind: "energy_meter" })).status, 201);
+    await fetch(`${running.base}/api/v1/devices/state`, { method: "POST", headers: { ...json, Authorization: `Bearer ${SECRETS.ARMOR_INGEST_TOKEN}` }, body: JSON.stringify({ device_id: "breaker-ac", state: { on: true, power_w: 1850, voltage_v: 229.5, current_a: 8.1, energy_kwh: 41.2 } }) });
+    await fetch(`${running.base}/api/v1/devices/state`, { method: "POST", headers: { ...json, Authorization: `Bearer ${SECRETS.ARMOR_INGEST_TOKEN}` }, body: JSON.stringify({ device_id: "meter-house", state: { power_w: 410, energy_kwh: 120.5 } }) });
+
+    // switching: a plug goes with a click (it only fails later, at the broker that is not there); a breaker needs the confirmation; a critical one an administrator too
+    const command = (id: string, extra: Record<string, unknown> = {}, headers: Record<string, string> = { cookie }) => fetch(`${running.base}/api/v1/devices/${id}/command`, { method: "POST", headers: { ...json, ...headers }, body: JSON.stringify({ command: "off", ...extra }) });
+    assert.notEqual((await command("plug-lamp")).status, 409);
+    const asked = await command("breaker-ac");
+    assert.deepEqual([asked.status, ((await asked.json()) as { code: string }).code], [409, "confirmation_required"]);
+    assert.notEqual((await command("breaker-ac", { confirm: true })).status, 409);                 // confirmed: it goes on to the broker
+    assert.equal((await command("freezer")).status, 409);
+    const refused = await command("freezer", { confirm: true }, operatorToken);                      // an operator token is not an administrator
+    assert.deepEqual([refused.status, ((await refused.json()) as { code: string }).code], [403, "admin_required"]);
+    assert.notEqual((await command("freezer", { confirm: true })).status, 403);                       // the administrator of Studio may
+
+    const list = await call(running.base, cookie, "GET", "/api/v1/electrical/devices");
+    assert.equal(list.status, 200);
+    const byId = Object.fromEntries((list.body.elements as Array<{ id: string }>).map(item => [item.id, item])) as unknown as Record<string, { power_w?: number; on?: boolean; switchable: boolean; risk: string; current_a?: number }>;
+    assert.deepEqual([byId["breaker-ac"].power_w, byId["breaker-ac"].on, byId["breaker-ac"].switchable, byId["breaker-ac"].risk, byId["breaker-ac"].current_a], [1850, true, true, "circuit", 8.1]);
+    assert.deepEqual([byId["meter-house"].power_w, byId["meter-house"].switchable], [410, false]);
+    assert.ok(byId["plug-lamp"] && byId["freezer"]);
+    assert.equal(list.body.totals.power_w, 2260);
+    assert.equal(list.body.totals.energy_kwh, 161.7);
+    assert.equal((await fetch(`${running.base}/api/v1/electrical/devices`)).status, 401);
   } finally { await running.stop(); }
 });
