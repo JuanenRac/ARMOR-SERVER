@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## [0.5.1] - A paused service says so
+## [0.5.1] - Nodes heard without a clock or with newer fields, a log of what they send, a month of history and the energy of each day
 
 - **A node that has no clock yet is heard anyway.** A radar, health or info message whose time is not a date (the time since the node started, which is what a node sends while it has no clock) is stamped with the moment the server receives it; a real date is kept as it came.
 - **The battery and inverter messages take the new optional fields of the contract**: `power_w`, `balancing`, `protecting`, `charge_mos` and `discharge_mos` of a battery stack (what a battery management system adds) and `bus_v` of an inverter. The example readings carry them, so the menus can be tried without a node.
