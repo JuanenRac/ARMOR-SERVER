@@ -7,6 +7,7 @@ import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { hasBearer } from "../http/auth.js";
 import { forwardCompatible } from "../contracts.js";
+import { ENERGY_ALARM_DEFAULTS, EnergySettingsInvalid } from "../energy_alarms.js";
 import { parseSolarMessage } from "../solar.js";
 import { ANT_CELL_COUNTS, ANT_CURRENTS, BATTERY_MODELS, CONNECTIONS, INVERTER_FAMILIES, INVERTER_MODELS, SolarRegistryError, exampleReading, modelLabel } from "../solar_registry.js";
 
@@ -85,6 +86,19 @@ export function registerSolarRoutes(app: Express, context: AppContext): void {
     const asked = Number(request.query.days ?? 30);
     const days = Number.isFinite(asked) ? Math.min(400, Math.max(1, Math.round(asked))) : 30;
     return response.json({ days: solar.energy(days) });
+  });
+
+  // The levels at which batteries and inverters raise alarms: read, and changed (a field that is left out goes back to its default).
+  app.get("/api/v1/solar/alarms", requireOperator, (_request, response) => response.json({ settings: context.energyAlarms.get(), defaults: ENERGY_ALARM_DEFAULTS }));
+  app.put("/api/v1/solar/alarms", requireOperator, (request, response) => {
+    try {
+      const saved = context.energyAlarms.set(request.body);
+      audit.record({ action: "solar.alarms", outcome: "allowed", actor: actor(request), detail: JSON.stringify(saved) });
+      return response.json({ settings: saved, defaults: ENERGY_ALARM_DEFAULTS });
+    } catch (error) {
+      if (error instanceof EnergySettingsInvalid) { audit.record({ action: "solar.alarms", outcome: "failed", actor: actor(request) }); return response.status(400).json({ error: error.message }); }
+      return response.status(500).json({ error: "internal error" });
+    }
   });
 
   app.get("/api/v1/solar/history", requireOperator, (request, response) => {

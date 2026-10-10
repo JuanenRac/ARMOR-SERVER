@@ -13,6 +13,7 @@ import type { ArmorEvent, ArmorEventBody } from "./events.js";
 import type { ElectricalMessage } from "./electrical.js";
 import type { NetworkEvent, NetworkMessage } from "./network.js";
 import type { SolarMessage } from "./solar.js";
+import { ENERGY_ALARM_DEFAULTS, type EnergyAlarmSettings } from "./energy_alarms.js";
 import type { SecurityMode } from "./store.js";
 
 export type AlarmSource = { type: "node" | "camera" | "device" | "solar" | "electrical" | "network"; id: string };
@@ -189,7 +190,6 @@ const DEVICE_CODE: Record<string, string> = { smoke: "smoke", co: "co", gas: "ga
 /** How long a slow or lossy line has to stay so before it is worth an alarm. */
 export const NETWORK_DEGRADED_DWELL_MS = 3 * 60_000;
 const LOW_BATTERY = 15, BATTERY_OK = 20;
-const SOLAR_LOW = 20, SOLAR_OK = 30;
 /** The mains voltage an AC channel of an electrical node may have (about 230 V less 15 % and plus 10 %), with the margin at which a raised alarm ends; below GRID_LOST the channel has no supply at all. */
 const MAINS_LOW = 195, MAINS_LOW_OK = 200, MAINS_HIGH = 253, MAINS_HIGH_OK = 250, GRID_LOST = 50, GRID_BACK = 100;
 /** The QPIWS flags that mean the inverter is faulty, not just warning. */
@@ -201,7 +201,7 @@ const SOLAR_FAULTS = new Set(["inverter_fault", "bus_over", "bus_under", "bus_so
  * devices to the alarm centre.
  */
 export class AlarmRules {
-  constructor(private readonly centre: AlarmCentre, private readonly mode: () => SecurityMode) {}
+  constructor(private readonly centre: AlarmCentre, private readonly mode: () => SecurityMode, private readonly energy: () => EnergyAlarmSettings = () => ENERGY_ALARM_DEFAULTS) {}
 
   /** Node, camera and mode events. */
   handleEvent(event: ArmorEvent | ArmorEventBody): void {
@@ -263,19 +263,40 @@ export class AlarmRules {
   handleSolar(message: SolarMessage): void {
     const id = `${message.node_id}/${message.device}`, source: AlarmSource = { type: "solar", id };
     const base = `solar:${id}`;
+    const level = this.energy();
     if (message.kind === "inverter") {
       const fault = message.mode === "fault" || message.warnings.some(name => SOLAR_FAULTS.has(name));
       if (fault) this.centre.raise(`${base}:fault`, { source, severity: "high", code: "solar_fault" });
       else this.centre.clear(`${base}:fault`);
-      const low = message.battery_percent < SOLAR_LOW || message.warnings.includes("battery_low") || message.warnings.includes("battery_under_shutdown");
+      const low = message.battery_percent < level.soc_low || message.warnings.includes("battery_low") || message.warnings.includes("battery_under_shutdown");
       if (low) this.centre.raise(`${base}:battery`, { source, severity: "warning", code: "solar_battery_low" });
-      else if (message.battery_percent >= SOLAR_OK) this.centre.clear(`${base}:battery`);
+      else if (message.battery_percent >= level.soc_ok) this.centre.clear(`${base}:battery`);
+      if (message.heatsink_c >= level.heatsink_high_c) this.centre.raise(`${base}:hot`, { source, severity: "warning", code: "solar_inverter_hot" });
+      else if (message.heatsink_c < level.heatsink_high_c - 5) this.centre.clear(`${base}:hot`);
     } else if (message.modules > 0) {
       if (message.alarm === true) this.centre.raise(`${base}:battery_alarm`, { source, severity: "high", code: "solar_battery_alarm" });
       else this.centre.clear(`${base}:battery_alarm`);
       const soc = message.soc_percent;
-      if (soc !== undefined && soc < SOLAR_LOW) this.centre.raise(`${base}:battery`, { source, severity: "warning", code: "solar_battery_low" });
-      else if (soc !== undefined && soc >= SOLAR_OK) this.centre.clear(`${base}:battery`);
+      if (soc !== undefined && soc < level.soc_low) this.centre.raise(`${base}:battery`, { source, severity: "warning", code: "solar_battery_low" });
+      else if (soc !== undefined && soc >= level.soc_ok) this.centre.clear(`${base}:battery`);
+      // the cells of the stack, the temperature and the wear: warnings that end with a margin, so a value on the edge does not flap
+      if (message.cell_min_v !== undefined && message.cell_max_v !== undefined) {
+        const spreadMv = (message.cell_max_v - message.cell_min_v) * 1000;
+        if (spreadMv > level.cell_spread_mv) this.centre.raise(`${base}:cells`, { source, severity: "warning", code: "solar_cells_unbalanced" });
+        else if (spreadMv < level.cell_spread_mv * 0.8) this.centre.clear(`${base}:cells`);
+      }
+      if (message.temperature_max_c !== undefined) {
+        if (message.temperature_max_c >= level.battery_temp_high_c) this.centre.raise(`${base}:hot`, { source, severity: "warning", code: "solar_battery_hot" });
+        else if (message.temperature_max_c < level.battery_temp_high_c - 3) this.centre.clear(`${base}:hot`);
+      }
+      if (message.temperature_min_c !== undefined) {
+        if (message.state === "charging" && message.temperature_min_c < level.battery_temp_low_c) this.centre.raise(`${base}:cold`, { source, severity: "warning", code: "solar_battery_cold" });
+        else if (message.state !== "charging" || message.temperature_min_c >= level.battery_temp_low_c + 2) this.centre.clear(`${base}:cold`);
+      }
+      if (message.health_percent !== undefined) {
+        if (message.health_percent < level.health_low_percent) this.centre.raise(`${base}:worn`, { source, severity: "warning", code: "solar_battery_worn" });
+        else if (message.health_percent >= level.health_low_percent + 5) this.centre.clear(`${base}:worn`);
+      }
     }
   }
 
