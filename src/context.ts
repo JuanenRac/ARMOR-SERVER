@@ -40,6 +40,7 @@ import { RulesFile } from "./rules.js";
 import { ArmorStore, type SystemState } from "./store.js";
 import { PreferencesStore } from "./preferences.js";
 import { IngestLog } from "./ingest_log.js";
+import { EnergyAlarmStore } from "./energy_alarms.js";
 import path from "node:path";
 
 export type AppContext = {
@@ -59,6 +60,8 @@ export type AppContext = {
   devices: DeviceRegistry;
   alarms: AlarmCentre;
   alarmRules: AlarmRules;
+  /** The levels at which batteries and inverters raise alarms (editable from Studio). */
+  energyAlarms: EnergyAlarmStore;
   automations: AutomationEngine;
   site: SiteStore;
   electrical: SiteStore;
@@ -146,7 +149,8 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     if (event.type === "mode") automations.handleMode(event.mode);
   };
   const alarms = new AlarmCentre({ file: path.join(config.dataDir, "alarms.json"), onEvent: record, onRaised: alarm => automations.handleAlarm(alarm), warn });
-  const alarmRules = new AlarmRules(alarms, () => store.snapshot().mode);
+  const energyAlarms = new EnergyAlarmStore(path.join(config.dataDir, "energy-alarms.json"));
+  const alarmRules = new AlarmRules(alarms, () => store.snapshot().mode, () => energyAlarms.get());
   const devices: DeviceRegistry = new DeviceRegistry({
     file: path.join(config.dataDir, "devices.json"), warn, onTopics: () => deviceLink.resubscribe?.(),
     onChange: (change: DeviceChange) => {
@@ -236,7 +240,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     ai: overrides.ai ?? new AiGateway({ ffmpegPath: config.ffmpegPath ?? "" }), requireAi,
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
-    config, store, events, rules, notifier, ingestLog, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    config, store, events, rules, notifier, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

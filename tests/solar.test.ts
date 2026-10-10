@@ -7,6 +7,7 @@ import { SECRETS, startServer, studioCookie, tempDir } from "./helpers.js";
 import fs from "node:fs";
 import path from "node:path";
 import { SolarRegistry, slug } from "../src/solar_registry.js";
+import { ENERGY_ALARM_DEFAULTS, EnergyAlarmStore, EnergySettingsInvalid, parseEnergyAlarmSettings } from "../src/energy_alarms.js";
 
 const inverter = (extra: Partial<SolarInverter> = {}): SolarInverter => ({
   kind: "inverter", node_id: "solar-1", device: "axpert-1", timestamp_ms: 1000, mode: "line", grid_v: 232, grid_hz: 50, out_v: 230, out_hz: 50, out_va: 161, out_w: 119, load_percent: 3,
@@ -274,4 +275,82 @@ test("solar parsing agrees with every shared conformance vector", () => {
       else assert.throws(() => parseSolarMessage(structuredClone(vector.payload)), `${kind} should reject: ${vector.name}`);
     }
   }
+});
+
+test("the levels of the alarms of batteries and inverters are the operator's: cells, temperature, wear, a hot inverter and the charge levels", () => {
+  const dir = tempDir();
+  const centre = new AlarmCentre({ file: path.join(dir, "alarms.json") });
+  let level = { ...ENERGY_ALARM_DEFAULTS };
+  const rules = new AlarmRules(centre, () => "disarmed", () => level);
+  const codes = () => centre.active().filter(alarm => !alarm.cleared_at).map(alarm => alarm.code).sort();
+  const stack = (extra: Partial<SolarBattery> = {}) => battery({ cell_min_v: 3.32, cell_max_v: 3.34, temperature_min_c: 20, temperature_max_c: 28, soc_percent: 80, health_percent: 90, state: "idle", ...extra });
+  rules.handleSolar(stack());
+  assert.deepEqual(codes(), []);
+  rules.handleSolar(stack({ cell_max_v: 3.46 }));                                  // 140 mV apart: over 100
+  assert.deepEqual(codes(), ["solar_cells_unbalanced"]);
+  rules.handleSolar(stack({ cell_max_v: 3.39 }));                                  // 70 mV: under 100 but not yet under 80 % of it? it is: 70 < 80
+  assert.deepEqual(codes(), []);
+  level = { ...level, cell_spread_mv: 50 };                                         // the operator is stricter
+  rules.handleSolar(stack({ cell_max_v: 3.39 }));
+  assert.deepEqual(codes(), ["solar_cells_unbalanced"]);
+  level = { ...ENERGY_ALARM_DEFAULTS };
+  rules.handleSolar(stack());
+  rules.handleSolar(stack({ temperature_max_c: 56 }));
+  assert.deepEqual(codes(), ["solar_battery_hot"]);
+  rules.handleSolar(stack({ temperature_max_c: 53 }));                             // 2 degrees under the level: a margin of 3 is needed
+  assert.deepEqual(codes(), ["solar_battery_hot"]);
+  rules.handleSolar(stack({ temperature_max_c: 40 }));
+  assert.deepEqual(codes(), []);
+  rules.handleSolar(stack({ temperature_min_c: -3, state: "idle" }));              // cold, but not charging: nothing
+  assert.deepEqual(codes(), []);
+  rules.handleSolar(stack({ temperature_min_c: -3, state: "charging" }));          // charging while frozen
+  assert.deepEqual(codes(), ["solar_battery_cold"]);
+  rules.handleSolar(stack({ temperature_min_c: -3, state: "idle" }));
+  assert.deepEqual(codes(), []);
+  rules.handleSolar(stack({ health_percent: 55 }));
+  assert.deepEqual(codes(), ["solar_battery_worn"]);
+  rules.handleSolar(stack({ health_percent: 62 }));                                // 2 over the level, 5 needed
+  assert.deepEqual(codes(), ["solar_battery_worn"]);
+  rules.handleSolar(stack({ health_percent: 70 }));
+  assert.deepEqual(codes(), []);
+  rules.handleSolar(inverter({ heatsink_c: 88 }));
+  assert.deepEqual(codes(), ["solar_inverter_hot"]);
+  rules.handleSolar(inverter({ heatsink_c: 82 }));
+  assert.deepEqual(codes(), ["solar_inverter_hot"]);
+  rules.handleSolar(inverter({ heatsink_c: 70 }));
+  assert.deepEqual(codes(), []);
+  level = { ...level, soc_low: 40, soc_ok: 50 };                                    // the charge levels are the operator's too
+  rules.handleSolar(inverter({ battery_percent: 35 }));
+  assert.deepEqual(codes(), ["solar_battery_low"]);
+  rules.handleSolar(inverter({ battery_percent: 45 }));
+  assert.deepEqual(codes(), ["solar_battery_low"]);
+  rules.handleSolar(inverter({ battery_percent: 55 }));
+  assert.deepEqual(codes(), []);
+});
+
+test("the settings of the energy alarms are checked, kept across runs and changed by an operator", async () => {
+  assert.deepEqual(parseEnergyAlarmSettings({}), ENERGY_ALARM_DEFAULTS);
+  assert.equal(parseEnergyAlarmSettings({ cell_spread_mv: 60 }).cell_spread_mv, 60);
+  for (const bad of [null, [], { soc_low: 0 }, { soc_low: 95 }, { soc_low: 50, soc_ok: 40 }, { cell_spread_mv: "100" }, { cell_spread_mv: 5 }, { battery_temp_low_c: 30 }, { colour: 1 }, { health_low_percent: Number.NaN }]) {
+    assert.throws(() => parseEnergyAlarmSettings(bad), EnergySettingsInvalid, JSON.stringify(bad));
+  }
+  const file = path.join(tempDir(), "energy-alarms.json");
+  const store = new EnergyAlarmStore(file);
+  assert.deepEqual(store.get(), ENERGY_ALARM_DEFAULTS);
+  store.set({ soc_low: 25, soc_ok: 35 });
+  assert.equal(new EnergyAlarmStore(file).get().soc_low, 25);                      // read back by the next run
+  fs.writeFileSync(file, "not json");
+  assert.deepEqual(new EnergyAlarmStore(file).get(), ENERGY_ALARM_DEFAULTS);        // a damaged file: the defaults
+
+  const running = await startServer();
+  try {
+    assert.equal((await fetch(`${running.base}/api/v1/solar/alarms`)).status, 401);
+    const cookie = await studioCookie(running.base);
+    const put = (body: unknown) => fetch(`${running.base}/api/v1/solar/alarms`, { method: "PUT", headers: { "Content-Type": "application/json", cookie }, body: JSON.stringify(body) });
+    assert.equal((await put({ soc_low: 0 })).status, 400);
+    const ok = await put({ soc_low: 30, soc_ok: 40, cell_spread_mv: 80 });
+    assert.equal(ok.status, 200);
+    const read = await (await fetch(`${running.base}/api/v1/solar/alarms`, { headers: { cookie } })).json() as { settings: { soc_low: number; cell_spread_mv: number; heatsink_high_c: number }; defaults: { soc_low: number } };
+    assert.deepEqual([read.settings.soc_low, read.settings.cell_spread_mv, read.settings.heatsink_high_c, read.defaults.soc_low], [30, 80, 85, 20]);
+  } finally { await running.stop(); }
 });
