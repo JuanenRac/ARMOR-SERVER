@@ -11,7 +11,10 @@ For a node to be updated from GitHub, the repository of its kind publishes a rel
 | radar | `JuanenRac/ARMOR-RADAR` | `armor_radar.bin` | `armor_radar.bin.sha256` |
 | solar | `JuanenRac/ARMOR-SOLAR` | `armor_solar.bin` | `armor_solar.bin.sha256` |
 | electrical | `JuanenRac/ARMOR-ELECTRICAL` | `armor_electrical.bin` | `armor_electrical.bin.sha256` |
+| alarm | `JuanenRac/ARMOR-ALARM` | `armor_alarm.bin` | `armor_alarm.bin.sha256` |
 | HMI | `JuanenRac/ARMOR-HMI` | `armor_hmi.bin` | `armor_hmi.bin.sha256` |
+
+A kind that runs on more than one board publishes **one image per board**, named `armor_<kind>-<board>.bin` (`armor_alarm-s3-eth.bin`, `armor_alarm-s3-wifi.bin`), each with its own `.sha256`. The server asks every node which board it is (`GET /api/v1/session`) and takes the image built for it; the plain name is read only for the kind's default board (`s3-eth`, and `lcd7box` for the HMI), which is how a release made before the boards had a name in it still works. A job that mixes boards fetches one image per board, and a release without the image of a node's board is refused for that kind (`no_image_for_board`).
 
 The image is the application image of the project (`build/<node>-<board>/armor_<kind>.bin`), not the merged one with the bootloader. The hash file is the line
 `sha256sum armor_<kind>.bin` writes. A release without the hash file, or whose image does not match it, is never used.

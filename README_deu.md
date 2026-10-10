@@ -69,7 +69,7 @@ flowchart LR
 ## 🌐 API
 
 * Öffentlich: `GET /healthz`. Für einen Operator: Status, Informationen, Kameras, Medien, Verlauf, Regeln, Geräte, Alarme, Automatisierungen, der Standortentwurf und `GET /api/v1/solar` mit Verlauf.
-* Für Feldknoten und Gateways: `POST /api/v1/telemetry`, `/health`, `/solar` und `/electrical/readings` mit dem Ingest-Token sowie die MQTT-Topics `armor/node/#`, `armor/solar/#` und `armor/electrical/#`. Ereignisse erreichen die Konsolen über den WebSocket `/api/v1/events`.
+* Für Feldknoten und Gateways: `POST /api/v1/telemetry`, `/health`, `/solar`, `/electrical/readings` und `/alarm/state` mit dem Ingest-Token sowie die MQTT-Topics `armor/node/#`, `armor/solar/#`, `armor/electrical/#` und `armor/alarm/#`. Ein Administrator kann die Zentrale eines Alarmknotens mit `POST /api/v1/alarm/command` scharf- und unscharfschalten; das wird abgelehnt, außer bei `ARMOR_ALARM_COMMANDS=1` (und wenn Knoten und Broker es ebenfalls erlauben). Ereignisse erreichen die Konsolen über den WebSocket `/api/v1/events`.
 * Jede Route, ihre Zugriffsregel und ihr Schema stehen in der OpenAPI-Datei von [ARMOR-COMMON](https://github.com/JuanenRac/ARMOR-COMMON), und ein Test prüft, dass keine Route fehlt.
 
 ## ⚙️ Konfiguration

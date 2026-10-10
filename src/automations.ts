@@ -13,7 +13,7 @@ import type { SecurityMode } from "./store.js";
 
 export type Trigger =
   | { type: "device"; device_id: string; field: string; equals: boolean | number }
-  | { type: "alarm"; severity?: Severity; source_type?: "node" | "camera" | "device" | "solar" | "electrical" | "network"; source_id?: string }
+  | { type: "alarm"; severity?: Severity; source_type?: "node" | "camera" | "device" | "solar" | "electrical" | "network" | "alarm"; source_id?: string }
   | { type: "mode"; mode: SecurityMode };
 export type Action = { type: "device"; device_id: string; command: "on" | "off" | "toggle"; /** Switch back after this many seconds. */ for_s?: number } | { type: "notify" };
 export type Automation = {
@@ -43,7 +43,7 @@ function cleanTrigger(raw: unknown): Trigger {
   if (t.type === "alarm") {
     const trigger: Trigger = { type: "alarm" };
     if (t.severity !== undefined && t.severity !== "") { if (!SEVERITIES.includes(t.severity as string)) throw new AutomationError("invalid_trigger", "unknown severity"); trigger.severity = t.severity as Severity; }
-    if (t.source_type !== undefined && t.source_type !== "") { if (!["node", "camera", "device", "solar", "electrical", "network"].includes(t.source_type as string)) throw new AutomationError("invalid_trigger", "unknown source"); trigger.source_type = t.source_type as "node" | "camera" | "device" | "solar" | "electrical"; }
+    if (t.source_type !== undefined && t.source_type !== "") { if (!["node", "camera", "device", "solar", "electrical", "network", "alarm"].includes(t.source_type as string)) throw new AutomationError("invalid_trigger", "unknown source"); trigger.source_type = t.source_type as "node" | "camera" | "device" | "solar" | "electrical"; }
     if (typeof t.source_id === "string" && t.source_id) { if (!ID.test(t.source_id)) throw new AutomationError("invalid_trigger", "invalid source id"); trigger.source_id = t.source_id; }
     return trigger;
   }

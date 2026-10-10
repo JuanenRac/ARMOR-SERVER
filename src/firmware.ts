@@ -7,16 +7,29 @@
  */
 import crypto from "node:crypto";
 
-export type NodeKind = "radar" | "solar" | "electrical" | "hmi";
-export const NODE_KINDS: readonly NodeKind[] = ["radar", "solar", "electrical", "hmi"];
+export type NodeKind = "radar" | "solar" | "electrical" | "alarm" | "hmi";
+export const NODE_KINDS: readonly NodeKind[] = ["radar", "solar", "electrical", "alarm", "hmi"];
 
-/** The repository whose releases carry each kind's image, and the file of the release that is that image (next to it: the same name with `.sha256`). */
+/**
+ * The repository whose releases carry each kind's image, and the file of the release that is that image (next to it: the same name with `.sha256`). A release carries one image per
+ * board, `armor_<kind>-<board>.bin`; one from before that naming has only `armor_<kind>.bin`, the image of the kind's default board (see DEFAULT_BOARDS).
+ */
 export const RELEASE_SOURCES: Record<NodeKind, { repo: string; asset: string }> = {
   radar: { repo: "JuanenRac/ARMOR-RADAR", asset: "armor_radar.bin" },
   solar: { repo: "JuanenRac/ARMOR-SOLAR", asset: "armor_solar.bin" },
   electrical: { repo: "JuanenRac/ARMOR-ELECTRICAL", asset: "armor_electrical.bin" },
+  alarm: { repo: "JuanenRac/ARMOR-ALARM", asset: "armor_alarm.bin" },
   hmi: { repo: "JuanenRac/ARMOR-HMI", asset: "armor_hmi.bin" },
 };
+/** The board whose image carries the plain name in a release that predates the board in the name. */
+export const DEFAULT_BOARDS: Record<NodeKind, string> = { radar: "s3-eth", solar: "s3-eth", electrical: "s3-eth", alarm: "s3-eth", hmi: "lcd7box" };
+
+/** The files of a release that are the image for `board` and its checksum: the one built for the board; the plain name only for the kind's default board (or when the board is not known). */
+export function imageNames(kind: NodeKind, board?: string): { image: string[] } {
+  const plain = RELEASE_SOURCES[kind].asset, stem = plain.replace(/\.bin$/, "");
+  if (!board) return { image: [plain] };
+  return { image: board === DEFAULT_BOARDS[kind] ? [`${stem}-${board}.bin`, plain] : [`${stem}-${board}.bin`] };
+}
 
 export const MIN_IMAGE_BYTES = 100 * 1024;
 export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -119,7 +132,7 @@ export class FirmwareService {
   }
 
   /** The newest release of the repository of this kind of node: its image, downloaded and checked against the hash the release publishes. A release without that hash is refused. */
-  async fetchRelease(kind: NodeKind): Promise<Image & { version: string }> {
+  async fetchRelease(kind: NodeKind, board?: string): Promise<Image & { version: string }> {
     const source = RELEASE_SOURCES[kind];
     const meta = await this.#get(`${this.#releaseApi()}/repos/${source.repo}/releases/latest`, "application/vnd.github+json").catch(() => undefined);
     if (!meta) throw new FirmwareError("github_unreachable");
@@ -127,9 +140,12 @@ export class FirmwareService {
     if (!meta.ok) throw new FirmwareError(`github_http_${meta.status}`);
     const release = await meta.json() as { tag_name?: string; assets?: Array<{ name?: string; browser_download_url?: string }> };
     const version = String(release.tag_name ?? "").replace(/^v/, "");
-    const asset = release.assets?.find(item => item.name === source.asset)?.browser_download_url;
-    const checksum = release.assets?.find(item => item.name === `${source.asset}.sha256`)?.browser_download_url;
-    if (!version || !asset) throw new FirmwareError("no_image_in_release");
+    // the image built for the node's board first, then (only for the default board) the plain name; the checksum is the one next to the image that was taken
+    let name: string | undefined;
+    for (const wanted of imageNames(kind, board).image) if (!name && release.assets?.some(item => item.name === wanted)) name = wanted;
+    const asset = name ? release.assets?.find(item => item.name === name)?.browser_download_url : undefined;
+    const checksum = name ? release.assets?.find(item => item.name === `${name}.sha256`)?.browser_download_url : undefined;
+    if (!version || !asset) throw new FirmwareError(board && board !== DEFAULT_BOARDS[kind] ? "no_image_for_board" : "no_image_in_release");
     if (!checksum) throw new FirmwareError("no_checksum");
     const [imageReply, checksumReply] = await Promise.all([this.#get(asset).catch(() => undefined), this.#get(checksum).catch(() => undefined)]);
     if (!imageReply?.ok || !checksumReply?.ok) throw new FirmwareError("download_failed");
@@ -241,9 +257,18 @@ export class FirmwareService {
   }
 
   async #run(job: FirmwareJob, upload: Image | undefined, login: { user: string; password: string }, onNode?: (job: FirmwareJob, target: JobTarget) => void): Promise<void> {
-    let image: Image;
+    // Each node gets the image built for ITS board: a job that mixes boards (an Ethernet and a Wi-Fi node of one kind) fetches one image per board. An uploaded file is the
+    // administrator's choice and goes to every node as it is.
+    const images = new Map<string, Image & { version?: string }>();
+    const boardOf = new Map<JobTarget, string | undefined>();
+    let image: Image & { version?: string };
     try {
-      image = upload ?? await this.fetchRelease(job.kind);
+      if (upload) image = upload;
+      else {
+        await Promise.all(job.targets.map(async target => { boardOf.set(target, await this.probe(target.address).then(probe => probe.board).catch(() => undefined)); }));
+        for (const board of new Set(job.targets.map(target => boardOf.get(target)))) images.set(board ?? "", await this.fetchRelease(job.kind, board));
+        image = images.values().next().value as Image & { version?: string };
+      }
     } catch (error) {
       job.state = "failed"; job.error = error instanceof FirmwareError ? error.code : "preparing_failed";
       for (const target of job.targets) { target.state = "failed"; target.error = job.error; }
@@ -251,7 +276,7 @@ export class FirmwareService {
     }
     job.version = image.version; job.bytes = image.bytes.length; job.sha256 = image.sha256; job.state = "running";
     for (const target of job.targets) {
-      try { await this.#updateNode(target, image, login); }
+      try { await this.#updateNode(target, upload ?? images.get(boardOf.get(target) ?? "") ?? image, login); }
       catch (error) { target.state = "failed"; target.error = error instanceof FirmwareError ? error.code : "failed"; }
       if (target.state !== "failed") target.state = "done";
       onNode?.(job, target);

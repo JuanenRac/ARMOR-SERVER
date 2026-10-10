@@ -25,6 +25,8 @@ import { registerElectricalRoutes } from "./routes/electrical.js";
 import { registerNetworkRoutes } from "./routes/network.js";
 import { networkTopic, parseNetworkMessage } from "./network.js";
 import { electricalTopic, parseElectricalMessage, parseElectricalResult } from "./electrical.js";
+import { alarmTopic, parseAlarmMessage, parseAlarmResult } from "./alarm.js";
+import { registerAlarmNodeRoutes } from "./routes/alarm.js";
 import { parseSolarMessage, solarTopic } from "./solar.js";
 import { forwardCompatible } from "./contracts.js";
 import { JsonFile } from "./history.js";
@@ -81,6 +83,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerDeviceRoutes(app, context);
   registerSolarRoutes(app, context);
   registerElectricalRoutes(app, context);
+  registerAlarmNodeRoutes(app, context);
   registerNetworkRoutes(app, context);
   registerAlarmRoutes(app, context);
   registerSystemRoutes(app, context, version);
@@ -163,6 +166,30 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
         context.ingestLog.ok(topic, ignored);
       } catch (error) { rejected(topic, raw, error, "invalid electrical result"); }
     });
+    // The alarm nodes: their state is armor/alarm/{node}/state and their answer to a command armor/alarm/{node}/result, the same rule for the node named in the body. A command is
+    // never retained and is sent at most once: an old one must never be delivered later.
+    mqtt.on("connect", () => mqtt.subscribe(["armor/alarm/+/state", "armor/alarm/+/result"], { qos: 1 }));
+    context.alarmLink.publish = (topic, payload) => { if (!mqtt.connected) throw new Error("the MQTT broker is not connected"); mqtt.publish(topic, payload, { qos: 0, retain: false }); };
+    mqtt.on("message", (topic, raw) => {
+      const named = alarmTopic(topic, "result");
+      if (!named) return;
+      try {
+        const { value: result, ignored } = forwardCompatible(() => parseAlarmResult(JSON.parse(raw.toString("utf8"))));
+        if (result.node_id !== named) throw new Error("node_id does not match the topic");
+        context.alarmCommands.handleResult(result, named);
+        context.ingestLog.ok(topic, ignored);
+      } catch (error) { rejected(topic, raw, error, "invalid alarm result"); }
+    });
+    mqtt.on("message", (topic, raw) => {
+      const named = alarmTopic(topic);
+      if (!named) return;
+      try {
+        const { value: message, ignored } = forwardCompatible(() => parseAlarmMessage(JSON.parse(raw.toString("utf8"))));
+        if (message.node_id !== named) throw new Error("node_id does not match the topic");
+        context.alarmNodes.ingest(message);
+        context.ingestLog.ok(topic, ignored);
+      } catch (error) { rejected(topic, raw, error, "invalid alarm payload"); }
+    });
     mqtt.on("message", (topic, raw) => {
       const named = electricalTopic(topic);
       if (!named) return;
@@ -200,7 +227,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   let sweepFailing = false;
   const sweeper = setInterval(() => {
     try {
-      context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.networkNodes.sweep();
+      context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.networkNodes.sweep();
       sweepFailing = false;
     } catch (error) {
       if (!sweepFailing) console.warn("ARMOR_SWEEP=FAILED", error instanceof Error ? error.message : "unknown error");

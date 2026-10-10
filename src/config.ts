@@ -57,6 +57,8 @@ export type ArmorConfig = {
   alertLanguage: AlertLanguage;
   /** Whether this server may send a command to the switch of an electrical node. Off unless ARMOR_ELECTRICAL_SWITCHING=1; even then the node has to allow it too. */
   electricalSwitching: boolean;
+  /** Whether this server may arm and disarm the panel of an alarm node. Off unless ARMOR_ALARM_COMMANDS=1; even then the node and the broker have to allow it too. */
+  alarmCommands: boolean;
   /** The admin agent (ARMOR-DEVOPS): where its Unix socket is and the token it wants; null when this install has no agent, and Studio then cannot administer services. */
   admin: { socketPath: string; token: string } | null;
   /** The voice gateway (ARMOR-VOICE-AI): its address on this machine and the token it wants; null when this install has none, and written and spoken commands then say so. */
@@ -187,6 +189,8 @@ export function readConfig(env: Env = process.env): ArmorConfig {
   if (aiTokenRaw && aiTokenRaw.length < MIN_SECRET_LENGTH) throw new ConfigError(`ARMOR_AI_TOKEN must be at least ${MIN_SECRET_LENGTH} characters`);
   const aiToken = aiTokenRaw || null;
   const electricalSwitching = env.ARMOR_ELECTRICAL_SWITCHING === "1";
+  const alarmCommands = env.ARMOR_ALARM_COMMANDS === "1";
+  if (alarmCommands) warnings.push("ARMOR_ALARM_COMMANDS=1: this server may arm and disarm the panels of alarm nodes, and a disarm from here carries no PIN; keep the broker's access list and the nodes' own setting as strict as you want this to be.");
   if (electricalSwitching) warnings.push("ARMOR_ELECTRICAL_SWITCHING=1: this server may send commands to the switches of electrical nodes; that is only for a bench, a lamp and a person present, until the installation has its own protections");
 
   // Off (plain HTTP/WS) by default - unchanged for every deployment that
@@ -235,7 +239,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     nodeStaleAfterS: integer(env, "ARMOR_NODE_STALE_AFTER_S", 30, 5, 3600),
     alertDwellMs: integer(env, "ARMOR_ALERT_DWELL_MS", 2000, 0, 60_000),
     cameraCheckS: integer(env, "ARMOR_CAMERA_CHECK_S", 20, 0, 3600),
-    alertWebhookUrl, alertWebhookSecret, telegram, homeAssistant, alertLanguage, electricalSwitching, admin, voice, aiToken,
+    alertWebhookUrl, alertWebhookSecret, telegram, homeAssistant, alertLanguage, electricalSwitching, alarmCommands, admin, voice, aiToken,
     tls,
     warnings,
   };

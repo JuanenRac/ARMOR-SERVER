@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.2] - The alarm nodes, and the firmware of every board
+
+- **`alarm.ts`, the state of the ARMOR-ALARM nodes** (`armor/alarm/{node}/state` over MQTT, `POST /api/v1/alarm/state` over HTTP with the ingest token, `GET /api/v1/alarm/nodes` for the consoles): the strict parser of the shared contract (the 81 conformance vectors pass; a field a newer node adds is dropped and said, never kept), the latest state of each node, a node that goes quiet for thirty seconds marked stale, and the sums (nodes, stale, armed, sounding).
+- **The alarms a panel raises:** a sounding alarm is `alarm_sounding` (critical) and ends with the disarm; a zone in tamper is `alarm_tamper` (high); a panel locked out after wrong PINs is `alarm_locked_out` and a silent node `alarm_offline` (warnings). They come from the node's own panel and do not depend on this server's security mode. The alarm source type `alarm` is accepted by the automations.
+- **`alarm_commands.ts`, the only code that can arm or disarm a panel, and it is OFF** (`ARMOR_ALARM_COMMANDS=1` turns it on, with a start-up warning). `POST /api/v1/alarm/command` (an administrator) takes `{node, action, mode?, force?}` and publishes the contract's command, never retained and at most once; there is no PIN anywhere in it. It refuses when the commands are off, the node is unknown or quiet, the node says it takes no commands, or another command to it is waiting; every refusal and every answer is audited, and an answer to nothing that is waiting is dropped. `GET /api/v1/alarm/commands` shows what became of the latest ones. Off by default at three places: this server, the node (`server.commands`) and the broker's ACL (`mqtt_identity.sh alarm-commands`).
+- **Firmware of the alarm node** can be updated from Studio like the others: the kind `alarm` takes the newest release of ARMOR-ALARM, and for each node the image of its own board (`armor_<kind>-<board>.bin`, with the plain name only for the default board), checked against the SHA-256 the release publishes.
+- **Tests:** 13 for the alarm nodes (the shared vectors, the topics, the store, every refusal of the commands, the alarms and the routes) and 2 for the board-aware release.
+
 ## [0.5.1] - Nodes heard without a clock or with newer fields, a log of what they send, a month of history and the energy of each day
 
 - **How much it matters to switch a device from afar** (`risk`: `low`, `circuit`, `critical`). A light or a plug goes with a click; a circuit of the board (the default of a breaker) needs `confirm: true` in the command or the server answers 409 `confirmation_required`; a critical one (a freezer, a pump, the alarm) also needs an administrator (403 `admin_required` for an operator token).

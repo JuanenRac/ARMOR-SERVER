@@ -205,13 +205,18 @@ def test_electrical(project: Path) -> None:
 
 
 def test_alarm(project: Path) -> None:
-    """Build and run ARMOR-ALARM's host tests (the zones, the wired loop and the panel's rules). Needs CMake and a C++17 compiler."""
+    """Build and run ARMOR-ALARM's host tests (the panel's rules, the node's settings, messages and runner, the update), then check the messages its serialiser prints. Needs CMake and a C++17 compiler."""
     cmake = check_tool("cmake", "CMake and a C++17 compiler are required to test ARMOR-ALARM (use Linux, WSL or MSYS2)")
     build = project / "build" / "host"
     command(project, [cmake, "-S", "tests", "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug"])
     command(project, [cmake, "--build", str(build)])
     suffix = ".exe" if os.name == "nt" else ""
-    command(project, [str(build / f"test_alarm{suffix}")])
+    for test in ("test_alarm", "test_node", "test_release"):
+        command(project, [str(build / f"{test}{suffix}")])
+    emitter = subprocess.run([str(build / f"emit_samples{suffix}")], cwd=project, capture_output=True, text=True, check=True)
+    checker = subprocess.run([sys.executable, "tests/check_samples.py"], cwd=project, input=emitter.stdout, text=True, check=False)
+    if checker.returncode:
+        raise RuntimeError("the alarm messages do not have the fields of contract version 0")
 
 
 def test_hmi(project: Path) -> None:

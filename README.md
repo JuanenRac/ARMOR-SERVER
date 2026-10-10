@@ -69,7 +69,7 @@ flowchart LR
 ## 🌐 API
 
 * Public: `GET /healthz`. For an operator: status, information, cameras, media, history, rules, devices, alarms, automations, the site design, and `GET /api/v1/solar` with its history.
-* For the field nodes and the gateways: `POST /api/v1/telemetry`, `/health`, `/solar` and `/electrical/readings` with the ingest token, and the MQTT topics `armor/node/#`, `armor/solar/#` and `armor/electrical/#`. Events reach the consoles by the WebSocket `/api/v1/events`.
+* For the field nodes and the gateways: `POST /api/v1/telemetry`, `/health`, `/solar`, `/electrical/readings` and `/alarm/state` with the ingest token, and the MQTT topics `armor/node/#`, `armor/solar/#`, `armor/electrical/#` and `armor/alarm/#`. An administrator can arm and disarm an alarm node's panel with `POST /api/v1/alarm/command`, which is refused unless `ARMOR_ALARM_COMMANDS=1` (and the node and the broker allow it too). Events reach the consoles by the WebSocket `/api/v1/events`.
 * Every route, its access rule and its schema is in the OpenAPI file of [ARMOR-COMMON](https://github.com/JuanenRac/ARMOR-COMMON), and a test checks that no route is missing from it.
 
 ## ⚙️ Configuration

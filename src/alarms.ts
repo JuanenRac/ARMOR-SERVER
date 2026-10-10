@@ -13,10 +13,11 @@ import type { ArmorEvent, ArmorEventBody } from "./events.js";
 import type { ElectricalMessage } from "./electrical.js";
 import type { NetworkEvent, NetworkMessage } from "./network.js";
 import type { SolarMessage } from "./solar.js";
+import type { AlarmMessage } from "./alarm.js";
 import { ENERGY_ALARM_DEFAULTS, type EnergyAlarmSettings } from "./energy_alarms.js";
 import type { SecurityMode } from "./store.js";
 
-export type AlarmSource = { type: "node" | "camera" | "device" | "solar" | "electrical" | "network"; id: string };
+export type AlarmSource = { type: "node" | "camera" | "device" | "solar" | "electrical" | "network" | "alarm"; id: string };
 export type Alarm = {
   id: string; key: string; source: AlarmSource; severity: Severity;
   /** What happened, as a stable code the client translates: intrusion, node_down, camera_down, smoke, water_leak, door_open, tamper, low_battery, device_offline ... */
@@ -330,6 +331,31 @@ export class AlarmRules {
       else if (volts < MAINS_LOW || volts > MAINS_HIGH) this.centre.raise(`${base}:voltage`, { source, severity: "warning", code: "electrical_voltage" });
       else if (volts >= MAINS_LOW_OK && volts <= MAINS_HIGH_OK) this.centre.clear(`${base}:voltage`);
     }
+  }
+
+  /**
+   * The state of an ARMOR-ALARM node's panel. A sounding alarm is CRITICAL and lasts as long as the node says it is in the alarm phase (it latches until a correct disarm); a
+   * zone in tamper is a high alarm that ends with the tamper; a panel locked out after wrong PINs is a warning. These come from the node's own panel and do not depend on the
+   * security mode of this server: the node decides whether it is armed. A node that goes quiet while it was armed or counting down is a warning.
+   */
+  handleAlarmNode(message: AlarmMessage, _previous: AlarmMessage | undefined): void {
+    const base = `alarm:${message.node_id}`, source: AlarmSource = { type: "alarm", id: message.node_id };
+    const zone = message.events.filter(event => event.kind === "alarm" && event.zone !== undefined).at(-1)?.zone;
+    if (message.phase === "alarm") this.centre.raise(`${base}:sounding`, { source, severity: "critical", code: "alarm_sounding", detail: { node: message.node_id, mode: message.mode, siren: message.siren, ...(zone ? { zone } : {}) } });
+    else this.centre.clear(`${base}:sounding`);
+    for (const item of message.zones) {
+      const key = `${base}:${item.id}:tamper`;
+      if (item.state === "tamper") this.centre.raise(key, { source: { type: "alarm", id: `${message.node_id}/${item.id}` }, severity: "high", code: "alarm_tamper", detail: { node: message.node_id, zone: item.id } });
+      else this.centre.clear(key);
+    }
+    if (message.locked_out) this.centre.raise(`${base}:locked_out`, { source, severity: "warning", code: "alarm_locked_out", detail: { node: message.node_id } });
+    else this.centre.clear(`${base}:locked_out`);
+  }
+
+  /** An alarm node went silent, or came back. Silence matters only while the panel was guarding, which the alarm raised before it fell silent says. */
+  handleAlarmNodeStale(node: string, stale: boolean): void {
+    if (stale) this.centre.raise(`alarm:${node}:offline`, { source: { type: "alarm", id: node }, severity: "warning", code: "alarm_offline" });
+    else this.centre.clear(`alarm:${node}:offline`);
   }
 
   /**
