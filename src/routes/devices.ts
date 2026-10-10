@@ -7,6 +7,7 @@ import type { Express, Response } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { KIND_LIST, PROTOCOLS, kindInfo, cleanState } from "../devices/catalog.js";
+import { defaultRisk } from "../devices/catalog.js";
 import { isCommand } from "../devices/commands.js";
 import { DeviceError, type Device } from "../devices/registry.js";
 import { hasBearer } from "../http/auth.js";
@@ -38,14 +39,14 @@ export function registerDeviceRoutes(app: Express, context: AppContext): void {
 
   app.get("/api/v1/devices", requireOperator, (_request, response) => response.json({
     devices: devices.list().map(deviceView),
-    kinds: KIND_LIST.map(kind => ({ kind, category: kindInfo(kind).category, alarm: kindInfo(kind).alarm, severity: kindInfo(kind).severity, commands: kindInfo(kind).commands })),
+    kinds: KIND_LIST.map(kind => ({ kind, category: kindInfo(kind).category, alarm: kindInfo(kind).alarm, severity: kindInfo(kind).severity, commands: kindInfo(kind).commands, default_risk: defaultRisk(kind) })),
     protocols: PROTOCOLS,
   }));
 
   app.post("/api/v1/devices", requireOperator, (request, response) => {
     const input = body(request);
     try {
-      const device = devices.create({ id: typeof input.id === "string" && input.id ? input.id : undefined, name: input.name as string, kind: input.kind as Device["kind"], protocol: input.protocol as Device["protocol"], location: input.location as string, source: input.source as Device["source"], commands: input.commands as Device["commands"], expected_interval_s: input.expected_interval_s as number });
+      const device = devices.create({ id: typeof input.id === "string" && input.id ? input.id : undefined, name: input.name as string, kind: input.kind as Device["kind"], protocol: input.protocol as Device["protocol"], location: input.location as string, source: input.source as Device["source"], commands: input.commands as Device["commands"], expected_interval_s: input.expected_interval_s as number, risk: input.risk as Device["risk"] | undefined });
       audit.record({ action: "device.create", outcome: "allowed", actor: actor(request), target: device.id, detail: device.kind });
       return response.status(201).json(deviceView(device));
     } catch (error) { audit.record({ action: "device.create", outcome: "failed", actor: actor(request), detail: error instanceof DeviceError ? error.code : "error" }); return fail(response, error); }
@@ -54,7 +55,7 @@ export function registerDeviceRoutes(app: Express, context: AppContext): void {
   app.patch("/api/v1/devices/:id", requireOperator, (request, response) => {
     const input = body(request), id = String(request.params.id);
     try {
-      const device = devices.update(id, { name: input.name as string | undefined, kind: input.kind as Device["kind"] | undefined, protocol: input.protocol as Device["protocol"] | undefined, location: input.location as string | undefined, source: input.source as Device["source"] | undefined, commands: input.commands as Device["commands"] | undefined, expected_interval_s: input.expected_interval_s as number | undefined });
+      const device = devices.update(id, { name: input.name as string | undefined, kind: input.kind as Device["kind"] | undefined, protocol: input.protocol as Device["protocol"] | undefined, location: input.location as string | undefined, source: input.source as Device["source"] | undefined, commands: input.commands as Device["commands"] | undefined, expected_interval_s: input.expected_interval_s as number | undefined, risk: input.risk as Device["risk"] | undefined });
       audit.record({ action: "device.update", outcome: "allowed", actor: actor(request), target: id });
       return response.json(deviceView(device));
     } catch (error) { return fail(response, error); }
@@ -73,6 +74,12 @@ export function registerDeviceRoutes(app: Express, context: AppContext): void {
   app.post("/api/v1/devices/:id/command", requireOperator, commandLimit, async (request, response) => {
     const id = String(request.params.id), command = body(request).command;
     if (!isCommand(command)) return response.status(400).json({ error: "the command is on, off or toggle", code: "invalid_command" });
+    // What matters when it goes off: a circuit of the board needs a confirmation in the request, and a critical one an administrator as well.
+    const target = devices.get(id);
+    if (target && target.risk !== "low") {
+      if (body(request).confirm !== true) return response.status(409).json({ error: "this device needs a confirmation to be switched", code: "confirmation_required", risk: target.risk });
+      if (target.risk === "critical" && studioUser(request)?.role !== "admin") { audit.record({ action: "device.command", outcome: "denied", actor: actor(request), target: `${id}=${command}`, detail: "critical" }); return response.status(403).json({ error: "a critical circuit is switched by an administrator", code: "admin_required", risk: target.risk }); }
+    }
     try {
       const done = await context.sendDeviceCommand(id, command);
       audit.record({ action: "device.command", outcome: "allowed", actor: actor(request), target: `${id}=${done.command}`, detail: done.via });

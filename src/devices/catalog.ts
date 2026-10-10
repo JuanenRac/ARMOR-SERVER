@@ -39,6 +39,9 @@ export const DEVICE_KINDS = {
   smart_plug: { category: "actuator", alarm: "none", severity: "warning", commands: ["on", "off", "toggle"] },
   smart_light: { category: "actuator", alarm: "none", severity: "warning", commands: ["on", "off", "toggle"] },
   smart_switch: { category: "actuator", alarm: "none", severity: "warning", commands: ["on", "off", "toggle"] },
+  // a circuit-breaker of the board that can be switched from afar, and a meter that only measures (what a Zigbee or Wi-Fi electrical device is)
+  smart_breaker: { category: "actuator", alarm: "none", severity: "warning", commands: ["on", "off", "toggle"] },
+  energy_meter: { category: "sensor", alarm: "none", severity: "warning", commands: [] },
   siren: { category: "actuator", alarm: "none", severity: "warning", commands: ["on", "off"] },
   lock: { category: "actuator", alarm: "none", severity: "warning", commands: ["on", "off"] },
   valve: { category: "actuator", alarm: "none", severity: "warning", commands: ["on", "off"] },
@@ -60,7 +63,7 @@ export type DeviceState = Record<string, StateValue>;
 const FIELDS: Record<string, { type: "boolean" } | { type: "number"; min: number; max: number }> = {
   triggered: { type: "boolean" }, open: { type: "boolean" }, on: { type: "boolean" }, locked: { type: "boolean" }, tamper: { type: "boolean" },
   temperature: { type: "number", min: -80, max: 200 }, humidity: { type: "number", min: 0, max: 100 }, battery: { type: "number", min: 0, max: 100 },
-  brightness: { type: "number", min: 0, max: 100 }, power_w: { type: "number", min: 0, max: 100000 }, energy_kwh: { type: "number", min: 0, max: 10_000_000 },
+  brightness: { type: "number", min: 0, max: 100 }, voltage_v: { type: "number", min: 0, max: 1000 }, current_a: { type: "number", min: 0, max: 1000 }, power_w: { type: "number", min: 0, max: 100000 }, energy_kwh: { type: "number", min: 0, max: 10_000_000 },
   lux: { type: "number", min: 0, max: 200000 }, rssi: { type: "number", min: -150, max: 0 }, co_ppm: { type: "number", min: 0, max: 10000 },
 };
 export const STATE_FIELDS = Object.keys(FIELDS);
@@ -83,3 +86,12 @@ export function isTriggered(kind: DeviceKind, state: DeviceState): boolean {
   const trigger = kindInfo(kind).trigger;
   return Boolean(trigger && state[trigger.field] === trigger.value);
 }
+
+/**
+ * How much it matters to switch a device from afar. `low`: a light, a plug (one click). `circuit`: a circuit of the board (needs a confirmation). `critical`: a circuit that must not go
+ * off by mistake (a freezer, a pump, the alarm): a confirmation and an administrator.
+ */
+export const RISK_LEVELS = ["low", "circuit", "critical"] as const;
+export type Risk = (typeof RISK_LEVELS)[number];
+export const isRisk = (value: unknown): value is Risk => typeof value === "string" && (RISK_LEVELS as readonly string[]).includes(value);
+export const defaultRisk = (kind: DeviceKind): Risk => (kind === "smart_breaker" ? "circuit" : "low");
