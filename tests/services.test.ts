@@ -106,3 +106,33 @@ test("a service whose process is frozen is called paused, and only then", async 
   assert.equal(listed.services.find(item => item.id === "server")?.state, "paused");
   assert.equal(listed.services.find(item => item.id === "network")?.state, "failed");   // a service that is not running is never "paused"
 });
+
+test("the version of a program is found where systemd says it runs", async () => {
+  const { execOf, pythonDirs, pythonPackageVersion, mosquittoVersion, programVersions } = await import("../src/services.js");
+  const exec = execOf("{ path=/usr/bin/python3 ; argv[]=/usr/bin/python3 -m armor_voice_ai.service --host 127.0.0.1 --port 18090 ; ignore_errors=no ; start_time=[n/a] }");
+  assert.deepEqual(exec, { program: "/usr/bin/python3", args: ["-m", "armor_voice_ai.service", "--host", "127.0.0.1", "--port", "18090"] });
+  assert.equal(execOf(undefined), null);
+  assert.deepEqual(pythonDirs({ Environment: "PYTHONPATH=/opt/armor/voice:/opt/armor/extra ARMOR_X=1", WorkingDirectory: "/opt/armor/apps/net" }), ["/opt/armor/voice", "/opt/armor/extra", "/opt/armor/apps/net", "/opt/armor/apps/net/src"]);
+  assert.deepEqual(pythonDirs({ WorkingDirectory: "!/nope" }), []);
+  assert.equal(pythonPackageVersion('"""x"""\n__version__ = "0.2.5"\n'), "0.2.5");
+  assert.equal(pythonPackageVersion("__version__ = 'banner; rm -rf'"), null);
+  assert.equal(pythonPackageVersion("nothing"), null);
+  assert.equal(mosquittoVersion("mosquitto version 2.0.18\n\nmosquitto is an MQTT v5.0"), "2.0.18");
+  assert.equal(mosquittoVersion("something else"), null);
+  const reader = programVersions("9.9.9");
+  const server = CATALOG.find(entry => entry.id === "server")!;
+  assert.equal(await reader(server, undefined), "9.9.9");   // the server knows its own
+  assert.equal(await reader(CATALOG.find(entry => entry.id === "voice-ai")!, { LoadState: "not-found" }), null);   // not installed: no version
+  assert.equal(await reader(CATALOG.find(entry => entry.id === "voice-ai")!, { LoadState: "loaded", ExecStart: "{ path=/usr/bin/python3 ; argv[]=/usr/bin/python3 -m ../evil ; }" }), null);   // a module name that is not a name
+});
+
+test("the list carries the version of each program, and of a field node's firmware", async () => {
+  const text = "Id=armor-server.service\nLoadState=loaded\nActiveState=active\nSubState=running\n\nId=armor-studio.service\nLoadState=loaded\nActiveState=active\nSubState=running\n";
+  const { services } = await listServices(async () => text, [{ id: "r1", kind: "radar", online: true, last_ms: 1, firmware: "0.5.7" }, { id: "e1", kind: "electrical", online: true, last_ms: 1 }], () => false,
+    async (entry) => entry.id === "server" ? "0.5.2" : entry.id === "studio" ? "0.6.8" : null);
+  assert.equal(services.find(service => service.id === "server")?.version, "0.5.2");
+  assert.equal(services.find(service => service.id === "studio")?.version, "0.6.8");
+  assert.equal(services.find(service => service.id === "network")?.version, undefined);   // not told: not shown
+  assert.equal(services.find(service => service.id === "node:radar:r1")?.version, "0.5.7");
+  assert.equal(services.find(service => service.id === "node:electrical:e1")?.version, undefined);
+});
