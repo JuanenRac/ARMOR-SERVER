@@ -155,14 +155,24 @@ async function legacyMove(camera: CameraConnection, command: PtzCommand): Promis
  * Move the camera: Hi3510 / PSIA first, then ONVIF, and say honestly why it failed: the stored
  * login was refused, the camera did not answer, or it accepts no PTZ command at all.
  */
+/** What worked last for each camera, so that the next move starts with it: trying the old protocols first cost a camera of ONVIF up to seven requests a second of a held button. */
+const worked = new Map<string, "legacy" | "onvif">();
+
 export async function movePtz(camera: CameraConnection, command: unknown): Promise<void> {
   if (!isPtzCommand(command)) throw mediaError("invalid PTZ command");
-  const outcome = await legacyMove(camera, command);
+  const legacy = async (): Promise<LegacyOutcome> => { const outcome = await legacyMove(camera, command); if (outcome === "ok") worked.set(camera.id, "legacy"); return outcome; };
+  const onvif = async (): Promise<boolean> => { try { await onvifMove(camera, command); worked.set(camera.id, "onvif"); return true; } catch { return false; } };
+  if (worked.get(camera.id) === "onvif") {
+    if (await onvif()) return;
+    worked.delete(camera.id);   // it stopped working: start from the beginning again
+  }
+  const outcome = await legacy();
   if (outcome === "ok") return;
+  // A refused login or a camera that does not answer is told at once (ONVIF would use the same stored login and wait as long); only a camera that answered and did not understand is tried over ONVIF.
   if (outcome === "unauthorized") throw mediaError("the camera refused the stored login: check its web password in the camera settings");
   if (outcome === "unreachable") throw mediaError("the camera did not answer on its web port");
-  try { await onvifMove(camera, command); }
-  catch { throw mediaError("this camera accepts no PTZ command (Hi3510, PSIA and ONVIF were all refused); it may not have PTZ hardware"); }
+  if (await onvif()) return;
+  throw mediaError("this camera accepts no PTZ command (Hi3510, PSIA and ONVIF were all refused); it may not have PTZ hardware");
 }
 
 /**

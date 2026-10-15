@@ -93,7 +93,11 @@ export function loadDotEnv(file: string, env: Env = process.env): void {
     const separator = line.indexOf("=");
     if (separator < 1) continue;
     const key = line.slice(0, separator).trim();
-    if (!env[key]) env[key] = line.slice(separator + 1).trim();
+    if (env[key]) continue;
+    let value = line.slice(separator + 1).trim();
+    // A value in quotes (ARMOR_STUDIO_PASSWORD="abc") is the text inside them: the quotes used to be part of the password.
+    if (value.length >= 2 && (value[0] === '"' || value[0] === "'") && value[value.length - 1] === value[0]) value = value.slice(1, -1);
+    env[key] = value;
   }
 }
 
@@ -186,10 +190,10 @@ export function readConfig(env: Env = process.env): ArmorConfig {
   if (alertWebhookSecret) secret(env, "ARMOR_ALERT_WEBHOOK_SECRET");
 
   const adminSocket = env.ARMOR_ADMIN_SOCKET?.trim() ?? "", adminToken = env.ARMOR_ADMIN_TOKEN?.trim() ?? "";
-  if (adminSocket && adminToken.length < MIN_SECRET_LENGTH) throw new Error(`ARMOR_ADMIN_TOKEN must be at least ${MIN_SECRET_LENGTH} characters when ARMOR_ADMIN_SOCKET is set`);
+  if (adminSocket && adminToken.length < MIN_SECRET_LENGTH) throw new ConfigError(`ARMOR_ADMIN_TOKEN must be at least ${MIN_SECRET_LENGTH} characters when ARMOR_ADMIN_SOCKET is set`);
   const admin = adminSocket ? { socketPath: adminSocket, token: adminToken } : null;
   const voiceUrl = env.ARMOR_VOICE_URL?.trim() ?? "", voiceToken = env.ARMOR_VOICE_TOKEN?.trim() ?? "";
-  if (voiceUrl && voiceToken.length < MIN_SECRET_LENGTH) throw new Error(`ARMOR_VOICE_TOKEN must be at least ${MIN_SECRET_LENGTH} characters when ARMOR_VOICE_URL is set`);
+  if (voiceUrl && voiceToken.length < MIN_SECRET_LENGTH) throw new ConfigError(`ARMOR_VOICE_TOKEN must be at least ${MIN_SECRET_LENGTH} characters when ARMOR_VOICE_URL is set`);
   const voice = voiceUrl ? { url: voiceUrl, token: voiceToken } : null;
   const aiTokenRaw = env.ARMOR_AI_TOKEN?.trim() ?? "";
   if (aiTokenRaw && aiTokenRaw.length < MIN_SECRET_LENGTH) throw new ConfigError(`ARMOR_AI_TOKEN must be at least ${MIN_SECRET_LENGTH} characters`);
@@ -237,7 +241,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     studioSessionTtlMs: integer(env, "ARMOR_STUDIO_SESSION_TTL_MS", 7 * 86_400_000, 60_000, 30 * 86_400_000),
     operatorSessionTtlMs: integer(env, "ARMOR_OPERATOR_SESSION_TTL_MS", 28_800_000, 60_000, 7 * 86_400_000),
     studioOrigins: originsWithStudioPort([...origins], saved.studio_port),
-    cookieSecure: env.ARMOR_COOKIE_SECURE === "1",
+    cookieSecure: env.ARMOR_COOKIE_SECURE === "1" || (env.ARMOR_COOKIE_SECURE === undefined && tls !== null),
     dataDir,
     ffmpegPath: env.ARMOR_FFMPEG_PATH?.trim() ?? "",
     maxMjpegRelays: integer(env, "ARMOR_MAX_MJPEG_RELAYS", 8, 1, 64),

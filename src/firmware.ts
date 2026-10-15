@@ -32,7 +32,19 @@ export function imageNames(kind: NodeKind, board?: string): { image: string[] } 
 }
 
 export const MIN_IMAGE_BYTES = 100 * 1024;
-export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
+/** The largest image each kind of node can hold in its application partition (the touch panel has 6 MB, the others 4 MB): a larger one is refused before it is sent. */
+export const maxImageBytes = (kind: NodeKind): number => (kind === "hmi" ? 6 : 4) * 1024 * 1024;
+
+/**
+ * The name the image says it is built for ("armor_alarm"), from the description of the application in an ESP32 image (the magic word 0xABCD5432 at offset 32, the project name at
+ * offset 80), or undefined when the file has none. A file is not an image of a kind just because someone says it is.
+ */
+export function imageProject(bytes: Buffer): string | undefined {
+  if (bytes.length < 112 || bytes.readUInt32LE(32) !== 0xabcd5432) return undefined;
+  const name = bytes.subarray(80, 112).toString("latin1").replace(/\0.*$/s, "");
+  return /^[\w.-]{1,31}$/.test(name) ? name : undefined;
+}
 const MAX_UPLOADS = 6;
 const UPLOAD_TTL_MS = 60 * 60 * 1000;
 const MAX_JOBS = 20;
@@ -45,7 +57,7 @@ export type FirmwareJob = {
   id: string; kind: NodeKind; source: "github" | "upload"; state: "preparing" | "running" | "done" | "failed";
   version?: string; bytes?: number; sha256?: string; error?: string; targets: JobTarget[]; started: number; finished?: number;
 };
-export type UploadInfo = { id: string; name: string; bytes: number; sha256: string };
+export type UploadInfo = { id: string; name: string; bytes: number; sha256: string; project?: string };
 export type ReleaseInfo = { kind: NodeKind; repo: string; version: string; bytes: number; checksum: boolean };
 
 export class FirmwareError extends Error {
@@ -118,7 +130,7 @@ export class FirmwareService {
     this.#expireUploads();
     while (this.#uploads.size >= MAX_UPLOADS) this.#uploads.delete(this.#uploads.keys().next().value as string);
     const sha256 = sha256Of(bytes);
-    const info: UploadInfo = { id: crypto.randomUUID(), name: name.replace(/[^\w.-]/g, "_").slice(0, 80) || "firmware.bin", bytes: bytes.length, sha256 };
+    const info: UploadInfo = { id: crypto.randomUUID(), name: name.replace(/[^\w.-]/g, "_").slice(0, 80) || "firmware.bin", bytes: bytes.length, sha256, ...(imageProject(bytes) ? { project: imageProject(bytes) } : {}) };
     this.#uploads.set(info.id, { info, image: { bytes, sha256 }, at: this.#now() });
     return info;
   }
@@ -152,9 +164,9 @@ export class FirmwareService {
     const expected = parseChecksum(await checksumReply.text());
     if (!expected) throw new FirmwareError("no_checksum");
     const declared = Number(imageReply.headers.get("content-length") ?? 0);
-    if (declared > MAX_IMAGE_BYTES) throw new FirmwareError("bad_size");
+    if (declared > maxImageBytes(kind)) throw new FirmwareError("bad_size");
     const bytes = Buffer.from(await imageReply.arrayBuffer());
-    if (bytes.length < MIN_IMAGE_BYTES || bytes.length > MAX_IMAGE_BYTES) throw new FirmwareError("bad_size");
+    if (bytes.length < MIN_IMAGE_BYTES || bytes.length > maxImageBytes(kind)) throw new FirmwareError("bad_size");
     if (sha256Of(bytes) !== expected) throw new FirmwareError("checksum_mismatch");
     return { bytes, sha256: expected, version };
   }
@@ -182,13 +194,15 @@ export class FirmwareService {
     } catch { return { address, reachable: false }; }
   }
 
-  async #updateNode(target: JobTarget, image: Image, login: { user: string; password: string }): Promise<void> {
+  async #updateNode(target: JobTarget, kind: NodeKind, image: Image, login: { user: string; password: string }): Promise<void> {
     const base = this.#base(target.address);
     const set = (state: TargetState) => { target.state = state; };
     set("checking");
     const before = await this.probe(target.address);
     if (!before.reachable) throw new FirmwareError("node_not_reachable");
     target.node_id = before.node_id; target.version_before = before.version;
+    // A node that says what it is must be the kind this job updates: the updates of a kind go only to nodes of that kind (the image of another one would be taken for good).
+    if (before.kind && before.kind !== kind) throw new FirmwareError("wrong_node_kind");
 
     set("signing_in");
     const signIn = await fetch(`${base}/api/v1/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(login), signal: AbortSignal.timeout(10_000) }).catch(() => undefined);
@@ -242,8 +256,12 @@ export class FirmwareService {
     let upload: Image | undefined;
     if (input.source === "upload") {
       this.#expireUploads();
-      upload = this.#uploads.get(input.uploadId ?? "")?.image;
-      if (!upload) throw new FirmwareError("unknown_upload");
+      const kept = this.#uploads.get(input.uploadId ?? "");
+      upload = kept?.image;
+      if (!kept || !upload) throw new FirmwareError("unknown_upload");
+      // An image that says which project it is built for must be the one of this kind of node (a radar's image sent to an alarm panel would be taken for good and break it).
+      if (kept.info.project && !kept.info.project.replace(/_/g, "-").includes(`armor-${input.kind}`)) throw new FirmwareError("wrong_image_kind");
+      if (upload.bytes.length > maxImageBytes(input.kind)) throw new FirmwareError("bad_size");
     }
     const job: FirmwareJob = {
       id: crypto.randomUUID(), kind: input.kind, source: input.source, state: "preparing", started: this.#now(),
@@ -276,7 +294,7 @@ export class FirmwareService {
     }
     job.version = image.version; job.bytes = image.bytes.length; job.sha256 = image.sha256; job.state = "running";
     for (const target of job.targets) {
-      try { await this.#updateNode(target, upload ?? images.get(boardOf.get(target) ?? "") ?? image, login); }
+      try { await this.#updateNode(target, job.kind, upload ?? images.get(boardOf.get(target) ?? "") ?? image, login); }
       catch (error) { target.state = "failed"; target.error = error instanceof FirmwareError ? error.code : "failed"; }
       if (target.state !== "failed") target.state = "done";
       onNode?.(job, target);

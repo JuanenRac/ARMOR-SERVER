@@ -234,3 +234,18 @@ test("a node without a clock that restarts is not taken for an old one: its time
     assert.equal(state.nodes["north-9"].lux, 77, "the newest message wins, as it arrived later");
   } finally { await running.stop(); }
 });
+
+test("the WebSocket of the events: the path may carry a query, and a page of another site cannot use the operator's cookie", async () => {
+  const port = Number(new URL(server.base).port);
+  const ask = (pathAndQuery: string, extra: string) => new Promise<string>(resolve => {
+    const socket = connect(port, "127.0.0.1", () => socket.write(`GET ${pathAndQuery} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nCookie: ${cookie}\r\n${extra}Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n`));
+    let data = "";
+    socket.on("data", chunk => { data += chunk.toString(); if (data.includes("\r\n\r\n")) socket.destroy(); });
+    socket.on("close", () => resolve(data));
+    socket.on("error", () => resolve(data));
+  });
+  assert.match(await ask("/api/v1/events", ""), /101 Switching/, "a session cookie opens it");
+  assert.match(await ask("/api/v1/events?since=5", ""), /101 Switching/, "with a query string as well");
+  assert.match(await ask("/api/v1/events", `Origin: http://127.0.0.1:${port}\r\n`), /101 Switching/, "from the server's own origin");
+  assert.doesNotMatch(await ask("/api/v1/events", "Origin: http://evil.example\r\n"), /101 Switching/, "not from a page of another site");
+});

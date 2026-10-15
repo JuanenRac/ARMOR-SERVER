@@ -233,3 +233,32 @@ test("the kinds of node and the names of their images", () => {
   assert.deepEqual(imageNames("alarm").image, ["armor_alarm.bin"]);
   assert.ok((NODE_KINDS as readonly string[]).includes("alarm") && RELEASE_SOURCES.alarm.repo === "JuanenRac/ARMOR-ALARM");
 });
+
+test("an image that says it is built for another kind, or a node of another kind, is refused before anything is sent", async () => {
+  const { imageProject, maxImageBytes } = await import("../src/firmware.js");
+  const named = (project: string, size = 120 * 1024) => { const bytes = image(7, size); bytes.writeUInt32LE(0xabcd5432, 32); bytes.fill(0, 80, 112); bytes.write(project, 80, "latin1"); return bytes; };
+  assert.equal(imageProject(named("armor_alarm")), "armor_alarm");
+  assert.equal(imageProject(image(7)), undefined, "an image with no description says nothing");
+  assert.equal(maxImageBytes("hmi"), 6 * 1024 * 1024);
+  assert.equal(maxImageBytes("radar"), 4 * 1024 * 1024);
+  const node = await fakeNode();
+  try {
+    await withServer(node, null, async (running, cookie) => {
+      const upload = async (bytes: Buffer) => (await call(running, cookie, "POST", "/api/v1/admin/firmware/uploads", bytes, { "Content-Type": "application/octet-stream", "X-Firmware-Name": "x.bin" })).body.id as string;
+      const start = (kind: string, id: string) => call(running, cookie, "POST", "/api/v1/admin/firmware/jobs", { kind, source: "upload", upload_id: id, targets: [{ address: "127.0.0.1" }], panel_user: "admin", panel_password: "node-pass" });
+      const alarmImage = await upload(named("armor_alarm"));
+      const wrongKind = await start("radar", alarmImage);
+      assert.equal(wrongKind.status >= 400, true, "an alarm panel's image is not sent as a radar's");
+      assert.equal(node.seen.length, 0);
+      // the right kind of image to a node that says it is another kind (the fake node is a radar)
+      const started = await start("alarm", alarmImage);
+      assert.equal(started.status, 202, JSON.stringify(started.body));
+      const job = await finished(running, cookie, started.body.id);
+      assert.equal(job.targets[0].error, "wrong_node_kind");
+      assert.equal(node.seen.length, 0, "and nothing reached the node");
+      // an image of 5 MB is too big for a radar and fine for the panel
+      const big = await upload(named("armor_radar", 5 * 1024 * 1024));
+      assert.equal((await start("radar", big)).status >= 400, true);
+    });
+  } finally { await node.close(); }
+});

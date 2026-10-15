@@ -27,7 +27,7 @@ export function registerHistoryRoutes(app: Express, context: AppContext): void {
 
   app.get("/api/v1/history", requireOperator, (request, response) => {
     const type = typeof request.query.type === "string" ? request.query.type : undefined;
-    if (type !== undefined && !TYPES.has(type as ArmorEvent["type"])) return response.status(400).json({ error: "type must be alert, node, camera or mode" });
+    if (type !== undefined && !TYPES.has(type as ArmorEvent["type"])) return response.status(400).json({ error: "type must be alert, node, camera, mode, device or alarm" });
     const node = typeof request.query.node === "string" && /^[A-Za-z0-9._-]{1,80}$/.test(request.query.node) ? request.query.node : undefined;
     if (request.query.node !== undefined && !node) return response.status(400).json({ error: "invalid node" });
     const since = timeParam(request.query.since), until = timeParam(request.query.until);
@@ -35,9 +35,11 @@ export function registerHistoryRoutes(app: Express, context: AppContext): void {
     const q = typeof request.query.q === "string" ? request.query.q.trim().slice(0, 80) : undefined;
     const level = typeof request.query.level === "string" ? request.query.level : undefined;
     if (level !== undefined && !["normal", "review", "high"].includes(level)) return response.status(400).json({ error: "level must be normal, review or high" });
-    const order = request.query.order === "asc" ? "asc" : "desc";
-    const list = events.list({ limit: positiveInteger(request.query.limit), before: positiveInteger(request.query.before), type: type as ArmorEvent["type"] | undefined, node, since, until, q: q || undefined, level: level as AlertLevel | undefined, order });
-    return response.json({ events: list, next_before: list.length > 0 ? list[list.length - 1].id : null });
+    // `after=<id>`: what happened after that event, oldest first, so that a client that polls (the phone's service) misses nothing however many events came between two questions.
+    const after = positiveInteger(request.query.after);
+    const order = after !== undefined || request.query.order === "asc" ? "asc" : "desc";
+    const list = events.list({ limit: positiveInteger(request.query.limit), before: after ?? positiveInteger(request.query.before), type: type as ArmorEvent["type"] | undefined, node, since, until, q: q || undefined, level: level as AlertLevel | undefined, order });
+    return response.json({ events: list, next_before: list.length > 0 ? list[list.length - 1].id : null, ...(after !== undefined ? { next_after: list.length > 0 ? list[list.length - 1].id : after } : {}) });
   });
 
   app.get("/api/v1/history/summary", requireOperator, (_request, response) => response.json(events.summary()));
@@ -48,7 +50,7 @@ export function registerHistoryRoutes(app: Express, context: AppContext): void {
     if (request.query.confirm !== "delete") return response.status(400).json({ error: "add confirm=delete to remove history" });
     const scope = request.query.scope;
     const type = typeof request.query.type === "string" ? request.query.type : undefined;
-    if (type !== undefined && !TYPES.has(type as ArmorEvent["type"])) return response.status(400).json({ error: "type must be alert, node, camera or mode" });
+    if (type !== undefined && !TYPES.has(type as ArmorEvent["type"])) return response.status(400).json({ error: "type must be alert, node, camera, mode, device or alarm" });
     let before: number | undefined;
     if (scope === "older-than") {
       const days = Number(request.query.days);

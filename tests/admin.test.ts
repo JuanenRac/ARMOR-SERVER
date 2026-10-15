@@ -174,3 +174,14 @@ test("adopting a node makes its account, writes the broker into the node's panel
     assert.ok(SECRETS.ARMOR_STUDIO_USERNAME);
   } finally { delete process.env.ARMOR_ADMIN_NODE_PORT; await running.stop(); await agent.close(); await new Promise<void>(resolve => panel.close(() => resolve())); }
 });
+
+test("an address that carries a login is shown without it and goes back whole when it was not touched", () => {
+  const current = "ARMOR_MQTT_URL=mqtt://armor:s3cret-pass@127.0.0.1:1883\nARMOR_ALERT_WEBHOOK_URL=https://hooks.example/x?token=abc123&a=1\nARMOR_PORT=18080\n";
+  const shown = maskEnv(current);
+  assert.doesNotMatch(shown, /s3cret-pass|abc123/);
+  assert.match(shown, /mqtt:\/\/armor:\*\*\*@127\.0\.0\.1:1883/);
+  assert.match(shown, /token=\*\*\*&a=1/);
+  assert.deepEqual(unmaskEnv(shown.replace("18080", "19090"), current), { content: current.replace("18080", "19090") }, "what was not touched is given back as it was");
+  const edited = unmaskEnv(shown.replace("127.0.0.1:1883", "10.0.0.5:1883"), current);
+  assert.ok("content" in edited && edited.content.includes("mqtt://armor:s3cret-pass@10.0.0.5:1883"), "editing around a hidden login keeps the login");
+});

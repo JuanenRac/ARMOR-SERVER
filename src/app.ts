@@ -117,7 +117,12 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   // A browser cannot set headers on a WebSocket: an operator session cookie is enough as well as the control token.
   server.on("upgrade", (request, socket, head) => {
     const reader = headerReader(request);
-    const allowed = request.url === "/api/v1/events" && (hasBearer(reader, config.controlToken) || context.operatorAuthorized(reader));
+    // The path is compared without its query string (a client that adds one is the same client), and a page of another site cannot open the socket with the cookie of the operator: when
+    // the request carries an Origin it must be this host's own or one of the configured Studio origins (a token, which a page cannot attach, needs no such check).
+    const path = (request.url ?? "").split("?")[0];
+    const origin = request.headers.origin;
+    const originOk = !origin || (() => { try { return new URL(origin).host === request.headers.host; } catch { return false; } })() || config.studioOrigins.includes(origin);
+    const allowed = path === "/api/v1/events" && (hasBearer(reader, config.controlToken) || (originOk && context.operatorAuthorized(reader)));
     if (!allowed) return socket.destroy();
     return clients.handleUpgrade(request, socket, head, client => clients.emit("connection", client, request));
   });

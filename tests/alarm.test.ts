@@ -163,7 +163,9 @@ test("a sounding alarm is critical and ends with the disarm; a tamper is high; a
   assert.deepEqual(active(), ["alarm_locked_out:warning:alarm-1", "alarm_sounding:critical:alarm-1", "alarm_tamper:high:alarm-1/window"]);
   rules.handleAlarmNode(state({ phase: "disarmed", mode: "disarmed", events: [] }), alarm);
   assert.deepEqual(active(), []);
-  rules.handleAlarmNodeStale("alarm-1", true);
+  rules.handleAlarmNodeStale("alarm-1", true, "disarmed");
+  assert.deepEqual(active(), [], "a panel that was disarmed and goes quiet was not guarding: nothing to wake anybody for");
+  rules.handleAlarmNodeStale("alarm-1", true, "armed");
   assert.deepEqual(active(), ["alarm_offline:warning:alarm-1"]);
   rules.handleAlarmNodeStale("alarm-1", false);
   assert.deepEqual(active(), []);

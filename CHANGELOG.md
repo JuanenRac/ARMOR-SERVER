@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.4] - Audit round two: durable state, safer firmware uploads and history
+
+- The state of the alarm and the pending automation reversals are written durably (fsync and a backup copy); if the state cannot be read the house starts ARMED.
+- Arming raises what is already wrong at that moment: a node or a camera that is down and a door left open while it was disarmed. A disarmed panel that goes quiet no longer wakes anybody.
+- The firmware upload checks that the image is for the right kind of node, with clear errors (wrong_image_kind, wrong_node_kind).
+- The history can be read after a cursor (`after`), and deleting it needs an administrator.
+- Recordings are fragmented MP4, so a cut in the middle keeps what was written; the memory of muted alarms is bounded.
+
 ## [0.5.3] - A PIN to disarm; an alarm while disarmed is accepted; a central that sounds reaches the phone
 
 - **`parseAlarmMessage` accepts `phase: alarm` with `mode: disarmed`** (it rejected the whole message, so a smoke detector sounding in a disarmed house was invisible to the server).

@@ -49,6 +49,13 @@ export function registerSystemRoutes(app: Express, context: AppContext, version:
     const nodes: FieldNode[] = [
       ...Object.values(store.snapshot().nodes).map(node => ({ id: node.node_id, kind: "radar", online: node.online, last_ms: node.timestamp_ms || null, firmware: node.panel?.firmware ?? null })),
       ...context.electricalNodes.list().map(node => ({ id: node.node_id, kind: "electrical", online: !node.stale, last_ms: Date.parse(node.received_at) || null })),
+      ...context.alarmNodes.list().map(node => ({ id: node.node_id, kind: "alarm", online: !node.stale, last_ms: Date.parse(node.received_at) || null })),
+      ...context.networkNodes.list().map(node => ({ id: node.node_id, kind: "network", online: !node.stale, last_ms: Date.parse(node.received_at) || null })),
+      // a solar gateway node reports one reading per equipment on its ports: one entry for the node, online while any of its equipment is
+      ...[...new Set(context.solar.list().map(item => item.node_id))].map(id => {
+        const own = context.solar.list().filter(item => item.node_id === id);
+        return { id, kind: "solar", online: own.some(item => !item.stale), last_ms: Math.max(...own.map(item => Date.parse(item.received_at) || 0)) || null };
+      }),
     ];
     const { systemd, services } = await listServices(readUnits, nodes, procPausedReader, versionReader);
     response.json({ time_ms: Date.now(), systemd, services });

@@ -130,6 +130,12 @@ export class AlarmCentre {
     }
   }
 
+  /** A cause whose alarm was taken off the list stays quiet until it ends; the memory of that is bounded (the oldest is forgotten first). */
+  #mute(key: string): void {
+    this.#muted.add(key);
+    while (this.#muted.size > MAX_KEPT) this.#muted.delete(this.#muted.values().next().value as string);
+  }
+
   /** The facts of an alarm that is still open, kept up to date while it goes on (the loss and the latency of a slow line, say). */
   update(key: string, detail: Record<string, unknown>): void {
     const alarm = this.#open(key);
@@ -190,7 +196,7 @@ export class AlarmCentre {
     if (index < 0) return undefined;
     const [alarm] = this.#alarms.splice(index, 1);
     // The cause is still going on (nobody cleared it): the same condition reported again must not bring the alarm back.
-    if (!alarm.cleared_at) this.#muted.add(alarm.key);
+    if (!alarm.cleared_at) this.#mute(alarm.key);
     this.#save();
     return alarm;
   }
@@ -198,7 +204,7 @@ export class AlarmCentre {
   /** Delete every alarm someone has acknowledged, whether its cause has ended or not (the record, and what was seen and is being lived with). The ones nobody has seen stay. */
   clearAcknowledged(): number {
     const before = this.#alarms.length;
-    for (const alarm of this.#alarms) if (alarm.acknowledged_at && !alarm.cleared_at) this.#muted.add(alarm.key);
+    for (const alarm of this.#alarms) if (alarm.acknowledged_at && !alarm.cleared_at) this.#mute(alarm.key);
     this.#alarms = this.#alarms.filter(alarm => !alarm.acknowledged_at);
     this.#save();
     return before - this.#alarms.length;
@@ -231,6 +237,22 @@ const SOLAR_FAULTS = new Set(["inverter_fault", "bus_over", "bus_under", "bus_so
 export class AlarmRules {
   constructor(private readonly centre: AlarmCentre, private readonly mode: () => SecurityMode, private readonly energy: () => EnergyAlarmSettings = () => ENERGY_ALARM_DEFAULTS) {}
 
+  /**
+   * What is already wrong when the system is armed: a node that fell silent, a camera that stopped answering or a door left open while it was disarmed raised nothing then (they matter
+   * only while armed), and the changes that would raise them have already happened. Set by the context, which knows the nodes, the cameras and the devices.
+   */
+  onArmed: (() => void) | undefined;
+
+  /** A problem that was there before arming, now that it matters. */
+  raisePresentProblems(problems: { nodesDown: string[]; camerasDown: string[]; devicesTriggered: Array<{ id: string; kind: string }> }): void {
+    for (const id of problems.nodesDown) this.centre.raise(`node:${id}:down`, { source: { type: "node", id }, severity: "warning", code: "node_down" });
+    for (const id of problems.camerasDown) this.centre.raise(`camera:${id}:down`, { source: { type: "camera", id }, severity: "warning", code: "camera_down" });
+    for (const device of problems.devicesTriggered) {
+      const info = kindInfo(device.kind as never);
+      if (info.alarm === "armed") this.centre.raise(`device:${device.id}:trigger`, { source: { type: "device", id: device.id }, severity: info.severity, code: DEVICE_CODE[device.kind] ?? "triggered" });
+    }
+  }
+
   /** Node, camera and mode events. */
   handleEvent(event: ArmorEvent | ArmorEventBody): void {
     switch (event.type) {
@@ -247,6 +269,7 @@ export class AlarmRules {
         else if (event.to === "offline" && this.mode() === "armed") this.centre.raise(`camera:${event.camera_id}:down`, { source: { type: "camera", id: event.camera_id }, severity: "warning", code: "camera_down" });
         break;
       case "mode":
+        if (event.mode === "armed") this.onArmed?.();
         // Disarming ends every intrusion alarm: nothing is being defended any more.
         if (event.mode === "disarmed") {
           const ends = (alarm: Alarm) => armedOnlyCodes.has(alarm.code) || alarm.code === "node_down" || alarm.code === "camera_down";
@@ -380,7 +403,8 @@ export class AlarmRules {
   }
 
   /** An alarm node went silent, or came back. Silence matters only while the panel was guarding, which the alarm raised before it fell silent says. */
-  handleAlarmNodeStale(node: string, stale: boolean): void {
+  handleAlarmNodeStale(node: string, stale: boolean, phase?: string): void {
+    if (stale && phase === "disarmed") return;   // a disarmed panel that goes quiet: it was not guarding, so there is nothing to wake anybody for (it is back-to-normal when it speaks again)
     if (stale) this.centre.raise(`alarm:${node}:offline`, { source: { type: "alarm", id: node }, severity: "warning", code: "alarm_offline" });
     else this.centre.clear(`alarm:${node}:offline`);
   }

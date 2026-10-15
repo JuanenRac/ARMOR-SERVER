@@ -136,7 +136,8 @@ export type AlarmStoreOptions = {
   staleAfterMs?: number;
   maxNodes?: number;
   onMessage?: (message: AlarmMessage, previous: AlarmMessage | undefined) => void;
-  onStale?: (node: string, stale: boolean) => void;
+  /** `phase` is the phase of the panel when it fell silent: a panel that was disarmed and goes quiet is not news to wake anybody for. */
+  onStale?: (node: string, stale: boolean, phase?: AlarmMessage["phase"]) => void;
 };
 type Entry = { state: AlarmMessage; receivedAtMs: number; stale: boolean };
 
@@ -167,7 +168,7 @@ export class AlarmStore {
     for (const entry of this.#entries.values()) {
       if (!entry.stale && now - entry.receivedAtMs > this.#options.staleAfterMs) {
         entry.stale = true;
-        this.#options.onStale?.(entry.state.node_id, true);
+        this.#options.onStale?.(entry.state.node_id, true, entry.state.phase);
       }
     }
   }

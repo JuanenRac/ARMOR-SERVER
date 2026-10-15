@@ -23,7 +23,7 @@ from datetime import date
 from pathlib import Path
 
 
-PYTHON_PROJECTS = {"ARMOR-COMMON", "ARMOR-SIMULATOR", "ARMOR-SERVER-AI", "ARMOR-VOICE-AI", "ARMOR-NETWORK"}
+PYTHON_PROJECTS = {"ARMOR-COMMON", "ARMOR-SIMULATOR", "ARMOR-SERVER-AI", "ARMOR-VOICE-AI", "ARMOR-NETWORK", "ARMOR-VISION"}
 PYTEST_PROJECTS = {"ARMOR-UPDATER"}
 NODE_PROJECTS = {"ARMOR-SERVER", "ARMOR-STUDIO"}
 NPM = "npm.cmd" if os.name == "nt" else "npm"
@@ -87,6 +87,18 @@ def check_tool(name: str, message: str) -> str:
     return path
 
 
+def project_python(project: Path) -> str:
+    """The Python of the checkout's own virtual environment with pytest in it (made the first time)."""
+    folder = project / ".venv"
+    python = folder / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    if not python.is_file():
+        command(project, [sys.executable, "-m", "venv", str(folder)])
+    probe = subprocess.run([str(python), "-c", "import pytest"], capture_output=True)
+    if probe.returncode != 0:
+        command(project, [str(python), "-m", "pip", "install", "-q", "pytest>=8.0"])
+    return str(python)
+
+
 def test_project(project: Path, manifest: dict[str, object]) -> None:
     name = str(manifest["name"])
     if name in PYTHON_PROJECTS:
@@ -94,14 +106,13 @@ def test_project(project: Path, manifest: dict[str, object]) -> None:
         environment["PYTHONPATH"] = str(project / "src") + os.pathsep + environment.get("PYTHONPATH", "")
         command(project, [sys.executable, "-m", "unittest", "discover", "-s", "tests"], environment)
     elif name in PYTEST_PROJECTS:
-        # A stdlib-only CLI/install core with an optional pytest-based test
-        # suite and an optional PySide6 desktop shell - `pip install -e
-        # ".[dev]"` first so `pytest` and the package's own console entry
-        # point are both on PATH for this checkout.
-        command(project, [sys.executable, "-m", "pip", "install", "-q", "-e", ".[dev]"])
+        # A stdlib-only CLI/install core with a pytest-based test suite. The tests run from `src` (PYTHONPATH) with pytest from a virtual environment of this checkout (`.venv`,
+        # ignored by git): the project itself is never installed. It used to be `pip install -e`, which pointed the installation at the folder of the build - for the updater that is a
+        # staging folder that is renamed a moment later, so the updated updater could not be imported - and put it in the system Python, which Debian and Raspberry Pi OS refuse (PEP 668).
+        python = project_python(project)
         environment = os.environ.copy()
         environment["PYTHONPATH"] = str(project / "src") + os.pathsep + environment.get("PYTHONPATH", "")
-        command(project, [sys.executable, "-m", "pytest", "tests", "-q"], environment)
+        command(project, [python, "-m", "pytest", "tests", "-q"], environment)
     elif name in NODE_PROJECTS:
         check_tool("npm", "npm is required; install Node.js 22 or newer")
         # A fresh checkout (every CI run; a developer machine only the first
@@ -315,7 +326,7 @@ def run_project(project: Path, manifest: dict[str, object]) -> None:
     environment = os.environ.copy()
     if name in PYTHON_PROJECTS:
         environment["PYTHONPATH"] = str(project / "src") + os.pathsep + environment.get("PYTHONPATH", "")
-        module = {"ARMOR-SIMULATOR": "armor_simulator", "ARMOR-NETWORK": "armor_network", "ARMOR-SERVER-AI": "armor_server_ai.cli", "ARMOR-VOICE-AI": "armor_voice_ai.gateway"}.get(name)
+        module = {"ARMOR-SIMULATOR": "armor_simulator", "ARMOR-NETWORK": "armor_network", "ARMOR-SERVER-AI": "armor_server_ai.cli", "ARMOR-VOICE-AI": "armor_voice_ai.gateway", "ARMOR-VISION": "armor_vision"}.get(name)
         if not module:
             print("ARMOR-COMMON is a library; run its tests or consume it from another project.")
             return

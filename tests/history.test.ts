@@ -113,3 +113,20 @@ test("history routes: filters are validated, deletion needs a confirmation and i
     assert.match(audit, /2 removed|1 removed/);
   } finally { await running.stop(); }
 });
+
+test("history after an event: oldest first, with the cursor to ask again from", async () => {
+  const running = await startServer();
+  try {
+    const operator = { Authorization: `Bearer ${SECRETS.ARMOR_OPERATOR_TOKEN}` };
+    const { events } = running.app.context;
+    for (let index = 0; index < 7; index += 1) events.append({ type: "camera", camera_id: `cam-0${index}`, from: "online", to: "offline" });
+    const get = async (query: string) => await (await fetch(`${running.base}/api/v1/history${query}`, { headers: operator })).json() as { events: Array<{ id: number }>; next_after?: number };
+    const first = await get("?after=2&limit=3");
+    assert.deepEqual(first.events.map(item => item.id), [3, 4, 5]);
+    assert.equal(first.next_after, 5);
+    const second = await get(`?after=${first.next_after}&limit=3`);
+    assert.deepEqual(second.events.map(item => item.id), [6, 7]);
+    const none = await get(`?after=${second.next_after}`);
+    assert.deepEqual([none.events.length, none.next_after], [0, 7], "nothing new: the cursor stays where it was");
+  } finally { await running.stop(); }
+});

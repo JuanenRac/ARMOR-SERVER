@@ -24,6 +24,7 @@ import { AlarmCentre, AlarmRules } from "./alarms.js";
 import { AutomationEngine, type Action } from "./automations.js";
 import { DeviceRegistry, type DeviceChange } from "./devices/registry.js";
 import { sendCommand, type Command } from "./devices/commands.js";
+import { isTriggered } from "./devices/catalog.js";
 import { SiteStore } from "./site.js";
 import { SolarStore } from "./solar.js";
 import { ElectricalStore } from "./electrical.js";
@@ -217,7 +218,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     enabled: config.electricalSwitching, nodes: electricalNodes, audit, now: overrides.now,
     publish: (topic, payload) => { if (!switchLink.publish) throw new Error("the MQTT broker is not connected"); switchLink.publish(topic, payload); },
   });
-  const alarmNodes = new AlarmStore({ now: overrides.now, onMessage: (message, previous) => alarmRules.handleAlarmNode(message, previous), onStale: (node, stale) => alarmRules.handleAlarmNodeStale(node, stale) });
+  const alarmNodes = new AlarmStore({ now: overrides.now, onMessage: (message, previous) => alarmRules.handleAlarmNode(message, previous), onStale: (node, stale, phase) => alarmRules.handleAlarmNodeStale(node, stale, phase) });
   const alarmLink: AppContext["alarmLink"] = {};
   const alarmCommands = new AlarmCommands({
     enabled: config.alarmCommands, nodes: alarmNodes, audit, now: overrides.now,
@@ -232,6 +233,12 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     onEvent: record,
   });
   const cameraWatcher = new CameraWatcher({ list: () => vault.list(), onEvent: record });
+  // Arming looks at what is already wrong (see AlarmRules.onArmed): the changes that would have raised it happened while it did not matter.
+  alarmRules.onArmed = () => alarmRules.raisePresentProblems({
+    nodesDown: Object.entries(store.snapshot().nodes).filter(([, node]) => !node.online || node.stale).map(([id]) => id),
+    camerasDown: cameraWatcher.snapshot().filter(camera => camera.status === "offline").map(camera => camera.id),
+    devicesTriggered: devices.list().filter(device => isTriggered(device.kind, device.state)).map(device => ({ id: device.id, kind: device.kind })),
+  });
   const users = new UserStore({
     file: path.join(config.dataDir, "users.json"), seed: { username: config.studioUsername, password: config.studioPassword },
     minPasswordLength: config.passwordMinLength, resetSeedPassword: config.resetStudioPassword, warn,

@@ -135,7 +135,8 @@ test("registry, state and alarms over HTTP: a door while armed, smoke at any tim
     await ingest("back-door", { open: false });
     await ingest("back-door", { open: true });
     alarms = (await call(running.base, cookie, "GET", "/api/v1/alarms")).body;
-    assert.deepEqual(alarms.active.map((alarm: { code: string }) => alarm.code).sort(), ["door_open", "smoke"]);
+    // (the door was left open when it was armed: that is the first door_open, and the new opening is the second)
+    assert.deepEqual(alarms.active.map((alarm: { code: string }) => alarm.code).sort(), ["door_open", "door_open", "smoke"]);
     // the smoke clears, but it stays on the list until someone acknowledges it
     await ingest("hall-smoke", { triggered: false });
     alarms = (await call(running.base, cookie, "GET", "/api/v1/alarms")).body;

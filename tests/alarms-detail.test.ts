@@ -112,3 +112,20 @@ test("an alarm that is going on and unseen is acknowledged before it can be take
     assert.equal((await del()).status, 200);
   } finally { await running.stop(); }
 });
+
+test("arming looks at what was already wrong: a node that is silent, a camera that is down and a door left open raise their alarms then", async () => {
+  const { startServer, studioCookie } = await import("./helpers.js");
+  const running = await startServer();
+  try {
+    const cookie = await studioCookie(running.base);
+    const context = running.app.context;
+    context.devices.create({ id: "front-door", name: "Front door", kind: "door", protocol: "wifi", source: { type: "push" }, commands: {} });
+    context.devices.applyState("front-door", { open: true });
+    context.store.telemetry({ node_id: "north-1", timestamp_ms: Date.now(), lux: 10, targets: [] });
+    context.store.health({ node_id: "north-1", timestamp_ms: Date.now() + 1, online: false });
+    assert.deepEqual(context.alarms.active().map(alarm => alarm.code), [], "disarmed: none of this matters yet");
+    assert.equal((await fetch(`${running.base}/api/v1/mode`, { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ mode: "armed" }) })).status, 200);
+    const codes = context.alarms.active().map(alarm => alarm.code).sort();
+    assert.deepEqual(codes, ["door_open", "node_down"], "armed with a node down and a door open");
+  } finally { await running.stop(); }
+});
