@@ -67,6 +67,8 @@ export type ArmorConfig = {
   haDiscovery: { prefix: string } | null;
   /** The admin agent (ARMOR-DEVOPS): where its Unix socket is and the token it wants; null when this install has no agent, and Studio then cannot administer services. */
   admin: { socketPath: string; token: string } | null;
+  /** The maintenance agent (ARMOR-DEVOPS): updates from GitHub, the system's updates and the root console; null when this install has none. */
+  maintenance: { socketPath: string; token: string } | null;
   /** The voice gateway (ARMOR-VOICE-AI): its address on this machine and the token it wants; null when this install has none, and written and spoken commands then say so. */
   voice: { url: string; token: string } | null;
   /** The token of the observation service (ARMOR-SERVER-AI); it opens only the /api/v1/ai routes. Null when this install has none. */
@@ -192,6 +194,9 @@ export function readConfig(env: Env = process.env): ArmorConfig {
   const adminSocket = env.ARMOR_ADMIN_SOCKET?.trim() ?? "", adminToken = env.ARMOR_ADMIN_TOKEN?.trim() ?? "";
   if (adminSocket && adminToken.length < MIN_SECRET_LENGTH) throw new ConfigError(`ARMOR_ADMIN_TOKEN must be at least ${MIN_SECRET_LENGTH} characters when ARMOR_ADMIN_SOCKET is set`);
   const admin = adminSocket ? { socketPath: adminSocket, token: adminToken } : null;
+  const maintSocket = env.ARMOR_MAINT_SOCKET?.trim() ?? "", maintToken = env.ARMOR_MAINT_TOKEN?.trim() ?? "";
+  if (maintSocket && maintToken.length < MIN_SECRET_LENGTH) throw new ConfigError(`ARMOR_MAINT_TOKEN must be at least ${MIN_SECRET_LENGTH} characters when ARMOR_MAINT_SOCKET is set`);
+  const maintenance = maintSocket ? { socketPath: maintSocket, token: maintToken } : null;
   const voiceUrl = env.ARMOR_VOICE_URL?.trim() ?? "", voiceToken = env.ARMOR_VOICE_TOKEN?.trim() ?? "";
   if (voiceUrl && voiceToken.length < MIN_SECRET_LENGTH) throw new ConfigError(`ARMOR_VOICE_TOKEN must be at least ${MIN_SECRET_LENGTH} characters when ARMOR_VOICE_URL is set`);
   const voice = voiceUrl ? { url: voiceUrl, token: voiceToken } : null;
@@ -255,7 +260,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     alertDwellMs: integer(env, "ARMOR_ALERT_DWELL_MS", 2000, 0, 60_000),
     alertMinTargets: integer(env, "ARMOR_ALERT_MIN_TARGETS", 1, 1, 20),
     cameraCheckS: integer(env, "ARMOR_CAMERA_CHECK_S", 20, 0, 3600),
-    alertWebhookUrl, alertWebhookSecret, telegram, homeAssistant, alertLanguage, electricalSwitching, alarmCommands, disarmPinRequired, haDiscovery, admin, voice, aiToken,
+    alertWebhookUrl, alertWebhookSecret, telegram, homeAssistant, alertLanguage, electricalSwitching, alarmCommands, disarmPinRequired, haDiscovery, admin, maintenance, voice, aiToken,
     tls,
     warnings,
   };

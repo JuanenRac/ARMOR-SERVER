@@ -24,6 +24,7 @@ import { registerSolarRoutes } from "./routes/solar.js";
 import { registerElectricalRoutes } from "./routes/electrical.js";
 import { registerNetworkRoutes } from "./routes/network.js";
 import { registerAlarmDesignRoutes } from "./routes/alarm_design.js";
+import { registerMaintenanceRoutes } from "./routes/maintenance.js";
 import { networkTopic, parseNetworkMessage } from "./network.js";
 import { electricalTopic, parseElectricalMessage, parseElectricalResult } from "./electrical.js";
 import { alarmTopic, parseAlarmMessage, parseAlarmResult } from "./alarm.js";
@@ -88,6 +89,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerAlarmNodeRoutes(app, context);
   registerNetworkRoutes(app, context);
   registerAlarmDesignRoutes(app, context);
+  registerMaintenanceRoutes(app, context);
   registerAlarmRoutes(app, context);
   registerSystemRoutes(app, context, version);
   registerAdminRoutes(app, context);

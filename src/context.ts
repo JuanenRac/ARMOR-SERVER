@@ -94,6 +94,8 @@ export type AppContext = {
   alarmLink: { publish?: (topic: string, payload: string) => void };
   /** The way to the admin agent, or null when there is none (see admin.ts). */
   admin: AdminAgent | null;
+  /** The maintenance agent: updates from GitHub, the system's updates and the root console (see routes/maintenance.ts). */
+  maintenance: AdminAgent | null;
   /** Updating the firmware of field nodes from Studio (see firmware.ts). */
   firmware: FirmwareService;
   /** What the observation service may ask (see ai.ts). */
@@ -124,7 +126,7 @@ export type AppContext = {
   viewCamera(camera: CameraConnection): ReturnType<typeof cameraView>;
 };
 
-export type ContextOverrides = Partial<Pick<AppContext, "audit" | "admin" | "firmware" | "ai">> & { broadcast?: (state: SystemState) => void; now?: () => number };
+export type ContextOverrides = Partial<Pick<AppContext, "audit" | "admin" | "maintenance" | "firmware" | "ai">> & { broadcast?: (state: SystemState) => void; now?: () => number };
 
 export function createContext(config: ArmorConfig, overrides: ContextOverrides = {}): AppContext {
   const audit = overrides.audit ?? createAuditLog(config.dataDir);
@@ -280,6 +282,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     ai: overrides.ai ?? new AiGateway({ ffmpegPath: config.ffmpegPath ?? "" }), requireAi,
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
+    maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
     alarmDesign, config, store, events, rules, notifier, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),

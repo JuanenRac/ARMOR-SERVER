@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.6] - Maintenance: updates from GitHub, the system's updates and the root console
+
+- `/api/v1/admin/updates`, `/updates/{id}/rollback`, `/system/check|upgrade|reboot` and `/maintenance/jobs/{id}` ask the maintenance helper (its own Unix socket and token, ARMOR_MAINT_SOCKET and ARMOR_MAINT_TOKEN) to compare what is installed with the newest release of each program on GitHub, install them, put the previous one back and update the operating system, with the progress of every job.
+- `/api/v1/admin/console` (state, unlock, lock, run, follow a job, cancel): a root console that is off unless the helper has it on, asks the administrator for the password again before the first command and after ten minutes without use, closes the door for five minutes after five wrong passwords, and writes every command and how it ended in the audit trail.
+- Everything is for administrators only; an operator gets a refusal and the helper is never asked.
+
 ## [0.5.5] - The alarm design
 
 - `GET` and `PUT /api/v1/alarm/design` (and its versions) keep the house's alarm drawn in Studio's Alarm Designer, the way the electrical and network drawings are kept: one document with a revision, a save made from an out-of-date copy is refused, and the earlier versions can be taken back. It is a drawing: nothing arms, disarms or sounds anything.
