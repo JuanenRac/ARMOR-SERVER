@@ -80,6 +80,8 @@ export type AppContext = {
   /** How the machine is doing (processor, memory, temperatures, disks, network cards): sampled while the server runs, see system_metrics.ts. */
   systemMonitor: SystemMonitor;
   network: SiteStore;
+  /** The alarm drawn in Studio's Alarm Designer (panels, sensors, sirens and how they are joined). */
+  alarmDesign: SiteStore;
   /** The one way a command reaches an electrical node's switch: off unless the operator turned it on (see electrical_switching.ts). */
   electricalSwitching: SwitchingService;
   /** Where its commands are published; set when the broker is connected (never retained, at most once). */
@@ -213,6 +215,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     onStale: (node, stale) => alarmRules.handleNetworkStale(node, stale),
   });
   const network = new SiteStore(path.join(config.dataDir, "network.json"), () => new Date(), "network design");
+  const alarmDesign = new SiteStore(path.join(config.dataDir, "alarm_design.json"), () => new Date(), "alarm design");
   const switchLink: AppContext["switchLink"] = {};
   const electricalSwitching = new SwitchingService({
     enabled: config.electricalSwitching, nodes: electricalNodes, audit, now: overrides.now,
@@ -277,7 +280,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     ai: overrides.ai ?? new AiGateway({ ffmpegPath: config.ffmpegPath ?? "" }), requireAi,
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
-    config, store, events, rules, notifier, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    alarmDesign, config, store, events, rules, notifier, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

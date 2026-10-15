@@ -20,13 +20,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-313%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-168%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="Maturity">
 </p>
 
 ---
 
-**Controllo di onestà - cosa funziona oggi:** Ogni rotta, sessione, cifratura e regola delle prove qui sotto è reale e coperta da test (`npm test`, 313 test, con una suite di integrazione HTTP completa contro un server isolato). Ha funzionato con un vero broker MQTT sulla CM5 (con script e con due nodi radar reali), ha trasmesso video dal vivo, salvato un'istantanea e registrato da cinque vere telecamere IP tramite FFmpeg. Ciò che **non è ancora provato**: ONVIF con una vera telecamera ONVIF, il PTZ su ogni firmware di telecamera (funziona sull'unità Hi3510), qualunque hardware Jetson e le rotte solari con un vero nodo gateway (sono testate con letture generate).
+**Controllo di onestà - cosa funziona oggi:** Ogni rotta, sessione, cifratura e regola delle prove qui sotto è reale e coperta da test (`npm test`, 168 test, con una suite di integrazione HTTP completa contro un server isolato). Ha funzionato con un vero broker MQTT sulla CM5 (con script, non con il firmware di un nodo di campo), ha trasmesso video dal vivo, salvato un'istantanea e registrato da cinque vere telecamere IP tramite FFmpeg. Ciò che **non è ancora provato**: ONVIF con una vera telecamera ONVIF, il PTZ su ogni firmware di telecamera (funziona sull'unità Hi3510), qualunque hardware Jetson e le rotte solari con un vero nodo gateway (sono testate con letture generate).
 
 ---
 
@@ -43,9 +43,6 @@
 * **Utenti:** nomi e password (hash scrypt), un ruolo `admin` che gestisce gli utenti e un ruolo `operator` che opera; cambiare una password o un ruolo chiude le altre sessioni di quell'utente.
 * **Dispositivi, allarmi e automazioni:** dispositivi di fumo, gas, allagamento, porta, finestra, movimento, clima, presa, luce, sirena e serratura via MQTT o invio autenticato, con stato normalizzato, disponibilità e comandi; allarmi con ciclo generato / riconosciuto / cancellato; regole che comandano dispositivi quando succede qualcosa; inserire e disinserire da una sessione aperta; e il progetto del sito conservato sul server per tutti i client.
 * **Letture solari:** inverter e pacchi di batterie (con ogni cella e le capacità) arrivano via HTTP o MQTT, sono validati dal contratto condiviso, conservati con una cronologia (un campione ogni 30 s per un giorno) e totali, segnati come obsoleti dopo due minuti, e generano quattro allarmi (guasto dell'inverter, batteria scarica, allarme della batteria, dispositivo muto).
-* **La macchina, la rete e il pannello:** `GET /api/v1/system/metrics` (CPU, memoria, dischi, temperatura, rete e una breve cronologia della macchina su cui gira), `GET/PUT /api/v1/system/connection` (indirizzo e porte di ascolto, solo per un amministratore, applicati al prossimo avvio), `GET /api/v1/panel/summary` (poche centinaia di byte per schermi piccoli) e, per il nodo di rete, gli accessi che un amministratore salva per l'amministrazione web di un dispositivo: cifrati (AES-256-GCM), mai restituiti e consegnati solo dentro l'unico ordine `inspect` che ne ha bisogno.
-* **Un PIN per disattivare:** ogni utente può avere un PIN e un PIN di coercizione. Disattivare da Studio, dal telefono, dal pannello a muro, con un comando a una centrale d'allarme o con la voce lo richiede; tre PIN errati bloccano l'utente per un minuto, poi cinque, poi quindici, e il PIN di coercizione disattiva facendo scattare in silenzio un allarme critico. `ARMOR_DISARM_PIN=required` rende il PIN obbligatorio.
-* **Un rilevamento che né il silenzio né un'interruzione di corrente ingannano:** un solo bersaglio mantenuto per il tempo di attesa è un'intrusione (`ARMOR_ALERT_MIN_TARGETS`, 1 per impostazione predefinita), un radar con i sensori morti diventa obsoleto anche se il suo battito continua, una centrale d'allarme che suona a sistema disattivato viene accettata e segnalata via Telegram, Home Assistant, webhook e MQTT, e un file di stato o di utenti danneggiato da un'interruzione viene sostituito dall'ultima copia buona (senza copie il server parte inserito).
 
 ## 🔄 Architettura
 
@@ -71,16 +68,14 @@ flowchart LR
 ## 🌐 API
 
 * Pubblica: `GET /healthz`. Per un operatore: stato, informazioni, telecamere, media, cronologia, regole, dispositivi, allarmi, automazioni, progetto del sito e `GET /api/v1/solar` con la sua cronologia.
-* Per i nodi di campo e i gateway: `POST /api/v1/telemetry`, `/health`, `/solar`, `/electrical/readings` e `/alarm/state` con il token di ingestione, e i topic MQTT `armor/node/#`, `armor/solar/#`, `armor/electrical/#` e `armor/alarm/#`. Un amministratore può inserire e disinserire la centrale di un nodo d'allarme con `POST /api/v1/alarm/command`, rifiutato salvo `ARMOR_ALARM_COMMANDS=1` (e se anche il nodo e il broker lo permettono). Gli eventi raggiungono le console dal WebSocket `/api/v1/events`.
+* Per i nodi di campo e i gateway: `POST /api/v1/telemetry`, `/health`, `/solar` e `/electrical/readings` con il token di ingestione, e i topic MQTT `armor/node/#`, `armor/solar/#` e `armor/electrical/#`. Gli eventi raggiungono le console dal WebSocket `/api/v1/events`.
 * Ogni rotta, la sua regola di accesso e il suo schema sono nel file OpenAPI di [ARMOR-COMMON](https://github.com/JuanenRac/ARMOR-COMMON), e un test verifica che non ne manchi nessuna.
 
 ## ⚙️ Configurazione
 
 * Copia `.env.example` in `.env` (ignorato da Git), oppure lascia che `run.bat` / `run.sh` generi segreti casuali alla prima esecuzione.
 * Obbligatorie: `ARMOR_INGEST_TOKEN` e `ARMOR_CONTROL_TOKEN` (24 caratteri o più, tutte diverse) e `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD` (il primo amministratore).
-* Comuni: `ARMOR_HOST` / `ARMOR_PORT`, `ARMOR_DATA_DIR`, `ARMOR_FFMPEG_PATH` (video dal vivo e cattura), `ARMOR_MQTT_URL`, `ARMOR_STUDIO_ORIGIN`, `ARMOR_NODE_STALE_AFTER_S`, `ARMOR_CAMERA_CHECK_S`, `ARMOR_ALERT_DWELL_MS`, `ARMOR_ALERT_MIN_TARGETS`, `ARMOR_DISARM_PIN`, `ARMOR_ALERT_WEBHOOK_URL` e `ARMOR_COOKIE_SECURE` (a `1` dietro TLS).
-* **Firmware, avvisi e voce:** il server aggiorna il firmware dei nodi di campo (un file o la release di GitHub, un nodo o tutti quelli di un tipo, con avanzamento e verifica dello SHA-256), invia gli allarmi a Telegram e a Home Assistant (con ritentativi e una riga di audit senza segreti, nelle sette lingue) ed esegue quindici comandi scritti o parlati tramite il gateway vocale (lo stato, gli allarmi, i nodi, le telecamere, i radar, i sistemi solare ed elettrico, la rete, l'ora, l'aiuto e le luci; armare e disarmare si confermano in un secondo turno). Il servizio di osservazione solleva `camera_motion` con un token proprio. Vedi [firmware dei nodi](docs/NODE_FIRMWARE.md) e [integrazione](docs/INTEGRATION.md).
-* **L'installazione in un file, un account proprio per il pannello a muro e Home Assistant:** un amministratore scarica l'intera installazione (le telecamere senza password, i progetti, le regole, le automazioni, i dispositivi, l'impianto solare e le soglie degli allarmi di energia; mai una password, un token o una chiave) e la importa su un'altra macchina, dove progetti, regole e soglie sostituiscono e gli elenchi aggiungono solo ciò che manca; un ruolo `panel` (privilegio minimo) lascia a un pannello a muro leggere il riepilogo, cambiare la modalità e riconoscere gli allarmi, e nient'altro, e il riepilogo porta l'energia della casa; con `ARMOR_HA_DISCOVERY=1` Home Assistant, che legge lo stesso broker, trova da solo i sensori dell'impianto solare, i canali elettrici e le centrali d'allarme (sola lettura, disattivato per impostazione predefinita).
+* Comuni: `ARMOR_HOST` / `ARMOR_PORT`, `ARMOR_DATA_DIR`, `ARMOR_FFMPEG_PATH` (video dal vivo e cattura), `ARMOR_MQTT_URL`, `ARMOR_STUDIO_ORIGIN`, `ARMOR_NODE_STALE_AFTER_S`, `ARMOR_CAMERA_CHECK_S`, `ARMOR_ALERT_DWELL_MS`, `ARMOR_ALERT_WEBHOOK_URL` e `ARMOR_COOKIE_SECURE` (a `1` dietro TLS).
 
 ## 📂 Struttura del repository
 
@@ -104,7 +99,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 313 tests: unit + full HTTP integration
+npm test            # 168 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```
@@ -119,14 +114,12 @@ Per installare sul banco di prova CM5 (isolato da ogni altro progetto, con utent
 * **[ARMOR-RADAR](https://github.com/JuanenRac/ARMOR-RADAR)** - Firmware del nodo di campo per ESP32-S3 con tre radar e un proprio pannello web
 * **[ARMOR-SOLAR](https://github.com/JuanenRac/ARMOR-SOLAR)** - Protocolli di inverter e batterie solari e messaggi di un nodo gateway
 * **[ARMOR-ELECTRICAL](https://github.com/JuanenRac/ARMOR-ELECTRICAL)** - Nodo elettrico: contatori, il messaggio delle letture della rete e le regole di manovra
-* **[ARMOR-ALARM](https://github.com/JuanenRac/ARMOR-ALARM)** - Nodo e centrale d'allarme: zone, inserimento, ritardi, sirena e PIN, con il server o senza
 * **[ARMOR-HMI](https://github.com/JuanenRac/ARMOR-HMI)** - Pannello touch: lo stato del sistema su uno schermo a parete, attivare e riconoscere gli allarmi, e la casa dell'assistente vocale
 * **[ARMOR-NETWORK](https://github.com/JuanenRac/ARMOR-NETWORK)** - La rete locale: i suoi dispositivi, internet e ciò che cambia
 * **ARMOR-SERVER** (questo repository) - Coordinatore centrale: telemetria, allarmi, dispositivi, letture solari e telecamere
 * **[ARMOR-STUDIO](https://github.com/JuanenRac/ARMOR-STUDIO)** - Console web: telecamere, radar, allarmi, energia solare e progettista del sito 2D/3D
 * **[ARMOR-ANDROID-CONTROL](https://github.com/JuanenRac/ARMOR-ANDROID-CONTROL)** - Client Android dell'operatore con radar 2D/3D in tempo reale
 * **[ARMOR-SERVER-AI](https://github.com/JuanenRac/ARMOR-SERVER-AI)** - Politica di inferenza visiva che spiega le sue decisioni e non agisce mai
-* **[ARMOR-VISION](https://github.com/JuanenRac/ARMOR-VISION)** - Zone delle telecamere, maschere e regole di rilevamento per la Jetson Orin NX
 * **[ARMOR-VOICE-AI](https://github.com/JuanenRac/ARMOR-VOICE-AI)** - Intenti vocali offline con una conferma impossibile da falsificare
 * **[ARMOR-HARDWARE](https://github.com/JuanenRac/ARMOR-HARDWARE)** - Contenitori, elettronica e matrice di accettazione da banco
 * **[ARMOR-DEVOPS](https://github.com/JuanenRac/ARMOR-DEVOPS)** - Distribuzione, banco di prova CM5, backup e TLS

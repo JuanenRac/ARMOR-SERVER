@@ -20,13 +20,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-313%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-168%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="Maturity">
 </p>
 
 ---
 
-**正直さのチェック - 今日動いているもの:** 以下のすべてのルート、セッション、暗号化、証拠の規則は実在し、テストで網羅されています（`npm test`、313 件。隔離したサーバーに対する完全な HTTP 統合テストを含む）。CM5 上の実際の MQTT ブローカーに対して動作し（スクリプトと 2 台の実際のレーダーノードによる）、5 台の実際の IP カメラから FFmpeg でライブ映像の配信、スナップショットの保存、録画を行いました。**まだ実証されていないもの：** 実際の ONVIF カメラでの ONVIF、すべてのカメラファームウェアでの PTZ（Hi3510 の機種では動作します）、Jetson ハードウェア全般、そして実際のゲートウェイノードでの太陽光ルート（生成した測定値でテストしています）。
+**正直さのチェック - 今日動いているもの:** 以下のすべてのルート、セッション、暗号化、証拠の規則は実在し、テストで網羅されています（`npm test`、168 件。隔離したサーバーに対する完全な HTTP 統合テストを含む）。CM5 上の実際の MQTT ブローカーに対して動作し（スクリプトによるもので、フィールドノードのファームウェアではありません）、5 台の実際の IP カメラから FFmpeg でライブ映像の配信、スナップショットの保存、録画を行いました。**まだ実証されていないもの：** 実際の ONVIF カメラでの ONVIF、すべてのカメラファームウェアでの PTZ（Hi3510 の機種では動作します）、Jetson ハードウェア全般、そして実際のゲートウェイノードでの太陽光ルート（生成した測定値でテストしています）。
 
 ---
 
@@ -43,9 +43,6 @@
 * **ユーザー：** 名前とパスワード（scrypt ハッシュ）、ユーザーを管理する `admin` ロールと操作する `operator` ロール。パスワードやロールを変えると、そのユーザーの他のセッションは終了します。
 * **デバイス、アラーム、自動化：** 煙、ガス、浸水、ドア、窓、動き、気候、プラグ、照明、サイレン、鍵のデバイスを MQTT または認証付きプッシュで扱い、正規化された状態、可用性、コマンドを持ちます。発生 / 確認済み / 解消のライフサイクルを持つアラーム。出来事に応じてデバイスを切り替える規則。サインイン済みセッションからの警戒と解除。そしてすべてのクライアントのためにサーバーに保存されるサイト設計。
 * **太陽光の測定値：** インバーターとバッテリースタック（各セルと容量を含む）が HTTP または MQTT で届き、共有の契約で検証され、履歴（1 日分を 30 s ごとに 1 サンプル）と合計とともに保持され、2 分後に期限切れとされ、4 種類のアラーム（インバーターの故障、バッテリー残量低下、バッテリーのアラーム、デバイスの沈黙）を上げます。
-* **マシン、ネットワーク、パネル：** `GET /api/v1/system/metrics`（稼働マシンのCPU、メモリ、ディスク、温度、ネットワークと短い履歴）、`GET/PUT /api/v1/system/connection`（待ち受けアドレスとポート、管理者のみ、次回起動時に反映）、`GET /api/v1/panel/summary`（小型画面向けの数百バイト）、そしてネットワークノード向けに、管理者がデバイスのWeb管理用に保存するログイン：暗号化（AES-256-GCM）され、返されることはなく、必要な `inspect` 命令の中でのみ渡されます。
-* **解除用の PIN：** 各ユーザーは PIN と脅迫用 PIN を持てます。Studio、スマートフォン、壁のパネル、警報盤への命令、音声のどれで解除するときも PIN を求め、3 回間違えるとそのユーザーを 1 分、次は 5 分、その次は 15 分ロックします。脅迫用 PIN は解除しつつ、静かに重大な警報を出します。`ARMOR_DISARM_PIN=required` で PIN を必須にできます。
-* **沈黙や停電にだまされない検知：** 待ち時間のあいだ続く単一の目標は侵入として扱います（`ARMOR_ALERT_MIN_TARGETS`、既定は 1）。センサーが死んだレーダーはハートビートが続いても古い扱いになり、警戒解除中に鳴る警報盤は受け付けて Telegram、Home Assistant、Webhook、MQTT で知らせ、停電で壊れた状態ファイルやユーザーファイルは直前の正常なコピーに置き換えます（コピーがなければサーバーは警戒状態で起動します）。
 
 ## 🔄 アーキテクチャ
 
@@ -71,16 +68,14 @@ flowchart LR
 ## 🌐 API
 
 * 公開：`GET /healthz`。オペレーター向け：状態、情報、カメラ、メディア、履歴、規則、デバイス、アラーム、自動化、サイト設計、履歴付きの `GET /api/v1/solar`。
-* フィールドノードとゲートウェイ向け：取り込みトークンを使う `POST /api/v1/telemetry`、`/health`、`/solar`、`/electrical/readings`、`/alarm/state` と、MQTT トピック `armor/node/#`、`armor/solar/#`、`armor/electrical/#`、`armor/alarm/#`。管理者は `POST /api/v1/alarm/command` で警報ノードの警報盤を警戒セット・解除できますが、`ARMOR_ALARM_COMMANDS=1`（かつノードとブローカーも許可）でなければ拒否されます。イベントは WebSocket `/api/v1/events` でコンソールに届きます。
+* フィールドノードとゲートウェイ向け：取り込みトークンを使う `POST /api/v1/telemetry`、`/health`、`/solar`、`/electrical/readings` と、MQTT トピック `armor/node/#`、`armor/solar/#`、`armor/electrical/#`。イベントは WebSocket `/api/v1/events` でコンソールに届きます。
 * すべてのルート、そのアクセス規則、スキーマは [ARMOR-COMMON](https://github.com/JuanenRac/ARMOR-COMMON) の OpenAPI ファイルにあり、漏れがないことをテストが確認します。
 
 ## ⚙️ 設定
 
 * `.env.example` を `.env`（Git は無視）にコピーするか、`run.bat` / `run.sh` に初回実行でランダムなシークレットを生成させます。
 * 必須：`ARMOR_INGEST_TOKEN` と `ARMOR_CONTROL_TOKEN`（24 文字以上、すべて異なる）、および `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD`（最初の管理者）。
-* よく使う：`ARMOR_HOST` / `ARMOR_PORT`、`ARMOR_DATA_DIR`、`ARMOR_FFMPEG_PATH`（ライブ映像と撮影）、`ARMOR_MQTT_URL`、`ARMOR_STUDIO_ORIGIN`、`ARMOR_NODE_STALE_AFTER_S`、`ARMOR_CAMERA_CHECK_S`、`ARMOR_ALERT_DWELL_MS`、`ARMOR_ALERT_MIN_TARGETS`、`ARMOR_DISARM_PIN`、`ARMOR_ALERT_WEBHOOK_URL`、`ARMOR_COOKIE_SECURE`（TLS の背後では `1`）。
-* **ファームウェア、通知、音声：** サーバーは現場ノードのファームウェアを更新し（ファイルまたは GitHub のリリース、1 台または種類ごとの全ノード、進捗表示と SHA-256 の確認付き）、アラームを Telegram と Home Assistant に送り（再試行あり、秘密を含まない監査行、7 言語）、音声ゲートウェイ経由で 15 個の文字または音声のコマンド（状態、アラーム、ノード、カメラ、レーダー、太陽光と電気のシステム、ネットワーク、時刻、ヘルプ、照明。警戒と解除は 2 回目のターンで確認）を実行します。観測サービスは専用のトークンで `camera_motion` を上げます。[ノードのファームウェア](docs/NODE_FIRMWARE.md)と[統合](docs/INTEGRATION.md)を参照。
-* **1 つのファイルでのインストール環境、壁面パネル専用アカウント、Home Assistant：** 管理者はインストール環境全体（パスワードなしのカメラ、設計、ルール、オートメーション、デバイス、太陽光設備、エネルギー警報のレベル。パスワード・トークン・鍵は含みません）をダウンロードし、別のマシンへインポートできます。設計・ルール・警報レベルは置き換えられ、一覧は不足分だけが追加されます。`panel` ロール（最小権限）の壁面パネルは、概要の読み取り、モード変更、警報の確認だけができ、概要には住宅のエネルギーが含まれます。`ARMOR_HA_DISCOVERY=1` にすると、同じブローカーを読む Home Assistant が太陽光設備のセンサー、電気チャンネル、警報盤を自動的に見つけます（読み取り専用、既定はオフ）。
+* よく使う：`ARMOR_HOST` / `ARMOR_PORT`、`ARMOR_DATA_DIR`、`ARMOR_FFMPEG_PATH`（ライブ映像と撮影）、`ARMOR_MQTT_URL`、`ARMOR_STUDIO_ORIGIN`、`ARMOR_NODE_STALE_AFTER_S`、`ARMOR_CAMERA_CHECK_S`、`ARMOR_ALERT_DWELL_MS`、`ARMOR_ALERT_WEBHOOK_URL`、`ARMOR_COOKIE_SECURE`（TLS の背後では `1`）。
 
 ## 📂 リポジトリの構成
 
@@ -104,7 +99,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 313 tests: unit + full HTTP integration
+npm test            # 168 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```
@@ -119,14 +114,12 @@ CM5 テストベンチ（他のすべてのプロジェクトから隔離され�
 * **[ARMOR-RADAR](https://github.com/JuanenRac/ARMOR-RADAR)** - ESP32-S3 用フィールドノードのファームウェア。レーダー 3 基と独自の Web パネル付き
 * **[ARMOR-SOLAR](https://github.com/JuanenRac/ARMOR-SOLAR)** - 太陽光インバーターとバッテリーのプロトコル、およびゲートウェイノードのメッセージ
 * **[ARMOR-ELECTRICAL](https://github.com/JuanenRac/ARMOR-ELECTRICAL)** - 電気ノード：電力量計、電力網の計測メッセージ、開閉のルール
-* **[ARMOR-ALARM](https://github.com/JuanenRac/ARMOR-ALARM)** - 警報ノードと警報盤：警戒区域、警戒セット、遅延、サイレン、PIN。サーバーがあってもなくても
 * **[ARMOR-HMI](https://github.com/JuanenRac/ARMOR-HMI)** - タッチパネル：壁面ディスプレイでのシステム状態表示、警戒・確認操作、音声アシスタントの拠点
 * **[ARMOR-NETWORK](https://github.com/JuanenRac/ARMOR-NETWORK)** - ローカルネットワーク：機器、インターネット、そして変化
 * **ARMOR-SERVER** (このリポジトリ) - 中央コーディネーター：テレメトリ、アラーム、デバイス、太陽光の測定値、カメラ
 * **[ARMOR-STUDIO](https://github.com/JuanenRac/ARMOR-STUDIO)** - Web コンソール：カメラ、レーダー、アラーム、太陽光発電、2D/3D サイト設計
 * **[ARMOR-ANDROID-CONTROL](https://github.com/JuanenRac/ARMOR-ANDROID-CONTROL)** - リアルタイム 2D/3D レーダー付きの Android オペレータークライアント
 * **[ARMOR-SERVER-AI](https://github.com/JuanenRac/ARMOR-SERVER-AI)** - 判断を説明し、決して動作しない視覚推論ポリシー
-* **[ARMOR-VISION](https://github.com/JuanenRac/ARMOR-VISION)** - Jetson Orin NX 向けのカメラのゾーン、マスク、検知ルール
 * **[ARMOR-VOICE-AI](https://github.com/JuanenRac/ARMOR-VOICE-AI)** - 偽造できない確認を備えたオフライン音声インテント
 * **[ARMOR-HARDWARE](https://github.com/JuanenRac/ARMOR-HARDWARE)** - 筐体、電子部品、ベンチ受け入れマトリクス
 * **[ARMOR-DEVOPS](https://github.com/JuanenRac/ARMOR-DEVOPS)** - デプロイ、CM5 テストベンチ、バックアップ、TLS

@@ -45,7 +45,7 @@ REQUIRED_MANIFEST_KEYS = (
     "deployment_target", "maturity", "family", "parent", "build", "notes", "native_version",
 )
 VALID_MATURITY = {"scaffolding", "functional", "established", "production"}
-SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
+SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:\.\d+)?$")   # three components up to 0.7.9, four from 0.8.0
 VERSION_HEADING = re.compile(r"(?im)^#{1,3}\s*\[?(\d+\.\d+\.\d+)(?:\]|\s|$)")
 
 # A version-shaped token sitting next to one of these "current version"
@@ -143,7 +143,7 @@ def main() -> int:
     if manifest["name"] != ROOT.name:
         fail(f"manifest name {manifest['name']!r} must match repository directory {ROOT.name!r}")
     if not isinstance(manifest["version"], str) or not SEMVER.fullmatch(manifest["version"]):
-        fail("manifest version must be MAJOR.MINOR.PATCH")
+        fail("manifest version must be MAJOR.MINOR.PATCH (or MAJOR.MINOR.PATCH.BUILD from 0.8.0)")
     if manifest["maturity"] not in VALID_MATURITY:
         fail(f"unsupported maturity: {manifest['maturity']!r}")
     if not isinstance(manifest["technologies"], list) or not manifest["technologies"]:
@@ -167,7 +167,7 @@ def main() -> int:
 
     # A Python project's pyproject.toml `version` and its package
     # `__init__.py`'s `__version__` mirror are a separate copy of the same
-    # number - found while auditing the ecosystem, several had silently
+    # number - found in practice, several had silently
     # drifted behind the manifest (armor_project_tool.py's `bump()` now
     # keeps them in sync going forward; this check catches a future regression
     # or a manual edit that skips it).

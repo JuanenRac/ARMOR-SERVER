@@ -256,20 +256,28 @@ def validate_markdown_links(project: Path) -> None:
     print("ARMOR_DOCS_LINKS=PASS")
 
 
+def next_version(version: str) -> str:
+    """The odometer of the family: no component ever reaches 10 (0.2.9 -> 0.3.0). Three components up to 0.7.9; from 0.8.0 a project has four (0.7.9 -> 0.8.0.0 -> 0.8.0.9 -> 0.8.1.0 -> ... -> 0.8.9.9 -> 0.9.0.0)."""
+    numbers = [int(part) for part in version.split(".")]
+    if len(numbers) == 3 and numbers[:2] >= [0, 8]:
+        return ".".join(str(number) for number in numbers + [0])   # 0.8.0 is already 0.8.0.0
+    if numbers == [0, 7, 9]:
+        return "0.8.0.0"
+    index = len(numbers) - 1
+    numbers[index] += 1
+    while index > 0 and numbers[index] == 10:
+        numbers[index] = 0
+        index -= 1
+        numbers[index] += 1
+    return ".".join(str(number) for number in numbers)
+
+
 def bump(project: Path, manifest: dict[str, object]) -> tuple[str, str]:
     before = str(manifest["version"])
     parts = before.split(".")
-    if len(parts) != 3 or any(not part.isdigit() for part in parts):
-        raise RuntimeError("manifest version must use major.minor.patch numeric format")
-    # Odometer scheme: PATCH +1, rolling into MINOR past 9 (0.2.9 -> 0.3.0),
-    # A previous version of this function stopped at 0.2.10 - a real
-    # mistake found and corrected on ARMOR-SERVER's own 0.2.9 -> 0.2.10 bump.
-    major, minor, patch = (int(part) for part in parts)
-    patch += 1
-    if patch > 9:
-        patch = 0
-        minor += 1
-    after = f"{major}.{minor}.{patch}"
+    if len(parts) not in (3, 4) or any(not part.isdigit() for part in parts):
+        raise RuntimeError("manifest version must use major.minor.patch (or major.minor.patch.build) numeric format")
+    after = next_version(before)
     manifest["version"] = after
     manifest["native_version"] = after
     manifest_path = project / "armor.project.json"
@@ -293,8 +301,8 @@ def bump(project: Path, manifest: dict[str, object]) -> tuple[str, str]:
         gradle_file.write_text(gradle, encoding="utf-8")
     # A Python project's own pyproject.toml `version` (PyPI-style packaging
     # identity) and its package `__init__.py`'s `__version__` mirror are a
-    # separate copy of the number from armor.project.json's - found while
-    # auditing the ecosystem: ARMOR-NETWORK's pyproject.toml stayed at 0.0.1
+    # separate copy of the number from armor.project.json's - found in
+    # practice: ARMOR-NETWORK's pyproject.toml stayed at 0.0.1
     # while its manifest reached 0.0.2, and ARMOR-COMMON's stayed at 0.2.3
     # against a manifest already at 0.2.6, unnoticed because nothing kept
     # them in sync. Kept narrow to the projects that actually have a

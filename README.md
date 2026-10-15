@@ -20,13 +20,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-313%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-168%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="Maturity">
 </p>
 
 ---
 
-**Honesty check - what runs today:** Every route, session, encryption and evidence rule below is real and covered by tests (`npm test`, 313 tests, including a full HTTP integration suite against an isolated server). It has run against a real MQTT broker on the CM5 (with scripts and with two real radar nodes), and has streamed live video, saved a snapshot and recorded from five real IP cameras through FFmpeg. What is **not** proven yet: ONVIF against a real ONVIF camera, PTZ on every camera firmware (it works on the Hi3510 unit), any Jetson hardware, and the solar routes against a real gateway node (they are tested with generated readings).
+**Honesty check - what runs today:** Every route, session, encryption and evidence rule below is real and covered by tests (`npm test`, 168 tests, including a full HTTP integration suite against an isolated server). It has run against a real MQTT broker on the CM5 (with scripts, not field-node firmware), and has streamed live video, saved a snapshot and recorded from five real IP cameras through FFmpeg. What is **not** proven yet: ONVIF against a real ONVIF camera, PTZ on every camera firmware (it works on the Hi3510 unit), any Jetson hardware, and the solar routes against a real gateway node (they are tested with generated readings).
 
 ---
 
@@ -43,9 +43,6 @@
 * **Users:** names and passwords (scrypt hashes), an `admin` role that manages users and an `operator` role that operates; a changed password or role ends that user's other sessions.
 * **Devices, alarms and automations:** smoke, gas, flood, door, window, motion, climate, plug, light, siren and lock devices over MQTT or an authenticated push, with normalised state, availability and commands; alarms with a raised / acknowledged / cleared lifecycle; rules that switch devices when something happens; arm and disarm from a signed-in session; and the site design kept on the server for every client.
 * **Solar readings:** inverters and battery stacks (with each cell and the capacities) arrive by HTTP or MQTT, are validated by the shared contract, kept with a history (a sample every 30 s for a day) and totals, marked stale after two minutes, and raise four alarms (inverter fault, battery low, battery alarm, device silent).
-* **The machine, the network and the panel:** `GET /api/v1/system/metrics` (CPU, memory, disks, temperature, network and a short history of the machine it runs on), `GET/PUT /api/v1/system/connection` (the address and ports it listens on, an administrator's, applied at the next start), `GET /api/v1/panel/summary` (a few hundred bytes for small screens) and, for the network node, the logins an administrator keeps for a device's web administration: encrypted (AES-256-GCM), never sent back, and handed over only inside the one `inspect` order that needs them.
-* **A PIN to disarm:** each user can have a PIN and a duress PIN. Disarming from Studio, the phone, the wall panel, a command to an alarm panel or the voice asks for it; three wrong PINs lock that user for a minute, then five, then fifteen, and the duress PIN disarms while it raises a critical alarm in silence. `ARMOR_DISARM_PIN=required` makes the PIN compulsory.
-* **Detection that neither silence nor a power cut can fool:** one target held for the dwell time is an intrusion (`ARMOR_ALERT_MIN_TARGETS`, 1 by default), a radar whose sensors died goes stale although its heartbeat goes on, an alarm node that sounds with the system disarmed is accepted and told by Telegram, Home Assistant, the webhook and MQTT, and a state or users file damaged by a power cut is replaced by its last good copy (the server starts armed when there is none).
 
 ## 🔄 Architecture
 
@@ -71,16 +68,14 @@ flowchart LR
 ## 🌐 API
 
 * Public: `GET /healthz`. For an operator: status, information, cameras, media, history, rules, devices, alarms, automations, the site design, and `GET /api/v1/solar` with its history.
-* For the field nodes and the gateways: `POST /api/v1/telemetry`, `/health`, `/solar`, `/electrical/readings` and `/alarm/state` with the ingest token, and the MQTT topics `armor/node/#`, `armor/solar/#`, `armor/electrical/#` and `armor/alarm/#`. An administrator can arm and disarm an alarm node's panel with `POST /api/v1/alarm/command`, which is refused unless `ARMOR_ALARM_COMMANDS=1` (and the node and the broker allow it too). Events reach the consoles by the WebSocket `/api/v1/events`.
+* For the field nodes and the gateways: `POST /api/v1/telemetry`, `/health`, `/solar` and `/electrical/readings` with the ingest token, and the MQTT topics `armor/node/#`, `armor/solar/#` and `armor/electrical/#`. Events reach the consoles by the WebSocket `/api/v1/events`.
 * Every route, its access rule and its schema is in the OpenAPI file of [ARMOR-COMMON](https://github.com/JuanenRac/ARMOR-COMMON), and a test checks that no route is missing from it.
 
 ## ⚙️ Configuration
 
 * Copy `.env.example` to `.env` (ignored by Git), or let `run.bat` / `run.sh` generate random secrets on the first run.
 * Required: `ARMOR_INGEST_TOKEN` and `ARMOR_CONTROL_TOKEN` (24 characters or more, all different) and `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD` (the first administrator).
-* Common: `ARMOR_HOST` / `ARMOR_PORT`, `ARMOR_DATA_DIR`, `ARMOR_FFMPEG_PATH` (live video and capture), `ARMOR_MQTT_URL`, `ARMOR_STUDIO_ORIGIN`, `ARMOR_NODE_STALE_AFTER_S`, `ARMOR_CAMERA_CHECK_S`, `ARMOR_ALERT_DWELL_MS`, `ARMOR_ALERT_MIN_TARGETS`, `ARMOR_DISARM_PIN`, `ARMOR_ALERT_WEBHOOK_URL` and `ARMOR_COOKIE_SECURE` (set it to `1` behind TLS).
-* **Firmware, notices and the voice:** the server updates the firmware of the field nodes (a file or the GitHub release, one node or every node of a type, with progress and a check of the SHA-256), sends the alarms to Telegram and to Home Assistant (with retries and an audit line without secrets, in the seven languages), and carries out fifteen written or spoken commands through the voice gateway (the state, the alarms, the nodes, the cameras, the radars, the solar and electrical systems, the network, the time, help and the lights; arming and disarming are confirmed in a second turn). The observation service raises `camera_motion` through its own token. See [node firmware](docs/NODE_FIRMWARE.md) and [integration](docs/INTEGRATION.md).
-* **The installation as one file, a wall panel's own account and Home Assistant:** an administrator downloads the whole installation (the cameras without their passwords, the designs, the rules, the automations, the devices, the solar equipment and the energy alarm levels; never a password, token or key) and imports it on another machine, where the designs, the rules and the alarm levels replace and the lists only add what is missing; a `panel` role (least privilege) lets a wall panel read the summary, change the mode and acknowledge alarms and nothing else, and the summary carries the energy of the house; with `ARMOR_HA_DISCOVERY=1` Home Assistant, reading the same broker, finds the sensors of the solar equipment, the electrical channels and the alarm panels by itself (read-only, off by default).
+* Common: `ARMOR_HOST` / `ARMOR_PORT`, `ARMOR_DATA_DIR`, `ARMOR_FFMPEG_PATH` (live video and capture), `ARMOR_MQTT_URL`, `ARMOR_STUDIO_ORIGIN`, `ARMOR_NODE_STALE_AFTER_S`, `ARMOR_CAMERA_CHECK_S`, `ARMOR_ALERT_DWELL_MS`, `ARMOR_ALERT_WEBHOOK_URL` and `ARMOR_COOKIE_SECURE` (set it to `1` behind TLS).
 
 ## 📂 Repository Structure
 
@@ -104,7 +99,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 313 tests: unit + full HTTP integration
+npm test            # 168 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```
@@ -119,14 +114,12 @@ To install on the CM5 test bench (isolated from every other project, own user, o
 * **[ARMOR-RADAR](https://github.com/JuanenRac/ARMOR-RADAR)** - Field-node firmware for ESP32-S3 with three radars and its own web panel
 * **[ARMOR-SOLAR](https://github.com/JuanenRac/ARMOR-SOLAR)** - Solar inverter and battery protocols and the messages of a gateway node
 * **[ARMOR-ELECTRICAL](https://github.com/JuanenRac/ARMOR-ELECTRICAL)** - Electrical node: meters, the message of the network's readings and the rules for switching
-* **[ARMOR-ALARM](https://github.com/JuanenRac/ARMOR-ALARM)** - Alarm node and panel: zones, arming, delays, siren and PIN, with the server or without it
 * **[ARMOR-HMI](https://github.com/JuanenRac/ARMOR-HMI)** - Touch panel: the state of the system on a wall screen, arming and acknowledging, and the home of the voice assistant
 * **[ARMOR-NETWORK](https://github.com/JuanenRac/ARMOR-NETWORK)** - The local network: its devices, the internet and what changes
 * **ARMOR-SERVER** (this repository) - Central coordinator: telemetry, alarms, devices, solar readings and cameras
 * **[ARMOR-STUDIO](https://github.com/JuanenRac/ARMOR-STUDIO)** - Web console: cameras, radar, alarms, solar energy and the 2D/3D site designer
 * **[ARMOR-ANDROID-CONTROL](https://github.com/JuanenRac/ARMOR-ANDROID-CONTROL)** - Android operator client with a live 2D/3D radar
 * **[ARMOR-SERVER-AI](https://github.com/JuanenRac/ARMOR-SERVER-AI)** - Visual inference policy that explains its decisions and never actuates
-* **[ARMOR-VISION](https://github.com/JuanenRac/ARMOR-VISION)** - Camera zones, masks and detection rules for the Jetson Orin NX
 * **[ARMOR-VOICE-AI](https://github.com/JuanenRac/ARMOR-VOICE-AI)** - Offline voice intents with a confirmation that cannot be forged
 * **[ARMOR-HARDWARE](https://github.com/JuanenRac/ARMOR-HARDWARE)** - Enclosures, electronics and the bench acceptance matrix
 * **[ARMOR-DEVOPS](https://github.com/JuanenRac/ARMOR-DEVOPS)** - Deployment, the CM5 test bench, backup and TLS

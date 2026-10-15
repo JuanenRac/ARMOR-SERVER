@@ -16,7 +16,7 @@ import { SiteConflict, SiteInvalid } from "./site.js";
 
 export const INSTALLATION_FORMAT = "armor-installation";
 export const INSTALLATION_VERSION = 1;
-export const PARTS = ["cameras", "site", "electrical", "network", "rules", "automations", "devices", "solar_devices", "energy_alarms", "users"] as const;
+export const PARTS = ["cameras", "site", "electrical", "network", "alarm_design", "rules", "automations", "devices", "solar_devices", "energy_alarms", "users"] as const;
 export type Part = (typeof PARTS)[number];
 
 export type InstallationBundle = {
@@ -57,6 +57,7 @@ export function buildBundle(context: AppContext, by: string): InstallationBundle
     site: context.site.get().site,
     electrical: context.electrical.get().site,
     network: context.network.get().site,
+    alarm_design: context.alarmDesign.get().site,
     rules: context.rules.get(),
     automations: context.automations.list().map(automation => stripSecrets(automation as unknown as Record<string, unknown>, ["last_run", "runs", "created_at"])),
     devices: context.devices.list().map(device => stripSecrets(device as unknown as Record<string, unknown>, ["state", "online", "last_seen", "created_at"])),
@@ -109,8 +110,8 @@ export function applyBundle(context: AppContext, bundle: InstallationBundle, wan
           report.applied.cameras = `${added} added, ${kept} already there${invalid ? `, ${invalid} refused` : ""}`;
           break;
         }
-        case "site": case "electrical": case "network": {
-          const store = context[part];
+        case "site": case "electrical": case "network": case "alarm_design": {
+          const store = part === "alarm_design" ? context.alarmDesign : context[part];
           if (!isRecord(content)) throw new Error("not a design");
           try { const saved = store.save(content, store.get().revision, `import by ${by}`); report.applied[part] = `replaced (revision ${saved.revision}; the previous one is kept as a version)`; }
           catch (error) {

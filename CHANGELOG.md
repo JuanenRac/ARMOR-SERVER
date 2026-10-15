@@ -2,7 +2,12 @@
 
 All notable changes to this project are documented here.
 
-## [0.5.4] - Audit round two: durable state, safer firmware uploads and history
+## [0.5.5] - The alarm design
+
+- `GET` and `PUT /api/v1/alarm/design` (and its versions) keep the house's alarm drawn in Studio's Alarm Designer, the way the electrical and network drawings are kept: one document with a revision, a save made from an out-of-date copy is refused, and the earlier versions can be taken back. It is a drawing: nothing arms, disarms or sounds anything.
+- The installation file carries the alarm design too (`alarm_design`).
+
+## [0.5.4] - Durable state, safer firmware uploads and history
 
 - The state of the alarm and the pending automation reversals are written durably (fsync and a backup copy); if the state cannot be read the house starts ARMED.
 - Arming raises what is already wrong at that moment: a node or a camera that is down and a door left open while it was disarmed. A disarmed panel that goes quiet no longer wakes anybody.
