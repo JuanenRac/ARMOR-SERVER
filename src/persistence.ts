@@ -6,6 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { durableRename, keepBackup } from "./durable.js";
 
 export type PersistedNode = {
   node_id: string; online: boolean; timestamp_ms: number; lux: number | null;
@@ -56,6 +57,8 @@ export class FileStatePersistence implements StatePersistence {
   readonly #delayMs: number;
   readonly #warn: (message: string) => void;
   #pending: PersistedState | undefined;
+  /** The file on the disk is one this run wrote or read well: only then does it become the backup (a damaged file never replaces a good copy). */
+  #goodOnDisk = true;
   #timer: NodeJS.Timeout | undefined;
 
   constructor(file: string, options: { delayMs?: number; warn?: (message: string) => void } = {}) {
@@ -64,16 +67,27 @@ export class FileStatePersistence implements StatePersistence {
     this.#warn = options.warn ?? (() => undefined);
   }
 
+  /**
+   * The state of the last run. A file that is there but cannot be read or understood is not "nothing": the previous good copy (state.json.bak) is used, and when there is none either
+   * the server starts ARMED, because starting disarmed after a power cut that damaged the file is exactly how a house ends up open.
+   */
   load(): PersistedState | undefined {
-    let text: string;
+    let text: string | undefined;
     try { text = fs.readFileSync(this.#file, "utf8"); }
     catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") this.#warn("state.json could not be read; starting empty");
-      return undefined;
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;   // first start
+      this.#warn("state.json could not be read");
+      this.#goodOnDisk = false;
     }
-    const state = parsePersisted(text);
-    if (!state) this.#warn("state.json is damaged or unrecognised; starting empty");
-    return state;
+    const state = text === undefined ? undefined : parsePersisted(text);
+    if (state) return state;
+    if (text !== undefined) { this.#warn("state.json is damaged or unrecognised"); this.#goodOnDisk = false; }
+    try {
+      const backup = parsePersisted(fs.readFileSync(`${this.#file}.bak`, "utf8"));
+      if (backup) { this.#warn("the previous good copy (state.json.bak) is used"); return backup; }
+    } catch { /* there is no copy */ }
+    this.#warn("there is no readable copy of the state: starting ARMED, with no nodes");
+    return { schema: 1, mode: "armed", revision: 0, nodes: [], panels: {} };
   }
 
   save(state: PersistedState, immediate: boolean): void {
@@ -93,7 +107,9 @@ export class FileStatePersistence implements StatePersistence {
       fs.mkdirSync(path.dirname(this.#file), { recursive: true });
       const temporary = `${this.#file}.tmp`;
       fs.writeFileSync(temporary, JSON.stringify(state), { encoding: "utf8", mode: 0o600 });
-      fs.renameSync(temporary, this.#file);
+      if (this.#goodOnDisk) keepBackup(this.#file);
+      durableRename(temporary, this.#file);
+      this.#goodOnDisk = true;
     } catch { this.#warn("state.json could not be written"); }
   }
 }

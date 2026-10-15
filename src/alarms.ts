@@ -16,6 +16,7 @@ import type { SolarMessage } from "./solar.js";
 import type { AlarmMessage } from "./alarm.js";
 import { ENERGY_ALARM_DEFAULTS, type EnergyAlarmSettings } from "./energy_alarms.js";
 import type { SecurityMode } from "./store.js";
+import { durableRename } from "./durable.js";
 
 export type AlarmSource = { type: "node" | "camera" | "device" | "solar" | "electrical" | "network" | "alarm"; id: string };
 export type Alarm = {
@@ -42,6 +43,8 @@ export const cleanDetail = (detail: Record<string, unknown> | undefined): AlarmD
 };
 
 const MAX_KEPT = 400;
+/** The most alarms ever kept: past it even an open one goes, oldest first (a burst of hundreds of alarms is not a list a person reads). */
+const HARD_MAX = 2000;
 /** Open ports that a house rarely wants open on something anyone on the network can reach: an old remote shell, an unencrypted file transfer, a remote desktop, a database, the provider's remote management. */
 const RISKY_PORTS = new Set([21, 23, 445, 3306, 3389, 5432, 5900, 6379, 7547]);
 export type AlarmCentreOptions = { file: string; now?: () => Date; onEvent?: (body: ArmorEventBody) => void; onRaised?: (alarm: Alarm) => void; warn?: (message: string) => void };
@@ -60,7 +63,7 @@ export class AlarmCentre {
     this.#now = options.now ?? (() => new Date());
     try {
       const raw = JSON.parse(fs.readFileSync(options.file, "utf8")) as { alarms?: Alarm[]; counter?: number; muted?: string[] };
-      if (Array.isArray(raw.alarms)) this.#alarms = raw.alarms.filter(alarm => typeof alarm?.id === "string" && typeof alarm.key === "string" && typeof alarm.raised_at === "string").slice(-MAX_KEPT);
+      if (Array.isArray(raw.alarms)) this.#alarms = raw.alarms.filter(alarm => typeof alarm?.id === "string" && typeof alarm.key === "string" && typeof alarm.raised_at === "string").slice(-HARD_MAX);
       if (typeof raw.counter === "number") this.#counter = raw.counter;
       if (Array.isArray(raw.muted)) this.#muted = new Set(raw.muted.filter(key => typeof key === "string").slice(-MAX_KEPT));
     } catch { /* nothing kept yet */ }
@@ -78,7 +81,7 @@ export class AlarmCentre {
       fs.mkdirSync(path.dirname(this.#options.file), { recursive: true });
       const temporary = `${this.#options.file}.${process.pid}.tmp`;
       fs.writeFileSync(temporary, JSON.stringify({ schema: 1, counter: this.#counter, alarms: this.#alarms, muted: [...this.#muted] }), { encoding: "utf8", mode: 0o600 });
-      fs.renameSync(temporary, this.#options.file);
+      durableRename(temporary, this.#options.file);
     } catch (error) { this.#options.warn?.(`the alarms file could not be written: ${(error as Error).message}`); }
   }
 
@@ -96,11 +99,35 @@ export class AlarmCentre {
     const alarm: Alarm = { id: `alm-${String(this.#counter).padStart(5, "0")}`, key, source: info.source, severity: info.severity, code: info.code, raised_at: this.#now().toISOString(), ...(detail ? { detail } : {}) };
     this.#counter += 1;
     this.#alarms.push(alarm);
-    if (this.#alarms.length > MAX_KEPT) this.#alarms.splice(0, this.#alarms.length - MAX_KEPT);
+    this.#trim();
     this.#save();
     this.#emit(alarm, "raised");
     this.#options.onRaised?.(alarm);
     return alarm;
+  }
+
+  /** The system was disarmed with the duress PIN: somebody is being forced. A critical alarm, told to every place and shown nowhere as a siren. */
+  raiseDuress(who: string): Alarm | undefined {
+    return this.raise(`duress:${this.#now().getTime()}`, { source: { type: "alarm", id: "duress" }, severity: "critical", code: "duress_disarm", detail: { by: who } });
+  }
+
+  /**
+   * Keeps the list to MAX_KEPT by dropping what nobody needs: the oldest alarm that is over and was acknowledged, then the oldest that is over. An alarm that is still going on, or that
+   * ended before anybody saw it, is never dropped to make room (a burst of "new device" alarms must not push a critical one off the list); only past HARD_MAX does anything go.
+   */
+  #trim(): void {
+    const drop = (match: (alarm: Alarm) => boolean): boolean => {
+      const index = this.#alarms.findIndex(match);
+      if (index < 0) return false;
+      this.#alarms.splice(index, 1);
+      return true;
+    };
+    while (this.#alarms.length > MAX_KEPT) {
+      if (drop(alarm => alarm.cleared_at !== undefined && alarm.acknowledged_at !== undefined)) continue;
+      if (drop(alarm => alarm.cleared_at !== undefined)) continue;
+      if (this.#alarms.length > HARD_MAX) { this.#alarms.shift(); continue; }
+      break;
+    }
   }
 
   /** The facts of an alarm that is still open, kept up to date while it goes on (the loss and the latency of a slow line, say). */

@@ -3,7 +3,7 @@
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import { connect, type MqttClient } from "mqtt";
-import { parseHealth, parseInfo, parseTelemetry } from "./contracts.js";
+import { forwardCompatible, parseHealth, parseInfo, parseTelemetry } from "./contracts.js";
 import type { IngestLog } from "./ingest_log.js";
 import { ArmorStore } from "./store.js";
 
@@ -43,13 +43,14 @@ export function attachMqtt(store: ArmorStore, brokerUrl: string, username?: stri
       const kind = topicKind(topic);
       if (!kind) return;
       const body: unknown = JSON.parse(raw.toString("utf8"));
-      const parsed = kind === "telemetry" ? parseTelemetry(body) : kind === "info" ? parseInfo(body) : parseHealth(body);
+      // A radar with a newer firmware may add a field: it is ignored and counted, as for every other kind of node, not a reason to refuse all it says.
+      const { value: parsed, ignored } = forwardCompatible(() => (kind === "telemetry" ? parseTelemetry(body) : kind === "info" ? parseInfo(body) : parseHealth(body)));
       const message = { ...parsed, timestamp_ms: stampOf(parsed.timestamp_ms, Date.now()) };
       if (!bodyMatchesTopic(topic, message)) throw new Error("node_id does not match the topic");
       if (kind === "telemetry") store.telemetry(message as ReturnType<typeof parseTelemetry>);
       else if (kind === "info") store.info(message as ReturnType<typeof parseInfo>);
       else store.health(message as ReturnType<typeof parseHealth>);
-      log?.ok(topic);
+      log?.ok(topic, ignored);
     } catch (error) {
       log?.rejected(topic, error instanceof Error ? error.message : "invalid payload", raw);
       console.warn("ARMOR_MQTT=REJECTED", error instanceof Error ? error.message : "invalid payload");

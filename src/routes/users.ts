@@ -64,6 +64,48 @@ export function registerUserRoutes(app: Express, context: AppContext): void {
     }
   });
 
+  // The PIN that disarms the system (and the duress PIN that disarms it and warns in silence): an administrator sets or clears anybody's; you set or clear your own after confirming
+  // your password. The PIN is never shown again.
+  const pinInput = (request: { body?: unknown }) => { const input = body(request); return { pin: input.pin, duress: input.duress_pin }; };
+  app.put("/api/v1/users/:id/pin", requireAdmin, (request, response) => {
+    const actor = studioUser(request), id = String(request.params.id);
+    try {
+      const { pin, duress } = pinInput(request);
+      const user = users.setPin(id, pin, duress);
+      audit.record({ action: "user.pin", outcome: "allowed", actor: actor?.username, target: user.username, detail: user.hasDuress ? "pin,duress" : "pin" });
+      return response.json(user);
+    } catch (error) {
+      audit.record({ action: "user.pin", outcome: "failed", actor: actor?.username, target: id, detail: error instanceof UserError ? error.code : "error" });
+      return fail(response, error);
+    }
+  });
+  app.delete("/api/v1/users/:id/pin", requireAdmin, (request, response) => {
+    const actor = studioUser(request), id = String(request.params.id);
+    try {
+      const user = users.clearPin(id);
+      audit.record({ action: "user.pin", outcome: "allowed", actor: actor?.username, target: user.username, detail: "cleared" });
+      return response.json(user);
+    } catch (error) { return fail(response, error); }
+  });
+  app.put("/api/v1/account/pin", accountLimit, (request, response) => {
+    const me = studioUser(request);
+    if (!me) return response.status(401).json({ error: "sign in first" });
+    const input = body(request);
+    if (typeof input.currentPassword !== "string" || !users.authenticate(me.username, input.currentPassword)) {
+      audit.record({ action: "account.pin", outcome: "denied", actor: me.username, detail: "current password" });
+      return response.status(403).json({ error: "the current password is not right", code: "wrong_password" });
+    }
+    try {
+      const { pin, duress } = pinInput(request);
+      const user = input.clear === true ? users.clearPin(me.id) : users.setPin(me.id, pin, duress);
+      audit.record({ action: "account.pin", outcome: "allowed", actor: me.username, detail: input.clear === true ? "cleared" : user.hasDuress ? "pin,duress" : "pin" });
+      return response.json(user);
+    } catch (error) {
+      audit.record({ action: "account.pin", outcome: "failed", actor: me.username, detail: error instanceof UserError ? error.code : "error" });
+      return fail(response, error);
+    }
+  });
+
   // Your own account: rename and change the password, whatever your role, after confirming the current password.
   app.patch("/api/v1/account", accountLimit, (request, response) => {
     const me = studioUser(request);

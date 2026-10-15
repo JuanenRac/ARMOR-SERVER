@@ -125,3 +125,15 @@ test("audit lines never carry credentials", () => {
   assert.match(lines[0], /^ARMOR_AUDIT \{"at":"2026-01-01T00:00:00.000Z","action":"camera.configure"/);
   assert.doesNotMatch(lines[0], /secret/);
 });
+
+test("recordings left behind by a stop that did not close them are kept when they hold something and removed when they do not", async () => {
+  const root = path.join(tempDir(), "media");
+  const folder = path.join(root, "cam-gate", "recordings");
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(folder, "recording-a.mp4.part.mp4"), Buffer.alloc(9000, 1));   // a fragmented MP4 is playable as it is
+  fs.writeFileSync(path.join(folder, "recording-b.mp4.part.mp4"), Buffer.alloc(100, 1));    // nothing worth keeping
+  const library = new EvidenceLibrary({ root, ffmpegPath: "", maxBytes: 1e9, retentionMs: 0 });
+  assert.equal(library.recoverOrphans(), 0, "constructing it already did the work");
+  assert.deepEqual(fs.readdirSync(folder).sort(), ["recording-a.mp4"]);
+  assert.equal(((await library.list()) as Array<{ kind: string }>).filter(item => item.kind === "recording").length, 1, "and it is now in the catalogue");
+});

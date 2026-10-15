@@ -94,7 +94,8 @@ test("camera lifecycle: configure, list without the password, view without the u
 
   const listed = JSON.stringify(await (await call("/api/v1/cameras", { cookie })).json());
   assert.doesNotMatch(listed, /hunter2/);
-  const views = JSON.stringify(await (await call("/api/v1/camera-views")).json());
+  assert.equal((await call("/api/v1/camera-views")).status, 401, "the inventory of the cameras is not for an anonymous client");
+  const views = JSON.stringify(await (await call("/api/v1/camera-views", { cookie })).json());
   assert.match(views, /cam-gate/);
   assert.doesNotMatch(views, /hunter2|"username"/);
 
@@ -205,4 +206,31 @@ test("discovery refuses a second concurrent request", async () => {
   assert.equal(response.status, 429);
   release();
   await running;
+});
+
+test("erasing the whole history or every recording is an administrator's, not an operator's", async () => {
+  const server = await startServer();
+  try {
+    const cookie = await studioCookie(server.base);
+    const operator = { Authorization: `Bearer ${SECRETS.ARMOR_OPERATOR_TOKEN}` };
+    for (const route of ["/api/v1/history", "/api/v1/media"]) {
+      const refused = await fetch(`${server.base}${route}`, { method: "DELETE", headers: { ...operator, "Content-Type": "application/json" }, body: JSON.stringify({ kind: "everything" }) });
+      assert.ok([401, 403].includes(refused.status), `${route}: ${refused.status}`);   // an operator token is no administrator session
+    }
+    const allowed = await fetch(`${server.base}/api/v1/history?confirm=delete&scope=all`, { method: "DELETE", headers: { cookie } });
+    assert.equal(allowed.status, 200);
+  } finally { await server.stop(); }
+});
+
+test("a node without a clock that restarts is not taken for an old one: its time is the time it arrived", async () => {
+  const running = await startServer();
+  try {
+    const cookie = await studioCookie(running.base);
+    const send = (timestamp: number, lux: number) => fetch(`${running.base}/api/v1/telemetry`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SECRETS.ARMOR_INGEST_TOKEN}` },
+      body: JSON.stringify({ node_id: "north-9", timestamp_ms: timestamp, lux, targets: [] }) });
+    assert.equal((await send(90_000, 10)).status, 202);       // seconds since boot, no clock
+    assert.equal((await send(2_000, 77)).status, 202);        // the node restarted: its counter starts again
+    const state = await (await fetch(`${running.base}/api/v1/status`, { headers: { cookie } })).json() as { nodes: Record<string, { lux: number }> };
+    assert.equal(state.nodes["north-9"].lux, 77, "the newest message wins, as it arrived later");
+  } finally { await running.stop(); }
 });

@@ -5,6 +5,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { durableRename } from "./durable.js";
 
 export type Sample = { t: number } & Record<string, number | string>;
 export const COARSE_EVERY_MS = 5 * 60_000;
@@ -60,6 +61,6 @@ export class JsonFile<T> {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const temporary = `${this.file}.${process.pid}.tmp`;
     fs.writeFileSync(temporary, JSON.stringify(value), { encoding: "utf8", mode: 0o600 });
-    fs.renameSync(temporary, this.file);
+    durableRename(temporary, this.file);
   }
 }

@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parseSolarMessage, type SolarMessage } from "./solar.js";
+import { durableRename } from "./durable.js";
 
 /**
  * The inverter families the projects that speak to them list (mpp-solar, esphome-pipsolar and others), with the dialect of the serial protocol each one answers in, which
@@ -155,7 +156,7 @@ export class SolarRegistry {
     fs.mkdirSync(path.dirname(this.#file), { recursive: true });
     const temporary = `${this.#file}.${process.pid}.tmp`;
     fs.writeFileSync(temporary, JSON.stringify({ schema: 1, devices: this.#items }, null, 2), { encoding: "utf8", mode: 0o600 });
-    fs.renameSync(temporary, this.#file);
+    durableRename(temporary, this.#file);
   }
 }
 

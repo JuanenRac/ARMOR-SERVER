@@ -21,29 +21,36 @@ export const validTelegramToken = (value: string) => TELEGRAM_TOKEN.test(value);
 export const validTelegramChat = (value: string) => TELEGRAM_CHAT.test(value);
 export const validWebhookId = (value: string) => WEBHOOK_ID.test(value);
 
-/** One message to every chat of the list; it is delivered when every chat took it. */
+/**
+ * One message to every chat of the list. A chat that refuses it (a bot thrown out of a group, an id typed wrong) does not stop the others from getting it, and a retry after a failure
+ * of the network or a 429 goes only to the chats that did not get it yet. It is delivered when every chat took it; it is given up (final) when what is left can never work.
+ */
 export function telegramChannel(options: TelegramOptions): NotifyChannel {
   const doFetch = options.fetchImpl ?? fetch;
   const api = (options.api ?? "https://api.telegram.org").replace(/\/$/, "");
+  const delivered = new WeakMap<object, Set<string>>();
   return {
     id: "telegram",
-    async deliver(_message, text, language, signal) {
-      let failed = "";
+    async deliver(message, text, language, signal) {
+      const got = delivered.get(message) ?? new Set<string>();
+      delivered.set(message, got);
+      let failed = "", retry = false;
       for (const chat of options.chatIds) {
+        if (got.has(chat)) continue;
         try {
           const response = await doFetch(`${api}/bot${options.token}/sendMessage`, {
             method: "POST", headers: { "Content-Type": "application/json", "User-Agent": "armor-server" }, redirect: "error", signal,
-            body: JSON.stringify({ chat_id: chat, text: `${alertTitle(language)}\n${text}`, disable_web_page_preview: true }),
+            body: JSON.stringify({ chat_id: chat, text: `${alertTitle(language)}
+${text}`, disable_web_page_preview: true }),
           });
-          if (!response.ok) {
-            // Telegram says why in the body (a wrong token, a chat that never talked to the bot); that is worth saying, minus anything that could be the token.
-            const reason = ((await response.json().catch(() => ({}))) as { description?: string }).description ?? "";
-            failed = `chat ${chat}: HTTP ${response.status}${reason ? ` ${reason.replace(options.token, "***").slice(0, 120)}` : ""}`;
-            if (response.status >= 400 && response.status < 500 && response.status !== 429) return { ok: false, detail: failed, final: true };
-          }
-        } catch (error) { failed = `chat ${chat}: ${error instanceof Error ? error.name : "network error"}`; }
+          if (response.ok) { got.add(chat); continue; }
+          // Telegram says why in the body (a wrong token, a chat that never talked to the bot); that is worth saying, minus anything that could be the token.
+          const reason = ((await response.json().catch(() => ({}))) as { description?: string }).description ?? "";
+          failed = `chat ${chat}: HTTP ${response.status}${reason ? ` ${reason.replace(options.token, "***").slice(0, 120)}` : ""}`;
+          if (response.status < 400 || response.status >= 500 || response.status === 429) retry = true;
+        } catch (error) { failed = `chat ${chat}: ${error instanceof Error ? error.name : "network error"}`; retry = true; }
       }
-      return failed ? { ok: false, detail: failed } : { ok: true, detail: `${options.chatIds.length} chat(s)` };
+      return failed ? { ok: false, detail: failed, final: !retry } : { ok: true, detail: `${options.chatIds.length} chat(s)` };
     },
   };
 }

@@ -79,7 +79,10 @@ export function registerSystemRoutes(app: Express, context: AppContext, version:
   app.put("/api/v1/system/connection", requireAdmin, (request, response) => {
     const checked = checkConnection(request.body);
     if (!checked.ok) return void response.status(400).json({ error: checked.error });
-    if (checked.value.host && !isLoopbackHost(checked.value.host) && config.studioPassword.length < 12) return void response.status(400).json({ error: "the administrator password must have at least 12 characters before the server is reachable from the network" });
+    // The password that counts is the one that works now: the seed of the settings file only while it still signs in (a password changed in Studio replaces it), and the minimum the
+    // server asks of every password it takes.
+    const seedStillSignsIn = context.users.authenticate(config.studioUsername, config.studioPassword) !== null;
+    if (checked.value.host && !isLoopbackHost(checked.value.host) && ((seedStillSignsIn && config.studioPassword.length < 12) || context.users.minPasswordLength < 12)) return void response.status(400).json({ error: "the administrator password must have at least 12 characters before the server is reachable from the network" });
     writeConnection(config.dataDir, checked.value);
     context.audit.record({ action: "system.connection", outcome: "allowed", actor: context.studioUser(request)?.username ?? "admin", detail: JSON.stringify(checked.value) });
     response.json(connectionState());

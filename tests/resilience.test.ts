@@ -34,18 +34,35 @@ test("the security mode and the nodes survive a restart, and a restored node is 
   assert.equal(second.snapshot().nodes["north-1"].online, true);
 });
 
-test("a damaged or foreign state file is ignored, never trusted", () => {
+test("a damaged or foreign state file is never trusted, and the server then starts ARMED, not open", () => {
   const dir = tempDir();
   const file = path.join(dir, "state.json");
   const warnings: string[] = [];
   for (const content of ["{not json", JSON.stringify({ schema: 2, mode: "armed", revision: 1, nodes: [] }), JSON.stringify({ schema: 1, mode: "armed", revision: 1, nodes: [{ node_id: "../x" }] })]) {
     fs.writeFileSync(file, content);
     const store = new ArmorStore(undefined, { persistence: new FileStatePersistence(file, { warn: message => warnings.push(message) }) });
-    assert.equal(store.snapshot().mode, "disarmed");
+    assert.equal(store.snapshot().mode, "armed", "after a file that cannot be read the house is guarded, not open");
     assert.deepEqual(Object.keys(store.snapshot().nodes), []);
   }
-  assert.equal(warnings.length, 3);
+  assert.equal(warnings.length, 6);   // "damaged" and "no copy: starting armed", for each of the three files
   assert.equal(parsePersisted("null"), undefined);
+});
+
+test("a state file damaged by a power cut is replaced by the last good copy, and a missing file is a first start", () => {
+  const dir = tempDir();
+  const file = path.join(dir, "state.json");
+  assert.equal(new FileStatePersistence(file).load(), undefined, "no file: a first start, disarmed");
+  const first = new FileStatePersistence(file, { delayMs: 5 });
+  first.save({ schema: 1, mode: "armed", revision: 3, nodes: [] }, true);
+  first.save({ schema: 1, mode: "disarmed", revision: 4, nodes: [] }, true);
+  assert.equal(JSON.parse(fs.readFileSync(`${file}.bak`, "utf8")).mode, "armed", "the file that was replaced is kept");
+  fs.writeFileSync(file, "");   // what a power cut leaves
+  const warnings: string[] = [];
+  const again = new FileStatePersistence(file, { warn: message => warnings.push(message) });
+  assert.equal(again.load()?.revision, 3, "the good copy is used");
+  assert.ok(warnings.some(message => message.includes("good copy")));
+  again.save({ schema: 1, mode: "armed", revision: 5, nodes: [] }, true);
+  assert.equal(JSON.parse(fs.readFileSync(`${file}.bak`, "utf8")).revision, 3, "a damaged file never replaces the good copy");
 });
 
 test("arming is written at once, node data is coalesced", async () => {

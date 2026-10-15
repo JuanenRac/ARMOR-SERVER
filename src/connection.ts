@@ -6,6 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { durableRename } from "./durable.js";
 
 export type Connection = { host?: string; port?: number; studio_port?: number };
 export const CONNECTION_FILE = "connection.json";
@@ -41,7 +42,7 @@ export function writeConnection(dataDir: string, value: Connection): void {
   fs.mkdirSync(dataDir, { recursive: true });
   const target = path.join(dataDir, CONNECTION_FILE), temporary = `${target}.tmp`;
   fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  fs.renameSync(temporary, target);
+  durableRename(temporary, target);
 }
 
 /** The origins Studio may be reached from once its port was changed: the same hosts the deployment names, on the new port. */

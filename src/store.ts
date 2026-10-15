@@ -33,9 +33,9 @@ export type SystemState = { mode: SecurityMode; revision: number; nodes: Record<
 
 type StoredNode = Omit<NodeState, "stale" | "panel"> & { received_at_ms: number; status: NodeStatus; high_since_ms: number | null };
 
-/** Two or more targets while armed is high, any target is a review, none is normal. */
-export const alertLevelFor = (mode: SecurityMode, targetCount: number): AlertLevel =>
-  targetCount >= 2 && mode === "armed" ? "high" : targetCount > 0 ? "review" : "normal";
+/** `minTargets` targets (2 unless the installation says otherwise) while armed is high, any target is a review, none is normal. */
+export const alertLevelFor = (mode: SecurityMode, targetCount: number, minTargets = 2): AlertLevel =>
+  targetCount >= minTargets && mode === "armed" ? "high" : targetCount > 0 ? "review" : "normal";
 
 /** More distinct nodes than this is a mistake or an attack, not a perimeter. */
 export const MAX_NODES = 256;
@@ -47,6 +47,8 @@ export type StoreOptions = {
   rules?: () => Rules;
   onEvent?: (event: ArmorEventBody) => void;
   persistence?: StatePersistence;
+  /** How many targets at once make an alert high while armed (default 2; the server's setting is ARMOR_ALERT_MIN_TARGETS, 1 by default). */
+  minTargets?: number;
 };
 
 export class ArmorStore {
@@ -55,6 +57,9 @@ export class ArmorStore {
   #updatedAt = new Date(0).toISOString();
   readonly #nodes = new Map<string, StoredNode>();
   readonly #panels = new Map<string, PanelInfo>();
+  readonly #minTargets: number;
+  /** The nodes that have sent telemetry since this server started: for them, silence is judged by the telemetry, not by the heartbeat. */
+  readonly #telemetrySeen = new Set<string>();
   readonly #onChange: ((state: SystemState) => void) | undefined;
   readonly #onEvent: ((event: ArmorEventBody) => void) | undefined;
   readonly #staleAfterMs: number;
@@ -69,6 +74,7 @@ export class ArmorStore {
     this.#now = options.now ?? Date.now;
     this.#rules = options.rules ?? (() => defaultRules());
     this.#persistence = options.persistence;
+    this.#minTargets = options.minTargets ?? 2;
     this.#restore(this.#persistence?.load());
   }
 
@@ -102,6 +108,7 @@ export class ArmorStore {
     if (!previous && this.#nodes.size >= MAX_NODES) throw new Error("too many nodes");
     if (previous && message.timestamp_ms < previous.timestamp_ms) return this.snapshot();
     const now = this.#now();
+    this.#telemetrySeen.add(message.node_id);
     const rules = this.#rules();
     const views: TargetView[] = message.targets.map(target => ({ ...target, counted: targetCounts(rules, message.node_id, target) }));
     const counted = views.filter(target => target.counted).length;
@@ -124,7 +131,10 @@ export class ArmorStore {
     const timestamp = Math.max(message.timestamp_ms, previous?.timestamp_ms ?? 0);
     const node: StoredNode = {
       node_id: message.node_id, online: message.online, timestamp_ms: timestamp, lux: previous?.lux ?? null,
-      target_count: previous?.target_count ?? 0, targets: previous?.targets ?? [], alert_level: previous?.alert_level ?? "normal", received_at_ms: this.#now(),
+      target_count: previous?.target_count ?? 0, targets: previous?.targets ?? [], alert_level: previous?.alert_level ?? "normal",
+      // A node whose sensors died keeps sending its heartbeat but stops sending telemetry (on purpose, so that the server says the node is quiet): once a node has sent telemetry,
+      // only telemetry keeps it from going stale. Otherwise a blind radar would stay online for ever and the perimeter would be unguarded without anyone knowing.
+      received_at_ms: previous && this.#telemetrySeen.has(message.node_id) ? previous.received_at_ms : this.#now(),
       status: message.online ? "online" : "offline", high_since_ms: previous?.high_since_ms ?? null,
     };
     return this.#store(node, previous);
@@ -171,6 +181,7 @@ export class ArmorStore {
   /** Forget a decommissioned node. Returns false when the node is unknown. A node that speaks again is simply new. */
   removeNode(nodeId: string): boolean {
     const hadPanel = this.#panels.delete(nodeId);
+    this.#telemetrySeen.delete(nodeId);
     if (!this.#nodes.delete(nodeId)) { if (hadPanel) this.#persistence?.save(this.#persisted(), false); return false; }
     this.#bump(false);
     return true;
@@ -181,7 +192,7 @@ export class ArmorStore {
 
   /** The level a node should have now: "high" needs the condition to have held for the dwell time. */
   #evaluated(node: StoredNode, count: number, now: number): StoredNode {
-    const raw = alertLevelFor(this.#mode, count);
+    const raw = alertLevelFor(this.#mode, count, this.#minTargets);
     const highSince = raw === "high" ? node.high_since_ms ?? now : null;
     const level: AlertLevel = raw === "high" && now - (highSince ?? now) < this.#rules().dwell_ms ? "review" : raw;
     return { ...node, target_count: count, alert_level: level, high_since_ms: highSince };

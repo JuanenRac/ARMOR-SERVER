@@ -172,7 +172,12 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const automations: AutomationEngine = new AutomationEngine({
     file: path.join(config.dataDir, "automations.json"), warn, mode: () => store.snapshot().mode,
     run: async (action: Action, automation) => {
-      if (action.type === "device") { await sendDeviceCommand(action.device_id, action.command); return; }
+      if (action.type === "device") {
+        // An automation never switches a critical circuit: that is a person, an administrator, with a confirmation (see routes/devices.ts).
+        if (devices.get(action.device_id)?.risk === "critical") throw new Error("an automation does not switch a critical circuit");
+        await sendDeviceCommand(action.device_id, action.command);
+        return;
+      }
       notifier.send({ service: "armor-server", event: "automation.notify", at: new Date().toISOString(), mode: store.snapshot().mode, automation: automation.id });
     },
     onResult: (automation, action, ok, detail) => audit.record({ action: "automation.run", outcome: ok ? "allowed" : "failed", target: `${automation.id}:${action.type === "device" ? `${action.device_id}=${action.command}` : "notify"}`, detail }),
@@ -223,7 +228,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const solar = new SolarStore({ now: overrides.now, onMessage: message => alarmRules.handleSolar(message), onStale: (node, device, stale) => alarmRules.handleSolarStale(node, device, stale) });
   const persistence = new FileStatePersistence(path.join(config.dataDir, "state.json"), { warn });
   const store: ArmorStore = new ArmorStore(overrides.broadcast, {
-    staleAfterMs: config.nodeStaleAfterS * 1000, now: overrides.now, persistence, rules: () => rules.get(),
+    staleAfterMs: config.nodeStaleAfterS * 1000, now: overrides.now, persistence, rules: () => rules.get(), minTargets: config.alertMinTargets,
     onEvent: record,
   });
   const cameraWatcher = new CameraWatcher({ list: () => vault.list(), onEvent: record });

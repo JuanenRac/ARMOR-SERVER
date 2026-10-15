@@ -7,6 +7,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import fs from "node:fs";
 import path from "node:path";
 import type { CameraConnection, CameraSecrets } from "./model.js";
+import { durableRename } from "../durable.js";
 
 type StoredSecrets = { iv: string; tag: string; ciphertext: string };
 type StoredCamera = Omit<CameraConnection, "secrets"> & { secrets?: StoredSecrets };
@@ -67,7 +68,7 @@ export class CameraVault {
     fs.mkdirSync(path.dirname(this.#file), { recursive: true });
     const temporary = `${this.#file}.tmp`;
     fs.writeFileSync(temporary, JSON.stringify({ schema: 1, cameras: stored }, null, 2), { encoding: "utf8", mode: 0o600 });
-    fs.renameSync(temporary, this.#file);
+    durableRename(temporary, this.#file);
   }
 
   #restore(): void {

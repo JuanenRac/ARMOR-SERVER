@@ -10,6 +10,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { finite, integer, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
+import { durableRename } from "./durable.js";
 
 export const DEVICE_KINDS = ["router", "computer", "phone", "tv", "printer", "camera", "iot", "server", "nas", "network", "unknown"] as const;
 export type DeviceKind = (typeof DEVICE_KINDS)[number];
@@ -285,7 +286,7 @@ export class DeviceNotes {
       fs.mkdirSync(path.dirname(this.#file), { recursive: true });
       const temporary = `${this.#file}.${process.pid}.tmp`;
       fs.writeFileSync(temporary, JSON.stringify({ schema: 1, notes: Object.fromEntries(this.#notes) }), { encoding: "utf8", mode: 0o600 });
-      fs.renameSync(temporary, this.#file);
+      durableRename(temporary, this.#file);
     } catch { /* losing the file only loses the names */ }
   }
 }
@@ -360,8 +361,10 @@ export class NetworkStore {
     this.#seen.set(message.node_id, seen);
     const firstMessage = seen.size === 0;
     for (const event of message.events ?? []) {
-      if (seen.has(event.id)) continue;
-      seen.add(event.id);
+      // An event is the same one when its id AND its time are: a node that restarts counts its ids again from e1, and those new events must not be taken for the old ones.
+      const key = `${event.id}@${event.at_ms}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       if (firstMessage && !this.#recent(event, message.timestamp_ms)) continue;     // the backlog of a node the server has just met is history, not news
       this.#events.push({ ...event, node_id: message.node_id });
       if (this.#events.length > 300) this.#events.splice(0, this.#events.length - 300);
@@ -384,7 +387,7 @@ export class NetworkStore {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       const temporary = `${file}.${process.pid}.tmp`;
       fs.writeFileSync(temporary, JSON.stringify({ schema: 1, outages: this.#outages }), { encoding: "utf8", mode: 0o600 });
-      fs.renameSync(temporary, file);
+      durableRename(temporary, file);
     } catch { /* the totals of the next messages still say it */ }
   }
 

@@ -42,7 +42,7 @@ const state = (extra: Partial<AlarmMessage> = {}): AlarmMessage => ({
 test("a state must be the contract's: unknown fields and joined rules are refused", () => {
   assert.doesNotThrow(() => parseAlarmMessage(state()));
   assert.throws(() => parseAlarmMessage({ ...state(), pin: "1234" }), /unknown field/);
-  assert.throws(() => parseAlarmMessage(state({ phase: "disarmed" })), /exactly when the phase is/);
+  assert.throws(() => parseAlarmMessage(state({ phase: "disarmed" })), /a disarmed panel has the mode disarmed/);
   assert.throws(() => parseAlarmMessage(state({ siren: true })), /only in the alarm phase/);
   assert.throws(() => parseAlarmMessage(state({ open_zones: ["garage"] })), /zone of the message/);
   assert.throws(() => parseAlarmMessage(state({ zones: [state().zones[0], state().zones[0]] })), /once/);
@@ -179,7 +179,7 @@ test("by default the server sends nothing to any panel: the route refuses, and t
     assert.equal((await post({ node: "alarm-1", action: "disarm" }, {})).status, 401);
     const off = await post({ node: "alarm-1", action: "disarm" });
     assert.deepEqual([off.status, ((await off.json()) as { code: string }).code], [403, "commands_disabled"]);
-    for (const bad of [{ node: "Bad Node", action: "disarm" }, { node: "alarm-1", action: "silence" }, { node: "alarm-1", action: "arm", mode: "night" }, { node: "alarm-1", action: "disarm", pin: "1234" },
+    for (const bad of [{ node: "Bad Node", action: "disarm" }, { node: "alarm-1", action: "silence" }, { node: "alarm-1", action: "arm", mode: "night" }, { node: "alarm-1", action: "disarm", token: "1234" },
                        { node: "alarm-1", action: "arm", mode: "away", force: "yes" }, "no"]) assert.equal((await post(bad)).status, 400, JSON.stringify(bad));
     const status = await fetch(`${running.base}/api/v1/alarm/commands`, { headers: { cookie } });
     assert.equal(status.status, 200);

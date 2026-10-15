@@ -14,7 +14,7 @@ const param = (request: Request, name: string): string => {
 };
 
 export function registerMediaRoutes(app: Express, context: AppContext): void {
-  const { evidence, audit, requireOperator } = context;
+  const { evidence, audit, requireOperator, requireAdmin } = context;
 
   app.get("/api/v1/media", requireOperator, async (_request, response) =>
     response.json({ items: await evidence.list(), activeCameraIds: evidence.activeCameraIds }));
@@ -56,7 +56,8 @@ export function registerMediaRoutes(app: Express, context: AppContext): void {
     return response.sendStatus(204);
   });
 
-  app.delete("/api/v1/media", requireOperator, async (request, response) => {
+  // Erasing ALL the recordings is an administrator's: they are evidence.
+  app.delete("/api/v1/media", requireAdmin, async (request, response) => {
     const requested = request.body?.kind;
     const kinds: MediaKind[] = requested === "snapshot" ? ["snapshots"] : requested === "recording" ? ["recordings"] : requested === "all" ? ["snapshots", "recordings"] : [];
     if (!kinds.length) return response.status(400).json({ error: "kind must be snapshot, recording, or all" });

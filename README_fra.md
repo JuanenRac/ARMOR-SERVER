@@ -20,13 +20,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-272%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-313%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="Maturity">
 </p>
 
 ---
 
-**Vérification d'honnêteté - ce qui fonctionne aujourd'hui:** Chaque route, session, chiffrement et règle de preuves ci-dessous est réel et couvert par des tests (`npm test`, 272 tests, dont une suite d'intégration HTTP complète face à un serveur isolé). Il a fonctionné avec un vrai broker MQTT sur la CM5 (avec des scripts et avec deux vrais nœuds radar), a diffusé de la vidéo en direct, enregistré une capture et filmé depuis cinq vraies caméras IP via FFmpeg. Ce qui n'est **pas encore prouvé** : ONVIF avec une vraie caméra ONVIF, le PTZ sur chaque firmware de caméra (il marche sur l'unité Hi3510), tout matériel Jetson et les routes solaires avec un vrai nœud passerelle (elles sont testées avec des relevés générés).
+**Vérification d'honnêteté - ce qui fonctionne aujourd'hui:** Chaque route, session, chiffrement et règle de preuves ci-dessous est réel et couvert par des tests (`npm test`, 313 tests, dont une suite d'intégration HTTP complète face à un serveur isolé). Il a fonctionné avec un vrai broker MQTT sur la CM5 (avec des scripts et avec deux vrais nœuds radar), a diffusé de la vidéo en direct, enregistré une capture et filmé depuis cinq vraies caméras IP via FFmpeg. Ce qui n'est **pas encore prouvé** : ONVIF avec une vraie caméra ONVIF, le PTZ sur chaque firmware de caméra (il marche sur l'unité Hi3510), tout matériel Jetson et les routes solaires avec un vrai nœud passerelle (elles sont testées avec des relevés générés).
 
 ---
 
@@ -44,6 +44,8 @@
 * **Appareils, alarmes et automatisations :** appareils de fumée, gaz, inondation, porte, fenêtre, mouvement, climat, prise, lumière, sirène et serrure par MQTT ou envoi authentifié, avec état normalisé, disponibilité et commandes ; alarmes avec un cycle déclenchée / acquittée / effacée ; règles qui commandent des appareils lors d'un événement ; armer et désarmer depuis une session ouverte ; et le plan du site gardé sur le serveur pour tous les clients.
 * **Relevés solaires :** les onduleurs et piles de batteries (avec chaque cellule et les capacités) arrivent par HTTP ou MQTT, sont validés par le contrat partagé, gardés avec un historique (un échantillon toutes les 30 s pendant un jour) et des totaux, marqués périmés après deux minutes, et déclenchent quatre alarmes (panne d'onduleur, batterie faible, alarme de batterie, appareil muet).
 * **La machine, le réseau et le panneau :** `GET /api/v1/system/metrics` (CPU, mémoire, disques, température, réseau et un court historique de la machine où il tourne), `GET/PUT /api/v1/system/connection` (l'adresse et les ports d'écoute, réservé à un administrateur, appliqué au prochain démarrage), `GET /api/v1/panel/summary` (quelques centaines d'octets pour les petits écrans) et, pour le nœud réseau, les accès qu'un administrateur garde pour l'administration web d'un appareil : chiffrés (AES-256-GCM), jamais renvoyés et remis seulement dans l'unique ordre `inspect` qui en a besoin.
+* **Un code PIN pour désarmer :** chaque utilisateur peut avoir un code PIN et un code de contrainte. Désarmer depuis Studio, le téléphone, le panneau mural, une commande à une centrale d'alarme ou la voix le demande ; trois codes erronés bloquent l'utilisateur une minute, puis cinq, puis quinze, et le code de contrainte désarme en levant en silence une alarme critique. `ARMOR_DISARM_PIN=required` rend le code obligatoire.
+* **Une détection que ni le silence ni une coupure de courant ne trompent :** une seule cible tenue pendant le délai est une intrusion (`ARMOR_ALERT_MIN_TARGETS`, 1 par défaut), un radar dont les capteurs sont morts devient périmé même si son battement continue, une centrale d'alarme qui sonne alors que le système est désarmé est acceptée et signalée par Telegram, Home Assistant, le webhook et MQTT, et un fichier d'état ou d'utilisateurs abîmé par une coupure est remplacé par sa dernière bonne copie (sans copie, le serveur démarre armé).
 
 ## 🔄 Architecture
 
@@ -76,7 +78,7 @@ flowchart LR
 
 * Copiez `.env.example` vers `.env` (ignoré par Git), ou laissez `run.bat` / `run.sh` générer des secrets aléatoires au premier lancement.
 * Obligatoires : `ARMOR_INGEST_TOKEN` et `ARMOR_CONTROL_TOKEN` (24 caractères ou plus, tous différents) et `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD` (le premier administrateur).
-* Courantes : `ARMOR_HOST` / `ARMOR_PORT`, `ARMOR_DATA_DIR`, `ARMOR_FFMPEG_PATH` (vidéo en direct et capture), `ARMOR_MQTT_URL`, `ARMOR_STUDIO_ORIGIN`, `ARMOR_NODE_STALE_AFTER_S`, `ARMOR_CAMERA_CHECK_S`, `ARMOR_ALERT_DWELL_MS`, `ARMOR_ALERT_WEBHOOK_URL` et `ARMOR_COOKIE_SECURE` (à `1` derrière TLS).
+* Courantes : `ARMOR_HOST` / `ARMOR_PORT`, `ARMOR_DATA_DIR`, `ARMOR_FFMPEG_PATH` (vidéo en direct et capture), `ARMOR_MQTT_URL`, `ARMOR_STUDIO_ORIGIN`, `ARMOR_NODE_STALE_AFTER_S`, `ARMOR_CAMERA_CHECK_S`, `ARMOR_ALERT_DWELL_MS`, `ARMOR_ALERT_MIN_TARGETS`, `ARMOR_DISARM_PIN`, `ARMOR_ALERT_WEBHOOK_URL` et `ARMOR_COOKIE_SECURE` (à `1` derrière TLS).
 * **Micrologiciel, avis et voix :** le serveur met à jour le micrologiciel des nœuds de terrain (un fichier ou la version GitHub, un nœud ou tous ceux d'un type, avec progression et vérification du SHA-256), envoie les alarmes à Telegram et à Home Assistant (avec reprises et une ligne d'audit sans secrets, dans les sept langues) et exécute quinze commandes écrites ou parlées via la passerelle vocale (l'état, les alarmes, les nœuds, les caméras, les radars, les systèmes solaire et électrique, le réseau, l'heure, l'aide et les lumières ; armer et désarmer se confirment en un second tour). Le service d'observation lève `camera_motion` avec son propre jeton. Voir [micrologiciel des nœuds](docs/NODE_FIRMWARE.md) et [intégration](docs/INTEGRATION.md).
 * **L'installation dans un fichier, un compte propre au panneau mural et Home Assistant :** un administrateur télécharge toute l'installation (les caméras sans leurs mots de passe, les plans, les règles, les automatisations, les appareils, l'équipement solaire et les seuils des alarmes d'énergie ; jamais un mot de passe, un jeton ou une clé) et l'importe sur une autre machine, où les plans, les règles et les seuils remplacent et les listes n'ajoutent que ce qui manque ; un rôle `panel` (privilège minimal) laisse un panneau mural lire le résumé, changer le mode et acquitter les alarmes, et rien d'autre, et le résumé porte l'énergie de la maison ; avec `ARMOR_HA_DISCOVERY=1`, Home Assistant, qui lit le même broker, trouve seul les capteurs de l'équipement solaire, les canaux électriques et les centrales d'alarme (lecture seule, désactivé par défaut).
 
@@ -102,7 +104,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 272 tests: unit + full HTTP integration
+npm test            # 313 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```
@@ -124,6 +126,7 @@ Pour installer sur le banc d'essai CM5 (isolé de tout autre projet, avec utilis
 * **[ARMOR-STUDIO](https://github.com/JuanenRac/ARMOR-STUDIO)** - Console web : caméras, radar, alarmes, énergie solaire et concepteur de site 2D/3D
 * **[ARMOR-ANDROID-CONTROL](https://github.com/JuanenRac/ARMOR-ANDROID-CONTROL)** - Client Android de l'opérateur avec radar 2D/3D en direct
 * **[ARMOR-SERVER-AI](https://github.com/JuanenRac/ARMOR-SERVER-AI)** - Politique d'inférence visuelle qui explique ses décisions et n'agit jamais
+* **[ARMOR-VISION](https://github.com/JuanenRac/ARMOR-VISION)** - Zones de caméra, masques et règles de détection pour la Jetson Orin NX
 * **[ARMOR-VOICE-AI](https://github.com/JuanenRac/ARMOR-VOICE-AI)** - Intentions vocales hors ligne avec une confirmation impossible à falsifier
 * **[ARMOR-HARDWARE](https://github.com/JuanenRac/ARMOR-HARDWARE)** - Boîtiers, électronique et matrice d'acceptation sur banc
 * **[ARMOR-DEVOPS](https://github.com/JuanenRac/ARMOR-DEVOPS)** - Déploiement, banc d'essai CM5, sauvegarde et TLS

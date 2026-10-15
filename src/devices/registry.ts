@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { cleanState, defaultRisk, isKind, isProtocol, isRisk, isTriggered, kindInfo, type DeviceKind, type DeviceState, type Protocol, type Risk } from "./catalog.js";
 import { cleanMap, parsePayload, stateFromPayload, type MapEntry } from "./mapping.js";
+import { durableRename } from "../durable.js";
 
 export type DeviceSource =
   | { type: "push" }
@@ -50,13 +51,17 @@ const validTopic = (topic: unknown, allowWildcards = false): topic is string =>
 const text = (value: unknown, max: number): string => (typeof value === "string" ? value.trim().slice(0, max) : "");
 const payloadWord = (value: unknown): string | undefined => (typeof value === "string" && value.length > 0 && value.length <= 200 ? value : undefined);
 
-export type RegistryOptions = { file: string; now?: () => Date; warn?: (message: string) => void; onChange?: (change: DeviceChange) => void; onTopics?: () => void };
+export type RegistryOptions = { file: string; now?: () => Date; warn?: (message: string) => void; onChange?: (change: DeviceChange) => void; onTopics?: () => void; /** How long the press of a panic button lasts (tests shorten it). */ pulseResetMs?: number };
+
+/** How long the press of a panic button lasts when the button only ever says that it was pressed. */
+const PULSE_RESET_MS = 30_000;
 
 export class DeviceRegistry {
   readonly #options: RegistryOptions;
   readonly #now: () => Date;
   #devices = new Map<string, Device>();
   #timer: NodeJS.Timeout | undefined;
+  readonly #pulses = new Map<string, NodeJS.Timeout>();
 
   constructor(options: RegistryOptions) {
     this.#options = options;
@@ -94,7 +99,7 @@ export class DeviceRegistry {
       fs.mkdirSync(path.dirname(this.#options.file), { recursive: true });
       const temporary = `${this.#options.file}.${process.pid}.tmp`;
       fs.writeFileSync(temporary, JSON.stringify({ schema: 1, devices: [...this.#devices.values()] }, null, 1), { encoding: "utf8", mode: 0o600 });
-      fs.renameSync(temporary, this.#options.file);
+      durableRename(temporary, this.#options.file);
     } catch (error) { this.#options.warn?.(`the devices file could not be written: ${(error as Error).message}`); }
   }
 
@@ -196,8 +201,16 @@ export class DeviceRegistry {
     const change: DeviceChange = { device, changes, onlineChanged: !wasOnline, ...(nowTriggered !== wasTriggered ? { triggered: nowTriggered } : {}) };
     this.#save();
     this.#options.onChange?.(change);
+    // A panic button says "I was pressed" and never "I was released" (the `action` of a Zigbee2MQTT button is a pulse): the press ends by itself after a while, so that the next one is a new alarm.
+    if (device.kind === "panic_button" && nowTriggered && !wasTriggered) {
+      const timer = setTimeout(() => { this.#pulses.delete(id); if (this.#devices.get(id) && isTriggered("panic_button", this.#devices.get(id)!.state)) this.applyState(id, { triggered: false }); }, this.#options.pulseResetMs ?? PULSE_RESET_MS);
+      timer.unref?.();
+      this.#pulses.set(id, timer);
+    }
     return change;
   }
+
+  close(): void { for (const timer of this.#pulses.values()) clearTimeout(timer); this.#pulses.clear(); }
 
   /** Whatever an MQTT device published: match its topic, translate its payload, apply it. */
   ingestMqtt(topic: string, raw: Buffer | string): DeviceChange[] {

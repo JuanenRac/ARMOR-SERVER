@@ -32,7 +32,8 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
     return camera;
   };
 
-  app.get("/api/v1/camera-views", (_request, response) => response.json({ cameras: vault.list().map(context.viewCamera) }));
+  // Needs an operator: the inventory of the cameras (address, ports, paths and, on many cheap cameras, a snapshot URL that carries the login) is not for whoever is on the LAN.
+  app.get("/api/v1/camera-views", requireOperator, (_request, response) => response.json({ cameras: vault.list().map(context.viewCamera) }));
   app.get("/api/v1/cameras", requireOperator, (_request, response) => response.json({ cameras: vault.list().map(context.publicCamera) }));
 
   app.post("/api/v1/cameras/configure", requireOperator, (request, response) => {

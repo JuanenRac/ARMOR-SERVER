@@ -222,3 +222,13 @@ test("the network design is kept and versioned like the others", async () => {
     assert.equal((await put({ revision: 1, network: { big: "x".repeat(787_500) } })).status, 400);
   } finally { await running.stop(); }
 });
+
+test("a node that restarts and counts its events from e1 again is not taken for the old one", () => {
+  const told: string[] = [];
+  const store = new NetworkStore({ now: () => NOW, onEvent: (_node, item) => told.push(`${item.id}:${item.kind}`) });
+  store.ingest(message({ events: [event({ id: "e1", kind: "new_device", at_ms: NOW - 50_000 })] }));
+  store.ingest(message({ events: [event({ id: "e1", kind: "new_device", at_ms: NOW - 50_000 })] }));    // the same event, said again
+  assert.deepEqual(told, ["e1:new_device"], "told once");
+  store.ingest(message({ events: [event({ id: "e1", kind: "port_opened", at_ms: NOW - 1000 })] }));      // after a restart: e1 is another event
+  assert.deepEqual(told, ["e1:new_device", "e1:port_opened"]);
+});

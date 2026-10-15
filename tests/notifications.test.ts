@@ -153,3 +153,44 @@ test("without any place configured the test says so, and the secrets of the sett
   assert.doesNotMatch(masked, /abc|secret-id-1234/);
   assert.match(masked, /ARMOR_TELEGRAM_CHAT_IDS=123456789/);
 });
+
+test("the panel of an alarm node and the network reach the places that tell a person", async () => {
+  const { alertMessageFor } = await import("../src/notify.js");
+  const at = "2000-01-01T00:00:00Z";
+  for (const mode of ["armed", "disarmed"] as const) {
+    const sounding = alertMessageFor({ id: 1, at, type: "alarm", alarm_id: "alm-00001", state: "raised", severity: "critical", source: "alarm-1", source_type: "alarm", code: "alarm_sounding" }, mode);
+    assert.equal(sounding?.event, "alarm.raised");
+    assert.equal(sounding?.alarm_node_id, "alarm-1");
+    assert.equal(sounding?.severity, "critical");
+    const tamper = alertMessageFor({ id: 2, at, type: "alarm", alarm_id: "alm-00002", state: "raised", severity: "high", source: "alarm-1/front-door", source_type: "alarm", code: "alarm_tamper" }, mode);
+    assert.equal(tamper?.alarm_node_id, "alarm-1/front-door");
+    const internet = alertMessageFor({ id: 3, at, type: "alarm", alarm_id: "alm-00003", state: "raised", severity: "warning", source: "net-1", source_type: "network", code: "network_internet_down" }, mode);
+    assert.equal(internet?.network_id, "net-1");
+  }
+  assert.equal(alertMessageFor({ id: 4, at, type: "alarm", alarm_id: "alm-00001", state: "cleared", severity: "critical", source: "alarm-1", source_type: "alarm", code: "alarm_sounding" }, "armed"), null);
+  const text = alertText({ service: "armor-server", event: "alarm.raised", at, mode: "disarmed", severity: "critical", code: "alarm_sounding", alarm_node_id: "alarm-1" }, "en");
+  assert.match(text, /CRITICAL alarm: alarm_sounding \(alarm-1\)/);
+});
+
+test("a Telegram chat that refuses the alarm does not stop the others, and a retry goes only to those that did not get it", async () => {
+  const delivered: string[] = [];
+  let down = true;
+  const fetchImpl = (async (_url: string, init: { body: string }) => {
+    const chat = (JSON.parse(init.body) as { chat_id: string }).chat_id;
+    if (chat === "111111111") return new Response(JSON.stringify({ description: "bot was kicked from the group" }), { status: 403 });   // never works
+    if (chat === "222222222" && down) return new Response("{}", { status: 502 });                                                      // works on a retry
+    delivered.push(chat);
+    return new Response("{}", { status: 200 });
+  }) as unknown as typeof fetch;
+  const channel = telegramChannel({ token: TOKEN, chatIds: ["111111111", "222222222", "333333333"], fetchImpl });
+  const message: AlertMessage = { service: "armor-server", event: "alert.test", at: "2000-01-01T00:00:00Z", mode: "armed" };
+  const first = await channel.deliver(message, "text", "en", new AbortController().signal);
+  assert.equal(first.ok, false);
+  assert.notEqual(first.final, true, "one chat can still be retried, so it is not given up");
+  assert.deepEqual(delivered, ["333333333"], "the chat after the refusing one got it");
+  down = false;
+  const second = await channel.deliver(message, "text", "en", new AbortController().signal);
+  assert.deepEqual(delivered, ["333333333", "222222222"], "the retry did not send it again to the chat that had it");
+  assert.equal(second.ok, false);
+  assert.equal(second.final, true, "only the chat that can never work is left: it is given up");
+});

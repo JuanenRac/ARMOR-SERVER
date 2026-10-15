@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { AlertLevel, SecurityMode } from "./store.js";
+import { durableRename } from "./durable.js";
 
 export type NodeStatus = "online" | "offline" | "stale";
 export type ArmorEventBody =
@@ -140,7 +141,7 @@ export class EventLog {
       const temporary = `${this.#file}.tmp`;
       fs.writeFileSync(temporary, kept.map(event => JSON.stringify(event) + "\n").join(""), { encoding: "utf8", mode: 0o600 });
       for (let index = 1; index <= KEPT_FILES; index += 1) fs.rmSync(`${this.#file}.${index}`, { force: true });
-      fs.renameSync(temporary, this.#file);
+      durableRename(temporary, this.#file);
       // Numbers of removed events must never come back, even if the newest ones were the ones removed.
       fs.writeFileSync(`${this.#file}.next`, String(this.#nextId), { encoding: "utf8", mode: 0o600 });
     } catch { /* If the rewrite fails the memory below still reflects the request; the next start reads what is on disk. */ }

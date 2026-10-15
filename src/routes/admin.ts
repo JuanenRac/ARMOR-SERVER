@@ -117,14 +117,18 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
 
     const accounts = await ask(response, "GET", "/v1/mqtt/accounts");
     if (!accounts) return;
-    const wanted = `field-node-${nodeId}`;
+    // The kind of node decides the identity: a radar node's account cannot publish where a solar, electrical, network or alarm node does (it was always the radar's, so an adopted node of any other kind stayed mute).
+    const kind = typeof input.kind === "string" ? input.kind : "radar";
+    const identity = ({ radar: ["node", "field-node"], solar: ["solar-node", "solar-node"], electrical: ["electrical-node", "electrical-node"], network: ["network-node", "network-node"], alarm: ["alarm-node", "alarm-node"] } as Record<string, [string, string]>)[kind];
+    if (!identity) return response.status(422).json({ error: "invalid_kind" });
+    const wanted = `${identity[1]}-${nodeId}`;
     const existing = Array.isArray(accounts.body.accounts) && (accounts.body.accounts as Array<{ user?: string }>).some(item => item.user === wanted);
     if (existing) {
       const removed = await ask(response, "DELETE", `/v1/mqtt/accounts/${wanted}`);
       if (!removed) return;
       if (removed.status >= 300) return relay(response, removed);
     }
-    const created = await ask(response, "POST", "/v1/mqtt/accounts", { role: "node", name: nodeId });
+    const created = await ask(response, "POST", "/v1/mqtt/accounts", { role: identity[0], name: nodeId });
     if (!created) return;
     if (created.status >= 300) return relay(response, created);
     const account = { user: String(created.body.user), password: String(created.body.password) };

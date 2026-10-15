@@ -97,7 +97,7 @@ test("a burst from many nodes is accepted completely and lands in the state", as
     const jobs: Array<() => Promise<number>> = [];
     for (let n = 0; n < nodes; n += 1) {
       for (let m = 0; m < perNode; m += 1) {
-        jobs.push(async () => (await fetch(`${running.base}/api/v1/telemetry`, { method: "POST", headers, body: JSON.stringify({ node_id: `node-${n}`, timestamp_ms: 100 + m, lux: m, targets: [] }) })).status);
+        jobs.push(async () => (await fetch(`${running.base}/api/v1/telemetry`, { method: "POST", headers, body: JSON.stringify({ node_id: `node-${n}`, timestamp_ms: 1_790_000_000_000 + m, lux: m, targets: [] }) })).status);
       }
     }
     const results: number[] = [];
@@ -108,7 +108,7 @@ test("a burst from many nodes is accepted completely and lands in the state", as
     assert.ok(Date.now() - started < 30_000, "1000 messages took too long");
     const state = await (await fetch(`${running.base}/api/v1/status`, { headers: { Authorization: `Bearer ${SECRETS.ARMOR_OPERATOR_TOKEN}` } })).json() as { nodes: Record<string, { timestamp_ms: number }> };
     assert.equal(Object.keys(state.nodes).length, nodes);
-    assert.ok(Object.values(state.nodes).every(node => node.timestamp_ms === 100 + perNode - 1));
+    assert.ok(Object.values(state.nodes).every(node => node.timestamp_ms === 1_790_000_000_000 + perNode - 1));
   } finally { await running.stop(); }
 });
 

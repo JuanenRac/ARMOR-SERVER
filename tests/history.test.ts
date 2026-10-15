@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { EventLog, type ArmorEventBody } from "../src/events.js";
-import { SECRETS, startServer, tempDir } from "./helpers.js";
+import { SECRETS, startServer, studioCookie, tempDir } from "./helpers.js";
 
 /** A log whose clock is set by the test, so ages are exact. */
 function logAt(file: string, clock: { now: number }, capacity = 5000) {
@@ -96,7 +96,8 @@ test("history routes: filters are validated, deletion needs a confirmation and i
     assert.equal(((await (await get("?q=cam")).json()) as { events: unknown[] }).events.length, 1);
     assert.equal(((await (await get("?level=high&order=asc")).json()) as { events: unknown[] }).events.length, 1);
 
-    const remove = (query: string, headers: Record<string, string> = operator) => fetch(`${running.base}/api/v1/history${query}`, { method: "DELETE", headers });
+    const admin = { cookie: await studioCookie(running.base) };   // erasing the history is an administrator's
+    const remove = (query: string, headers: Record<string, string> = admin) => fetch(`${running.base}/api/v1/history${query}`, { method: "DELETE", headers });
     assert.equal((await remove("?scope=all", {})).status, 401);
     assert.equal((await remove("?scope=all")).status, 400, "no confirmation");
     assert.equal((await remove("?scope=some&confirm=delete")).status, 400);

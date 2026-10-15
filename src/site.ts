@@ -11,6 +11,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { durableRename } from "./durable.js";
 
 export const MAX_SITE_BYTES = 768 * 1024;
 export type SiteDocument = { revision: number; updated_at: string | null; updated_by: string | null; site: Record<string, unknown> | null };
@@ -57,7 +58,7 @@ export class SiteStore {
     fs.mkdirSync(path.dirname(this.#file), { recursive: true });
     const temporary = `${this.#file}.${process.pid}.tmp`;
     fs.writeFileSync(temporary, JSON.stringify(this.#doc), { encoding: "utf8", mode: 0o600 });
-    fs.renameSync(temporary, this.#file);
+    durableRename(temporary, this.#file);
     return this.#doc;
   }
   /** Keep the design as it is now, before `incoming` replaces it. */

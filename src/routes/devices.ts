@@ -3,6 +3,7 @@
  * set by hand for a test), and commands to actuators.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
+import { RISK_LEVELS } from "../devices/catalog.js";
 import type { Express, Response } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
@@ -54,6 +55,12 @@ export function registerDeviceRoutes(app: Express, context: AppContext): void {
 
   app.patch("/api/v1/devices/:id", requireOperator, (request, response) => {
     const input = body(request), id = String(request.params.id);
+    // How much a device matters to switch is set by an administrator: an operator who could lower it to "low" would walk round the rule that a critical circuit is switched by an administrator.
+    const current = devices.get(id);
+    if (current && input.risk !== undefined && input.risk !== current.risk && studioUser(request)?.role !== "admin" && RISK_LEVELS.indexOf(input.risk as never) < RISK_LEVELS.indexOf(current.risk)) {
+      audit.record({ action: "device.update", outcome: "denied", actor: actor(request), target: id, detail: "risk lowered" });
+      return response.status(403).json({ error: "only an administrator lowers how much a device matters to switch", code: "admin_required" });
+    }
     try {
       const device = devices.update(id, { name: input.name as string | undefined, kind: input.kind as Device["kind"] | undefined, protocol: input.protocol as Device["protocol"] | undefined, location: input.location as string | undefined, source: input.source as Device["source"] | undefined, commands: input.commands as Device["commands"] | undefined, expected_interval_s: input.expected_interval_s as number | undefined, risk: input.risk as Device["risk"] | undefined });
       audit.record({ action: "device.update", outcome: "allowed", actor: actor(request), target: id });

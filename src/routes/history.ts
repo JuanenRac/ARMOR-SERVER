@@ -23,7 +23,7 @@ const positiveInteger = (value: unknown): number | undefined => {
 };
 
 export function registerHistoryRoutes(app: Express, context: AppContext): void {
-  const { events, rules, audit, requireOperator, store } = context;
+  const { events, rules, audit, requireOperator, requireAdmin, store } = context;
 
   app.get("/api/v1/history", requireOperator, (request, response) => {
     const type = typeof request.query.type === "string" ? request.query.type : undefined;
@@ -43,7 +43,8 @@ export function registerHistoryRoutes(app: Express, context: AppContext): void {
   app.get("/api/v1/history/summary", requireOperator, (_request, response) => response.json(events.summary()));
 
   // Removing history is deliberate and permanent, so it needs an explicit confirmation and is audited.
-  app.delete("/api/v1/history", requireOperator, (request, response) => {
+  // Erasing the history is an administrator's: it is the evidence of what happened.
+  app.delete("/api/v1/history", requireAdmin, (request, response) => {
     if (request.query.confirm !== "delete") return response.status(400).json({ error: "add confirm=delete to remove history" });
     const scope = request.query.scope;
     const type = typeof request.query.type === "string" ? request.query.type : undefined;

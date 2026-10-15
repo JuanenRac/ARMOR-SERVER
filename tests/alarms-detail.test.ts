@@ -77,3 +77,38 @@ test("an alarm taken off the list while its cause goes on does not come back unt
   assert.equal(alarms.clearAcknowledged(), 1);
   assert.equal(alarms.raise("k", info), undefined, "clearing the record does not bring back what is still going on either");
 });
+
+test("a burst of minor alarms never pushes off the list one that is still going on or that nobody has seen", () => {
+  const alarms = centre();
+  const critical = alarms.raise("alarm:alarm-1:sounding", { source: { type: "alarm", id: "alarm-1" }, severity: "critical", code: "alarm_sounding" });
+  assert.ok(critical);
+  for (let index = 0; index < 600; index += 1) {   // a big LAN: 600 devices that were never seen, each raised and then gone
+    alarms.raise(`network:new:${index}`, { source: { type: "network", id: `net-1/${index}` }, severity: "warning", code: "network_new_device" });
+    alarms.clear(`network:new:${index}`);
+    if (index % 2 === 0) alarms.acknowledge(`alm-${String(index + 2).padStart(5, "0")}`, "tester");
+  }
+  assert.ok(alarms.active().some(alarm => alarm.id === critical.id), "the critical alarm is still on the list");
+  assert.ok(alarms.active().length + alarms.recent().length <= 401, "and the list was kept to its size");
+  // the ones dropped were over: an alarm that is still going on is never one of them
+  const open = alarms.raise("network:open", { source: { type: "network", id: "net-1" }, severity: "warning", code: "network_degraded" });
+  for (let index = 0; index < 450; index += 1) {
+    alarms.raise(`device:${index}`, { source: { type: "device", id: `d${index}` }, severity: "warning", code: "tamper" });
+  }
+  assert.ok(alarms.active().some(alarm => alarm.id === open?.id), "an open alarm is not dropped while there is anything over to drop, nor while the list is under the hard limit");
+  assert.ok(alarms.active().length >= 451, "450 alarms still going on are all kept");
+});
+
+test("an alarm that is going on and unseen is acknowledged before it can be taken off the list", async () => {
+  const { startServer, studioCookie } = await import("./helpers.js");
+  const running = await startServer();
+  try {
+    const cookie = await studioCookie(running.base);
+    const raised = running.app.context.alarms.raise("test:one", { source: { type: "device", id: "smoke-1" }, severity: "critical", code: "smoke" });
+    assert.ok(raised);
+    const del = () => fetch(`${running.base}/api/v1/alarms/${raised.id}`, { method: "DELETE", headers: { cookie } });
+    const refused = await del();
+    assert.deepEqual([refused.status, ((await refused.json()) as { code: string }).code], [409, "acknowledge_first"]);
+    await fetch(`${running.base}/api/v1/alarms/${raised.id}/acknowledge`, { method: "POST", headers: { cookie } });
+    assert.equal((await del()).status, 200);
+  } finally { await running.stop(); }
+});

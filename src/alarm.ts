@@ -56,7 +56,7 @@ function parseEvent(value: unknown, index: number): AlarmEvent {
   return event as unknown as AlarmEvent;
 }
 
-/** The state of a node, with the rules that join fields: a zone named once, an open zone is a zone of the message, the mode is disarmed exactly when the phase is, a siren only in the alarm phase. */
+/** The state of a node, with the rules that join fields: a zone named once, an open zone is a zone of the message, a disarmed panel has the mode disarmed and an armed one does not, a siren only in the alarm phase. */
 export function parseAlarmMessage(value: unknown): AlarmMessage {
   const body = record(value, "alarm message");
   onlyKnown(body, ["kind", "node_id", "timestamp_ms", "phase", "mode", "siren", "locked_out", "commands_enabled", "zones", "open_zones", "events"], "alarm message");
@@ -77,7 +77,9 @@ export function parseAlarmMessage(value: unknown): AlarmMessage {
   if (!Array.isArray(body.events) || body.events.length > 10) throw new Error("invalid events");
   const events = body.events.map(parseEvent);
   if (events.some(event => event.zone !== undefined && !ids.includes(event.zone))) throw new Error("an event about a zone names a zone of the message");
-  if ((body.phase === "disarmed") !== (body.mode === "disarmed")) throw new Error("the mode is disarmed exactly when the phase is");
+  // A disarmed panel has the mode disarmed; the alarm phase may carry it too (a 24-hour zone or a tamper sounds with nobody having armed the panel).
+  if (body.phase === "disarmed" && body.mode !== "disarmed") throw new Error("a disarmed panel has the mode disarmed");
+  if ((body.phase === "exit_delay" || body.phase === "armed" || body.phase === "entry_delay") && body.mode === "disarmed") throw new Error("an arming or armed panel has a mode other than disarmed");
   if (body.siren === true && body.phase !== "alarm") throw new Error("the siren sounds only in the alarm phase");
   return { ...(body as unknown as AlarmMessage), node_id: node, timestamp_ms: timestamp, zones, events };
 }

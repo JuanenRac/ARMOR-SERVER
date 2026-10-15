@@ -44,6 +44,8 @@ export type ArmorConfig = {
   nodeStaleAfterS: number;
   /** Milliseconds a two-target condition must persist before it becomes "high" (0 = immediately). */
   alertDwellMs: number;
+  /** How many targets at once, while armed, make a node's alert "high" (an intrusion): 1 by default, so that a lone intruder is one; 2 to ignore a single target (a pet). */
+  alertMinTargets: number;
   /** Seconds between camera reachability checks (0 disables the watchdog). */
   cameraCheckS: number;
   /** Where alarms are POSTed (signed with `alertWebhookSecret` when set); null when unused. */
@@ -59,6 +61,8 @@ export type ArmorConfig = {
   electricalSwitching: boolean;
   /** Whether this server may arm and disarm the panel of an alarm node. Off unless ARMOR_ALARM_COMMANDS=1; even then the node and the broker have to allow it too. */
   alarmCommands: boolean;
+  /** ARMOR_DISARM_PIN=required: disarming from Studio, the phone or the wall panel needs the PIN of the signed-in user, and a user without a PIN cannot disarm. Otherwise a PIN is asked only of users who have one. */
+  disarmPinRequired: boolean;
   /** Home Assistant's MQTT discovery of what the nodes report (read-only sensors): off unless ARMOR_HA_DISCOVERY=1; the prefix is Home Assistant's (default "homeassistant"). See ha_discovery.ts. */
   haDiscovery: { prefix: string } | null;
   /** The admin agent (ARMOR-DEVOPS): where its Unix socket is and the token it wants; null when this install has no agent, and Studio then cannot administer services. */
@@ -192,6 +196,8 @@ export function readConfig(env: Env = process.env): ArmorConfig {
   const aiToken = aiTokenRaw || null;
   const electricalSwitching = env.ARMOR_ELECTRICAL_SWITCHING === "1";
   const alarmCommands = env.ARMOR_ALARM_COMMANDS === "1";
+  const disarmPinRequired = env.ARMOR_DISARM_PIN?.trim() === "required";
+  if (!disarmPinRequired) warnings.push("ARMOR_DISARM_PIN is not \"required\": anyone signed in as a user without a PIN can disarm the system; set a PIN for each user and ARMOR_DISARM_PIN=required.");
   const haPrefix = (env.ARMOR_HA_DISCOVERY_PREFIX ?? "homeassistant").trim();
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(haPrefix)) throw new ConfigError("ARMOR_HA_DISCOVERY_PREFIX is one word of letters, digits, - and _");
   const haDiscovery = env.ARMOR_HA_DISCOVERY === "1" ? { prefix: haPrefix } : null;
@@ -243,8 +249,9 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     mqtt: mqttUrl ? { url: mqttUrl, username: env.ARMOR_MQTT_USERNAME?.trim() || undefined, password: env.ARMOR_MQTT_PASSWORD || undefined } : null,
     nodeStaleAfterS: integer(env, "ARMOR_NODE_STALE_AFTER_S", 30, 5, 3600),
     alertDwellMs: integer(env, "ARMOR_ALERT_DWELL_MS", 2000, 0, 60_000),
+    alertMinTargets: integer(env, "ARMOR_ALERT_MIN_TARGETS", 1, 1, 20),
     cameraCheckS: integer(env, "ARMOR_CAMERA_CHECK_S", 20, 0, 3600),
-    alertWebhookUrl, alertWebhookSecret, telegram, homeAssistant, alertLanguage, electricalSwitching, alarmCommands, haDiscovery, admin, voice, aiToken,
+    alertWebhookUrl, alertWebhookSecret, telegram, homeAssistant, alertLanguage, electricalSwitching, alarmCommands, disarmPinRequired, haDiscovery, admin, voice, aiToken,
     tls,
     warnings,
   };

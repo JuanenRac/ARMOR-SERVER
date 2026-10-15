@@ -10,6 +10,7 @@ import type { Alarm } from "./alarms.js";
 import type { DeviceChange } from "./devices/registry.js";
 import type { Severity } from "./devices/catalog.js";
 import type { SecurityMode } from "./store.js";
+import { durableRename } from "./durable.js";
 
 export type Trigger =
   | { type: "device"; device_id: string; field: string; equals: boolean | number }
@@ -43,7 +44,7 @@ function cleanTrigger(raw: unknown): Trigger {
   if (t.type === "alarm") {
     const trigger: Trigger = { type: "alarm" };
     if (t.severity !== undefined && t.severity !== "") { if (!SEVERITIES.includes(t.severity as string)) throw new AutomationError("invalid_trigger", "unknown severity"); trigger.severity = t.severity as Severity; }
-    if (t.source_type !== undefined && t.source_type !== "") { if (!["node", "camera", "device", "solar", "electrical", "network", "alarm"].includes(t.source_type as string)) throw new AutomationError("invalid_trigger", "unknown source"); trigger.source_type = t.source_type as "node" | "camera" | "device" | "solar" | "electrical"; }
+    if (t.source_type !== undefined && t.source_type !== "") { if (!["node", "camera", "device", "solar", "electrical", "network", "alarm"].includes(t.source_type as string)) throw new AutomationError("invalid_trigger", "unknown source"); trigger.source_type = t.source_type as NonNullable<Extract<Trigger, { type: "alarm" }>["source_type"]>; }
     if (typeof t.source_id === "string" && t.source_id) { if (!ID.test(t.source_id)) throw new AutomationError("invalid_trigger", "invalid source id"); trigger.source_id = t.source_id; }
     return trigger;
   }
@@ -75,12 +76,16 @@ export type AutomationOptions = {
   warn?: (message: string) => void;
 };
 
+type PendingReversal = { automation_id: string; device_id: string; command: "on" | "off"; due_ms: number };
+
 export class AutomationEngine {
   readonly #options: AutomationOptions;
   readonly #now: () => Date;
   #automations = new Map<string, Automation>();
   readonly #recent = new Map<string, number[]>();
   readonly #timers = new Set<NodeJS.Timeout>();
+  /** The "switch it back after N seconds" that are still to be done: kept in the file, so that a restart in between does not leave a siren or a light on for ever. */
+  readonly #pending = new Map<string, PendingReversal>();
   #saveTimer: NodeJS.Timeout | undefined;
 
   constructor(options: AutomationOptions) {
@@ -95,7 +100,34 @@ export class AutomationEngine {
           this.#automations.set(a.id, { id: a.id, name: String(a.name ?? a.id).slice(0, 80), enabled: a.enabled !== false, trigger: cleanTrigger(a.trigger), when_mode: a.when_mode === "armed" || a.when_mode === "disarmed" ? a.when_mode : "any", actions: cleanActions(a.actions), created_at: String(a.created_at ?? this.#now().toISOString()), last_run: typeof a.last_run === "string" ? a.last_run : null, runs: Number.isInteger(a.runs) ? a.runs : 0 });
         } catch { /* skip a damaged entry */ }
       }
+      for (const item of Array.isArray((raw as { pending?: unknown }).pending) ? (raw as { pending: unknown[] }).pending.slice(0, 200) : []) {
+        const entry = item as Partial<PendingReversal>;
+        if (typeof entry?.automation_id === "string" && typeof entry.device_id === "string" && ID.test(entry.device_id) && (entry.command === "on" || entry.command === "off") && Number.isFinite(entry.due_ms)) {
+          this.#pending.set(`${entry.automation_id}:${entry.device_id}`, { automation_id: entry.automation_id, device_id: entry.device_id, command: entry.command, due_ms: entry.due_ms as number });
+        }
+      }
     } catch { /* none yet */ }
+  }
+
+  /** Called once the server is running (the devices and the broker are there): the reversals left over from before a restart are done, the ones not yet due are waited for. */
+  resumePending(): void {
+    for (const entry of [...this.#pending.values()]) this.#scheduleReversal(entry, Math.max(1000, entry.due_ms - this.#now().getTime()));
+  }
+
+  #scheduleReversal(entry: PendingReversal, waitMs: number): void {
+    const key = `${entry.automation_id}:${entry.device_id}`;
+    this.#pending.set(key, entry);
+    this.#save();
+    const timer = setTimeout(() => {
+      this.#timers.delete(timer);
+      this.#pending.delete(key);
+      this.#save();
+      const automation = this.#automations.get(entry.automation_id) ?? ({ id: entry.automation_id, name: entry.automation_id, enabled: true, trigger: { type: "mode", mode: "armed" }, when_mode: "any", actions: [], runs: 0 } as unknown as Automation);
+      const revert: Action = { type: "device", device_id: entry.device_id, command: entry.command };
+      void this.#options.run(revert, automation).then(() => this.#options.onResult?.(automation, revert, true), (error: Error) => this.#options.onResult?.(automation, revert, false, error.message));
+    }, waitMs);
+    timer.unref();
+    this.#timers.add(timer);
   }
 
   #save(): void {
@@ -109,8 +141,8 @@ export class AutomationEngine {
     try {
       fs.mkdirSync(path.dirname(this.#options.file), { recursive: true });
       const temporary = `${this.#options.file}.${process.pid}.tmp`;
-      fs.writeFileSync(temporary, JSON.stringify({ schema: 1, automations: [...this.#automations.values()] }, null, 1), { encoding: "utf8", mode: 0o600 });
-      fs.renameSync(temporary, this.#options.file);
+      fs.writeFileSync(temporary, JSON.stringify({ schema: 1, automations: [...this.#automations.values()], pending: [...this.#pending.values()] }, null, 1), { encoding: "utf8", mode: 0o600 });
+      durableRename(temporary, this.#options.file);
     } catch (error) { this.#options.warn?.(`the automations file could not be written: ${(error as Error).message}`); }
   }
 
@@ -181,10 +213,7 @@ export class AutomationEngine {
         await this.#options.run(action, automation);
         this.#options.onResult?.(automation, action, true);
         if (action.type === "device" && action.for_s) {
-          const revert: Action = { type: "device", device_id: action.device_id, command: action.command === "on" ? "off" : "on" };
-          const timer = setTimeout(() => { this.#timers.delete(timer); void this.#options.run(revert, automation).then(() => this.#options.onResult?.(automation, revert, true), (error: Error) => this.#options.onResult?.(automation, revert, false, error.message)); }, action.for_s * 1000);
-          timer.unref();
-          this.#timers.add(timer);
+          this.#scheduleReversal({ automation_id: automation.id, device_id: action.device_id, command: action.command === "on" ? "off" : "on", due_ms: this.#now().getTime() + action.for_s * 1000 }, action.for_s * 1000);
         }
       } catch (error) { this.#options.onResult?.(automation, action, false, error instanceof Error ? error.message : "failed"); }
     }

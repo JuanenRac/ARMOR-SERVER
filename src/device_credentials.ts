@@ -7,6 +7,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { durableRename } from "./durable.js";
 
 export type DeviceLogin = { user: string; password: string };
 type Stored = { iv: string; tag: string; ciphertext: string };
@@ -81,6 +82,6 @@ export class DeviceCredentials {
     fs.mkdirSync(path.dirname(this.#file), { recursive: true });
     const temporary = `${this.#file}.tmp`;
     fs.writeFileSync(temporary, JSON.stringify({ schema: 1, logins: Object.fromEntries(this.#logins) }), { encoding: "utf8", mode: 0o600 });
-    fs.renameSync(temporary, this.#file);
+    durableRename(temporary, this.#file);
   }
 }

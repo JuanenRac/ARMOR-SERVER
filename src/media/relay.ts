@@ -117,6 +117,8 @@ export class RelayManager {
         deliver(frame, relay.subscribers);
       }
     });
+    // Nobody reads what ffmpeg says on stderr, and a pipe nobody empties fills up (about 64 KB) and blocks ffmpeg: the live picture froze for everybody. It is read and dropped.
+    child.stderr?.on("data", () => undefined);
     const close = () => this.#close(camera.id, relay);
     child.once("error", close);
     child.once("close", close);

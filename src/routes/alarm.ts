@@ -1,6 +1,6 @@
 /**
  * The state of the ARMOR-ALARM nodes' panels, and the only route that sends anything towards one: POST /api/v1/alarm/command (arm or disarm), for an administrator, refused
- * unless ARMOR_ALARM_COMMANDS=1 (see ../alarm_commands.ts). A disarm carries no PIN: the node, the broker and this server must all have said yes.
+ * unless ARMOR_ALARM_COMMANDS=1 (see ../alarm_commands.ts). A disarm needs the PIN of the signed-in user, checked by this server; the node, the broker and this server must all have said yes.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import type { Express } from "express";
@@ -10,6 +10,7 @@ import { hasBearer } from "../http/auth.js";
 import { forwardCompatible } from "../contracts.js";
 import { ACTIONS, parseAlarmMessage, type AlarmAction } from "../alarm.js";
 import { AlarmCommandError } from "../alarm_commands.js";
+import { checkDisarm } from "./disarm_gate.js";
 
 const NODE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
@@ -38,14 +39,21 @@ export function registerAlarmNodeRoutes(app: Express, context: AppContext): void
   app.get("/api/v1/alarm/commands", requireOperator, (_request, response) => response.json(alarmCommands.status()));
 
   // A command to one node: {"node", "action": "arm" | "disarm", "mode": "away" | "stay" (on an arm), "force": boolean (on an arm)}. Answered 202 with the command id (the node's
-  // answer arrives later in /commands); a refusal is 4xx with a code. No PIN is accepted or sent.
+  // answer arrives later in /commands); a refusal is 4xx with a code. A disarm needs the PIN of the signed-in user (see disarm_gate.ts); the PIN is checked here and never sent to the node.
   app.post("/api/v1/alarm/command", requireAdmin, commandLimit, (request, response) => {
     const body = typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {};
     const node = typeof body.node === "string" ? body.node : "";
-    const known = ["node", "action", "mode", "force"];
+    const known = ["node", "action", "mode", "force", "pin"];
     if (!NODE.test(node) || typeof body.action !== "string" || !(ACTIONS as readonly string[]).includes(body.action) || Object.keys(body).some(key => !known.includes(key))
       || ("force" in body && typeof body.force !== "boolean") || ("mode" in body && body.mode !== "away" && body.mode !== "stay")) {
       return response.status(400).json({ error: "node, an action (arm or disarm) and, on an arm, a mode (away or stay) and optionally force are required", code: "invalid_request" });
+    }
+    const user = studioUser(request);
+    if (body.action === "disarm") {
+      // The panel itself does not ask for a PIN of a disarm that comes from the server (the broker, the node's own setting and this server must all have said yes): this server does.
+      const verdict = checkDisarm(context, user, body.pin, user?.username ?? "administrator");
+      if (!verdict.allow) return response.status(verdict.status).json(verdict.body);
+      if (verdict.duress) context.alarms.raiseDuress(user?.username ?? "administrator");
     }
     try {
       const sent = alarmCommands.request(node, body.action as AlarmAction, body.mode as "away" | "stay" | undefined, body.force === true, studioUser(request)?.username ?? "administrator");

@@ -6,6 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { durableRename } from "./durable.js";
 
 export type Zone = {
   id: string; name: string;
@@ -93,7 +94,7 @@ export class RulesFile {
     fs.mkdirSync(path.dirname(this.#file), { recursive: true });
     const temporary = `${this.#file}.tmp`;
     fs.writeFileSync(temporary, JSON.stringify(rules, null, 2), { encoding: "utf8", mode: 0o600 });
-    fs.renameSync(temporary, this.#file);
+    durableRename(temporary, this.#file);
     this.#rules = rules;
   }
 }

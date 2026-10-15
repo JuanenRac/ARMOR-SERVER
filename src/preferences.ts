@@ -6,6 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { durableRename } from "./durable.js";
 
 export type WeatherPlace = { name: string; region: string; country: string; lat: number; lon: number };
 export type Preferences = { language?: string; theme?: string; weatherPlace?: WeatherPlace | null };
@@ -75,7 +76,7 @@ export class PreferencesStore {
       fs.mkdirSync(path.dirname(this.#file), { recursive: true });
       const temporary = `${this.#file}.tmp`;
       fs.writeFileSync(temporary, JSON.stringify({ schema: 1, users: Object.fromEntries(this.#byUser) }, null, 2), { encoding: "utf8", mode: 0o600 });
-      fs.renameSync(temporary, this.#file);
+      durableRename(temporary, this.#file);
     } catch { /* losing this file only means preferences are not kept across a restart */ }
   }
 }

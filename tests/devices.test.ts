@@ -350,3 +350,44 @@ test("electrical devices: a breaker and a meter report voltage, current, power a
     assert.equal((await fetch(`${running.base}/api/v1/electrical/devices`)).status, 401);
   } finally { await running.stop(); }
 });
+
+test("an operator cannot walk round the rule for critical circuits: not by lowering the risk, not by an automation", async () => {
+  const running = await startServer();
+  try {
+    const cookie = await studioCookie(running.base);
+    const operator = { Authorization: `Bearer ${SECRETS.ARMOR_OPERATOR_TOKEN}` };
+    const make = (id: string, extra: Record<string, unknown>) => call(running.base, cookie, "POST", "/api/v1/devices", { id, name: id, protocol: "zigbee", commands: { mqtt: { topic: `armor/device/${id}/set`, on: "ON", off: "OFF" } }, source: { type: "push" }, ...extra });
+    await make("freezer", { kind: "smart_breaker", risk: "critical" });
+    await make("plug-lamp", { kind: "smart_plug" });
+    const send = (method: string, route: string, body: unknown, headers: Record<string, string>) => fetch(`${running.base}${route}`, { method, headers: { ...json, ...headers }, body: JSON.stringify(body) });
+    // lowering the risk
+    const lowered = await send("PATCH", "/api/v1/devices/freezer", { risk: "low" }, operator);
+    assert.deepEqual([lowered.status, ((await lowered.json()) as { code: string }).code], [403, "admin_required"]);
+    assert.equal((await call(running.base, cookie, "GET", "/api/v1/devices")).body.devices.find((device: { id: string }) => device.id === "freezer").risk, "critical");
+    const whole = (risk: string) => ({ name: "freezer", kind: "smart_breaker", protocol: "zigbee", commands: { mqtt: { topic: "armor/device/freezer/set", on: "ON", off: "OFF" } }, source: { type: "push" }, risk });
+    assert.equal((await send("PATCH", "/api/v1/devices/freezer", whole("low"), { cookie })).status, 200, "an administrator may");
+    assert.equal((await send("PATCH", "/api/v1/devices/freezer", whole("critical"), operator)).status, 200, "raising it is the operator's too");
+    // an automation on a circuit
+    const automation = (device: string) => ({ name: `off ${device}`, enabled: true, trigger: { type: "mode", mode: "armed" }, when_mode: "any", actions: [{ type: "device", device_id: device, command: "off" }] });
+    const refused = await send("POST", "/api/v1/automations", automation("freezer"), operator);
+    assert.deepEqual([refused.status, ((await refused.json()) as { code: string }).code], [403, "admin_required"]);
+    assert.equal((await send("POST", "/api/v1/automations", automation("plug-lamp"), operator)).status, 201, "a light or a plug is the operator's");
+    assert.equal((await send("POST", "/api/v1/automations", automation("freezer"), { cookie })).status, 201, "an administrator may");
+  } finally { await running.stop(); }
+});
+
+test("the SOS button of Zigbee2MQTT sounds the panic alarm, and every press is a new one", async () => {
+  for (const word of ["single", "double", "hold", "emergency", "sos"]) assert.equal(toBoolean(word), true, word);
+  assert.equal(toBoolean("released"), false);
+  const changes: Array<boolean | undefined> = [];
+  const devices = registry({ onChange: change => changes.push(change.triggered), pulseResetMs: 25 });
+  devices.create({ id: "sos-1", name: "SOS", kind: "panic_button", protocol: "zigbee", source: { type: "mqtt", topic: "armor/device/sos-1", map: [{ field: "triggered", path: "action" }] }, commands: {} });
+  devices.ingestMqtt("armor/device/sos-1", JSON.stringify({ action: "emergency" }));
+  assert.deepEqual(changes, [true], "a press triggers it (before, the word was not understood and the field was dropped)");
+  await pause(80);
+  assert.deepEqual(changes, [true, false], "the press ends by itself: the button never says it was released");
+  devices.ingestMqtt("armor/device/sos-1", JSON.stringify({ action: "single" }));
+  assert.deepEqual(changes, [true, false, true], "the next press is a new alarm");
+  await pause(80);
+  devices.close();
+});

@@ -136,3 +136,41 @@ test("a node that only sent its info does not appear, and forgetting a node forg
   store.health({ node_id: "quiet", timestamp_ms: 3, online: true });
   assert.equal(store.snapshot().nodes.quiet.panel, null);
 });
+
+test("a radar whose sensors died keeps its heartbeat but goes stale: only telemetry keeps a node alive", () => {
+  let now = 1_000_000;
+  const store = new ArmorStore(undefined, { staleAfterMs: 30_000, now: () => now });
+  store.telemetry(telemetry("north-1", 1, 1));
+  for (let beat = 2; beat < 10; beat += 1) {   // eight heartbeats, one every 10 s, and no telemetry
+    now += 10_000;
+    store.health(parseHealth({ node_id: "north-1", timestamp_ms: beat, online: true }));
+  }
+  store.sweep();
+  const blind = store.snapshot().nodes["north-1"];
+  assert.equal(blind.stale, true);
+  store.telemetry(telemetry("north-1", 20, 0));
+  assert.equal(store.snapshot().nodes["north-1"].stale, false);
+  // a node that never sent telemetry is judged by its heartbeat, as before
+  store.health(parseHealth({ node_id: "south-1", timestamp_ms: 1, online: true }));
+  now += 20_000;
+  store.health(parseHealth({ node_id: "south-1", timestamp_ms: 2, online: true }));
+  now += 20_000;
+  assert.equal(store.snapshot().nodes["south-1"].stale, false);
+});
+
+test("a lone intruder is an intrusion when the installation says one target is enough", () => {
+  assert.equal(alertLevelFor("armed", 1), "review", "the default of the function is the old rule");
+  assert.equal(alertLevelFor("armed", 1, 1), "high");
+  assert.equal(alertLevelFor("disarmed", 1, 1), "review");
+  assert.equal(alertLevelFor("armed", 2, 3), "review");
+  let now = 1_000_000;
+  const events: string[] = [];
+  const store = new ArmorStore(undefined, { minTargets: 1, now: () => now, rules: () => ({ schema: 1, dwell_ms: 2000, zones: [] }), onEvent: event => { if (event.type === "alert") events.push(`${event.from}>${event.to}`); } });
+  store.arm("armed");
+  store.telemetry(telemetry("north-1", 1, 1));
+  assert.equal(store.snapshot().nodes["north-1"].alert_level, "review", "not yet: it has to last the dwell time");
+  now += 2500;
+  store.telemetry(telemetry("north-1", 2, 1));
+  assert.equal(store.snapshot().nodes["north-1"].alert_level, "high");
+  assert.ok(events.includes("review>high"));
+});

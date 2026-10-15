@@ -9,7 +9,9 @@ import { cleanState, STATE_FIELDS, type DeviceState } from "./catalog.js";
 export type MapEntry = { field: string; path: string; invert?: boolean };
 export const MAX_MAP_ENTRIES = 12;
 
-const TRUE_WORDS = new Set(["on", "true", "1", "open", "opened", "detected", "alarm", "triggered", "motion", "wet", "leak", "active", "pressed", "smoke", "gas"]);
+const TRUE_WORDS = new Set(["on", "true", "1", "open", "opened", "detected", "alarm", "triggered", "motion", "wet", "leak", "active", "pressed", "smoke", "gas",
+  // what the SOS buttons of Zigbee2MQTT say in `action` (a press, not a state: see the pulse in registry.ts)
+  "single", "double", "triple", "hold", "long", "emergency", "sos", "panic", "press"]);
 const FALSE_WORDS = new Set(["off", "false", "0", "closed", "clear", "cleared", "normal", "no_motion", "dry", "inactive", "idle", "released", "safe"]);
 
 /** The value at a dotted path ("contact", "sensor.temperature", "a.0.b"); "$" is the whole payload. */

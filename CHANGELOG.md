@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.3] - A PIN to disarm; an alarm while disarmed is accepted; a central that sounds reaches the phone
+
+- **`parseAlarmMessage` accepts `phase: alarm` with `mode: disarmed`** (it rejected the whole message, so a smoke detector sounding in a disarmed house was invisible to the server).
+- **Alarms of an alarm node and of the network are told** like any other (Telegram, Home Assistant, the webhook and `armor/server/alert`): `alarm_sounding`, `alarm_tamper`, `alarm_locked_out`, `alarm_offline` and the network alarms, armed or not; the message carries `alarm_node_id` or `network_id`.
+- A trigger of an automation can start from any source that exists (`solar`, `electrical`, `network`, `alarm`), not only node, camera and device.
+- **A PIN to disarm, checked here:** each user can have a PIN (4 to 10 digits, kept as a salted hash) and a second, duress PIN. `POST /api/v1/mode` with `disarmed`, a command to disarm an alarm node and the voice command to disarm all ask for the `pin` of the signed-in user whenever the user has one; with `ARMOR_DISARM_PIN=required` a user without a PIN cannot disarm at all (`pin_not_set`). Three wrong PINs lock that user for a minute, then five, then fifteen (`pin_locked`, with `retry_after_s`). The duress PIN disarms like the right one and raises a critical `duress_disarm` alarm that goes to every place that tells a person. Before, a signed-in operator, the wall panel or the voice could disarm with no PIN at all.
+- `PUT/DELETE /api/v1/users/{id}/pin` (administrator) and `PUT /api/v1/account/pin` (yourself, with your password) set and clear the PINs; the users list says `hasPin` and `hasDuress`, never the PIN.
+- **A radar whose sensors died no longer stays online:** once a node has sent telemetry, only telemetry keeps it from going stale; its heartbeat alone does not (the node stops sending telemetry on purpose when its sensors fail, but kept sending its heartbeat).
+- **One target is an intrusion:** while armed, a single target that stays for the dwell time makes the node's alert high (`ARMOR_ALERT_MIN_TARGETS`, 1 by default; 2 restores the old rule that ignored a lone intruder).
+- **A SOS button sounds the panic alarm:** the words of the `action` of a Zigbee2MQTT button (`single`, `double`, `hold`, `emergency`, `sos`...) are a press, and a press ends by itself after 30 s so that the next one is a new alarm. Before, the word was not understood and the panic never sounded.
+- **The inventory of the cameras needs a session:** `GET /api/v1/camera-views` (address, ports, paths and, on many cameras, a snapshot URL that holds the login) answered anybody on the LAN.
+- **The list of alarms keeps what matters:** past 400, the oldest alarm that is over (and was acknowledged) goes, never one that is still going on or that nobody has seen. An alarm that is going on and unseen must be acknowledged before it can be taken off the list (`acknowledge_first`).
+- **A live picture no longer freezes** when FFmpeg writes a lot to its error output: it is read and dropped.
+- **A critical circuit is an administrator's:** lowering how much a device matters to switch, or making an automation that switches a circuit, needs an administrator, and an automation never switches a critical circuit.
+- **Erasing the whole history or every recording needs an administrator.** The administrator-password check for opening the server to the network looks at the password that works now.
+- **A file damaged by a power cut is not the end:** files are forced to the disk before they take the old one's name; `state.json` and `users.json` keep the last good copy (`.bak`) and are restored from it; with none, the server starts ARMED (state) or puts the damaged users file aside (`users.json.damaged`) instead of writing the seed over it.
+- **"Switch it back after N seconds" survives a restart:** the pending reversals are kept in the automations file and done after the start, so a siren or a light turned on by an automation is not left on for ever.
+- **Recordings:** written as fragmented MP4 (playable however they end), at most one hour each (`maxRecordingS`), closed cleanly when the server stops, and the ones a crash left behind are given their name again (or removed when empty).
+- **Telegram:** a chat that refuses the alarm no longer stops the others from getting it, and a retry goes only to the chats that did not get it.
+- **The voice's "silence the alarms" tells the truth:** it acknowledges them and says that a sounding siren is not switched off by it.
+- **Adopting a node** makes the account of its kind (radar, solar, electrical, network or alarm); every adopted node used to get a radar's account and stayed mute. A radar with a newer firmware that adds a field is no longer refused whole, a node without a clock that restarts over HTTP is stamped with the time it arrived (as over MQTT), and the events of a network node that restarted its counter are not taken for old ones.
+
 ## [0.5.2] - The alarm nodes, and the firmware of every board
 
 - **`alarm.ts`, the state of the ARMOR-ALARM nodes** (`armor/alarm/{node}/state` over MQTT, `POST /api/v1/alarm/state` over HTTP with the ingest token, `GET /api/v1/alarm/nodes` for the consoles): the strict parser of the shared contract (the 81 conformance vectors pass; a field a newer node adds is dropped and said, never kept), the latest state of each node, a node that goes quiet for thirty seconds marked stale, and the sums (nodes, stale, armed, sounding).

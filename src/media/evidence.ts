@@ -21,6 +21,8 @@ export type EvidenceOptions = {
   root: string; ffmpegPath: string; maxBytes: number; retentionMs: number;
   /** Extra text for a failed recording's server log; never sent to a client. */
   warn?: (message: string) => void;
+  /** The longest a recording is allowed to run (default one hour): one that nobody stops must not grow until the disk is full. */
+  maxRecordingS?: number;
 };
 
 type ActiveRecording = { process: ChildProcess; cameraId: string; temporaryPath: string; completedPath: string; startedAt: string; stopRequested: boolean; settled: Promise<MediaItem> };
@@ -33,7 +35,37 @@ export const mediaKindFrom = (value: unknown): MediaKind | null => value === "sn
 export class EvidenceLibrary {
   readonly #options: EvidenceOptions;
   readonly #active = new Map<string, ActiveRecording>();
-  constructor(options: EvidenceOptions) { this.#options = options; }
+  constructor(options: EvidenceOptions) { this.#options = options; this.recoverOrphans(); }
+
+  /**
+   * A recording is written as a fragmented MP4, which is playable however it ends. Recordings left behind by a stop that did not close them (a power cut, a crash, a restart) are
+   * given their final name when they have something in them and removed when they do not. Returns how many were kept.
+   */
+  recoverOrphans(): number {
+    let kept = 0;
+    let cameras: string[] = [];
+    try { cameras = fs.readdirSync(this.#options.root); } catch { return 0; }
+    for (const camera of cameras) {
+      if (!CAMERA_ID.test(camera)) continue;
+      const folder = path.join(this.#options.root, camera, "recordings");
+      let names: string[] = [];
+      try { names = fs.readdirSync(folder); } catch { continue; }
+      for (const name of names) {
+        if (!name.endsWith(".part.mp4")) continue;
+        const partial = path.join(folder, name), final = path.join(folder, name.slice(0, -".part.mp4".length));
+        try {
+          if (fs.statSync(partial).size >= 4096 && !fs.existsSync(final)) { fs.renameSync(partial, final); kept += 1; }
+          else fs.rmSync(partial, { force: true });
+        } catch { /* it stays where it is */ }
+      }
+    }
+    return kept;
+  }
+
+  /** Closes every recording that is running, cleanly (the server is stopping). */
+  async stopAll(): Promise<void> {
+    await Promise.allSettled([...this.#active.keys()].map(cameraId => this.stopRecording(cameraId)));
+  }
 
   get root(): string { return this.#options.root; }
   get activeCameraIds(): string[] { return [...this.#active.keys()]; }
@@ -192,7 +224,7 @@ export class EvidenceLibrary {
     const temporaryPath = `${completedPath}.part.mp4`;
     // Copy the camera's encoded video instead of re-encoding it: a low-power
     // gateway stays responsive and the file simply starts at the next keyframe.
-    const child = spawn(this.#options.ffmpegPath, ["-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp", "-i", source, "-an", "-c:v", "copy", "-movflags", "+faststart", "-y", temporaryPath], { stdio: ["pipe", "ignore", "pipe"], windowsHide: true });
+    const child = spawn(this.#options.ffmpegPath, ["-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp", "-i", source, "-an", "-c:v", "copy", "-t", String(this.#options.maxRecordingS ?? 3600), "-movflags", "+frag_keyframe+empty_moov+default_base_moof", "-y", temporaryPath], { stdio: ["pipe", "ignore", "pipe"], windowsHide: true });
     let errorOutput = "";
     child.stderr?.on("data", chunk => { if (errorOutput.length < 1200) errorOutput += chunk.toString("utf8"); });
     let resolveSettled!: (item: MediaItem) => void;

@@ -35,7 +35,7 @@ async function fakeAgent(): Promise<{ socket: string; seen: Seen[]; files: Recor
       if (request.method === "PUT" && url.startsWith("/v1/files/")) { files[url.slice(10)] = String(body.content); return send(200, { ok: true, restarted: body.restart ? ["server"] : [] }); }
       if (request.method === "GET" && url === "/v1/mqtt/accounts") return send(200, { accounts: accounts.map(user => ({ user, role: "field-node", manageable: true, topics: [] })) });
       if (request.method === "POST" && url === "/v1/mqtt/accounts") {
-        const user = `field-node-${String(body.name)}`;
+        const user = `${body.role === "node" ? "field-node" : String(body.role)}-${String(body.name)}`;
         if (accounts.includes(user)) return send(409, { error: "identity_failed" });
         accounts.push(user); return send(200, { ok: true, user, password: `pw-${user}` });
       }
@@ -160,6 +160,12 @@ test("adopting a node makes its account, writes the broker into the node's panel
     const manual = await call(running, cookie, "POST", "/api/v1/admin/nodes/provision", { node_id: "nodo-radar-3", address: "127.0.0.1", broker_host: "192.168.0.180" });
     assert.deepEqual([manual.body.written, manual.body.why], [false, "no_panel_login"]);
 
+    // the kind of node decides the identity the account gets (it was always the radar's)
+    const alarm = await call(running, cookie, "POST", "/api/v1/admin/nodes/provision", { node_id: "alarm-9", kind: "alarm", address: "127.0.0.1", broker_host: "192.168.0.180" });
+    assert.equal(alarm.body.broker.username, "alarm-node-alarm-9");
+    const solar = await call(running, cookie, "POST", "/api/v1/admin/nodes/provision", { node_id: "solar-9", kind: "solar", address: "127.0.0.1", broker_host: "192.168.0.180" });
+    assert.equal(solar.body.broker.username, "solar-node-solar-9");
+    assert.equal((await call(running, cookie, "POST", "/api/v1/admin/nodes/provision", { node_id: "x-9", kind: "toaster", address: "127.0.0.1", broker_host: "192.168.0.180" })).status, 422);
     assert.equal((await call(running, cookie, "POST", "/api/v1/admin/nodes/provision", { node_id: "Bad Id", address: "127.0.0.1", broker_host: "x" })).status, 422);
     delete process.env.ARMOR_ADMIN_NODE_PORT;
     assert.equal((await call(running, cookie, "POST", "/api/v1/admin/nodes/provision", { node_id: "n1", address: "8.8.8.8", broker_host: "192.168.0.180" })).status, 422);

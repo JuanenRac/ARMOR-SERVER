@@ -20,13 +20,13 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2020%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-272%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-313%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Maturity-functional-00E5FF.svg" alt="Maturity">
 </p>
 
 ---
 
-**诚实性检查 - 今天真正能运行的部分:** 下面的每条路由、会话、加密和证据规则都是真实的，并有测试覆盖（`npm test`，272 个测试，其中包括针对隔离服务器的完整 HTTP 集成测试）。它已在 CM5 上对着真实的 MQTT 代理运行过（用的是脚本和两个真实的雷达节点），并通过 FFmpeg 从五台真实 IP 摄像头推送过实时视频、保存过快照并录过像。**尚未证实的：** 对真实 ONVIF 摄像头的 ONVIF、每种摄像头固件上的 PTZ（在 Hi3510 设备上可用）、任何 Jetson 硬件，以及对真实网关节点的太阳能路由（它们用生成的读数测试）。
+**诚实性检查 - 今天真正能运行的部分:** 下面的每条路由、会话、加密和证据规则都是真实的，并有测试覆盖（`npm test`，313 个测试，其中包括针对隔离服务器的完整 HTTP 集成测试）。它已在 CM5 上对着真实的 MQTT 代理运行过（用的是脚本和两个真实的雷达节点），并通过 FFmpeg 从五台真实 IP 摄像头推送过实时视频、保存过快照并录过像。**尚未证实的：** 对真实 ONVIF 摄像头的 ONVIF、每种摄像头固件上的 PTZ（在 Hi3510 设备上可用）、任何 Jetson 硬件，以及对真实网关节点的太阳能路由（它们用生成的读数测试）。
 
 ---
 
@@ -44,6 +44,8 @@
 * **设备、报警与自动化：** 烟雾、燃气、水浸、门、窗、移动、气候、插座、灯、警笛和门锁设备，通过 MQTT 或经认证的推送接入，带规范化状态、可用性和命令；报警有触发 / 已确认 / 已清除的生命周期；在事件发生时切换设备的规则；从已登录会话布防和撤防；以及为所有客户端保存在服务器上的场地设计。
 * **太阳能读数：** 逆变器和电池组（含每个电芯和容量）通过 HTTP 或 MQTT 到达，由共享契约验证，保存历史（一天内每 30 s 一个样本）和合计，两分钟后标记为过期，并触发四种报警（逆变器故障、电池电量低、电池报警、设备静默）。
 * **机器、网络与面板：** `GET /api/v1/system/metrics`（运行所在机器的 CPU、内存、磁盘、温度、网络及简短历史）、`GET/PUT /api/v1/system/connection`（监听的地址和端口，仅管理员，下次启动生效）、`GET /api/v1/panel/summary`（供小屏幕使用的几百字节）；对于网络节点，还有管理员为设备网页管理保存的登录：加密（AES-256-GCM）保存、从不返回，仅在需要它的那一条 `inspect` 指令中交给节点。
+* **撤防 PIN：** 每个用户可以有一个 PIN 和一个胁迫 PIN。从 Studio、手机、墙面面板、给报警主机的命令或语音撤防都要求输入；连续输错 3 次会锁定该用户 1 分钟，再次 5 分钟，再次 15 分钟；胁迫 PIN 会撤防，同时悄悄发出严重警报。`ARMOR_DISARM_PIN=required` 使 PIN 成为必需。
+* **不会被沉默或断电欺骗的检测：** 在等待时间内持续存在的单个目标即视为入侵（`ARMOR_ALERT_MIN_TARGETS`，默认 1）；传感器已死的雷达即使心跳仍在也会变为过期；系统撤防时鸣响的报警主机会被接受，并通过 Telegram、Home Assistant、Webhook 和 MQTT 通知；因断电损坏的状态或用户文件会换回最后一份完好副本（没有副本则服务器以布防状态启动）。
 
 ## 🔄 架构
 
@@ -76,7 +78,7 @@ flowchart LR
 
 * 把 `.env.example` 复制为 `.env`（Git 会忽略它），或让 `run.bat` / `run.sh` 在首次运行时生成随机机密。
 * 必填：`ARMOR_INGEST_TOKEN` 和 `ARMOR_CONTROL_TOKEN`（24 个字符或更长，且互不相同）以及 `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD`（第一个管理员）。
-* 常用：`ARMOR_HOST` / `ARMOR_PORT`、`ARMOR_DATA_DIR`、`ARMOR_FFMPEG_PATH`（实时视频和抓拍）、`ARMOR_MQTT_URL`、`ARMOR_STUDIO_ORIGIN`、`ARMOR_NODE_STALE_AFTER_S`、`ARMOR_CAMERA_CHECK_S`、`ARMOR_ALERT_DWELL_MS`、`ARMOR_ALERT_WEBHOOK_URL` 和 `ARMOR_COOKIE_SECURE`（在 TLS 之后设为 `1`）。
+* 常用：`ARMOR_HOST` / `ARMOR_PORT`、`ARMOR_DATA_DIR`、`ARMOR_FFMPEG_PATH`（实时视频和抓拍）、`ARMOR_MQTT_URL`、`ARMOR_STUDIO_ORIGIN`、`ARMOR_NODE_STALE_AFTER_S`、`ARMOR_CAMERA_CHECK_S`、`ARMOR_ALERT_DWELL_MS`、`ARMOR_ALERT_MIN_TARGETS`、`ARMOR_DISARM_PIN`、`ARMOR_ALERT_WEBHOOK_URL` 和 `ARMOR_COOKIE_SECURE`（在 TLS 之后设为 `1`）。
 * **固件、通知与语音：** 服务器可更新现场节点的固件（文件或 GitHub 发布版，单个节点或某一类型的全部节点，带进度并校验 SHA-256），把警报发送到 Telegram 和 Home Assistant（带重试，审计行不含机密，支持七种语言），并通过语音网关执行十五条书面或语音命令（状态、警报、节点、摄像头、雷达、太阳能与电气系统、网络、时间、帮助和灯光；布防与撤防需在第二轮确认）。观察服务使用自己的令牌触发 `camera_motion`。见[节点固件](docs/NODE_FIRMWARE.md)和[集成](docs/INTEGRATION.md)。
 * **整套安装配置保存为一个文件、壁挂面板专用账户和 Home Assistant：** 管理员可下载整套安装配置（摄像头不含密码、设计、规则、自动化、设备、光伏设备和能源报警级别；绝不含密码、令牌或密钥），并在另一台机器上导入——设计、规则和报警级别会被替换，列表只补充缺少的；`panel` 角色（最小权限）让壁挂面板只能读取摘要、更改模式和确认报警，摘要中带有家庭能源信息；设置 `ARMOR_HA_DISCOVERY=1` 后，读取同一代理的 Home Assistant 会自动发现光伏设备、电气通道和报警主机的传感器（只读，默认关闭）。
 
@@ -102,7 +104,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 272 tests: unit + full HTTP integration
+npm test            # 313 tests: unit + full HTTP integration
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```
@@ -124,6 +126,7 @@ npm run build       # dist/server.mjs
 * **[ARMOR-STUDIO](https://github.com/JuanenRac/ARMOR-STUDIO)** - 网页控制台：摄像头、雷达、报警、太阳能和 2D/3D 场地设计器
 * **[ARMOR-ANDROID-CONTROL](https://github.com/JuanenRac/ARMOR-ANDROID-CONTROL)** - 带实时 2D/3D 雷达的 Android 操作员客户端
 * **[ARMOR-SERVER-AI](https://github.com/JuanenRac/ARMOR-SERVER-AI)** - 会解释决策且从不执行动作的视觉推理策略
+* **[ARMOR-VISION](https://github.com/JuanenRac/ARMOR-VISION)** - Jetson Orin NX 上的摄像头区域、遮罩与检测规则
 * **[ARMOR-VOICE-AI](https://github.com/JuanenRac/ARMOR-VOICE-AI)** - 带无法伪造确认的离线语音意图
 * **[ARMOR-HARDWARE](https://github.com/JuanenRac/ARMOR-HARDWARE)** - 外壳、电子器件和台架验收矩阵
 * **[ARMOR-DEVOPS](https://github.com/JuanenRac/ARMOR-DEVOPS)** - 部署、CM5 测试台、备份与 TLS

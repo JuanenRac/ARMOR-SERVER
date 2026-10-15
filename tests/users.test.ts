@@ -179,7 +179,7 @@ test("a signed-in console is never rate limited by its own polling, while an ano
     for (let index = 0; index < 300; index += 1) if ((await fetch(`${running.base}/api/v1/status`, { headers: { cookie } })).status === 429) refused += 1;
     assert.equal(refused, 0, "300 requests in a minute from a signed-in operator all get through");
     let limited = 0;
-    for (let index = 0; index < 300; index += 1) if ((await fetch(`${running.base}/api/v1/camera-views`)).status === 429) limited += 1;
+    for (let index = 0; index < 300; index += 1) if ((await fetch(`${running.base}/api/v1/status`)).status === 429) limited += 1;
     assert.ok(limited > 0, "an anonymous client is still limited");
   } finally { await running.stop(); }
 });
@@ -199,4 +199,110 @@ test("a signed-in session survives a server restart, and the file holds no usabl
   } finally { await second.stop(); }
   const third = await startServer({ ARMOR_DATA_DIR: dataDir });
   try { assert.equal((await api(third.base, cookie, "GET", "/api/v1/users")).status, 401, "a signed-out session stays signed out"); } finally { await third.stop(); }
+});
+
+test("a PIN to disarm: kept as a hash, wrong ones lock the user for longer each time, the duress one is told apart", () => {
+  const file = path.join(tempDir(), "users.json");
+  const users = new UserStore({ file, seed: { username: "admin", password: "correct-horse-battery" }, minPasswordLength: 8 });
+  const id = users.list()[0].id;
+  assert.equal(users.verifyPin(id, "1234"), "none");
+  assert.equal(users.list()[0].hasPin, false);
+  for (const bad of ["123", "12345678901", "abcd", 1234, "", undefined]) assert.throws(() => users.setPin(id, bad), (e: unknown) => e instanceof UserError && e.code === "invalid_pin");
+  assert.throws(() => users.setPin(id, "4321", "4321"), (e: unknown) => e instanceof UserError && e.code === "same_pin");
+  const user = users.setPin(id, "4321", "1111");
+  assert.equal(user.hasPin, true);
+  assert.equal(user.hasDuress, true);
+  assert.ok(!fs.readFileSync(file, "utf8").includes("4321"), "only a hash is kept");
+  assert.ok(!JSON.stringify(users.list()).includes("hash"));
+  let now = 1_000_000;
+  assert.equal(users.verifyPin(id, "4321", now), "ok");
+  assert.equal(users.verifyPin(id, "1111", now), "duress");
+  assert.equal(users.verifyPin(id, "0000", now), "bad");
+  assert.equal(users.verifyPin(id, "0000", now), "bad");
+  assert.equal(users.verifyPin(id, "0000", now), "locked");        // the third one in a row: a minute
+  assert.equal(users.verifyPin(id, "4321", now + 59_000), "locked", "even the right PIN waits");
+  assert.equal(users.pinLockedFor(id, now + 59_000), 1);
+  now += 61_000;
+  assert.equal(users.verifyPin(id, "0000", now), "bad");
+  assert.equal(users.verifyPin(id, "0000", now), "bad");
+  assert.equal(users.verifyPin(id, "0000", now), "locked");        // the second lock: five minutes
+  assert.equal(users.verifyPin(id, "4321", now + 200_000), "locked");
+  assert.equal(users.verifyPin(id, "4321", now + 301_000), "ok");
+  assert.equal(users.verifyPin(id, "0000", now + 301_000), "bad");  // a right one cleared the count
+  // it survives a restart, without the lock
+  const again = new UserStore({ file, seed: { username: "admin", password: "correct-horse-battery" }, minPasswordLength: 8 });
+  assert.equal(again.verifyPin(id, "4321"), "ok");
+  assert.equal(again.list()[0].hasDuress, true);
+  again.setPin(id, "5555");
+  assert.equal(again.list()[0].hasDuress, false, "setting only a PIN removes the duress one");
+  assert.equal(again.verifyPin(id, "1111"), "bad");
+  again.clearPin(id);
+  assert.equal(again.verifyPin(id, "5555"), "none");
+  assert.throws(() => again.setPin("u-nobody", "1234"), (e: unknown) => e instanceof UserError && e.code === "not_found");
+});
+
+test("disarming over HTTP asks for the PIN: wrong, locked, duress with a silent critical alarm, and the required policy", async () => {
+  const running = await startServer({ ARMOR_DISARM_PIN: "required" });
+  try {
+    const cookie = await studioCookie(running.base);
+    const me = (await api(running.base, cookie, "GET", "/api/v1/users")).body.users as Array<{ id: string; current: boolean }>;
+    const id = me.find(user => user.current)!.id;
+    const disarm = (pin?: string) => api(running.base, cookie, "POST", "/api/v1/mode", { mode: "disarmed", ...(pin === undefined ? {} : { pin }) });
+    assert.equal((await api(running.base, cookie, "POST", "/api/v1/mode", { mode: "armed" })).status, 200, "arming never asks for a PIN");
+    const none = await disarm("1234");
+    assert.equal(none.status, 403);
+    assert.equal(none.body.code, "pin_not_set");
+    assert.equal((await api(running.base, cookie, "PUT", `/api/v1/users/${id}/pin`, { pin: "12", duress_pin: "" })).status, 400);
+    assert.equal((await api(running.base, cookie, "PUT", `/api/v1/users/${id}/pin`, { pin: "2468", duress_pin: "1357" })).status, 200);
+    assert.equal((await disarm()).body.code, "wrong_pin");
+    assert.equal((await disarm("0000")).body.code, "wrong_pin");
+    const locked = await disarm("0000");
+    assert.equal(locked.status, 429);
+    assert.equal(locked.body.code, "pin_locked");
+    assert.equal((await disarm("2468")).status, 429, "the right PIN waits as well");
+    // another user has his own PIN and his own lock: the right PIN and the duress PIN
+    const guard = (await api(running.base, cookie, "POST", "/api/v1/users", { username: "guard", password: "guard-password-1", role: "operator" })).body.id as string;
+    assert.equal((await api(running.base, cookie, "PUT", `/api/v1/users/${guard}/pin`, { pin: "8642", duress_pin: "9753" })).status, 200);
+    const guardCookie = (await login(running.base, "guard", "guard-password-1")).cookie;
+    const post = (pin: string) => api(running.base, guardCookie, "POST", "/api/v1/mode", { mode: "disarmed", pin });
+    assert.equal((await post("8642")).status, 200);
+    assert.equal(((await api(running.base, guardCookie, "GET", "/api/v1/alarms")).body.active as unknown[]).length, 0, "the right PIN raises nothing");
+    await api(running.base, guardCookie, "POST", "/api/v1/mode", { mode: "armed" });
+    assert.equal((await post("9753")).status, 200, "the duress PIN disarms as well");
+    const active = (await api(running.base, guardCookie, "GET", "/api/v1/alarms")).body.active as Array<{ code: string; severity: string }>;
+    assert.deepEqual(active.map(alarm => [alarm.code, alarm.severity]), [["duress_disarm", "critical"]]);
+  } finally { await running.stop(); }
+});
+
+test("without ARMOR_DISARM_PIN=required a user without a PIN still disarms, and a user with one needs it", async () => {
+  const running = await startServer();
+  try {
+    const cookie = await studioCookie(running.base);
+    assert.equal((await api(running.base, cookie, "POST", "/api/v1/mode", { mode: "disarmed" })).status, 200);
+    const id = ((await api(running.base, cookie, "GET", "/api/v1/users")).body.users as Array<{ id: string; current: boolean }>).find(user => user.current)!.id;
+    await api(running.base, cookie, "PUT", `/api/v1/users/${id}/pin`, { pin: "2468" });
+    assert.equal((await api(running.base, cookie, "POST", "/api/v1/mode", { mode: "disarmed" })).body.code, "wrong_pin");
+    assert.equal((await api(running.base, cookie, "POST", "/api/v1/mode", { mode: "disarmed", pin: "2468" })).status, 200);
+    assert.equal((await api(running.base, cookie, "DELETE", `/api/v1/users/${id}/pin`)).status, 200);
+    assert.equal((await api(running.base, cookie, "POST", "/api/v1/mode", { mode: "disarmed" })).status, 200);
+  } finally { await running.stop(); }
+});
+
+test("a users file damaged by a power cut is never overwritten by the seed: the last good copy is used", () => {
+  const file = path.join(tempDir(), "users.json");
+  const warnings: string[] = [];
+  const make = () => new UserStore({ file, seed: { username: "admin", password: "correct-horse-battery" }, minPasswordLength: 8, warn: message => warnings.push(message) });
+  const first = make();
+  first.create({ username: "guard", password: "guard-password-1", role: "operator" });
+  first.create({ username: "second", password: "second-password-1", role: "operator" });   // a save makes the copy of the one before
+  fs.writeFileSync(file, "");                                                             // what a power cut leaves
+  const again = make();
+  assert.deepEqual(again.list().map(user => user.username).sort(), ["admin", "guard"], "the accounts of the last good copy are back");
+  assert.ok(warnings.some(message => message.includes("last good copy")));
+  // no copy at all: the damaged file is kept aside, not destroyed
+  const lone = path.join(tempDir(), "users.json");
+  fs.writeFileSync(lone, "{broken");
+  const fresh = new UserStore({ file: lone, seed: { username: "admin", password: "correct-horse-battery" }, minPasswordLength: 8, warn: message => warnings.push(message) });
+  assert.equal(fresh.list().length, 1);
+  assert.equal(fs.readFileSync(`${lone}.damaged`, "utf8"), "{broken");
 });

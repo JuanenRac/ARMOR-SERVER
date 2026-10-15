@@ -235,6 +235,9 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   historySaver.unref();
   // Silence and dwell time are time-driven: they need a clock, not a message.
   // A failure of one pass must not take the process down (an uncaught exception in a timer would); it is said once, and again only after a pass that worked.
+  // The "switch it back after N seconds" of an automation that were pending when the server stopped: done a few seconds after the start, once the broker had time to connect.
+  const resume = setTimeout(() => context.automations.resumePending(), 5000);
+  resume.unref();
   let sweepFailing = false;
   const sweeper = setInterval(() => {
     try {
@@ -262,7 +265,8 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       for (const timer of watchdogs) clearTimeout(timer);
       context.store.flush();
       context.studioSessions.flush();
-      context.devices.flush(); context.alarms.flush(); context.automations.close();
+      clearTimeout(resume); context.devices.flush(); context.alarms.flush(); context.automations.close();
+      await context.evidence.stopAll();   // a recording that is running is closed, not cut off
       context.notifier.close();
       context.ptz.close();
       mqtt?.end(true);

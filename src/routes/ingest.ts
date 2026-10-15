@@ -7,6 +7,7 @@ import type { Express } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { parseHealth, parseTelemetry } from "../contracts.js";
+import { stampOf } from "../mqtt.js";
 import { hasBearer } from "../http/auth.js";
 
 export function registerIngestRoutes(app: Express, context: AppContext, startedAt: number, version: string): void {
@@ -23,16 +24,20 @@ export function registerIngestRoutes(app: Express, context: AppContext, startedA
     ...(operatorAuthorized(request) ? { mode: store.snapshot().mode, live_video: Boolean(config.ffmpegPath), mqtt: Boolean(config.mqtt) } : {}),
   }));
 
+  // A node without a clock (it has not reached an NTP server, or it restarted) counts its time from zero: over MQTT the server already gives such a message the time it arrived, and over HTTP
+  // it did not, so a node that restarted had its messages taken for old ones and ignored until its counter passed the old one.
+  const stamped = <T extends { timestamp_ms: number }>(message: T): T => ({ ...message, timestamp_ms: stampOf(message.timestamp_ms, Date.now()) });
+
   app.post("/api/v1/telemetry", ingestLimit, (request, response) => {
     if (!hasBearer(request, config.ingestToken)) return response.sendStatus(401);
     // The answer is deliberately minimal: a field node's token must not reveal the rest of the perimeter.
-    try { return response.status(202).json({ accepted: true, revision: store.telemetry(parseTelemetry(request.body)).revision }); }
+    try { return response.status(202).json({ accepted: true, revision: store.telemetry(stamped(parseTelemetry(request.body))).revision }); }
     catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "invalid telemetry" }); }
   });
 
   app.post("/api/v1/health", ingestLimit, (request, response) => {
     if (!hasBearer(request, config.ingestToken)) return response.sendStatus(401);
-    try { return response.status(202).json({ accepted: true, revision: store.health(parseHealth(request.body)).revision }); }
+    try { return response.status(202).json({ accepted: true, revision: store.health(stamped(parseHealth(request.body))).revision }); }
     catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "invalid health" }); }
   });
 

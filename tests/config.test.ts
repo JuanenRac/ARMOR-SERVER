@@ -48,8 +48,9 @@ test("the discovery CIDR must be a /24", () => {
 });
 
 test("a short Studio password is only a warning on a loopback-only server", () => {
-  const local = readConfig({ ...SECRETS, ARMOR_STUDIO_PASSWORD: "short-pw9" });
+  const local = readConfig({ ...SECRETS, ARMOR_DISARM_PIN: "required", ARMOR_STUDIO_PASSWORD: "short-pw9" });
   assert.equal(local.warnings.length, 1);
-  assert.equal(readConfig({ ...SECRETS }).warnings.length, 0);
+  assert.equal(readConfig({ ...SECRETS, ARMOR_DISARM_PIN: "required" }).warnings.length, 0);
+  assert.equal(readConfig({ ...SECRETS }).warnings.length, 1, "without ARMOR_DISARM_PIN=required the server says that anyone without a PIN can disarm");
   assert.throws(() => readConfig({ ...SECRETS, ARMOR_STUDIO_PASSWORD: "short-pw9", ARMOR_HOST: "192.168.0.10" }), ConfigError);
 });
