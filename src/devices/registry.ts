@@ -6,7 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { cleanState, defaultRisk, isKind, isProtocol, isRisk, isTriggered, kindInfo, type DeviceKind, type DeviceState, type Protocol, type Risk } from "./catalog.js";
+import { cleanState, defaultRisk, isKind, isOpeningKind, isProtocol, isRisk, isTriggered, kindInfo, type DeviceKind, type DeviceState, type Protocol, type Risk } from "./catalog.js";
 import { cleanMap, parsePayload, stateFromPayload, type MapEntry } from "./mapping.js";
 import { durableRename } from "../durable.js";
 
@@ -260,7 +260,7 @@ function defaultMap(kind: DeviceKind, payload: unknown): MapEntry[] | undefined 
   if (typeof payload === "object" && payload !== null) return undefined;
   const trigger = kindInfo(kind).trigger;
   if (trigger) return [{ field: trigger.field, path: "$" }];
-  if (kindInfo(kind).category === "actuator") return [{ field: kind === "lock" ? "locked" : kind === "valve" ? "open" : "on", path: "$" }];
+  if (kindInfo(kind).category === "actuator") return [{ field: kind === "lock" ? "locked" : isOpeningKind(kind) ? "open" : "on", path: "$" }];
   return undefined;
 }
 

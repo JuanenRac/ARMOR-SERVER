@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.7] - Device kinds for shutters, gate and garage motors and water heaters; maintenance routes in the contract
+
+- New device kinds `shutter`, `gate_motor`, `garage_motor` and `water_heater`: open and close commands for the motors (state field `open`) and on and off for the water heater.
+- The maintenance routes (programs, updates, history, jobs and console) are described in the OpenAPI contract.
+- `POST /api/v1/admin/system/upgrade` takes a `mode`: `upgrade` (default), `full` (full-upgrade) or `repair`; anything else is refused (422) and the mode is written in the audit trail.
+- **Firmware jobs with several nodes:** between one node and the next the job waits a moment, every request to a node asks the node to close the connection after it (a small node closes idle sockets, and a pooled one could be dead when its turn came, minutes later), the first look at a node is tried three times and the sign-in with the upload twice; a failure of the second node no longer needs a new job.
+- The list of the last operations can be emptied (`DELETE /api/v1/admin/updates/history`).
+
 ## [0.5.6] - Maintenance: updates from GitHub, the system's updates and the root console
 
 - `/api/v1/admin/updates`, `/updates/{id}/rollback`, `/system/check|upgrade|reboot` and `/maintenance/jobs/{id}` ask the maintenance helper (its own Unix socket and token, ARMOR_MAINT_SOCKET and ARMOR_MAINT_TOKEN) to compare what is installed with the newest release of each program on GitHub, install them, put the previous one back and update the operating system, with the progress of every job.

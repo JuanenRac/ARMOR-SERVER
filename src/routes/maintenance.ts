@@ -63,12 +63,21 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
     relay(response, reply);
   });
 
+  app.delete("/api/v1/admin/updates/history", requireAdmin, async (request, response) => {
+    const reply = await ask(response, "POST", "/v1/history/clear", {});
+    if (!reply) return;
+    audit.record({ action: "maintenance.history.clear", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), detail: reply.status < 300 ? `${String(reply.body.cleared ?? 0)} entries` : undefined });
+    relay(response, reply);
+  });
+
   // ---- the operating system ----
   for (const action of ["check", "upgrade", "reboot"] as const) {
     app.post(`/api/v1/admin/system/${action}`, requireAdmin, async (request, response) => {
-      const reply = await ask(response, "POST", `/v1/system/${action}`);
+      const mode = action === "upgrade" && typeof body(request).mode === "string" ? String(body(request).mode) : undefined;
+      if (mode !== undefined && !["upgrade", "full", "repair"].includes(mode)) return response.status(422).json({ error: "bad_mode" });
+      const reply = await ask(response, "POST", `/v1/system/${action}`, mode === undefined ? undefined : { mode });
       if (!reply) return;
-      audit.record({ action: `maintenance.system.${action}`, outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request) });
+      audit.record({ action: `maintenance.system.${action}`, outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), ...(mode ? { detail: mode } : {}) });
       relay(response, reply);
     });
   }

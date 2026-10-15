@@ -45,9 +45,17 @@ export const DEVICE_KINDS = {
   siren: { category: "actuator", alarm: "none", severity: "warning", commands: ["on", "off"] },
   lock: { category: "actuator", alarm: "none", severity: "warning", commands: ["on", "off"] },
   valve: { category: "actuator", alarm: "none", severity: "warning", commands: ["on", "off"] },
+  // motors that open and close things (on = open, off = close) and a water heater (a thermo, a boiler, a heat-pump tank) that heats while it is on
+  shutter: { category: "actuator", alarm: "none", severity: "warning", commands: ["on", "off"] },
+  gate_motor: { category: "actuator", alarm: "none", severity: "warning", commands: ["on", "off"] },
+  garage_motor: { category: "actuator", alarm: "none", severity: "warning", commands: ["on", "off"] },
+  water_heater: { category: "actuator", alarm: "none", severity: "warning", commands: ["on", "off", "toggle"] },
 } as const satisfies Record<string, KindInfo>;
 
 export type DeviceKind = keyof typeof DEVICE_KINDS;
+/** The actuators whose state is "open" (a valve, a roller shutter, a gate and a garage door motor): their commands are "open" and "close". */
+export const OPENING_KINDS: readonly DeviceKind[] = ["valve", "shutter", "gate_motor", "garage_motor"];
+export const isOpeningKind = (kind: string): boolean => (OPENING_KINDS as readonly string[]).includes(kind);
 export const KIND_LIST = Object.keys(DEVICE_KINDS) as DeviceKind[];
 export const isKind = (value: unknown): value is DeviceKind => typeof value === "string" && Object.hasOwn(DEVICE_KINDS, value);
 export const kindInfo = (kind: DeviceKind): KindInfo => DEVICE_KINDS[kind];

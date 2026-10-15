@@ -31,6 +31,7 @@ async function fakeAgent(consoleEnabled = true): Promise<{ socket: string; seen:
       if (request.method === "POST" && url.endsWith("/rollback")) return send(202, { id: "job-2", state: "running" });
       if (request.method === "POST" && url.startsWith("/v1/system/")) return send(202, { id: "job-3", state: "running" });
       if (request.method === "GET" && url.startsWith("/v1/jobs/")) return send(200, { id: "job-1", state: "done", percent: 100, log: ["x"], log_total: 1 });
+      if (request.method === "POST" && url === "/v1/history/clear") return send(200, { ok: true, cleared: 3 });
       if (request.method === "GET" && url === "/v1/console") return send(200, { enabled: consoleEnabled });
       if (request.method === "POST" && url === "/v1/console/run") return consoleEnabled ? send(202, { id: "c1", state: "running", output: "", offset: 0 }) : send(403, { error: "console_disabled" });
       if (request.method === "GET" && url.startsWith("/v1/console/jobs/")) return send(200, { id: "c1", state: "done", code: 0, output: "hi\n", offset: 3, cwd: "/tmp" });
@@ -74,14 +75,19 @@ test("an administrator checks, installs, rolls back and upgrades the system, wit
     assert.equal((await call(running, cookie, "POST", "/api/v1/admin/updates", { components: [] })).status, 422);
     assert.equal((await call(running, cookie, "POST", "/api/v1/admin/updates/studio/rollback")).status, 202);
     assert.equal((await call(running, cookie, "POST", "/api/v1/admin/updates/shell/rollback")).status, 404);
+    assert.equal((await call(running, cookie, "DELETE", "/api/v1/admin/updates/history")).body.cleared, 3);
     assert.equal((await call(running, cookie, "POST", "/api/v1/admin/system/check")).status, 202);
     assert.equal((await call(running, cookie, "POST", "/api/v1/admin/system/upgrade")).status, 202);
+    assert.equal((await call(running, cookie, "POST", "/api/v1/admin/system/upgrade", { mode: "full" })).status, 202);
+    assert.deepEqual(agent.seen.at(-1)?.body, { mode: "full" });
+    assert.equal((await call(running, cookie, "POST", "/api/v1/admin/system/upgrade", { mode: "repair" })).status, 202);
+    assert.equal((await call(running, cookie, "POST", "/api/v1/admin/system/upgrade", { mode: "rm -rf" })).status, 422);
     assert.equal((await call(running, cookie, "POST", "/api/v1/admin/system/reboot")).status, 202);
     assert.equal((await call(running, cookie, "GET", "/api/v1/admin/maintenance/jobs/job-1?since=0")).body.state, "done");
     assert.equal((await call(running, cookie, "GET", "/api/v1/admin/maintenance/jobs/..%2Fx")).status, 404);
     assert.ok(agent.seen.every(item => item.token === TOKEN), "every request carries the token");
     const audit = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8");
-    for (const action of ["maintenance.check", "maintenance.update", "maintenance.rollback", "maintenance.system.check", "maintenance.system.upgrade", "maintenance.system.reboot"]) assert.match(audit, new RegExp(action.replace(/\./g, "\\.")));
+    for (const action of ["maintenance.check", "maintenance.update", "maintenance.rollback", "maintenance.system.check", "maintenance.system.upgrade", "maintenance.system.reboot", "maintenance.history.clear"]) assert.match(audit, new RegExp(action.replace(/\./g, "\\.")));
   } finally { await running.stop(); await agent.close(); }
 });
 
@@ -93,7 +99,7 @@ test("an operator who is not an administrator cannot reach any of it", async () 
     assert.equal((await call(running, cookie, "POST", "/api/v1/users", { username: "guard", password: "guard-password-1", role: "operator" })).status, 201);
     const login = await fetch(`${running.base}/api/v1/studio/session`, { method: "POST", headers: json, body: JSON.stringify({ username: "guard", password: "guard-password-1" }) });
     const guard = (login.headers.getSetCookie()[0] ?? "").split(";")[0];
-    for (const [method, route] of [["GET", "/api/v1/admin/updates"], ["POST", "/api/v1/admin/updates"], ["POST", "/api/v1/admin/system/upgrade"], ["POST", "/api/v1/admin/system/reboot"], ["POST", "/api/v1/admin/console/unlock"], ["POST", "/api/v1/admin/console/run"], ["GET", "/api/v1/admin/console"]]) {
+    for (const [method, route] of [["GET", "/api/v1/admin/updates"], ["POST", "/api/v1/admin/updates"], ["POST", "/api/v1/admin/system/upgrade"], ["POST", "/api/v1/admin/system/reboot"], ["DELETE", "/api/v1/admin/updates/history"], ["POST", "/api/v1/admin/console/unlock"], ["POST", "/api/v1/admin/console/run"], ["GET", "/api/v1/admin/console"]]) {
       assert.equal((await call(running, guard, method, route, method === "GET" ? undefined : {})).status, 403, route);
     }
     assert.equal(agent.seen.length, 0, "the agent was never asked");

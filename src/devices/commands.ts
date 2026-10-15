@@ -3,7 +3,7 @@
  * network). A command a kind does not understand is refused before anything is sent. Nothing here ever logs a URL or a payload.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
-import { kindInfo } from "./catalog.js";
+import { isOpeningKind, kindInfo } from "./catalog.js";
 import { DeviceError, isLanUrl, type Device, type DeviceRegistry } from "./registry.js";
 
 export type Command = "on" | "off" | "toggle";
@@ -16,7 +16,7 @@ export type CommandDeps = {
 };
 
 /** The state field a command sets (a lock is "locked", a valve "open", the rest "on"). */
-export const commandField = (device: Device): "on" | "locked" | "open" => (device.kind === "lock" ? "locked" : device.kind === "valve" ? "open" : "on");
+export const commandField = (device: Device): "on" | "locked" | "open" => (device.kind === "lock" ? "locked" : isOpeningKind(device.kind) ? "open" : "on");
 
 /** What a toggle turns into, from the state the device last reported. */
 export function resolveToggle(device: Device): "on" | "off" { return device.state[commandField(device)] === true ? "off" : "on"; }

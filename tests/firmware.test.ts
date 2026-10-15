@@ -66,7 +66,7 @@ async function fakeGithub(release: { tag: string; image: Buffer; checksum?: stri
 
 async function withServer(node: { port: number }, github: { api: string } | null, run: (running: Running, cookie: string) => Promise<void>): Promise<void> {
   process.env.ARMOR_ADMIN_NODE_PORT = String(node.port);
-  const firmware = new FirmwareService({ nodePort: () => node.port, releaseApi: () => github?.api ?? "http://127.0.0.1:9", settleMs: 20, pollMs: 20, restartWaitMs: 3000 });
+  const firmware = new FirmwareService({ nodePort: () => node.port, releaseApi: () => github?.api ?? "http://127.0.0.1:9", settleMs: 20, pollMs: 20, restartWaitMs: 3000, betweenMs: 10, retryMs: 10 });
   const running = await startServer({}, { firmware });
   try { await run(running, await studioCookie(running.base)); } finally { delete process.env.ARMOR_ADMIN_NODE_PORT; await running.stop(); }
 }

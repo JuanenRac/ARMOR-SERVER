@@ -79,6 +79,31 @@ def fail(message: str) -> None:
     raise SystemExit(1)
 
 
+def validate_changelog_order() -> None:
+    """The changelog reads newest first: an `Unreleased` entry only at the top, each version once, and the versions in descending order (a stale `Unreleased` left in the
+    middle, or a second entry for a version, made changelogs hard to read)."""
+    path = ROOT / "CHANGELOG.md"
+    if not path.is_file():
+        return
+    heading = re.compile(r"^##\s*\[?(\d+\.\d+\.\d+(?:\.\d+)?)\]?")
+    unreleased = re.compile(r"^##\s*\[?Unreleased\]?", re.IGNORECASE)
+    key = lambda version: tuple((list(map(int, version.split("."))) + [0] * 4)[:4])
+    versions: list[tuple[str, int]] = []
+    seen_version = False
+    for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+        match = heading.match(line)
+        if match:
+            versions.append((match.group(1), number))
+            seen_version = True
+        elif unreleased.match(line) and seen_version:
+            fail(f"CHANGELOG.md line {number}: 'Unreleased' must be at the top, above the versions (merge it into the version that shipped it)")
+    for (newer, _), (older, line) in zip(versions, versions[1:]):
+        if key(newer) == key(older):
+            fail(f"CHANGELOG.md line {line}: version {older} has two entries; make it one")
+        if key(newer) < key(older):
+            fail(f"CHANGELOG.md line {line}: version {older} is listed after the older {newer}; newest first")
+
+
 def validate_readme_version_prose(manifest: dict) -> None:
     real_version = manifest["version"]
     name_pattern = re.compile(re.escape(manifest["name"]) + r"\s+v(\d+\.\d+\.\d+)")
@@ -164,6 +189,7 @@ def main() -> int:
         fail(f"latest changelog version {found} differs from manifest {manifest['version']}")
 
     validate_readme_version_prose(manifest)
+    validate_changelog_order()
 
     # A Python project's pyproject.toml `version` and its package
     # `__init__.py`'s `__version__` mirror are a separate copy of the same

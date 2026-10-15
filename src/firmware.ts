@@ -77,6 +77,9 @@ export type FirmwareOptions = {
   pollMs?: number;
   /** How long the node is given before it is asked whether it is back (it restarts a moment after it has answered). */
   settleMs?: number;
+  /** The pause between one node and the next, and between the tries of a step that could not reach the node. */
+  betweenMs?: number;
+  retryMs?: number;
 };
 
 const sha256Of = (bytes: Buffer) => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -109,6 +112,8 @@ export class FirmwareService {
   readonly #restartWaitMs: number;
   readonly #pollMs: number;
   readonly #settleMs: number;
+  readonly #betweenMs: number;
+  readonly #retryMs: number;
   #running = false;
   readonly #restartedAt = new WeakMap<JobTarget, number>();
 
@@ -119,6 +124,8 @@ export class FirmwareService {
     this.#restartWaitMs = options.restartWaitMs ?? 120_000;
     this.#pollMs = options.pollMs ?? 2_000;
     this.#settleMs = options.settleMs ?? 4_000;
+    this.#betweenMs = options.betweenMs ?? 3_000;
+    this.#retryMs = options.retryMs ?? 2_000;
   }
 
   // ---- the images -------------------------------------------------------------------------------------------------------------------
@@ -187,7 +194,7 @@ export class FirmwareService {
   /** What a node says about itself without a login: its id, its version, its board and, from the firmware that says it, its kind (radar, solar, electrical, hmi). */
   async probe(address: string): Promise<{ address: string; reachable: boolean; node_id?: string; version?: string; board?: string; kind?: string }> {
     try {
-      const reply = await fetch(`${this.#base(address)}/api/v1/session`, { signal: AbortSignal.timeout(4_000) });
+      const reply = await fetch(`${this.#base(address)}/api/v1/session`, { headers: { Connection: "close" }, signal: AbortSignal.timeout(4_000) });
       if (!reply.ok) return { address, reachable: false };
       const data = await reply.json() as { node_id?: string; version?: string; board?: string; kind?: string };
       return { address, reachable: true, node_id: data.node_id, version: data.version, board: data.board, ...(typeof data.kind === "string" ? { kind: data.kind } : {}) };
@@ -198,14 +205,42 @@ export class FirmwareService {
     const base = this.#base(target.address);
     const set = (state: TargetState) => { target.state = state; };
     set("checking");
-    const before = await this.probe(target.address);
+    // A node that was spoken to a long time ago (the first node of a job takes minutes) may not answer at the first try: a short node has few sockets and closes the idle ones.
+    let before = await this.probe(target.address);
+    for (let attempt = 1; !before.reachable && attempt < 3; attempt += 1) { await sleep(this.#retryMs); before = await this.probe(target.address); }
     if (!before.reachable) throw new FirmwareError("node_not_reachable");
     target.node_id = before.node_id; target.version_before = before.version;
     // A node that says what it is must be the kind this job updates: the updates of a kind go only to nodes of that kind (the image of another one would be taken for good).
     if (before.kind && before.kind !== kind) throw new FirmwareError("wrong_node_kind");
 
+    // Signing in and sending the image are tried twice when the node cannot be reached (a connection that dropped, a socket the node had closed): the second try starts from a new sign-in.
+    let answer: { error?: string; version?: string; sha256?: string } = {};
+    for (let attempt = 1; ; attempt += 1) {
+      try { answer = await this.#signInAndSend(target, base, image, login, set); break; }
+      catch (error) {
+        const again = error instanceof FirmwareError && (error.code === "node_not_reachable" || error.code === "upload_failed") && attempt < 2;
+        if (!again) throw error;
+        await sleep(this.#retryMs);
+      }
+    }
+    const total = image.bytes.length;
+    target.sent = total;
+    set("restarting");
+    this.#restartedAt.set(target, this.#now());
+    const expected = answer.version ?? image.version;
+    await sleep(this.#settleMs);
+    const deadline = this.#now() + this.#restartWaitMs;
+    for (;;) {
+      const state = await this.probe(target.address);
+      if (state.reachable && (!expected || state.version === expected)) { target.version_after = state.version; return; }
+      if (this.#now() > deadline) throw new FirmwareError("did_not_come_back");
+      await sleep(this.#pollMs);
+    }
+  }
+
+  async #signInAndSend(target: JobTarget, base: string, image: Image, login: { user: string; password: string }, set: (state: TargetState) => void): Promise<{ error?: string; version?: string; sha256?: string }> {
     set("signing_in");
-    const signIn = await fetch(`${base}/api/v1/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(login), signal: AbortSignal.timeout(10_000) }).catch(() => undefined);
+    const signIn = await fetch(`${base}/api/v1/login`, { method: "POST", headers: { "Content-Type": "application/json", Connection: "close" }, body: JSON.stringify(login), signal: AbortSignal.timeout(10_000) }).catch(() => undefined);
     const cookie = signIn?.headers.get("set-cookie")?.split(";")[0];
     if (!signIn) throw new FirmwareError("node_not_reachable");
     if (signIn.status === 401) throw new FirmwareError("panel_login_refused");
@@ -225,26 +260,14 @@ export class FirmwareService {
       },
     });
     const sent = await fetch(`${base}/api/v1/ota`, {
-      method: "POST", headers: { Cookie: cookie, "X-Requested-With": "armor", "Content-Type": "application/octet-stream", "Content-Length": String(total) },
+      method: "POST", headers: { Cookie: cookie, "X-Requested-With": "armor", "Content-Type": "application/octet-stream", "Content-Length": String(total), Connection: "close" },
       body: stream, duplex: "half", signal: AbortSignal.timeout(240_000),
     } as RequestInit & { duplex: "half" }).catch(() => undefined);
     if (!sent) throw new FirmwareError("upload_failed");
     const answer = await sent.json().catch(() => ({})) as { error?: string; version?: string; sha256?: string };
     if (!sent.ok) throw new FirmwareError(answer.error ? `node_${answer.error}` : `node_http_${sent.status}`);
     if (answer.sha256 && answer.sha256.toLowerCase() !== image.sha256) throw new FirmwareError("hash_mismatch");
-
-    target.sent = total;
-    set("restarting");
-    this.#restartedAt.set(target, this.#now());
-    const expected = answer.version ?? image.version;
-    await sleep(this.#settleMs);
-    const deadline = this.#now() + this.#restartWaitMs;
-    for (;;) {
-      const state = await this.probe(target.address);
-      if (state.reachable && (!expected || state.version === expected)) { target.version_after = state.version; return; }
-      if (this.#now() > deadline) throw new FirmwareError("did_not_come_back");
-      await sleep(this.#pollMs);
-    }
+    return answer;
   }
 
   // ---- the jobs ---------------------------------------------------------------------------------------------------------------------
@@ -298,6 +321,7 @@ export class FirmwareService {
       catch (error) { target.state = "failed"; target.error = error instanceof FirmwareError ? error.code : "failed"; }
       if (target.state !== "failed") target.state = "done";
       onNode?.(job, target);
+      if (target !== job.targets[job.targets.length - 1]) await sleep(this.#betweenMs);   // the next node is spoken to after the network has had a moment
     }
     job.state = job.targets.every(target => target.state === "done") ? "done" : "failed";
     if (job.state === "failed") job.error = "some_nodes_failed";
