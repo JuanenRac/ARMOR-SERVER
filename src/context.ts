@@ -233,10 +233,21 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   });
   const preferences = new PreferencesStore(path.join(config.dataDir, "preferences.json"));
   const studioUser = (request: HeaderSource): PublicUser | undefined => { const id = studioSessions.userId(request); return id ? users.get(id) : undefined; };
-  const operatorAuthorized = (request: HeaderSource): boolean =>
-    hasBearer(request, config.operatorToken) || operatorSessions.has(request) || Boolean(studioUser(request));
+  // A wall panel's account is of the `panel` role: it is not an operator. It may only do what a wall panel does: read the summary, change the mode and acknowledge the alarms.
+  const panelRoutes = new Set(["GET /api/v1/panel/summary", "POST /api/v1/mode", "POST /api/v1/alarms/acknowledge"]);
+  const operatorAuthorized = (request: HeaderSource): boolean => {
+    if (hasBearer(request, config.operatorToken) || operatorSessions.has(request)) return true;
+    const user = studioUser(request);
+    return Boolean(user) && user?.role !== "panel";
+  };
   const requireOperator: RequestHandler = (request, response, next) => {
     if (operatorAuthorized(request)) return next();
+    const panel = studioUser(request);
+    if (panel?.role === "panel") {
+      if (panelRoutes.has(`${request.method} ${request.path}`)) return next();
+      audit.record({ action: "panel.access", outcome: "denied", actor: panel.username, target: `${request.method} ${request.path}` });
+      return response.status(403).json({ error: "this account only serves a wall panel" });
+    }
     audit.record({ action: "operator.access", outcome: "denied", target: `${request.method} ${request.path}` });
     return response.status(401).json({ error: "operator authorization is required" });
   };

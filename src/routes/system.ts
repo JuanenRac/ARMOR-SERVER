@@ -7,6 +7,7 @@ import path from "node:path";
 import type { Express } from "express";
 import { checkConnection, readConnection, writeConnection } from "../connection.js";
 import { isLoopbackHost } from "../config.js";
+import type { SolarTotals } from "../solar.js";
 import type { AppContext } from "../context.js";
 import { listServices, procPausedReader, programVersions, systemctlReader, type FieldNode, type UnitReader } from "../services.js";
 
@@ -22,6 +23,15 @@ export function tailLines(file: string, limit: number, maxBytes = 512 * 1024): s
       return lines.slice(-limit);
     } finally { fs.closeSync(descriptor); }
   } catch { return []; }
+}
+
+/** What the wall panel's energy page shows: the power of the panels and of the house, the battery's charge and power, and whether the solar equipment reports at all. Always a few dozen bytes. */
+export function energySummary(totals: SolarTotals): { reporting: boolean; pv_w: number; load_w: number; battery_w: number | null; soc_percent: number | null; mode: string | null; inverters: number; batteries: number; stale: number } {
+  return {
+    reporting: totals.inverters + totals.batteries > totals.stale, pv_w: Math.round(totals.pv_w), load_w: Math.round(totals.load_w),
+    battery_w: totals.battery_w === null ? null : Math.round(totals.battery_w), soc_percent: totals.soc_percent === null ? null : Math.round(totals.soc_percent),
+    mode: totals.mode, inverters: totals.inverters, batteries: totals.batteries, stale: totals.stale,
+  };
 }
 
 export function registerSystemRoutes(app: Express, context: AppContext, version: string, readUnits: UnitReader = systemctlReader): void {
@@ -52,6 +62,7 @@ export function registerSystemRoutes(app: Express, context: AppContext, version:
     response.json({
       mode: state.mode, revision: state.revision, time_ms: Date.now(),
       nodes: { online: nodes.filter(node => node.online).length, total: nodes.length },
+      energy: energySummary(context.solar.totals()),
       alarms: {
         active: active.length, unacknowledged: active.filter(alarm => !alarm.acknowledged_at).length,
         items: order.slice(0, 6).map(alarm => ({ id: alarm.id, code: alarm.code, severity: alarm.severity, source_type: alarm.source.type, source_id: alarm.source.id.slice(0, 48), raised_at: alarm.raised_at, acknowledged: Boolean(alarm.acknowledged_at) })),

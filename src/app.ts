@@ -28,6 +28,7 @@ import { electricalTopic, parseElectricalMessage, parseElectricalResult } from "
 import { alarmTopic, parseAlarmMessage, parseAlarmResult } from "./alarm.js";
 import { registerAlarmNodeRoutes } from "./routes/alarm.js";
 import { parseSolarMessage, solarTopic } from "./solar.js";
+import { DiscoveryPublisher } from "./ha_discovery.js";
 import { forwardCompatible } from "./contracts.js";
 import { JsonFile } from "./history.js";
 import type { ElectricalHistoryFile } from "./electrical.js";
@@ -128,6 +129,16 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     context.ingestLog.rejected(topic, why, raw);
     console.warn("ARMOR_MQTT=REJECTED", why);
   };
+  if (mqtt && config.haDiscovery) {
+    // Home Assistant reads the same broker: it is told, once and then again now and then, what the nodes report (read-only sensors; ha_discovery.ts).
+    const discovery = new DiscoveryPublisher({
+      prefix: config.haDiscovery.prefix, solar: () => context.solar.list(), electrical: () => context.electricalNodes.list(), alarm: () => context.alarmNodes.list(),
+      publish: (topic, payload) => { if (!mqtt.connected) throw new Error("the MQTT broker is not connected"); mqtt.publish(topic, payload, { qos: 1, retain: true }); }, warn: message => console.warn(message),
+    });
+    mqtt.on("connect", () => { discovery.forget(); discovery.round(true); });
+    discovery.start();
+    mqtt.on("close", () => discovery.stop());
+  }
   if (mqtt) context.notifier.setPublisher((topic, payload) => { if (mqtt.connected) mqtt.publish(topic, payload, { qos: 1 }); });
   if (mqtt) {
     // Devices speak over the same broker: subscribe to their topics (again whenever the list changes), hand their messages to the registry, and publish commands.

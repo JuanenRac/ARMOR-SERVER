@@ -20,6 +20,16 @@ export type SolarInverter = {
   bus_v?: number;
   total_out_w?: number; total_out_va?: number; total_load_percent?: number; total_charging_a?: number;
   units?: SolarUnit[];
+  /** What the unit says about itself: its serial number and firmware, the energy the panels have made in all (Wh) and what it is rated for and how it is set. */
+  serial?: string; firmware?: string; pv_energy_total_wh?: number;
+  ratings?: SolarRatings;
+};
+export type SolarRatings = {
+  grid_rating_v?: number; out_rating_v?: number; out_rating_hz?: number; out_rating_va?: number; out_rating_w?: number;
+  battery_rating_v?: number; battery_recharge_v?: number; battery_under_v?: number; battery_bulk_v?: number; battery_float_v?: number;
+  max_charge_a?: number; max_ac_charge_a?: number;
+  battery_type?: "agm" | "flooded" | "user"; input_range?: "appliance" | "ups"; output_priority?: "utility_first" | "solar_first" | "sbu";
+  charger_priority?: "utility_first" | "solar_first" | "solar_and_utility" | "solar_only";
 };
 export type SolarUnit = {
   unit: number; mode: SolarMode; serial?: string; fault_code?: string; grid_v?: number; out_v?: number; out_va?: number; out_w?: number;
@@ -43,7 +53,16 @@ const deviceName = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 const warningName = /^[a-z][a-z0-9_]{0,39}$/;
 const INVERTER_KEYS = ["kind", "node_id", "device", "timestamp_ms", "mode", "grid_v", "grid_hz", "out_v", "out_hz", "out_va", "out_w", "load_percent", "battery_v", "battery_a", "battery_percent",
   "pv_v", "pv_a", "pv_w", "heatsink_c", "ac_charging", "pv_charging", "load_on", "warnings"] as const;
-const INVERTER_OPTIONAL_KEYS = ["bus_v", "pv2_v", "pv2_a", "pv2_w", "total_out_w", "total_out_va", "total_load_percent", "total_charging_a", "units"] as const;
+const INVERTER_OPTIONAL_KEYS = ["bus_v", "pv2_v", "pv2_a", "pv2_w", "total_out_w", "total_out_va", "total_load_percent", "total_charging_a", "units", "serial", "firmware", "pv_energy_total_wh", "ratings"] as const;
+const RATINGS_RANGES: Record<string, readonly [number, number]> = {
+  grid_rating_v: [0, 600], out_rating_v: [0, 600], out_rating_hz: [0, 100], out_rating_va: [0, 1_000_000], out_rating_w: [0, 1_000_000], battery_rating_v: [0, 600], battery_recharge_v: [0, 600],
+  battery_under_v: [0, 600], battery_bulk_v: [0, 600], battery_float_v: [0, 600], max_charge_a: [0, 2000], max_ac_charge_a: [0, 2000],
+};
+const RATINGS_CHOICES: Record<string, readonly string[]> = {
+  battery_type: ["agm", "flooded", "user"], input_range: ["appliance", "ups"], output_priority: ["utility_first", "solar_first", "sbu"], charger_priority: ["utility_first", "solar_first", "solar_and_utility", "solar_only"],
+};
+const serialText = /^[0-9A-Za-z]{8,20}$/;
+const firmwareText = /^[0-9A-Za-z._-]{1,24}$/;
 const INVERTER_OPTIONAL_RANGES: Record<string, readonly [number, number]> = {
   bus_v: [0, 1500], pv2_v: [0, 1500], pv2_a: [0, 500], pv2_w: [0, 100_000], total_out_w: [0, 1_000_000], total_out_va: [0, 1_000_000], total_load_percent: [0, 200], total_charging_a: [0, 10_000],
 };
@@ -61,6 +80,14 @@ const inRange = (value: unknown, low: number, high: number): value is number => 
 function readDevice(body: Record<string, unknown>): string {
   if (typeof body.device !== "string" || !deviceName.test(body.device)) throw new Error("invalid device");
   return body.device;
+}
+
+function parseRatings(value: unknown): SolarRatings {
+  const ratings = record(value, "ratings");
+  onlyKnown(ratings, [...Object.keys(RATINGS_RANGES), ...Object.keys(RATINGS_CHOICES)], "ratings");
+  for (const [key, [low, high]] of Object.entries(RATINGS_RANGES)) if (key in ratings && !inRange(ratings[key], low, high)) throw new Error(`invalid ratings.${key}`);
+  for (const [key, choices] of Object.entries(RATINGS_CHOICES)) if (key in ratings && !(typeof ratings[key] === "string" && choices.includes(ratings[key] as string))) throw new Error(`invalid ratings.${key}`);
+  return ratings as unknown as SolarRatings;
 }
 
 function parseUnit(value: unknown, index: number): SolarUnit {
@@ -81,13 +108,17 @@ export function parseSolarInverter(value: unknown): SolarInverter {
   for (const [key, [low, high]] of Object.entries(INVERTER_OPTIONAL_RANGES)) if (key in body && !inRange(body[key], low, high)) throw new Error(`invalid ${key}`);
   if ("units" in body && (!Array.isArray(body.units) || body.units.length > 10)) throw new Error("invalid units");
   const units = Array.isArray(body.units) ? body.units.map(parseUnit) : undefined;
+  if ("serial" in body && !(typeof body.serial === "string" && serialText.test(body.serial))) throw new Error("invalid serial");
+  if ("firmware" in body && !(typeof body.firmware === "string" && firmwareText.test(body.firmware))) throw new Error("invalid firmware");
+  if ("pv_energy_total_wh" in body && !inRange(body.pv_energy_total_wh, 0, 1e12)) throw new Error("invalid pv_energy_total_wh");
+  const ratings = "ratings" in body ? parseRatings(body.ratings) : undefined;
   if (body.kind !== "inverter") throw new Error("invalid kind");
   const node = readNodeId(body), device = readDevice(body), timestamp = readTimestamp(body);
   if (typeof body.mode !== "string" || !(SOLAR_MODES as readonly string[]).includes(body.mode)) throw new Error("invalid mode");
   for (const [key, [low, high]] of Object.entries(INVERTER_RANGES)) if (!inRange(body[key], low, high)) throw new Error(`invalid ${key}`);
   for (const key of ["ac_charging", "pv_charging", "load_on"]) if (typeof body[key] !== "boolean") throw new Error(`invalid ${key}`);
   if (!Array.isArray(body.warnings) || body.warnings.length > 32 || !body.warnings.every(name => typeof name === "string" && warningName.test(name))) throw new Error("invalid warnings");
-  return { ...(body as unknown as SolarInverter), node_id: node, device, timestamp_ms: timestamp, warnings: [...(body.warnings as string[])], ...(units ? { units } : {}) };
+  return { ...(body as unknown as SolarInverter), node_id: node, device, timestamp_ms: timestamp, warnings: [...(body.warnings as string[])], ...(units ? { units } : {}), ...(ratings ? { ratings } : {}) };
 }
 
 const BATTERY_OPTIONAL_RANGES: Record<string, readonly [number, number]> = {

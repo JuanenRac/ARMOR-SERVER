@@ -78,6 +78,7 @@ flowchart LR
 * 必填：`ARMOR_INGEST_TOKEN` 和 `ARMOR_CONTROL_TOKEN`（24 个字符或更长，且互不相同）以及 `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD`（第一个管理员）。
 * 常用：`ARMOR_HOST` / `ARMOR_PORT`、`ARMOR_DATA_DIR`、`ARMOR_FFMPEG_PATH`（实时视频和抓拍）、`ARMOR_MQTT_URL`、`ARMOR_STUDIO_ORIGIN`、`ARMOR_NODE_STALE_AFTER_S`、`ARMOR_CAMERA_CHECK_S`、`ARMOR_ALERT_DWELL_MS`、`ARMOR_ALERT_WEBHOOK_URL` 和 `ARMOR_COOKIE_SECURE`（在 TLS 之后设为 `1`）。
 * **固件、通知与语音：** 服务器可更新现场节点的固件（文件或 GitHub 发布版，单个节点或某一类型的全部节点，带进度并校验 SHA-256），把警报发送到 Telegram 和 Home Assistant（带重试，审计行不含机密，支持七种语言），并通过语音网关执行十五条书面或语音命令（状态、警报、节点、摄像头、雷达、太阳能与电气系统、网络、时间、帮助和灯光；布防与撤防需在第二轮确认）。观察服务使用自己的令牌触发 `camera_motion`。见[节点固件](docs/NODE_FIRMWARE.md)和[集成](docs/INTEGRATION.md)。
+* **整套安装配置保存为一个文件、壁挂面板专用账户和 Home Assistant：** 管理员可下载整套安装配置（摄像头不含密码、设计、规则、自动化、设备、光伏设备和能源报警级别；绝不含密码、令牌或密钥），并在另一台机器上导入——设计、规则和报警级别会被替换，列表只补充缺少的；`panel` 角色（最小权限）让壁挂面板只能读取摘要、更改模式和确认报警，摘要中带有家庭能源信息；设置 `ARMOR_HA_DISCOVERY=1` 后，读取同一代理的 Home Assistant 会自动发现光伏设备、电气通道和报警主机的传感器（只读，默认关闭）。
 
 ## 📂 仓库结构
 

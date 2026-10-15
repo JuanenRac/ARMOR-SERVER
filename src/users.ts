@@ -9,8 +9,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 /** An administrator manages users as well as operating; an operator only operates. */
-export type Role = "admin" | "operator";
-export const ROLES: readonly Role[] = ["admin", "operator"];
+/** `panel` is the account of a wall panel (ARMOR-HMI): it may read the small summary, arm and disarm the system and acknowledge alarms, and nothing else (see context.ts). */
+export type Role = "admin" | "operator" | "panel";
+export const ROLES: readonly Role[] = ["admin", "operator", "panel"];
 export type PublicUser = { id: string; username: string; role: Role; createdAt: string; updatedAt: string };
 type UserRecord = PublicUser & { salt: string; hash: string };
 
@@ -121,7 +122,7 @@ export class UserStore {
   }
 
   #checkRole(role: unknown): Role {
-    if (!ROLES.includes(role as Role)) throw new UserError("invalid_role", "the role is admin or operator", 400);
+    if (!ROLES.includes(role as Role)) throw new UserError("invalid_role", "the role is admin, operator or panel", 400);
     return role as Role;
   }
 

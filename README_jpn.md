@@ -78,6 +78,7 @@ flowchart LR
 * 必須：`ARMOR_INGEST_TOKEN` と `ARMOR_CONTROL_TOKEN`（24 文字以上、すべて異なる）、および `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD`（最初の管理者）。
 * よく使う：`ARMOR_HOST` / `ARMOR_PORT`、`ARMOR_DATA_DIR`、`ARMOR_FFMPEG_PATH`（ライブ映像と撮影）、`ARMOR_MQTT_URL`、`ARMOR_STUDIO_ORIGIN`、`ARMOR_NODE_STALE_AFTER_S`、`ARMOR_CAMERA_CHECK_S`、`ARMOR_ALERT_DWELL_MS`、`ARMOR_ALERT_WEBHOOK_URL`、`ARMOR_COOKIE_SECURE`（TLS の背後では `1`）。
 * **ファームウェア、通知、音声：** サーバーは現場ノードのファームウェアを更新し（ファイルまたは GitHub のリリース、1 台または種類ごとの全ノード、進捗表示と SHA-256 の確認付き）、アラームを Telegram と Home Assistant に送り（再試行あり、秘密を含まない監査行、7 言語）、音声ゲートウェイ経由で 15 個の文字または音声のコマンド（状態、アラーム、ノード、カメラ、レーダー、太陽光と電気のシステム、ネットワーク、時刻、ヘルプ、照明。警戒と解除は 2 回目のターンで確認）を実行します。観測サービスは専用のトークンで `camera_motion` を上げます。[ノードのファームウェア](docs/NODE_FIRMWARE.md)と[統合](docs/INTEGRATION.md)を参照。
+* **1 つのファイルでのインストール環境、壁面パネル専用アカウント、Home Assistant：** 管理者はインストール環境全体（パスワードなしのカメラ、設計、ルール、オートメーション、デバイス、太陽光設備、エネルギー警報のレベル。パスワード・トークン・鍵は含みません）をダウンロードし、別のマシンへインポートできます。設計・ルール・警報レベルは置き換えられ、一覧は不足分だけが追加されます。`panel` ロール（最小権限）の壁面パネルは、概要の読み取り、モード変更、警報の確認だけができ、概要には住宅のエネルギーが含まれます。`ARMOR_HA_DISCOVERY=1` にすると、同じブローカーを読む Home Assistant が太陽光設備のセンサー、電気チャンネル、警報盤を自動的に見つけます（読み取り専用、既定はオフ）。
 
 ## 📂 リポジトリの構成
 

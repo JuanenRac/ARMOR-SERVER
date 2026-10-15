@@ -4,9 +4,10 @@
  * Nothing here is privileged: the privileged part is the admin agent (ARMOR-DEVOPS), which this file asks over a Unix socket and which can do only a closed list of things.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
-import type { Express, Request, Response } from "express";
+import express, { type Express, type Request, type Response } from "express";
 import type { AppContext } from "../context.js";
 import { maskEnv, unmaskEnv, type AdminReply } from "../admin.js";
+import { applyBundle, buildBundle, parseBundle, PARTS } from "../installation.js";
 
 const NODE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const PRIVATE_V4 = /^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})$/;
@@ -149,6 +150,29 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
     } catch {
       return done(false, "panel_not_reachable");
     }
+  });
+
+  // The whole installation as one file (cameras without their passwords, the designs, the rules, the automations, the devices, the solar equipment, the energy alarms, and who the
+  // users are): to keep, or to move to another machine. Importing replaces the designs, the rules and the alarm levels and only adds what is missing of the rest (see installation.ts).
+  const installationJson = express.json({ limit: 9 * 1024 * 1024, type: "application/json" });
+  app.get("/api/v1/admin/installation", requireAdmin, (request, response) => {
+    audit.record({ action: "admin.installation.export", outcome: "allowed", actor: actor(request) });
+    const bundle = buildBundle(context, actor(request) ?? "an administrator");
+    response.set({ "Cache-Control": "no-store", "Content-Disposition": `attachment; filename="armor-installation.json"` });
+    return response.json(bundle);
+  });
+  app.post("/api/v1/admin/installation", requireAdmin, installationJson, (request, response) => {
+    const input = body(request);
+    const bundle = parseBundle(input.bundle);
+    if (!bundle) {
+      audit.record({ action: "admin.installation.import", outcome: "denied", actor: actor(request), detail: "not an installation file" });
+      return response.status(400).json({ error: "invalid_bundle" });
+    }
+    const wanted = Array.isArray(input.parts) ? input.parts.filter((part): part is string => typeof part === "string" && (PARTS as readonly string[]).includes(part)) : [];
+    if (Array.isArray(input.parts) && input.parts.length > 0 && wanted.length === 0) return response.status(400).json({ error: "no_known_part" });
+    const report = applyBundle(context, bundle, wanted, actor(request) ?? "an administrator");
+    audit.record({ action: "admin.installation.import", outcome: Object.keys(report.failed).length > 0 ? "failed" : "allowed", actor: actor(request), detail: `${Object.keys(report.applied).join(", ") || "nothing"}` });
+    return response.json(report);
   });
 
   void config;

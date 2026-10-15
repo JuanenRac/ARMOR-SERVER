@@ -23,3 +23,35 @@ test("the panel summary is small, needs a sign-in and puts the alarms nobody has
     for (const item of after.alarms.items) assert.deepEqual(Object.keys(item).sort(), ["acknowledged", "code", "id", "raised_at", "severity", "source_id", "source_type"]);
   } finally { await running.stop(); }
 });
+
+test("a wall panel's account serves the panel and nothing else, and the summary carries the energy", async () => {
+  const running = await startServer();
+  try {
+    const admin = { "Content-Type": "application/json", cookie: await studioCookie(running.base) };
+    const made = await fetch(`${running.base}/api/v1/users`, { method: "POST", headers: admin, body: JSON.stringify({ username: "wall-panel", password: "wall-panel-password-1", role: "panel" }) });
+    assert.equal(made.status, 201);
+    assert.equal(((await made.json()) as { role: string }).role, "panel");
+    const login = await fetch(`${running.base}/api/v1/studio/session`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: "wall-panel", password: "wall-panel-password-1" }) });
+    assert.equal(login.status, 201);
+    const headers = { "Content-Type": "application/json", cookie: (login.headers.getSetCookie()[0] ?? "").split(";")[0] };
+
+    // what a wall panel does
+    const summary = await fetch(`${running.base}/api/v1/panel/summary`, { headers });
+    assert.equal(summary.status, 200);
+    const body = await summary.json() as { energy: { reporting: boolean; pv_w: number; load_w: number; battery_w: number | null; soc_percent: number | null; inverters: number; batteries: number } };
+    assert.deepEqual(body.energy, { reporting: false, pv_w: 0, load_w: 0, battery_w: null, soc_percent: null, mode: null, inverters: 0, batteries: 0, stale: 0 });
+    assert.equal((await fetch(`${running.base}/api/v1/mode`, { method: "POST", headers, body: JSON.stringify({ mode: "armed" }) })).status < 300, true);
+    assert.equal((await fetch(`${running.base}/api/v1/alarms/acknowledge`, { method: "POST", headers, body: "{}" })).status < 400, true);
+
+    // everything else is refused, whatever the route: the state, the cameras, the solar readings, the users, the services
+    for (const [method, path] of [["GET", "/api/v1/cameras"], ["GET", "/api/v1/solar"], ["GET", "/api/v1/users"], ["GET", "/api/v1/system/services"], ["POST", "/api/v1/devices"], ["GET", "/api/v1/system/metrics"]] as const) {
+      const answer = await fetch(`${running.base}${path}`, { method, headers, ...(method === "POST" ? { body: "{}" } : {}) });
+      assert.equal(answer.status, 403, `${method} ${path}`);
+    }
+    // an account of the other roles is untouched: an operator still reads the state
+    const operator = await fetch(`${running.base}/api/v1/users`, { method: "POST", headers: admin, body: JSON.stringify({ username: "guard-1", password: "guard-password-1", role: "operator" }) });
+    assert.equal(operator.status, 201);
+    // and a role that does not exist is refused
+    assert.equal((await fetch(`${running.base}/api/v1/users`, { method: "POST", headers: admin, body: JSON.stringify({ username: "boss", password: "boss-password-1234", role: "root" }) })).status, 400);
+  } finally { await running.stop(); }
+});
