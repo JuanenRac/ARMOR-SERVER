@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.6.4] - Push to the phones through Firebase, when the installation has its own project
+
+- Push through Firebase Cloud Messaging, off by default: it is on only when ARMOR_FCM_SERVICE_ACCOUNT names the service account file of the installation's own Firebase project, and it sends only what the other channels already send.
+- A phone registers the token of its app with POST /api/v1/push/register and takes it back with DELETE; a viewer's phone may do it too. An administrator reads GET /api/v1/push/status.
+- The server makes its access token from the service account (a signed JWT exchanged at the token endpoint), reuses it for most of its hour, and drops a phone that Firebase says is gone.
+- At most 50 phones are kept (the oldest registration makes room) in a private file of the data directory; nothing is logged with a token, a key or an address in it.
+
 ## [0.6.3] - Zones of a camera's picture to ignore
 
 - New routes GET and PUT /api/v1/cameras/{id}/ignore-zones: an operator reads the zones of a camera, an administrator replaces them (at most sixteen rectangles inside the picture, as fractions from the top left).

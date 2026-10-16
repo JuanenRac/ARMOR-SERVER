@@ -29,6 +29,7 @@ import { networkTopic, parseNetworkMessage } from "./network.js";
 import { electricalTopic, parseElectricalMessage, parseElectricalResult } from "./electrical.js";
 import { alarmTopic, parseAlarmMessage, parseAlarmResult } from "./alarm.js";
 import { registerAlarmNodeRoutes } from "./routes/alarm.js";
+import { registerPushRoutes } from "./routes/push.js";
 import { parseSolarMessage, solarTopic } from "./solar.js";
 import { DiscoveryPublisher } from "./ha_discovery.js";
 import { forwardCompatible } from "./contracts.js";
@@ -87,6 +88,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerSolarRoutes(app, context);
   registerElectricalRoutes(app, context);
   registerAlarmNodeRoutes(app, context);
+  registerPushRoutes(app, context);
   registerNetworkRoutes(app, context);
   registerAlarmDesignRoutes(app, context);
   registerMaintenanceRoutes(app, context);

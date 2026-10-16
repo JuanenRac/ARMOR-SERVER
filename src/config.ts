@@ -59,6 +59,8 @@ export type ArmorConfig = {
   telegram: { token: string; chatIds: string[] } | null;
   /** ntfy: the address of the topic and, for a protected one, a token. */
   ntfy: { url: string; token: string } | null;
+  /** Push through Firebase Cloud Messaging: the path of the service account file of the installation's own Firebase project; null: off. */
+  fcmServiceAccount: string | null;
   /** Home Assistant: its address and the id of the webhook an automation listens on; null when unused. */
   homeAssistant: { url: string; webhookId: string } | null;
   /** The language the alarm sentences (Telegram, Home Assistant) are told in. */
@@ -179,6 +181,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     if (telegramChats.length === 0 || telegramChats.length > 10 || !telegramChats.every(validTelegramChat)) throw new ConfigError("ARMOR_TELEGRAM_CHAT_IDS must be one to ten chat ids (numbers) or @channel names, separated by commas");
     telegram = { token: telegramToken, chatIds: telegramChats };
   }
+  const fcmServiceAccount = env.ARMOR_FCM_SERVICE_ACCOUNT?.trim() || null;
   const ntfyRaw = env.ARMOR_NTFY_URL?.trim() ?? "";
   let ntfy: ArmorConfig["ntfy"] = null;
   if (ntfyRaw) {
@@ -277,7 +280,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     escalateAfterMin: integer(env, "ARMOR_ESCALATE_AFTER_MIN", 0, 0, 1440),
     alertMinTargets: integer(env, "ARMOR_ALERT_MIN_TARGETS", 1, 1, 20),
     cameraCheckS: integer(env, "ARMOR_CAMERA_CHECK_S", 20, 0, 3600),
-    alertWebhookUrl, alertWebhookSecret, telegram, ntfy, homeAssistant, alertLanguage, electricalSwitching, alarmCommands, disarmPinRequired, haDiscovery, admin, maintenance, voice, aiToken,
+    alertWebhookUrl, alertWebhookSecret, telegram, ntfy, fcmServiceAccount, homeAssistant, alertLanguage, electricalSwitching, alarmCommands, disarmPinRequired, haDiscovery, admin, maintenance, voice, aiToken,
     tls,
     warnings,
   };

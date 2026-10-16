@@ -4,6 +4,7 @@
  * and lets tests assemble an isolated server.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
+import fs from "node:fs";
 import type { RequestHandler } from "express";
 import { unixTransport, type AdminAgent } from "./admin.js";
 import { FirmwareService } from "./firmware.js";
@@ -30,6 +31,7 @@ import { isTriggered } from "./devices/catalog.js";
 import { AlarmZoneFeed } from "./alarm_zone_feed.js";
 import { CaptureOnDetect } from "./capture_on_detect.js";
 import { IgnoreZones } from "./ignore_zones.js";
+import { FcmDevices, fcmChannel, parseServiceAccount } from "./push_fcm.js";
 import { SiteStore } from "./site.js";
 import { SolarStore } from "./solar.js";
 import { ElectricalStore } from "./electrical.js";
@@ -106,6 +108,10 @@ export type AppContext = {
   captureOnDetect: CaptureOnDetect;
   /** The parts of each camera's picture that the observation service does not look at. */
   ignoreZones: IgnoreZones;
+  /** The Android phones that asked for push through Firebase; empty and unused unless ARMOR_FCM_SERVICE_ACCOUNT is set. */
+  fcmDevices: FcmDevices;
+  /** Whether push through Firebase is on. */
+  fcmEnabled: boolean;
   /** The way to the admin agent, or null when there is none (see admin.ts). */
   admin: AdminAgent | null;
   /** The maintenance agent: updates from GitHub, the system's updates and the root console (see routes/maintenance.ts). */
@@ -166,6 +172,8 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const channels: NotifyChannel[] = [];
   if (config.telegram) channels.push(telegramChannel({ token: config.telegram.token, chatIds: config.telegram.chatIds, api: process.env.ARMOR_TELEGRAM_API || undefined }));
   if (config.ntfy) channels.push(ntfyChannel({ url: config.ntfy.url, token: config.ntfy.token || undefined }));
+  const fcmDevices = new FcmDevices(path.join(config.dataDir, "fcm-devices.json"));
+  if (config.fcmServiceAccount) channels.push(fcmChannel({ account: parseServiceAccount(fs.readFileSync(config.fcmServiceAccount, "utf8")), devices: fcmDevices }));
   if (config.homeAssistant) channels.push(homeAssistantChannel({ url: config.homeAssistant.url, webhookId: config.homeAssistant.webhookId }));
   const notifier = new AlertNotifier({ webhookUrl: config.alertWebhookUrl ?? undefined, webhookSecret: config.alertWebhookSecret || undefined, audit, channels, language: config.alertLanguage });
   const deviceLink: AppContext["deviceLink"] = {};
@@ -281,7 +289,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   // A viewer (the family, a guard) only looks: every read, the stream tickets that let them watch a camera, and nothing that changes, deletes, switches, arms or configures. What holds secrets or
   // settings (the administration routes, the users, the console, the node tokens) is closed to them even to read.
   const viewerCloses = /^\/api\/v1\/(admin|users|system\/ingest|preferences|installation)(\/|$)/;
-  const viewerMay = (method: string, path: string): boolean => (method === "GET" || method === "HEAD" ? !viewerCloses.test(path) : method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/stream-ticket$/.test(path));
+  const viewerMay = (method: string, path: string): boolean => (method === "GET" || method === "HEAD" ? !viewerCloses.test(path) : (method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/stream-ticket$/.test(path)) || ((method === "POST" || method === "DELETE") && path === "/api/v1/push/register"));
   const requireOperator: RequestHandler = (request, response, next) => {
     if (operatorAuthorized(request)) return next();
     const panel = studioUser(request);
@@ -313,7 +321,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    alarmDesign, alarmZoneFeed, captureOnDetect, ignoreZones, config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    alarmDesign, alarmZoneFeed, captureOnDetect, ignoreZones, fcmDevices, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

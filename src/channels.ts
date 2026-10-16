@@ -8,7 +8,7 @@ import { alertTitle, type AlertLanguage } from "./alert_text.js";
 import type { AlertMessage } from "./notify.js";
 
 export type Attempt = { ok: boolean; /** What happened, without any secret. */ detail: string; /** A client error will not get better by trying again. */ final?: boolean };
-export type NotifyChannel = { id: "telegram" | "homeassistant" | "ntfy"; deliver(message: AlertMessage, text: string, language: AlertLanguage, signal: AbortSignal): Promise<Attempt> };
+export type NotifyChannel = { id: "telegram" | "homeassistant" | "ntfy" | "fcm"; deliver(message: AlertMessage, text: string, language: AlertLanguage, signal: AbortSignal): Promise<Attempt> };
 
 export type TelegramOptions = { token: string; chatIds: string[]; api?: string; fetchImpl?: typeof fetch };
 export type NtfyOptions = { /** The address of the topic, such as https://ntfy.sh/my-armor-topic or the one of a self-hosted ntfy. */ url: string; token?: string; fetchImpl?: typeof fetch };
