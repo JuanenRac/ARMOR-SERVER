@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.9] - A check before arming, a viewer role, escalation, ntfy, proof of custody and daily electrical energy
+
+- `GET /api/v1/preflight` reports what would leave the perimeter blind or noisy before arming: a radar node that does not answer, a silent alarm panel, an open zone, a camera that is down, an open door or window and alarms nobody has seen, each blocking or only a warning.
+- A `viewer` role (family, guards) that can read the state, the alarms, the cameras, the history and ask for a camera's stream ticket, and can change nothing; what holds secrets or settings is closed to it even to read.
+- A critical alarm that nobody acknowledges within `ARMOR_ESCALATE_AFTER_MIN` minutes is told again, once, to every channel as unattended (off by default).
+- ntfy as a channel for the alarms (`ARMOR_NTFY_URL`, `ARMOR_NTFY_TOKEN`): a push to the phone with the highest priority for a critical alarm.
+- `GET /api/v1/media/.../proof` gives a signed proof of custody (size, SHA-256 now and every audit line about the file) and `POST /api/v1/media/proof/verify` says whether a proof is genuine and the file still matches it.
+- `GET /api/v1/electrical/energy` gives the energy of each channel per day, adding only the difference between readings so a meter that wraps at 9,999.99 kWh or restarts from zero does not break the sum.
+- A test walks every role over the routes it is meant to reach and the ones it is not, so a role cannot gain or lose access unnoticed.
+- The routes are described in the OpenAPI contract.
+
 ## [0.5.8] - Per-node ingest tokens, a hardened firmware job, quicker logins and alarm coverage by camera
 
 - Each node can have its own ingest token (derived from the shared one and the node's identity) and the server can refuse the shared token entirely; the token of a node is shown to administrators.

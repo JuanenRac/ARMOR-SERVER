@@ -11,8 +11,8 @@ import { durableRename, keepBackup } from "./durable.js";
 
 /** An administrator manages users as well as operating; an operator only operates. */
 /** `panel` is the account of a wall panel (ARMOR-HMI): it may read the small summary, arm and disarm the system and acknowledge alarms, and nothing else (see context.ts). */
-export type Role = "admin" | "operator" | "panel";
-export const ROLES: readonly Role[] = ["admin", "operator", "panel"];
+export type Role = "admin" | "operator" | "panel" | "viewer";
+export const ROLES: readonly Role[] = ["admin", "operator", "panel", "viewer"];
 /** `hasPin` / `hasDuress` say that a PIN to disarm (and a second one that disarms but warns in silence) is set; the PINs themselves are never shown. */
 export type PublicUser = { id: string; username: string; role: Role; createdAt: string; updatedAt: string; hasPin: boolean; hasDuress: boolean };
 type UserRecord = Omit<PublicUser, "hasPin" | "hasDuress"> & { salt: string; hash: string; pin?: { salt: string; hash: string }; duress?: { salt: string; hash: string } };
@@ -151,7 +151,7 @@ export class UserStore {
   }
 
   #checkRole(role: unknown): Role {
-    if (!ROLES.includes(role as Role)) throw new UserError("invalid_role", "the role is admin, operator or panel", 400);
+    if (!ROLES.includes(role as Role)) throw new UserError("invalid_role", "the role is admin, operator, viewer or panel", 400);
     return role as Role;
   }
 

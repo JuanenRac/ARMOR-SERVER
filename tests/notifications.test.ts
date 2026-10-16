@@ -107,7 +107,7 @@ test("the alarms reach Telegram and Home Assistant, in the language of the insta
     const cookie = await studioCookie(running.base);
     assert.equal((await call(running, "", "GET", "/api/v1/admin/notifications")).status, 401);
     const status = await call(running, cookie, "GET", "/api/v1/admin/notifications");
-    assert.deepEqual(status.body, { webhook: false, mqtt: false, telegram: true, homeassistant: true, language: "es" });
+    assert.deepEqual(status.body, { webhook: false, mqtt: false, telegram: true, homeassistant: true, ntfy: false, language: "es" });
     assert.doesNotMatch(JSON.stringify(status.body), /AAH|armor-alerts/);
 
     // a real alarm

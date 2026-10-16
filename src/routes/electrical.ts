@@ -76,6 +76,12 @@ export function registerElectricalRoutes(app: Express, context: AppContext): voi
     }
   });
 
+  // The energy of each channel per day (the last `days`, 30 by default): what the meters counted, with a counter that wrapped or was reset taken into account.
+  app.get("/api/v1/electrical/energy", requireOperator, (request, response) => {
+    const asked = Number(request.query.days ?? 30);
+    response.json({ channels: context.electricalEnergy.list(Number.isFinite(asked) ? Math.round(asked) : 30) });
+  });
+
   app.get("/api/v1/electrical/history", requireOperator, (request, response) => {
     const node = typeof request.query.node === "string" ? request.query.node : "";
     const channel = typeof request.query.channel === "string" ? request.query.channel : "";

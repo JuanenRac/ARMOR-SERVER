@@ -16,7 +16,7 @@ export function registerNotificationRoutes(app: Express, context: AppContext): v
 
   app.post("/api/v1/admin/notifications/test", requireAdmin, limit, async (request, response) => {
     const only = typeof request.body?.channel === "string" ? request.body.channel : undefined;
-    if (only !== undefined && !["webhook", "mqtt", "telegram", "homeassistant"].includes(only)) return response.status(422).json({ error: "unknown_channel" });
+    if (only !== undefined && !["webhook", "mqtt", "telegram", "homeassistant", "ntfy"].includes(only)) return response.status(422).json({ error: "unknown_channel" });
     const results = await notifier.test(store.snapshot().mode, only);
     if (results.length === 0) return response.status(409).json({ error: "nothing_configured", results });
     return response.json({ results });

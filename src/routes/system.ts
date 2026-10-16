@@ -9,6 +9,7 @@ import { checkConnection, readConnection, writeConnection } from "../connection.
 import { isLoopbackHost } from "../config.js";
 import type { SolarTotals } from "../solar.js";
 import type { AppContext } from "../context.js";
+import { buildPreflight } from "../preflight.js";
 import { listServices, procPausedReader, programVersions, systemctlReader, type FieldNode, type UnitReader } from "../services.js";
 
 /** The last `limit` lines of a text file, without reading all of a large one. */
@@ -38,6 +39,15 @@ export function registerSystemRoutes(app: Express, context: AppContext, version:
   const { config, store, devices, alarms, automations, users, vault, events, evidence, systemMonitor, requireOperator, requireAdmin } = context;
   // How the machine is doing, as a task manager shows it: the latest sample and the last few minutes of it.
   app.get("/api/v1/system/metrics", requireOperator, (_request, response) => response.json({ ...systemMonitor.current, history: systemMonitor.history }));
+
+  // The check before arming: what would leave the perimeter blind or noisy. Read only; the console, the phone and the wall panel ask it before they arm.
+  app.get("/api/v1/preflight", requireOperator, (_request, response) => response.json(buildPreflight({
+    nodes: Object.values(store.snapshot().nodes).map(node => ({ node_id: node.node_id, online: node.online })),
+    panels: context.alarmNodes.list().map(node => ({ node_id: node.node_id, stale: node.stale, open_zones: node.state.open_zones })),
+    cameras: context.cameraWatcher.snapshot().map(camera => ({ id: camera.id, status: camera.status })),
+    devices: devices.list().map(device => ({ id: device.id, kind: device.kind, online: device.online, state: device.state as Record<string, unknown>, expected_interval_s: device.expected_interval_s })),
+    alarms: alarms.active(),
+  })));
 
   // What the nodes sent that the server took, refused or partly ignored (fields of a newer firmware), per topic, with the start of the last refused message.
   app.get("/api/v1/system/ingest", requireOperator, (_request, response) => response.json({ topics: context.ingestLog.list() }));

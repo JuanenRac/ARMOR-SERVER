@@ -18,6 +18,8 @@ import { UserStore, type PublicUser } from "./users.js";
 import { EvidenceLibrary } from "./media/evidence.js";
 import { RelayManager, StreamTickets } from "./media/relay.js";
 import { CameraWatcher } from "./cameras/health.js";
+import { Escalator } from "./escalation.js";
+import { ElectricalEnergy } from "./electrical_energy.js";
 import { PtzController } from "./cameras/ptz.js";
 import { EventLog, type ArmorEventBody } from "./events.js";
 import { AlarmCentre, AlarmRules } from "./alarms.js";
@@ -37,7 +39,7 @@ import { DeviceCredentials } from "./device_credentials.js";
 import { SystemMonitor } from "./system_metrics.js";
 import { SolarRegistry } from "./solar_registry.js";
 import { AlertNotifier } from "./notify.js";
-import { homeAssistantChannel, telegramChannel, type NotifyChannel } from "./channels.js";
+import { homeAssistantChannel, ntfyChannel, telegramChannel, type NotifyChannel } from "./channels.js";
 import { FileStatePersistence } from "./persistence.js";
 import { RulesFile } from "./rules.js";
 import { ArmorStore, type SystemState } from "./store.js";
@@ -52,6 +54,7 @@ export type AppContext = {
   events: EventLog;
   rules: RulesFile;
   notifier: AlertNotifier;
+  escalator: Escalator;
   cameraWatcher: CameraWatcher;
   ptz: PtzController;
   audit: AuditLog;
@@ -70,6 +73,8 @@ export type AppContext = {
   electrical: SiteStore;
   /** What the ARMOR-ELECTRICAL nodes measure on the house's network. */
   electricalNodes: ElectricalStore;
+  /** The energy of every electrical channel, day by day (a meter that wraps or is reset does not break the sum). */
+  electricalEnergy: ElectricalEnergy;
   /** What the ARMOR-NETWORK nodes see on the local network, the names an operator gave the devices, and the network design drawn in Studio. */
   networkNodes: NetworkStore;
   networkNotes: DeviceNotes;
@@ -151,6 +156,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   // The other places the alarms go. The address of Telegram can only be changed by the environment, for the tests that stand in for it.
   const channels: NotifyChannel[] = [];
   if (config.telegram) channels.push(telegramChannel({ token: config.telegram.token, chatIds: config.telegram.chatIds, api: process.env.ARMOR_TELEGRAM_API || undefined }));
+  if (config.ntfy) channels.push(ntfyChannel({ url: config.ntfy.url, token: config.ntfy.token || undefined }));
   if (config.homeAssistant) channels.push(homeAssistantChannel({ url: config.homeAssistant.url, webhookId: config.homeAssistant.webhookId }));
   const notifier = new AlertNotifier({ webhookUrl: config.alertWebhookUrl ?? undefined, webhookSecret: config.alertWebhookSecret || undefined, audit, channels, language: config.alertLanguage });
   const deviceLink: AppContext["deviceLink"] = {};
@@ -188,7 +194,8 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     onResult: (automation, action, ok, detail) => audit.record({ action: "automation.run", outcome: ok ? "allowed" : "failed", target: `${automation.id}:${action.type === "device" ? `${action.device_id}=${action.command}` : "notify"}`, detail }),
   });
   const site = new SiteStore(path.join(config.dataDir, "site.json"));
-  const electricalNodes = new ElectricalStore({ now: overrides.now, onMessage: message => alarmRules.handleElectrical(message), onStale: (node, stale) => alarmRules.handleElectricalStale(node, stale) });
+  const electricalEnergy = new ElectricalEnergy();
+  const electricalNodes = new ElectricalStore({ now: overrides.now, onMessage: message => { alarmRules.handleElectrical(message); const at = (overrides.now ?? Date.now)(); for (const channel of message.channels) electricalEnergy.add(message.node_id, channel.id, channel.energy_kwh, at); }, onStale: (node, stale) => alarmRules.handleElectricalStale(node, stale) });
   const electrical = new SiteStore(path.join(config.dataDir, "electrical.json"), () => new Date(), "electrical design");
   const networkNotes = new DeviceNotes(path.join(config.dataDir, "network-devices.json"));
   const systemMonitor = new SystemMonitor();
@@ -237,6 +244,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     staleAfterMs: config.nodeStaleAfterS * 1000, now: overrides.now, persistence, rules: () => rules.get(), minTargets: config.alertMinTargets,
     onEvent: record,
   });
+  const escalator = new Escalator({ afterMin: config.escalateAfterMin, active: () => alarms.active(), send: message => notifier.send(message), mode: () => store.snapshot().mode, now: overrides.now });
   const cameraWatcher = new CameraWatcher({ list: () => vault.list(), onEvent: record });
   // Arming looks at what is already wrong (see AlarmRules.onArmed): the changes that would have raised it happened while it did not matter.
   alarmRules.onArmed = () => alarmRules.raisePresentProblems({
@@ -255,11 +263,20 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const operatorAuthorized = (request: HeaderSource): boolean => {
     if (hasBearer(request, config.operatorToken) || operatorSessions.has(request)) return true;
     const user = studioUser(request);
-    return Boolean(user) && user?.role !== "panel";
+    return Boolean(user) && user?.role !== "panel" && user?.role !== "viewer";
   };
+  // A viewer (the family, a guard) only looks: every read, the stream tickets that let them watch a camera, and nothing that changes, deletes, switches, arms or configures. What holds secrets or
+  // settings (the administration routes, the users, the console, the node tokens) is closed to them even to read.
+  const viewerCloses = /^\/api\/v1\/(admin|users|system\/ingest|preferences|installation)(\/|$)/;
+  const viewerMay = (method: string, path: string): boolean => (method === "GET" || method === "HEAD" ? !viewerCloses.test(path) : method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/stream-ticket$/.test(path));
   const requireOperator: RequestHandler = (request, response, next) => {
     if (operatorAuthorized(request)) return next();
     const panel = studioUser(request);
+    if (panel?.role === "viewer") {
+      if (viewerMay(request.method, request.path)) return next();
+      audit.record({ action: "viewer.access", outcome: "denied", actor: panel.username, target: `${request.method} ${request.path}` });
+      return response.status(403).json({ error: "this account can only look" });
+    }
     if (panel?.role === "panel") {
       if (panelRoutes.has(`${request.method} ${request.path}`)) return next();
       audit.record({ action: "panel.access", outcome: "denied", actor: panel.username, target: `${request.method} ${request.path}` });
@@ -283,7 +300,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    alarmDesign, config, store, events, rules, notifier, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    alarmDesign, config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

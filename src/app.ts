@@ -236,8 +236,10 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   const electricalHistoryFile = new JsonFile<ElectricalHistoryFile>(path.join(config.dataDir, "electrical-history.json"));
   context.solar.importHistory(solarHistoryFile.read());
   context.electricalNodes.importHistory(electricalHistoryFile.read());
+  const electricalEnergyFile = new JsonFile<ReturnType<typeof context.electricalEnergy.export>>(path.join(config.dataDir, "electrical-energy.json"));
+  context.electricalEnergy.import(electricalEnergyFile.read());
   const saveHistory = (): void => {
-    try { solarHistoryFile.write(context.solar.exportHistory()); electricalHistoryFile.write(context.electricalNodes.exportHistory()); }
+    try { solarHistoryFile.write(context.solar.exportHistory()); electricalHistoryFile.write(context.electricalNodes.exportHistory()); electricalEnergyFile.write(context.electricalEnergy.export()); }
     catch (error) { console.warn("ARMOR_HISTORY=NOT_SAVED", error instanceof Error ? error.message : "unknown error"); }
   };
   const historySaver = setInterval(saveHistory, 60_000);
@@ -250,7 +252,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   let sweepFailing = false;
   const sweeper = setInterval(() => {
     try {
-      context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.networkNodes.sweep();
+      context.escalator.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.networkNodes.sweep();
       sweepFailing = false;
     } catch (error) {
       if (!sweepFailing) console.warn("ARMOR_SWEEP=FAILED", error instanceof Error ? error.message : "unknown error");

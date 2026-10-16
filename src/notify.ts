@@ -14,13 +14,15 @@ import type { NotifyChannel } from "./channels.js";
 export const ALERT_TOPIC = "armor/server/alert";
 export type AlertMessage = {
   service: "armor-server";
-  event: "alert.raised" | "alert.cleared" | "node.offline" | "node.stale" | "camera.offline" | "alarm.raised" | "automation.notify" | "alert.test";
+  event: "alert.raised" | "alert.cleared" | "node.offline" | "node.stale" | "camera.offline" | "alarm.raised" | "alarm.escalated" | "automation.notify" | "alert.test";
   at: string;
   mode: SecurityMode;
   node_id?: string;
   camera_id?: string;
   targets?: number;
   /** For a device or a solar alarm: which alarm, how serious, what, and the device (or, for solar equipment, its "node/device" path). */
+  /** For an escalation: the minutes the alarm has waited for a person. */
+  minutes?: number;
   alarm_id?: string; severity?: "critical" | "high" | "warning"; code?: string; device_id?: string; solar_id?: string; electrical_id?: string; alarm_node_id?: string; network_id?: string;
   /** For an automation that notifies: which one, and the alarm or device that set it off when there is one. */
   automation?: string;
@@ -103,8 +105,8 @@ export class AlertNotifier {
   get #language(): AlertLanguage { return this.#options.language ?? "es"; }
 
   /** Which places the alarms are sent to (nothing secret). */
-  status(): { webhook: boolean; mqtt: boolean; telegram: boolean; homeassistant: boolean; language: AlertLanguage } {
-    return { webhook: Boolean(this.#options.webhookUrl), mqtt: Boolean(this.#publish), telegram: this.#channels.some(channel => channel.id === "telegram"), homeassistant: this.#channels.some(channel => channel.id === "homeassistant"), language: this.#language };
+  status(): { webhook: boolean; mqtt: boolean; telegram: boolean; homeassistant: boolean; ntfy: boolean; language: AlertLanguage } {
+    return { webhook: Boolean(this.#options.webhookUrl), mqtt: Boolean(this.#publish), telegram: this.#channels.some(channel => channel.id === "telegram"), homeassistant: this.#channels.some(channel => channel.id === "homeassistant"), ntfy: this.#channels.some(channel => channel.id === "ntfy"), language: this.#language };
   }
 
   /** Sends one test message to every place (or to the one asked for), once and at once, and says what each came to. */

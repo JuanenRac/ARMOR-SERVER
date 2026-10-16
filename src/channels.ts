@@ -8,9 +8,10 @@ import { alertTitle, type AlertLanguage } from "./alert_text.js";
 import type { AlertMessage } from "./notify.js";
 
 export type Attempt = { ok: boolean; /** What happened, without any secret. */ detail: string; /** A client error will not get better by trying again. */ final?: boolean };
-export type NotifyChannel = { id: "telegram" | "homeassistant"; deliver(message: AlertMessage, text: string, language: AlertLanguage, signal: AbortSignal): Promise<Attempt> };
+export type NotifyChannel = { id: "telegram" | "homeassistant" | "ntfy"; deliver(message: AlertMessage, text: string, language: AlertLanguage, signal: AbortSignal): Promise<Attempt> };
 
 export type TelegramOptions = { token: string; chatIds: string[]; api?: string; fetchImpl?: typeof fetch };
+export type NtfyOptions = { /** The address of the topic, such as https://ntfy.sh/my-armor-topic or the one of a self-hosted ntfy. */ url: string; token?: string; fetchImpl?: typeof fetch };
 export type HomeAssistantOptions = { url: string; webhookId: string; fetchImpl?: typeof fetch };
 
 const TELEGRAM_TOKEN = /^\d{6,}:[A-Za-z0-9_-]{30,}$/;
@@ -66,6 +67,29 @@ export function homeAssistantChannel(options: HomeAssistantOptions): NotifyChann
         const response = await doFetch(address, {
           method: "POST", headers: { "Content-Type": "application/json", "User-Agent": "armor-server" }, redirect: "error", signal,
           body: JSON.stringify({ ...message, title: alertTitle(language), text }),
+        });
+        if (response.ok) return { ok: true, detail: `HTTP ${response.status}` };
+        return { ok: false, detail: `HTTP ${response.status}`, final: response.status >= 400 && response.status < 500 && response.status !== 429 };
+      } catch (error) { return { ok: false, detail: error instanceof Error ? error.name : "network error" }; }
+    },
+  };
+}
+
+/**
+ * ntfy (https://ntfy.sh, or one of your own): a push to the phone with no app of ours - the phone's ntfy app subscribes to the topic. The sentence is the body, the title is the system's,
+ * and a critical alarm goes with the highest priority so the phone sounds even in silent mode. The topic address is a secret of the installation: it is never written in an error.
+ */
+export function ntfyChannel(options: NtfyOptions): NotifyChannel {
+  const doFetch = options.fetchImpl ?? fetch;
+  return {
+    id: "ntfy",
+    async deliver(message, text, language, signal) {
+      try {
+        const priority = message.severity === "critical" || message.event === "alarm.escalated" ? "5" : message.severity === "warning" ? "3" : "4";
+        const response = await doFetch(options.url, {
+          method: "POST", redirect: "error", signal, body: text,
+          headers: { "User-Agent": "armor-server", Title: Buffer.from(alertTitle(language), "utf8").toString("latin1"), Priority: priority, Tags: priority === "5" ? "rotating_light" : "warning",
+            ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}) },
         });
         if (response.ok) return { ok: true, detail: `HTTP ${response.status}` };
         return { ok: false, detail: `HTTP ${response.status}`, final: response.status >= 400 && response.status < 500 && response.status !== 429 };

@@ -46,6 +46,8 @@ export type ArmorConfig = {
   nodeStaleAfterS: number;
   /** Milliseconds a two-target condition must persist before it becomes "high" (0 = immediately). */
   alertDwellMs: number;
+  /** Minutes a critical alarm may wait unseen before it is told again to every place (0 = never). */
+  escalateAfterMin: number;
   /** How many targets at once, while armed, make a node's alert "high" (an intrusion): 1 by default, so that a lone intruder is one; 2 to ignore a single target (a pet). */
   alertMinTargets: number;
   /** Seconds between camera reachability checks (0 disables the watchdog). */
@@ -55,6 +57,8 @@ export type ArmorConfig = {
   alertWebhookSecret: string;
   /** A Telegram chat that gets the alarms, through a bot of the installation; null when unused. */
   telegram: { token: string; chatIds: string[] } | null;
+  /** ntfy: the address of the topic and, for a protected one, a token. */
+  ntfy: { url: string; token: string } | null;
   /** Home Assistant: its address and the id of the webhook an automation listens on; null when unused. */
   homeAssistant: { url: string; webhookId: string } | null;
   /** The language the alarm sentences (Telegram, Home Assistant) are told in. */
@@ -175,6 +179,16 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     if (telegramChats.length === 0 || telegramChats.length > 10 || !telegramChats.every(validTelegramChat)) throw new ConfigError("ARMOR_TELEGRAM_CHAT_IDS must be one to ten chat ids (numbers) or @channel names, separated by commas");
     telegram = { token: telegramToken, chatIds: telegramChats };
   }
+  const ntfyRaw = env.ARMOR_NTFY_URL?.trim() ?? "";
+  let ntfy: ArmorConfig["ntfy"] = null;
+  if (ntfyRaw) {
+    let parsed: URL | undefined;
+    try { parsed = new URL(ntfyRaw); } catch { /* reported below */ }
+    if (!parsed || (parsed.protocol !== "http:" && parsed.protocol !== "https:") || parsed.username || parsed.password || parsed.hash || parsed.search || parsed.pathname.length < 2) {
+      throw new ConfigError("ARMOR_NTFY_URL must be the address of a ntfy topic, such as https://ntfy.sh/my-armor-topic");
+    }
+    ntfy = { url: parsed.toString(), token: env.ARMOR_NTFY_TOKEN?.trim() ?? "" };
+  }
   const haUrlRaw = env.ARMOR_HOMEASSISTANT_URL?.trim() ?? "", haWebhookId = env.ARMOR_HOMEASSISTANT_WEBHOOK_ID?.trim() ?? "";
   let homeAssistant: ArmorConfig["homeAssistant"] = null;
   if (haUrlRaw || haWebhookId) {
@@ -260,9 +274,10 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     mqtt: mqttUrl ? { url: mqttUrl, username: env.ARMOR_MQTT_USERNAME?.trim() || undefined, password: env.ARMOR_MQTT_PASSWORD || undefined } : null,
     nodeStaleAfterS: integer(env, "ARMOR_NODE_STALE_AFTER_S", 30, 5, 3600),
     alertDwellMs: integer(env, "ARMOR_ALERT_DWELL_MS", 2000, 0, 60_000),
+    escalateAfterMin: integer(env, "ARMOR_ESCALATE_AFTER_MIN", 0, 0, 1440),
     alertMinTargets: integer(env, "ARMOR_ALERT_MIN_TARGETS", 1, 1, 20),
     cameraCheckS: integer(env, "ARMOR_CAMERA_CHECK_S", 20, 0, 3600),
-    alertWebhookUrl, alertWebhookSecret, telegram, homeAssistant, alertLanguage, electricalSwitching, alarmCommands, disarmPinRequired, haDiscovery, admin, maintenance, voice, aiToken,
+    alertWebhookUrl, alertWebhookSecret, telegram, ntfy, homeAssistant, alertLanguage, electricalSwitching, alarmCommands, disarmPinRequired, haDiscovery, admin, maintenance, voice, aiToken,
     tls,
     warnings,
   };

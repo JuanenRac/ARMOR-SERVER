@@ -6,7 +6,10 @@
 import type { Express, Request } from "express";
 import fs from "node:fs";
 import type { AppContext } from "../context.js";
+import path from "node:path";
 import { mediaKindFrom, type MediaKind } from "../media/evidence.js";
+import { buildProof, custodyOf, verifyProof } from "../evidence_proof.js";
+import { tailLines } from "./system.js";
 
 const param = (request: Request, name: string): string => {
   const value = request.params[name];
@@ -36,6 +39,27 @@ export function registerMediaRoutes(app: Express, context: AppContext): void {
     if (!digest) return response.sendStatus(404);
     audit.record({ actor: who(request), action: "evidence.hash", outcome: "allowed", target: `${param(request, "cameraId")}/${kind}/${param(request, "file")}` });
     return response.json({ sha256: digest });
+  });
+
+  // A signed proof of custody: the file, its digest now and every line of the audit trail about it. Hand it over with the file; the server can say whether it is genuine (POST /api/v1/media/proof/verify).
+  app.get("/api/v1/media/:cameraId/:kind/:file/proof", requireOperator, async (request, response) => {
+    const cameraId = param(request, "cameraId"), file = param(request, "file"), kind = mediaKindFrom(param(request, "kind"));
+    if (!kind) return response.sendStatus(404);
+    const [digest, items] = [await evidence.sha256(cameraId, kind, file), await evidence.list()];
+    const item = items.find(entry => entry.cameraId === cameraId && entry.file === file);
+    if (!digest || !item) return response.sendStatus(404);
+    const lines = tailLines(path.join(context.config.dataDir, "audit.log"), 20_000).flatMap(line => { try { return [JSON.parse(line) as Record<string, unknown>]; } catch { return []; } });
+    const target = `${cameraId}/${kind}/${file}`;
+    audit.record({ actor: who(request), action: "evidence.proof", outcome: "allowed", target });
+    return response.json(buildProof(context.config.controlToken, { camera: cameraId, kind, name: file, bytes: item.bytes, created_at: item.createdAt, sha256: digest, protected: item.protected }, custodyOf(lines, target)));
+  });
+
+  app.post("/api/v1/media/proof/verify", requireOperator, async (request, response) => {
+    const proof = request.body;
+    if (!verifyProof(context.config.controlToken, proof)) return response.json({ genuine: false, matches: false });
+    const kind = mediaKindFrom(proof.file.kind);
+    const digest = kind ? await evidence.sha256(proof.file.camera, kind, proof.file.name) : null;
+    return response.json({ genuine: true, matches: digest !== null && digest === proof.file.sha256, issued_at: proof.issued_at });
   });
 
   app.put("/api/v1/media/:cameraId/:kind/:file/protected", requireOperator, (request, response) => {
