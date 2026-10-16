@@ -11,7 +11,8 @@
   🇮🇹 <b>Italiano</b> |
   <a href="README_deu.md">🇩🇪 Deutsch</a> |
   <a href="README_zho.md">🇨🇳 简体中文</a> |
-  <a href="README_jpn.md">🇯🇵 日本語</a>
+  <a href="README_jpn.md">🇯🇵 日本語</a> |
+  <a href="README_por.md">🇵🇹 Português</a>
 </p>
 
 ### Coordinatore centrale di sicurezza: ingresso della telemetria, allarmi, dispositivi, letture solari e gateway delle telecamere

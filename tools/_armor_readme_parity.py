@@ -26,6 +26,7 @@ DEFAULT_LANGUAGE_FILES: tuple[str, ...] = (
     "README_deu.md",
     "README_zho.md",
     "README_jpn.md",
+    "README_por.md",
 )
 
 _HEADING_RE = re.compile(r"(?m)^##\s+(?:\d+\.\s+)?(\S+)")

@@ -37,6 +37,7 @@ REQUIRED_DOCUMENTS = (
     "README_deu.md",
     "README_zho.md",
     "README_jpn.md",
+    "README_por.md",
     "CHANGELOG.md",
     "LICENSE",
 )

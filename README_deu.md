@@ -11,7 +11,8 @@
   <a href="README_ita.md">🇮🇹 Italiano</a> |
   🇩🇪 <b>Deutsch</b> |
   <a href="README_zho.md">🇨🇳 简体中文</a> |
-  <a href="README_jpn.md">🇯🇵 日本語</a>
+  <a href="README_jpn.md">🇯🇵 日本語</a> |
+  <a href="README_por.md">🇵🇹 Português</a>
 </p>
 
 ### Zentraler Sicherheitskoordinator: Telemetrie-Eingang, Alarme, Geräte, Solarmesswerte und Kamera-Gateway
