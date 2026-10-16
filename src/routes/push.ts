@@ -3,7 +3,7 @@
  * alarms), takes it back when the person signs out, and an administrator asks whether it is on and how many phones are registered. It is only on when the installation has its own service account.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { FcmInvalid } from "../push_fcm.js";
@@ -28,10 +28,13 @@ export function registerPushRoutes(app: Express, context: AppContext): void {
     }
   });
 
-  app.delete("/api/v1/push/register", requireOperator, limit, (request, response) => {
+  // DELETE is the proper verb, but a phone's HTTP stack may not send a body with it: the same thing as a POST.
+  const unregister = (request: Request, response: Response): Response => {
     const token = tokenOf(request.body);
     const removed = typeof token === "string" && fcmDevices.remove(token);
     if (removed) audit.record({ actor: who(request), action: "push.unregister", outcome: "allowed", target: "a phone" });
     return response.json({ registered: false, devices: fcmDevices.count() });
-  });
+  };
+  app.delete("/api/v1/push/register", requireOperator, limit, (request, response) => unregister(request, response));
+  app.post("/api/v1/push/unregister", requireOperator, limit, (request, response) => unregister(request, response));
 }

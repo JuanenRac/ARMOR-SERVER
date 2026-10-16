@@ -95,5 +95,8 @@ test("push is off by default: a phone cannot register, and the status says so", 
     assert.deepEqual(status, { enabled: false, devices: 0 });
     assert.equal((await fetch(`${running.base}/api/v1/push/register`, { method: "POST", headers: admin, body: JSON.stringify({ token: TOKEN_A }) })).status, 409);
     assert.equal((await fetch(`${running.base}/api/v1/push/register`, { method: "POST", body: JSON.stringify({ token: TOKEN_A }), headers: { "Content-Type": "application/json" } })).status, 401);
+    // a phone can take its token back by POST too (some HTTP stacks send no body with DELETE), and only with a session
+    assert.equal((await fetch(`${running.base}/api/v1/push/unregister`, { method: "POST", headers: admin, body: JSON.stringify({ token: TOKEN_A }) })).status, 200);
+    assert.equal((await fetch(`${running.base}/api/v1/push/unregister`, { method: "POST", body: JSON.stringify({ token: TOKEN_A }), headers: { "Content-Type": "application/json" } })).status, 401);
   } finally { await running.stop(); }
 });
