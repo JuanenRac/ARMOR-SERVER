@@ -10,10 +10,12 @@ import { COMMAND_TYPES, type CommandType, type NetworkDevice, type NetworkResult
 
 export type NetworkCommand = { id: string; type: CommandType; device_id?: string; ip?: string; mac?: string; port?: number; /** An `inspect` is done with the login kept for the device: the login is put in only when the order is handed to the node. */ login?: boolean };
 export type CommandStatus = "queued" | "sent" | "done" | "expired";
-export type CommandRecord = { command: NetworkCommand; node_id: string; by: string; created_at: string; status: CommandStatus; sent_at?: string; result?: NetworkResult };
+export type CommandRecord = { command: NetworkCommand; node_id: string; by: string; created_at: string; status: CommandStatus; sent_at?: string; result?: NetworkResult; offers?: number };
 export class CommandInvalid extends Error { constructor(message: string, readonly code = "invalid_command") { super(message); } }
 
 const MAX_QUEUE_PER_NODE = 16, TAKE_AT_ONCE = 4, WAIT_MS = 120_000, SENT_MS = 180_000, KEEP = 100;
+/** An order handed out whose result never came (the answer that carried it was lost on the way) is offered again after this long, up to three times in all: the node skips an order it already did. */
+const REOFFER_MS = 25_000, MAX_OFFERS = 3;
 /** The orders that are about one device need it; a sweep is about the whole network. */
 const NEEDS_DEVICE: readonly CommandType[] = ["ping", "wake", "ports", "http", "inspect"];
 const PORT_ORDERS: readonly CommandType[] = ["http", "inspect"];
@@ -45,12 +47,14 @@ export class NetworkCommands {
     return record;
   }
 
-  /** The orders for a node to do now, each handed out once. */
+  /** The orders for a node to do now: the new ones, and the ones handed out a while ago that have no result (an answer lost on the way), each at most three times. */
   take(nodeId: string): NetworkCommand[] {
     this.#expire();
-    const taken = this.#records.filter(record => record.node_id === nodeId && record.status === "queued").slice(0, TAKE_AT_ONCE);
+    const now = this.#now().getTime();
+    const due = (record: CommandRecord): boolean => record.status === "queued" || (record.status === "sent" && (record.offers ?? 1) < MAX_OFFERS && now - Date.parse(record.sent_at ?? "") >= REOFFER_MS);
+    const taken = this.#records.filter(record => record.node_id === nodeId && due(record)).slice(0, TAKE_AT_ONCE);
     const at = this.#now().toISOString();
-    for (const record of taken) { record.status = "sent"; record.sent_at = at; }
+    for (const record of taken) { record.status = "sent"; record.sent_at = at; record.offers = (record.offers ?? 0) + 1; }
     return taken.map(record => record.command);
   }
 

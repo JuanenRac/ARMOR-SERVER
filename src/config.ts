@@ -15,6 +15,8 @@ export type ArmorConfig = {
   host: string;
   port: number;
   ingestToken: string;
+  /** The shared ingest token is no longer accepted from nodes: each one must hold its own (see http/node_token.ts). */
+  ingestStrict: boolean;
   controlToken: string;
   operatorToken: string;
   cameraConfigKey: string;
@@ -240,7 +242,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
   return {
     host: effectiveHost,
     port: saved.port ?? integer(env, "ARMOR_PORT", 8080, 1, 65535),
-    ingestToken, controlToken, operatorToken, cameraConfigKey,
+    ingestToken, ingestStrict: env.ARMOR_INGEST_STRICT === "1", controlToken, operatorToken, cameraConfigKey,
     cameraKeyIsFallback: !configuredKey,
     studioUsername, studioPassword, passwordMinLength: isLoopbackHost(effectiveHost) ? 8 : 12, resetStudioPassword: env.ARMOR_STUDIO_RESET_PASSWORD === "1",
     studioSessionTtlMs: integer(env, "ARMOR_STUDIO_SESSION_TTL_MS", 7 * 86_400_000, 60_000, 30 * 86_400_000),

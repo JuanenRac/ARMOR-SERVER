@@ -15,6 +15,8 @@ const param = (request: Request, name: string): string => {
 
 export function registerMediaRoutes(app: Express, context: AppContext): void {
   const { evidence, audit, requireOperator, requireAdmin } = context;
+  /** Who did it, for the audit trail: the Studio user of the session (a token has no name of its own). */
+  const who = (request: Request): string | undefined => context.studioUser(request)?.username;
 
   app.get("/api/v1/media", requireOperator, async (_request, response) =>
     response.json({ items: await evidence.list(), activeCameraIds: evidence.activeCameraIds }));
@@ -32,7 +34,7 @@ export function registerMediaRoutes(app: Express, context: AppContext): void {
     const kind = mediaKindFrom(param(request, "kind"));
     const digest = kind ? await evidence.sha256(param(request, "cameraId"), kind, param(request, "file")) : null;
     if (!digest) return response.sendStatus(404);
-    audit.record({ action: "evidence.hash", outcome: "allowed", target: `${param(request, "cameraId")}/${kind}/${param(request, "file")}` });
+    audit.record({ actor: who(request), action: "evidence.hash", outcome: "allowed", target: `${param(request, "cameraId")}/${kind}/${param(request, "file")}` });
     return response.json({ sha256: digest });
   });
 
@@ -40,7 +42,7 @@ export function registerMediaRoutes(app: Express, context: AppContext): void {
     const kind = mediaKindFrom(param(request, "kind"));
     if (typeof request.body?.protected !== "boolean") return response.status(400).json({ error: "protected must be true or false" });
     if (!kind || !evidence.setProtected(param(request, "cameraId"), kind, param(request, "file"), request.body.protected)) return response.sendStatus(404);
-    audit.record({ action: request.body.protected ? "evidence.protect" : "evidence.unprotect", outcome: "allowed", target: `${param(request, "cameraId")}/${kind}/${param(request, "file")}` });
+    audit.record({ actor: who(request), action: request.body.protected ? "evidence.protect" : "evidence.unprotect", outcome: "allowed", target: `${param(request, "cameraId")}/${kind}/${param(request, "file")}` });
     return response.sendStatus(204);
   });
 
@@ -52,7 +54,7 @@ export function registerMediaRoutes(app: Express, context: AppContext): void {
     const item = evidence.item(cameraId, kind, file);
     if (item?.protected) return response.status(409).json({ error: "this evidence is protected; remove its protection first" });
     if (!evidence.remove(cameraId, kind, file)) return response.sendStatus(404);
-    audit.record({ action: "evidence.delete", outcome: "allowed", target: `${cameraId}/${kind}/${file}` });
+    audit.record({ actor: who(request), action: "evidence.delete", outcome: "allowed", target: `${cameraId}/${kind}/${file}` });
     return response.sendStatus(204);
   });
 
@@ -62,7 +64,7 @@ export function registerMediaRoutes(app: Express, context: AppContext): void {
     const kinds: MediaKind[] = requested === "snapshot" ? ["snapshots"] : requested === "recording" ? ["recordings"] : requested === "all" ? ["snapshots", "recordings"] : [];
     if (!kinds.length) return response.status(400).json({ error: "kind must be snapshot, recording, or all" });
     const deleted = await evidence.removeAll(kinds);
-    audit.record({ action: "evidence.delete-all", outcome: "allowed", detail: `${requested}: ${deleted}` });
+    audit.record({ actor: who(request), action: "evidence.delete-all", outcome: "allowed", detail: `${requested}: ${deleted}` });
     return response.json({ deleted });
   });
 }

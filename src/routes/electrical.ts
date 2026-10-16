@@ -7,6 +7,7 @@ import type { Express } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { hasBearer } from "../http/auth.js";
+import { ingestCaller } from "../http/node_token.js";
 import { forwardCompatible } from "../contracts.js";
 import { kindInfo } from "../devices/catalog.js";
 import { SWITCH_ACTIONS, parseElectricalMessage, type SwitchAction } from "../electrical.js";
@@ -21,7 +22,7 @@ export function registerElectricalRoutes(app: Express, context: AppContext): voi
   const switchLimit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "too many switch commands" } });
 
   app.post("/api/v1/electrical/readings", ingestLimit, (request, response) => {
-    if (!hasBearer(request, config.ingestToken)) return response.sendStatus(401);
+    if (!ingestCaller(request, config.ingestToken, config.ingestStrict, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
     try {
       const { value, ignored } = forwardCompatible(() => parseElectricalMessage(request.body));
       electricalNodes.ingest(value);

@@ -32,7 +32,9 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
     if (!config.voice) return response.status(503).json({ error: "voice_unavailable" });
 
     try {
-      const answer = await askVoice(config.voice, { text, language, ...(confirmation ? { confirmation } : {}) });
+      // The confirmation token the gateway issues is bound to the person who asked: another session cannot use it.
+      const subject = (studioUser(request)?.id ?? "operator").slice(0, 64);
+      const answer = await askVoice(config.voice, { text, language, subject, ...(confirmation ? { confirmation } : {}) });
       let speech = answer.speech ?? "";
       let result: Record<string, unknown> | undefined;
       let executed = false;

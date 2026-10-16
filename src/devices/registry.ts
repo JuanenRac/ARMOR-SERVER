@@ -59,6 +59,7 @@ const PULSE_RESET_MS = 30_000;
 export class DeviceRegistry {
   readonly #options: RegistryOptions;
   readonly #now: () => Date;
+  readonly #startedAt: number;
   #devices = new Map<string, Device>();
   #timer: NodeJS.Timeout | undefined;
   readonly #pulses = new Map<string, NodeJS.Timeout>();
@@ -66,6 +67,7 @@ export class DeviceRegistry {
   constructor(options: RegistryOptions) {
     this.#options = options;
     this.#now = options.now ?? (() => new Date());
+    this.#startedAt = this.#now().getTime();
     this.#load();
   }
 
@@ -249,7 +251,8 @@ export class DeviceRegistry {
     const now = this.#now().getTime(), out: DeviceChange[] = [];
     for (const device of this.#devices.values()) {
       if (device.expected_interval_s <= 0 || !device.online || !device.last_seen) continue;
-      if (now - Date.parse(device.last_seen) > device.expected_interval_s * 1000) { const change = this.setOnline(device.id, false); if (change) out.push(change); }
+      // After a long stop every device was "last seen" long ago: each one gets a whole interval from the start to report before it counts as silent (no storm of offline alarms at boot).
+      if (now - Math.max(Date.parse(device.last_seen), this.#startedAt) > device.expected_interval_s * 1000) { const change = this.setOnline(device.id, false); if (change) out.push(change); }
     }
     return out;
   }

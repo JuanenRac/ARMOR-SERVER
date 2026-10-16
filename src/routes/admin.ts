@@ -7,6 +7,7 @@
 import express, { type Express, type Request, type Response } from "express";
 import type { AppContext } from "../context.js";
 import { maskEnv, unmaskEnv, type AdminReply } from "../admin.js";
+import { nodeTokenFor } from "../http/node_token.js";
 import { applyBundle, buildBundle, parseBundle, PARTS } from "../installation.js";
 
 const NODE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -28,6 +29,14 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
     try { return await admin.request(method, path, payload); }
     catch { response.status(503).json({ error: "admin_unavailable", reason: "not_answering" }); return undefined; }
   }
+
+  // The token of one node (see http/node_token.ts): read once by an administrator to provision a board, never kept anywhere, and written in the audit trail.
+  app.get("/api/v1/admin/nodes/:id/token", requireAdmin, (request, response) => {
+    const id = String(request.params.id);
+    if (!/^[a-z0-9][a-z0-9:._-]{0,63}$/.test(id)) return response.status(422).json({ error: "invalid_node_id" });
+    audit.record({ action: "node.token.read", outcome: "allowed", actor: studioUser(request)?.username, target: id });
+    return response.json({ node_id: id, token: nodeTokenFor(config.ingestToken, id), strict: config.ingestStrict });
+  });
 
   app.get("/api/v1/admin/status", requireAdmin, async (_request, response) => {
     if (!admin) return response.json({ available: false, reason: "not_configured", hint: "install the admin agent: ARMOR-DEVOPS scripts/install_cm5.sh --with-admin" });

@@ -98,7 +98,7 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
     catch { return response.json({ available: false, enabled: false, unlocked_until: 0 }); }
   });
 
-  app.post("/api/v1/admin/console/unlock", requireAdmin, (request, response) => {
+  app.post("/api/v1/admin/console/unlock", requireAdmin, async (request, response) => {
     const name = actor(request) ?? "";
     const recent = (failures.get(name) ?? []).filter(at => Date.now() - at < FAILURE_WINDOW_MS);
     if (recent.length >= FAILURES_ALLOWED) {
@@ -106,7 +106,7 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
       return response.status(429).json({ error: "too_many_attempts" });
     }
     const password = typeof body(request).password === "string" ? body(request).password as string : "";
-    if (!users.authenticate(name, password)) {
+    if (!await users.authenticateLater(name, password)) {
       failures.set(name, [...recent, Date.now()]);
       audit.record({ action: "console.unlock", outcome: "denied", actor: name, detail: "wrong password" });
       return response.status(403).json({ error: "wrong_password" });

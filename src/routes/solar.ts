@@ -6,6 +6,7 @@ import type { Express, Response } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { hasBearer } from "../http/auth.js";
+import { ingestCaller } from "../http/node_token.js";
 import { forwardCompatible } from "../contracts.js";
 import { ENERGY_ALARM_DEFAULTS, EnergySettingsInvalid } from "../energy_alarms.js";
 import { parseSolarMessage } from "../solar.js";
@@ -20,7 +21,7 @@ export function registerSolarRoutes(app: Express, context: AppContext): void {
   const ingestLimit = rateLimit({ windowMs: 60_000, limit: 6_000, standardHeaders: "draft-8", legacyHeaders: false });
 
   app.post("/api/v1/solar", ingestLimit, (request, response) => {
-    if (!hasBearer(request, config.ingestToken)) return response.sendStatus(401);
+    if (!ingestCaller(request, config.ingestToken, config.ingestStrict, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
     try {
       const { value, ignored } = forwardCompatible(() => parseSolarMessage(request.body));
       solar.ingest(value);

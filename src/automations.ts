@@ -13,7 +13,8 @@ import type { SecurityMode } from "./store.js";
 import { durableRename } from "./durable.js";
 
 export type Trigger =
-  | { type: "device"; device_id: string; field: string; equals: boolean | number }
+  /** `op` (numbers only): "eq" (the default) waits for the value, "gt" for it to go above `equals` and "lt" for it to go below: a temperature over 30, a battery under 20. */
+  | { type: "device"; device_id: string; field: string; equals: boolean | number; op?: "eq" | "gt" | "lt" }
   | { type: "alarm"; severity?: Severity; source_type?: "node" | "camera" | "device" | "solar" | "electrical" | "network" | "alarm"; source_id?: string }
   | { type: "mode"; mode: SecurityMode };
 export type Action = { type: "device"; device_id: string; command: "on" | "off" | "toggle"; /** Switch back after this many seconds. */ for_s?: number } | { type: "notify" };
@@ -39,7 +40,9 @@ function cleanTrigger(raw: unknown): Trigger {
     if (typeof t.device_id !== "string" || !ID.test(t.device_id)) throw new AutomationError("invalid_trigger", "the trigger needs a device");
     if (typeof t.field !== "string" || !FIELD.test(t.field)) throw new AutomationError("invalid_trigger", "the trigger needs a field");
     if (typeof t.equals !== "boolean" && !(typeof t.equals === "number" && Number.isFinite(t.equals))) throw new AutomationError("invalid_trigger", "the trigger needs a value to wait for");
-    return { type: "device", device_id: t.device_id, field: t.field, equals: t.equals };
+    if (t.op !== undefined && t.op !== "eq" && t.op !== "gt" && t.op !== "lt") throw new AutomationError("invalid_trigger", "the comparison is eq, gt or lt");
+    if ((t.op === "gt" || t.op === "lt") && typeof t.equals !== "number") throw new AutomationError("invalid_trigger", "gt and lt compare numbers");
+    return { type: "device", device_id: t.device_id, field: t.field, equals: t.equals, ...(t.op === "gt" || t.op === "lt" ? { op: t.op } : {}) };
   }
   if (t.type === "alarm") {
     const trigger: Trigger = { type: "alarm" };
@@ -229,7 +232,14 @@ export class AutomationEngine {
 
   handleDevice(change: DeviceChange): void {
     for (const item of change.changes) {
-      this.#fire(a => a.trigger.type === "device" && a.trigger.device_id === change.device.id && a.trigger.field === item.field && a.trigger.equals === item.to);
+      this.#fire(a => {
+        const trigger = a.trigger;
+        if (trigger.type !== "device" || trigger.device_id !== change.device.id || trigger.field !== item.field) return false;
+        // A threshold fires when the value crosses it, not on every report beyond it.
+        if (trigger.op === "gt") return typeof item.to === "number" && typeof trigger.equals === "number" && item.to > trigger.equals && !(typeof item.from === "number" && item.from > trigger.equals);
+        if (trigger.op === "lt") return typeof item.to === "number" && typeof trigger.equals === "number" && item.to < trigger.equals && !(typeof item.from === "number" && item.from < trigger.equals);
+        return trigger.equals === item.to;
+      });
     }
   }
   handleAlarm(alarm: Alarm): void {

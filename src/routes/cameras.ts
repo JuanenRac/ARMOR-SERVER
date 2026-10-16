@@ -22,6 +22,8 @@ const param = (request: Request, name: string): string => {
 
 export function registerCameraRoutes(app: Express, context: AppContext): void {
   const { config, vault, evidence, relays, tickets, discovery, audit, requireOperator, operatorAuthorized } = context;
+  /** Who did it, for the audit trail: the Studio user of the session (a token has no name of its own). */
+  const who = (request: Request): string | undefined => context.studioUser(request)?.username;
   // A held PTZ button repeats its command every second, so movement has a budget of its own.
   const ptzLimit = rateLimit({ windowMs: 60_000, limit: 240, standardHeaders: "draft-8", legacyHeaders: false });
   const lastPtzAudit = new Map<string, number>();
@@ -42,7 +44,7 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
     if (!camera) return response.status(400).json({ error: "invalid camera configuration" });
     vault.save(camera);
     relays.stop(camera.id); // a changed address or credential must not keep an old stream alive
-    audit.record({ action: "camera.configure", outcome: "allowed", target: camera.id });
+    audit.record({ actor: who(request), action: "camera.configure", outcome: "allowed", target: camera.id });
     return response.json(context.publicCamera(camera));
   });
 
@@ -52,7 +54,7 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
     if (evidence.isRecording(camera.id)) return response.status(409).json({ error: "stop the active recording before removing this camera" });
     relays.stop(camera.id);
     vault.remove(camera.id);
-    audit.record({ action: "camera.remove", outcome: "allowed", target: camera.id });
+    audit.record({ actor: who(request), action: "camera.remove", outcome: "allowed", target: camera.id });
     // Evidence is kept: removing a connection must never erase footage without a separate, explicit action.
     return response.sendStatus(204);
   });
@@ -62,7 +64,7 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
     response.once("close", () => { if (!response.writableEnded) controller.abort(); });
     try {
       const prefixes = discoveryPrefixes(config.discoveryCidr);
-      audit.record({ action: "camera.discover", outcome: "allowed", detail: prefixes.map(prefix => `${prefix}.0/24`).join(",") });
+      audit.record({ actor: who(request), action: "camera.discover", outcome: "allowed", detail: prefixes.map(prefix => `${prefix}.0/24`).join(",") });
       const result = await discovery.run(() => scanNetworks({ prefixes, signal: controller.signal }));
       if (result === "busy") return response.status(429).json({ error: "a camera discovery is already running" });
       return response.json({ cameras: result, scanned: prefixes.map(prefix => `${prefix}.0/24`) });
@@ -80,11 +82,11 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
       const now = Date.now();
       if (now - (lastPtzAudit.get(camera.id) ?? 0) > 5_000 || request.body?.command === "stop") {
         lastPtzAudit.set(camera.id, now);
-        audit.record({ action: "camera.ptz", outcome: "allowed", target: camera.id, detail: String(request.body?.command) });
+        audit.record({ actor: who(request), action: "camera.ptz", outcome: "allowed", target: camera.id, detail: String(request.body?.command) });
       }
       response.json({ camera: context.publicCamera(camera), command: request.body?.command });
     } catch (error) {
-      audit.record({ action: "camera.ptz", outcome: "failed", target: camera.id });
+      audit.record({ actor: who(request), action: "camera.ptz", outcome: "failed", target: camera.id });
       response.status(502).json({ error: clientMessage(error, "PTZ operation failed") });
     }
   });
@@ -101,7 +103,7 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
       if (light) camera.previewPath = light.replace(/^\/+/, "");
       vault.save(camera);
     }
-    audit.record({ action: "camera.discover-rtsp", outcome: "allowed", target: camera.id, detail: `${paths.length} path(s)` });
+    audit.record({ actor: who(request), action: "camera.discover-rtsp", outcome: "allowed", target: camera.id, detail: `${paths.length} path(s)` });
     return response.json({ paths, camera: context.publicCamera(camera) });
   });
 
@@ -118,7 +120,7 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
     const camera = vault.get(param(request, "id"));
     if (!camera) return response.sendStatus(404);
     if (!operatorAuthorized(request) && !tickets.valid(request.query.ticket, camera.id)) {
-      audit.record({ action: "camera.stream", outcome: "denied", target: camera.id });
+      audit.record({ actor: who(request), action: "camera.stream", outcome: "denied", target: camera.id });
       return response.status(401).json({ error: "operator authorization or a stream ticket is required" });
     }
     try {
@@ -136,10 +138,10 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
     if (!camera) return;
     try {
       const item = await evidence.snapshot(camera);
-      audit.record({ action: "evidence.snapshot", outcome: "allowed", target: item.id });
+      audit.record({ actor: who(request), action: "evidence.snapshot", outcome: "allowed", target: item.id });
       response.status(201).json({ item });
     } catch (error) {
-      audit.record({ action: "evidence.snapshot", outcome: "failed", target: camera.id });
+      audit.record({ actor: who(request), action: "evidence.snapshot", outcome: "failed", target: camera.id });
       response.status(502).json({ error: clientMessage(error, "snapshot failed") });
     }
   });
@@ -149,10 +151,10 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
     if (!camera) return;
     try {
       const started = await evidence.startRecording(camera);
-      audit.record({ action: "evidence.record.start", outcome: "allowed", target: camera.id });
+      audit.record({ actor: who(request), action: "evidence.record.start", outcome: "allowed", target: camera.id });
       response.status(202).json({ cameraId: started.cameraId, recording: true, startedAt: started.startedAt });
     } catch (error) {
-      audit.record({ action: "evidence.record.start", outcome: "failed", target: camera.id });
+      audit.record({ actor: who(request), action: "evidence.record.start", outcome: "failed", target: camera.id });
       response.status(502).json({ error: clientMessage(error, "recording could not start") });
     }
   });
@@ -162,10 +164,10 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
     if (!evidence.isRecording(cameraId)) return response.status(409).json({ error: "camera is not recording" });
     try {
       const item = await evidence.stopRecording(cameraId);
-      audit.record({ action: "evidence.record.stop", outcome: "allowed", target: item.id });
+      audit.record({ actor: who(request), action: "evidence.record.stop", outcome: "allowed", target: item.id });
       return response.json({ item });
     } catch (error) {
-      audit.record({ action: "evidence.record.stop", outcome: "failed", target: cameraId });
+      audit.record({ actor: who(request), action: "evidence.record.stop", outcome: "failed", target: cameraId });
       return response.status(502).json({ error: clientMessage(error, "recording could not be finalized") });
     }
   });

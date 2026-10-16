@@ -26,7 +26,7 @@ export class VoiceError extends Error {
 }
 
 /** Asks the gateway about one phrase. Its refusals keep their meaning (a phrase that is not a command is an answer, not an error). */
-export async function askVoice(gateway: VoiceGateway, request: { text: string; language?: string; confirmation?: string }): Promise<VoiceAnswer> {
+export async function askVoice(gateway: VoiceGateway, request: { text: string; language?: string; confirmation?: string; subject?: string }): Promise<VoiceAnswer> {
   let reply: Response;
   try {
     reply = await fetch(`${gateway.url.replace(/\/$/, "")}/v1/command`, {

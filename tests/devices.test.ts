@@ -392,3 +392,28 @@ test("the SOS button of Zigbee2MQTT sounds the panic alarm, and every press is a
   await pause(80);
   devices.close();
 });
+
+test("an automation can wait for a number to go above or below a limit, and fires once when it crosses it", async () => {
+  const running = await startServer();
+  const published: Array<[string, string]> = [];
+  running.app.context.deviceLink.publish = (topic, payload) => { published.push([topic, payload]); };
+  try {
+    const cookie = await studioCookie(running.base);
+    await call(running.base, cookie, "POST", "/api/v1/devices", { id: "probe", name: "Probe", kind: "temperature" });
+    await call(running.base, cookie, "POST", "/api/v1/devices", { id: "fan", name: "Fan", kind: "smart_switch", commands: { mqtt: { topic: "fan/set", on: "ON", off: "OFF" } } });
+    const refused = await call(running.base, cookie, "POST", "/api/v1/automations", { name: "Bad", trigger: { type: "device", device_id: "probe", field: "temperature", equals: true, op: "gt" }, actions: [] });
+    assert.equal(refused.status, 400);
+    const made = await call(running.base, cookie, "POST", "/api/v1/automations", { name: "Too hot", trigger: { type: "device", device_id: "probe", field: "temperature", equals: 30, op: "gt" }, when_mode: "any", actions: [{ type: "device", device_id: "fan", command: "on" }] });
+    assert.equal(made.status, 201);
+    const report = (value: number) => call(running.base, cookie, "POST", "/api/v1/devices/probe/state", { state: { temperature: value } });
+    await report(25); await report(29);
+    await pause(60);
+    assert.equal(published.length, 0, "below the limit nothing happens");
+    await report(31);
+    await pause(60);
+    assert.deepEqual(published, [["fan/set", "ON"]]);
+    await report(33); await report(35);
+    await pause(60);
+    assert.equal(published.length, 1, "still above: it does not fire again on every report");
+  } finally { await running.stop(); }
+});

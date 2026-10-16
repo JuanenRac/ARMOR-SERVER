@@ -4,7 +4,7 @@
  * directory is the source of truth, so a name or password changed in Studio is not undone by a restart.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { randomBytes, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { durableRename, keepBackup } from "./durable.js";
@@ -37,6 +37,8 @@ const secretOf = (key: "pin" | "duress", user: Partial<UserRecord>): Partial<Pic
   return value && typeof value.salt === "string" && typeof value.hash === "string" ? { [key]: { salt: value.salt, hash: value.hash } } : {};
 };
 const hash = (password: string, salt: Buffer): Buffer => scryptSync(password.normalize("NFKC"), salt, 64, { N: 16384, r: 8, p: 1 });
+/** The same hash without holding the event loop: a login takes about a tenth of a second on a small board, and everything else waits meanwhile if it is done synchronously. */
+const hashLater = (password: string, salt: Buffer): Promise<Buffer> => new Promise((resolve, reject) => scrypt(password.normalize("NFKC"), salt, 64, { N: 16384, r: 8, p: 1 }, (error, key) => (error ? reject(error) : resolve(key))));
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
 export type UserStoreOptions = {
@@ -162,6 +164,15 @@ export class UserStore {
     const salt = Buffer.from(user?.salt ?? "AAAAAAAAAAAAAAAAAAAAAA==", "base64");
     const expected = Buffer.from(user?.hash ?? Buffer.alloc(64).toString("base64"), "base64");
     const actual = hash(typeof password === "string" ? password.slice(0, MAX_PASSWORD_LENGTH) : "", salt);
+    return user && expected.length === actual.length && timingSafeEqual(expected, actual) ? UserStore.#view(user) : null;
+  }
+
+  /** `authenticate` without blocking the server while the hash is worked out: what a login uses. */
+  async authenticateLater(username: string, password: string): Promise<PublicUser | null> {
+    const user = this.#users.find(item => same(item.username, username));
+    const salt = Buffer.from(user?.salt ?? "AAAAAAAAAAAAAAAAAAAAAA==", "base64");
+    const expected = Buffer.from(user?.hash ?? Buffer.alloc(64).toString("base64"), "base64");
+    const actual = await hashLater(typeof password === "string" ? password.slice(0, MAX_PASSWORD_LENGTH) : "", salt);
     return user && expected.length === actual.length && timingSafeEqual(expected, actual) ? UserStore.#view(user) : null;
   }
 

@@ -7,9 +7,10 @@ import type { Express, Request } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { AiError, FRAME_HEIGHT, FRAME_WIDTH, parseObservation } from "../ai.js";
+import { coveringNodes } from "../ai_cover.js";
 
 export function registerAiRoutes(app: Express, context: AppContext): void {
-  const { ai, alarms, audit, store, vault, requireAi } = context;
+  const { ai, alarms, audit, store, vault, requireAi, site } = context;
   const framesLimit = rateLimit({ windowMs: 60_000, limit: 240, standardHeaders: "draft-8", legacyHeaders: false });
   const param = (request: Request, name: string) => String(request.params[name] ?? "");
 
@@ -19,7 +20,11 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
     response.json({
       mode: state.mode,
       nodes: Object.entries(state.nodes).map(([id, node]) => ({ id, online: node.online, targets: node.target_count, lux: node.lux })),
-      cameras: vault.list().filter(camera => Boolean(camera.rtspPath && camera.secrets?.username && camera.secrets.password)).map(camera => ({ id: camera.id, name: camera.name })),
+      // `nodes`: the radar nodes that cover each camera in the site design (absent when the design cannot say: every node then counts).
+      cameras: vault.list().filter(camera => Boolean(camera.rtspPath && camera.secrets?.username && camera.secrets.password)).map(camera => {
+        const nodes = coveringNodes(site.get().site, camera.id);
+        return { id: camera.id, name: camera.name, ...(nodes ? { nodes } : {}) };
+      }),
     });
   });
 

@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.8] - Per-node ingest tokens, a hardened firmware job, quicker logins and alarm coverage by camera
+
+- Each node can have its own ingest token (derived from the shared one and the node's identity) and the server can refuse the shared token entirely; the token of a node is shown to administrators.
+- The firmware job waits between nodes, closes each connection, retries a node that did not answer and reports which step failed, so updating several nodes in a row no longer fails at the second one.
+- Signing in hashes the password without blocking the server, so a login no longer stalls the live video and the polls.
+- The summary of the versions of the system is cached and the registry gives a node a short grace after the server starts before calling it offline.
+- The audit records who opened a camera or a recording, not only that it was opened.
+- A network command that no agent picked up is offered again up to three times before it is given up.
+- The cameras that the AI covers list the radar nodes that cover them, which lets Studio open the right camera for a radar alarm.
+- An automation can trigger when a reading goes above or below a value.
+- A spoken order is tied to the user who gave it and cannot be confirmed by another.
+- The OpenAPI file describes the maintenance routes, the system check, upgrade and reboot, and the node token.
+
 ## [0.5.7] - Device kinds for shutters, gate and garage motors and water heaters; maintenance routes in the contract
 
 - New device kinds `shutter`, `gate_motor`, `garage_motor` and `water_heater`: open and close commands for the motors (state field `open`) and on and off for the water heater.

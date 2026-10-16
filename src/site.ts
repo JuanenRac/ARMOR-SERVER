@@ -89,14 +89,25 @@ export class SiteStore {
     for (const name of names) if (!keep.has(name)) fs.rmSync(path.join(this.#historyDir, name), { force: true });
   }
 
+  /** What each version file says about itself: a version file never changes, so it is read once and the list is made from here (reading all of them, up to tens of megabytes, on every request held the server). */
+  readonly #summaries = new Map<string, SiteVersion | null>();
+
   /** The versions kept, newest first. */
   versions(): SiteVersion[] {
     try {
-      return fs.readdirSync(this.#historyDir).filter(name => /_r\d+\.json$/.test(name)).sort().reverse().flatMap(name => {
-        try {
-          const doc = JSON.parse(fs.readFileSync(path.join(this.#historyDir, name), "utf8")) as SiteDocument;
-          return [{ id: name.replace(/\.json$/, ""), revision: doc.revision, saved_at: doc.updated_at ?? "", updated_by: doc.updated_by, counts: countsOf(doc.site) }];
-        } catch { return []; }
+      const names = fs.readdirSync(this.#historyDir).filter(name => /_r\d+\.json$/.test(name)).sort().reverse();
+      const present = new Set(names);
+      for (const known of [...this.#summaries.keys()]) if (!present.has(known)) this.#summaries.delete(known);
+      return names.flatMap(name => {
+        let summary = this.#summaries.get(name);
+        if (summary === undefined) {
+          try {
+            const doc = JSON.parse(fs.readFileSync(path.join(this.#historyDir, name), "utf8")) as SiteDocument;
+            summary = { id: name.replace(/\.json$/, ""), revision: doc.revision, saved_at: doc.updated_at ?? "", updated_by: doc.updated_by, counts: countsOf(doc.site) };
+          } catch { summary = null; }
+          this.#summaries.set(name, summary);
+        }
+        return summary ? [summary] : [];
       });
     } catch { return []; }
   }

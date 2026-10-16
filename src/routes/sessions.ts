@@ -17,11 +17,11 @@ export function registerSessionRoutes(app: Express, context: AppContext): void {
     return response.json({ authenticated: Boolean(user), ...(user ? { user: { id: user.id, username: user.username, role: user.role } } : {}) });
   });
 
-  app.post("/api/v1/studio/session", loginLimit, (request, response) => {
+  app.post("/api/v1/studio/session", loginLimit, async (request, response) => {
     const username = typeof request.body?.username === "string" ? request.body.username : "";
     const password = typeof request.body?.password === "string" ? request.body.password : "";
     // The same work is done whether or not the user exists, so the response time never reveals which value was wrong.
-    const user = users.authenticate(username, password);
+    const user = await users.authenticateLater(username, password);
     if (!user) {
       audit.record({ action: "studio.login", outcome: "denied", actor: username.slice(0, 40) });
       return response.sendStatus(401);
