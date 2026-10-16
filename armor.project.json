@@ -13,7 +13,7 @@
     "Docker"
   ],
   "deployment_target": "NVIDIA Jetson Orin NX",
-  "maturity": "functional",
+  "maturity": "established",
   "family": "Core Services",
   "parent": null,
   "native_version": "0.6.4",
