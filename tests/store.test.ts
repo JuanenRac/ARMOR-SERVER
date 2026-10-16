@@ -137,6 +137,25 @@ test("a node that only sent its info does not appear, and forgetting a node forg
   assert.equal(store.snapshot().nodes.quiet.panel, null);
 });
 
+test("a node that reconnects after being offline is not called silent again while it waits to send telemetry", () => {
+  let now = 1_000_000;
+  const events: Array<{ type: string; to?: string }> = [];
+  const store = new ArmorStore(undefined, { staleAfterMs: 30_000, now: () => now, onEvent: event => events.push(event as never) });
+  store.telemetry(telemetry("north-1", 1, 0));
+  now += 20_000;
+  store.health(parseHealth({ node_id: "north-1", timestamp_ms: 2, online: false }));   // its last will: it rebooted
+  now += 20_000;                                                                       // 40 s since its last telemetry
+  store.health(parseHealth({ node_id: "north-1", timestamp_ms: 3, online: true }));    // it connects again
+  events.length = 0;
+  now += 5_000;
+  store.sweep();
+  assert.equal(store.snapshot().nodes["north-1"].stale, false, "it connected 5 s ago");
+  assert.deepEqual(events.filter(event => event.type === "node"), [], "no node event, so no alarm and no voice");
+  now += 30_001;                                                                       // but if it then sends nothing for the whole window, it is silent after all
+  store.sweep();
+  assert.equal(store.snapshot().nodes["north-1"].stale, true);
+});
+
 test("a radar whose sensors died keeps its heartbeat but goes stale: only telemetry keeps a node alive", () => {
   let now = 1_000_000;
   const store = new ArmorStore(undefined, { staleAfterMs: 30_000, now: () => now });

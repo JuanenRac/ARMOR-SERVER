@@ -134,7 +134,8 @@ export class ArmorStore {
       target_count: previous?.target_count ?? 0, targets: previous?.targets ?? [], alert_level: previous?.alert_level ?? "normal",
       // A node whose sensors died keeps sending its heartbeat but stops sending telemetry (on purpose, so that the server says the node is quiet): once a node has sent telemetry,
       // only telemetry keeps it from going stale. Otherwise a blind radar would stay online for ever and the perimeter would be unguarded without anyone knowing.
-      received_at_ms: previous && this.#telemetrySeen.has(message.node_id) ? previous.received_at_ms : this.#now(),
+      // (A node that comes back from "offline" - it rebooted or lost its link - has just proved it is alive: its silence is counted from now, not from the telemetry it sent before it went away, or it would be called silent again the moment it reconnects.)
+      received_at_ms: previous && this.#telemetrySeen.has(message.node_id) && !(message.online && !previous.online) ? previous.received_at_ms : this.#now(),
       status: message.online ? "online" : "offline", high_since_ms: previous?.high_since_ms ?? null,
     };
     return this.#store(node, previous);
