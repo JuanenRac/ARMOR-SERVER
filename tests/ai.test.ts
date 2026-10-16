@@ -43,6 +43,16 @@ test("the observation service has its own token, and the operator's does not ope
   try { assert.equal((await call(without, "GET", "/api/v1/ai/context", { bearer: AI_TOKEN })).status, 401); } finally { await without.stop(); }
 });
 
+test("the context hands the observation service the ignore zones of a camera, and none for a camera without any", async () => {
+  await withServer(Buffer.alloc(FRAME_BYTES, 9), async running => {
+    const before = await call(running, "GET", "/api/v1/ai/context", { bearer: AI_TOKEN });
+    assert.equal(before.body.cameras[0].ignore, undefined);
+    running.app.context.ignoreZones.set("cam-gate", [{ x: 0, y: 0, w: 0.5, h: 1 }]);
+    const after = await call(running, "GET", "/api/v1/ai/context", { bearer: AI_TOKEN });
+    assert.deepEqual(after.body.cameras[0].ignore, [{ x: 0, y: 0, w: 0.5, h: 1 }]);
+  });
+});
+
 test("the context tells the mode, the radar nodes and the cameras that can be looked at - without a password", async () => {
   await withServer(Buffer.alloc(FRAME_BYTES, 9), async running => {
     const reply = await call(running, "GET", "/api/v1/ai/context", { bearer: AI_TOKEN });

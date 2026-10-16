@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.6.3] - Zones of a camera's picture to ignore
+
+- New routes GET and PUT /api/v1/cameras/{id}/ignore-zones: an operator reads the zones of a camera, an administrator replaces them (at most sixteen rectangles inside the picture, as fractions from the top left).
+- The zones are handed to the observation service with the camera in /api/v1/ai/context, are kept in the data directory, survive a restart and go with the camera when it is removed.
+- Nothing is cut from the video or the photos: only the movement detection leaves those pixels out.
+- The OpenAPI file documents the routes, and tests cover the validation, the store, the roles, the unknown camera and the context.
+
 ## [0.6.2] - Portuguese in the voice answers and the alert texts
 
 - The answers of the voice commands (state, alarms, nodes, cameras, radars, solar, power, network, time, lights, help) and the confirmations are available in Portuguese.

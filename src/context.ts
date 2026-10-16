@@ -29,6 +29,7 @@ import { sendCommand, type Command } from "./devices/commands.js";
 import { isTriggered } from "./devices/catalog.js";
 import { AlarmZoneFeed } from "./alarm_zone_feed.js";
 import { CaptureOnDetect } from "./capture_on_detect.js";
+import { IgnoreZones } from "./ignore_zones.js";
 import { SiteStore } from "./site.js";
 import { SolarStore } from "./solar.js";
 import { ElectricalStore } from "./electrical.js";
@@ -103,6 +104,8 @@ export type AppContext = {
   alarmZoneFeed: AlarmZoneFeed;
   /** The photos and the video taken by themselves when a camera sees something while the perimeter is armed. */
   captureOnDetect: CaptureOnDetect;
+  /** The parts of each camera's picture that the observation service does not look at. */
+  ignoreZones: IgnoreZones;
   /** The way to the admin agent, or null when there is none (see admin.ts). */
   admin: AdminAgent | null;
   /** The maintenance agent: updates from GitHub, the system's updates and the root console (see routes/maintenance.ts). */
@@ -240,6 +243,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const alarmNodes = new AlarmStore({ now: overrides.now, onMessage: (message, previous) => alarmRules.handleAlarmNode(message, previous), onStale: (node, stale, phase) => alarmRules.handleAlarmNodeStale(node, stale, phase) });
   const alarmLink: AppContext["alarmLink"] = {};
   const captureOnDetect = new CaptureOnDetect({ file: path.join(config.dataDir, "capture-on-detect.json"), audit, now: overrides.now, tools: { snapshot: camera => evidence.snapshot(camera), startRecording: camera => evidence.startRecording(camera), stopRecording: id => evidence.stopRecording(id), isRecording: id => evidence.isRecording(id) } });
+  const ignoreZones = new IgnoreZones(path.join(config.dataDir, "camera-ignore-zones.json"));
   const alarmZoneFeed = new AlarmZoneFeed(path.join(config.dataDir, "alarm-zone-links.json"), { publish: (topic, payload) => { if (!alarmLink.publish) throw new Error("the MQTT broker is not connected"); alarmLink.publish(topic, payload); }, devices: () => devices.list(), now: overrides.now, warn });
   const alarmCommands = new AlarmCommands({
     enabled: config.alarmCommands, nodes: alarmNodes, audit, now: overrides.now,
@@ -309,7 +313,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    alarmDesign, alarmZoneFeed, captureOnDetect, config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    alarmDesign, alarmZoneFeed, captureOnDetect, ignoreZones, config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

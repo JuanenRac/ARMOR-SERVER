@@ -23,7 +23,8 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
       // `nodes`: the radar nodes that cover each camera in the site design (absent when the design cannot say: every node then counts).
       cameras: vault.list().filter(camera => Boolean(camera.rtspPath && camera.secrets?.username && camera.secrets.password)).map(camera => {
         const nodes = coveringNodes(site.get().site, camera.id);
-        return { id: camera.id, name: camera.name, ...(nodes ? { nodes } : {}) };
+        const ignore = context.ignoreZones.get(camera.id);
+        return { id: camera.id, name: camera.name, ...(nodes ? { nodes } : {}), ...(ignore.length ? { ignore } : {}) };
       }),
     });
   });
