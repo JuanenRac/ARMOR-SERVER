@@ -12,6 +12,7 @@ import { forwardCompatible } from "../contracts.js";
 import { ACTIONS, parseAlarmMessage, type AlarmAction } from "../alarm.js";
 import { AlarmCommandError } from "../alarm_commands.js";
 import { checkDisarm } from "./disarm_gate.js";
+import { ZoneLinksInvalid } from "../alarm_zone_feed.js";
 
 const NODE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
@@ -35,6 +36,20 @@ export function registerAlarmNodeRoutes(app: Express, context: AppContext): void
   });
 
   app.get("/api/v1/alarm/nodes", requireOperator, (_request, response) => response.json({ nodes: alarmNodes.list(), totals: alarmNodes.totals() }));
+
+  // Which Zigbee device of the registry is which zone of which panel: the server tells the panel the state of those zones while it holds the radio (see ../alarm_zone_feed.ts).
+  app.get("/api/v1/alarm/zone-links", requireOperator, (_request, response) => response.json({ links: context.alarmZoneFeed.list() }));
+  app.put("/api/v1/alarm/zone-links", requireAdmin, (request, response) => {
+    const body = typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {};
+    try {
+      const links = context.alarmZoneFeed.set(body.links);
+      context.audit.record({ action: "alarm.zone_links", outcome: "allowed", target: `${links.length} links`, actor: studioUser(request)?.username ?? "admin" });
+      return response.json({ links });
+    } catch (error) {
+      if (error instanceof ZoneLinksInvalid) return response.status(400).json({ error: error.message });
+      throw error;
+    }
+  });
 
   // Whether the commands are on, the ones waiting for an answer and what became of the latest ones.
   app.get("/api/v1/alarm/commands", requireOperator, (_request, response) => response.json(alarmCommands.status()));

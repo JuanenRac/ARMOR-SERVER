@@ -8,7 +8,8 @@ import express, { type Express } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { hasBearer } from "../http/auth.js";
-import { ingestCaller } from "../http/node_token.js";
+import { ingestCaller, nodeTokenFor } from "../http/node_token.js";
+import { sealFor } from "../http/credential_seal.js";
 import { forwardCompatible } from "../contracts.js";
 import { NoteInvalid, parseNetworkMessage } from "../network.js";
 import { CommandInvalid } from "../network_commands.js";
@@ -25,7 +26,8 @@ export function registerNetworkRoutes(app: Express, context: AppContext): void {
   const body = (request: { body?: unknown }): Record<string, unknown> => (typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {});
 
   app.post("/api/v1/network/state", ingestLimit, (request, response) => {
-    if (!ingestCaller(request, config.ingestToken, config.ingestStrict, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
+    const caller = ingestCaller(request, config.ingestToken, config.ingestStrict, (request.body as { node_id?: unknown } | undefined)?.node_id);
+    if (!caller) return response.sendStatus(401);
     try {
       const { value: message, ignored } = forwardCompatible(() => parseNetworkMessage(request.body));
       networkNodes.ingest(message);
@@ -34,9 +36,10 @@ export function registerNetworkRoutes(app: Express, context: AppContext): void {
       // The answer carries the manual orders waiting for this node (handed out once); a node that does not look for them simply ignores the field.
       const commands = networkCommands.take(message.node_id).map(command => {
         if (!command.login || !command.device_id) return command;
-        const login = deviceCredentials.get(command.device_id);
+        const login = caller === "node" ? deviceCredentials.get(command.device_id) : undefined;   // the shared token (a board provisioned the old way) never gets a login
         const { login: _asked, ...rest } = command;
-        return login ? { ...rest, auth: { user: login.user, password: login.password } } : rest;   // without a login kept, the node looks without one
+        // The login is sealed with the token of this node alone: on plain HTTP it is not readable on the way and no other node can open it. Without one kept, the node looks without one.
+        return login ? { ...rest, auth_sealed: sealFor(nodeTokenFor(config.ingestToken, message.node_id), JSON.stringify({ user: login.user, password: login.password })) } : rest;
       });
       return response.status(202).json({ accepted: true, commands });
     } catch (error) {

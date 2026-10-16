@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## [0.6.0] - A login for a network node is sealed for it alone, and the Zigbee zones of the alarm panels are told to them
+
+- The login of a device of the network (a router, a NAS, a camera) that an inspection order carries now reaches only the node that spoke with its own token, and travels sealed for that node (HMAC-SHA256 keystream and tag, key from the node's token): it is not readable on plain HTTP and no other node can open it.
+- A board provisioned the old way with the shared ingest token no longer receives any login with its orders; it inspects without one until it is given its own token.
+- New route GET and PUT /api/v1/alarm/zone-links: an operator reads which Zigbee device is which zone of which panel, an administrator replaces the links (at most 64, one device per zone).
+- While the server holds the Zigbee radio it publishes the state of each linked zone on armor/alarm/<node>/zigbee (normal, triggered or tamper, and a low battery) on every change of the device and every 30 seconds, so a restarted panel or a lost message heals by itself.
+- A device that does not answer says nothing, so the panel's own supervision of silent sensors judges it; the message is information and never a command.
+- The OpenAPI file documents both changes, and tests hold the sealed format, the strict links and the role of each caller.
+
 ## [0.5.9] - A check before arming, a viewer role, escalation, ntfy, proof of custody and daily electrical energy
 
 - `GET /api/v1/preflight` reports what would leave the perimeter blind or noisy before arming: a radar node that does not answer, a silent alarm panel, an open zone, a camera that is down, an open door or window and alarms nobody has seen, each blocking or only a warning.
