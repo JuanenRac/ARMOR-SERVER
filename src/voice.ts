@@ -5,7 +5,7 @@
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 
-export const VOICE_LANGUAGES = ["en", "es", "de", "fr", "it", "ja", "zh"] as const;
+export const VOICE_LANGUAGES = ["en", "es", "de", "fr", "it", "ja", "zh", "pt"] as const;
 export type VoiceLanguage = (typeof VOICE_LANGUAGES)[number];
 
 export type VoiceAnswer = {
@@ -55,6 +55,7 @@ const WORDS: Record<VoiceLanguage, Words> = {
   fr: { armed: "Système armé.", disarmed: "Système désarmé.", modeArmed: "armé", modeDisarmed: "désarmé", status: "Le système est {0}. {1} alarme(s) active(s). {2} nœud(s) sur {3} en ligne.", silenced: "{0} alarme(s) acquittée(s). Une sirène qui sonne n'est pas éteinte pour autant.", noAlarms: "Il n'y a aucune alarme active." },
   it: { armed: "Sistema armato.", disarmed: "Sistema disarmato.", modeArmed: "armato", modeDisarmed: "disarmato", status: "Il sistema è {0}. {1} allarme/i attivo/i. {2} nodo/i su {3} online.", silenced: "{0} allarme/i confermato/i. Una sirena che suona non viene spenta da questo.", noAlarms: "Non ci sono allarmi attivi." },
   ja: { armed: "警備を開始しました。", disarmed: "警備を解除しました。", modeArmed: "警備中", modeDisarmed: "警備解除中", status: "システムは{0}です。有効なアラームは{1}件。オンラインのノードは{3}台中{2}台です。", silenced: "{0}件のアラームを確認しました。鳴っているサイレンはこれでは止まりません。", noAlarms: "有効なアラームはありません。" },
+  pt: { armed: "Sistema armado.", disarmed: "Sistema desarmado.", modeArmed: "armado", modeDisarmed: "desarmado", status: "O sistema está {0}. {1} alarme(s) ativo(s). {2} de {3} nó(s) online.", silenced: "{0} alarme(s) reconhecido(s). Uma sirene que esteja a tocar não se desliga com isto.", noAlarms: "Não há alarmes ativos." },
   zh: { armed: "已布防。", disarmed: "已撤防。", modeArmed: "已布防", modeDisarmed: "已撤防", status: "系统{0}。有 {1} 个活动报警。{3} 个节点中有 {2} 个在线。", silenced: "已确认 {0} 个报警。正在响的警报器不会因此关闭。", noAlarms: "没有活动报警。" },
 };
 

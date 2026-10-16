@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [0.6.2] - Portuguese in the voice answers and the alert texts
+
+- The answers of the voice commands (state, alarms, nodes, cameras, radars, solar, power, network, time, lights, help) and the confirmations are available in Portuguese.
+- The text of the alerts sent to Telegram, ntfy, the webhook and the other channels can be written in Portuguese.
+- The tests that count the languages expect the eight.
+
 ## [0.6.1] - Photos and video taken by themselves when a camera sees something while armed
 
 - When the AI observation service reports something on a camera while the system is armed, the server now takes the evidence by itself: a photo or several, and a video of the configured length, through the same snapshot and recording of the evidence library.

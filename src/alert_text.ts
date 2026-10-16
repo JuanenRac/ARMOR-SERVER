@@ -5,7 +5,7 @@
  */
 import type { AlertMessage } from "./notify.js";
 
-export const ALERT_LANGUAGES = ["en", "es", "de", "fr", "it", "ja", "zh"] as const;
+export const ALERT_LANGUAGES = ["en", "es", "de", "fr", "it", "ja", "zh", "pt"] as const;
 export type AlertLanguage = (typeof ALERT_LANGUAGES)[number];
 export const isAlertLanguage = (value: unknown): value is AlertLanguage => (ALERT_LANGUAGES as readonly unknown[]).includes(value);
 
@@ -33,6 +33,7 @@ const WORDS: Record<AlertLanguage, Words> = {
   fr: { title: "A.R.M.O.R.", raised: "ALERTE sur le nœud {0} : {1} personnes détectées alors que le système est armé.", cleared: "Alerte terminée sur le nœud {0}.", offline: "Le nœud {0} est hors ligne alors que le système est armé.", stale: "Le nœud {0} ne donne plus de nouvelles alors que le système est armé.", camera: "La caméra {0} ne répond plus alors que le système est armé.", alarm: "Alarme {0} : {1} ({2}).", automation: "L'automatisation {0} demande de prévenir.", test: "Ceci est un message de test : les alarmes d'A.R.M.O.R. arrivent jusqu'ici.", escalated: "PERSONNE NE L'A ACQUITTÉE après {2} min :", armed: "Armé", disarmed: "Désarmé", critical: "CRITIQUE", high: "ÉLEVÉE", warning: "d'avertissement" },
   it: { title: "A.R.M.O.R.", raised: "ALLERTA sul nodo {0}: {1} persone rilevate con il sistema armato.", cleared: "Allerta terminata sul nodo {0}.", offline: "Il nodo {0} è offline con il sistema armato.", stale: "Il nodo {0} ha smesso di riferire con il sistema armato.", camera: "La telecamera {0} ha smesso di rispondere con il sistema armato.", alarm: "Allarme {0}: {1} ({2}).", automation: "L'automazione {0} chiede di avvisare.", test: "Questo è un messaggio di prova: gli allarmi di A.R.M.O.R. arrivano fin qui.", escalated: "NESSUNO L'HA RICONOSCIUTA dopo {2} min:", armed: "Armato", disarmed: "Disarmato", critical: "CRITICO", high: "ALTO", warning: "di avviso" },
   ja: { title: "A.R.M.O.R.", raised: "ノード {0} で警報：警備中に {1} 人を検知しました。", cleared: "ノード {0} の警報が解除されました。", offline: "警備中にノード {0} がオフラインです。", stale: "警備中にノード {0} からの報告が止まりました。", camera: "警備中にカメラ {0} が応答しなくなりました。", alarm: "{0} アラーム：{1}（{2}）。", automation: "オートメーション {0} が通知を求めています。", test: "これはテストメッセージです。A.R.M.O.R. の警報はここに届きます。", escalated: "{2} 分経っても誰も確認していません：", armed: "警備中", disarmed: "警備解除", critical: "重大", high: "高", warning: "注意" },
+  pt: { title: "A.R.M.O.R.", raised: "ALERTA no nó {0}: {1} pessoas detetadas com o sistema armado.", cleared: "Alerta terminado no nó {0}.", offline: "O nó {0} está offline com o sistema armado.", stale: "O nó {0} deixou de reportar com o sistema armado.", camera: "A câmara {0} deixou de responder com o sistema armado.", alarm: "Alarme {0}: {1} ({2}).", automation: "A automatização {0} pede para avisar.", test: "Esta é uma mensagem de teste: os alarmes do A.R.M.O.R. chegam até aqui.", escalated: "NINGUÉM O RECONHECEU após {2} min:", armed: "Armado", disarmed: "Desarmado", critical: "CRÍTICA", high: "ALTA", warning: "de aviso" },
   zh: { title: "A.R.M.O.R.", raised: "节点 {0} 报警：布防期间检测到 {1} 人。", cleared: "节点 {0} 的报警已解除。", offline: "布防期间节点 {0} 离线。", stale: "布防期间节点 {0} 停止上报。", camera: "布防期间摄像头 {0} 停止响应。", alarm: "{0}报警：{1}（{2}）。", automation: "自动化 {0} 请求通知。", test: "这是一条测试消息：A.R.M.O.R. 的报警会送到这里。", escalated: "{2} 分钟内无人确认：", armed: "已布防", disarmed: "已撤防", critical: "严重", high: "高级", warning: "警告" },
 };
 

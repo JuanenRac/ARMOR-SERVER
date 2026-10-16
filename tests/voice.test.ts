@@ -40,7 +40,7 @@ const call = async (running: Running, cookie: string, method: string, url: strin
 const mode = (running: Running) => running.app.context.store.snapshot().mode;
 
 test("what is said in every language has its sentences", () => {
-  assert.deepEqual([...VOICE_LANGUAGES], ["en", "es", "de", "fr", "it", "ja", "zh"]);
+  assert.deepEqual([...VOICE_LANGUAGES], ["en", "es", "de", "fr", "it", "ja", "zh", "pt"]);
   assert.equal(isVoiceLanguage("fr"), true);
   assert.equal(isVoiceLanguage("xx"), false);
   for (const language of VOICE_LANGUAGES) {

@@ -83,6 +83,17 @@ const WORDS: Record<VoiceLanguage, Words> = {
     lightsOn: "{0}個の照明をつけました。", lightsOff: "{0}個の照明を消しました。", lightsNone: "照明は設定されていません。", lightsFailed: " {0}個は応答しませんでした。",
     internet: ["正常", "低速", "停止中", "到達不能（ローカルネットワークが停止中）", "不明"],
   },
+  pt: {
+    alarms: "{0} alarme(s) ativo(s), {1} grave(s).", nodes: "{0} de {1} nó(s) online.", nodesOffline: " Sem ligação: {0}.", nodesNone: "Nenhum nó reportou ainda.",
+    cameras: "{0} de {1} câmara(s) a responder.", camerasBad: " Sem resposta: {0}.", camerasNone: "Não há câmaras configuradas.",
+    radar: "Os radares veem {0} pessoa(s).", radarNone: "Os radares não veem ninguém.", radarNoNodes: "Nenhum nó de radar está online.",
+    solar: "Solar: {0} W dos painéis, {1} W consumidos pela casa.", solarBattery: " Bateria a {0}%.", solarNone: "Nenhum equipamento solar reporta.",
+    electrical: "A casa consome {0} W da rede.", electricalFeeds: "A casa está a ceder {0} W à rede.", electricalNone: "Nenhum nó elétrico reporta.",
+    network: "A internet está {0}. {1} dispositivo(s) na rede.", networkNone: "O nó de rede não reporta.", time: "São {0}.",
+    help: "Posso armar e desarmar o sistema, dizer o estado, os alarmes, os nós, as câmaras, os radares, o solar, o consumo, a rede e a hora, ligar e desligar as luzes e silenciar o alarme.",
+    lightsOn: "{0} luz(es) ligada(s).", lightsOff: "{0} luz(es) desligada(s).", lightsNone: "Não há luzes configuradas.", lightsFailed: " {0} não responderam.",
+    internet: ["a funcionar", "lenta", "em baixo", "inalcançável, a rede local está em baixo", "desconhecido"],
+  },
   zh: {
     alarms: "有 {0} 个活动报警，其中 {1} 个严重。", nodes: "{1} 个节点中有 {0} 个在线。", nodesOffline: " 无连接：{0}。", nodesNone: "还没有节点上报。",
     cameras: "{1} 个摄像头中有 {0} 个有响应。", camerasBad: " 无响应：{0}。", camerasNone: "没有配置摄像头。",
