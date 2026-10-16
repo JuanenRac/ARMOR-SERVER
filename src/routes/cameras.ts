@@ -4,6 +4,7 @@
  * operator; live video also accepts a short-lived camera-bound ticket.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
+import { CaptureSettingsInvalid } from "../capture_on_detect.js";
 import type { Express, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
@@ -28,6 +29,19 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
   const ptzLimit = rateLimit({ windowMs: 60_000, limit: 240, standardHeaders: "draft-8", legacyHeaders: false });
   const lastPtzAudit = new Map<string, number>();
   const sensitiveLimit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
+
+  // What the server keeps by itself when a camera sees something while the perimeter is armed (see ../capture_on_detect.ts): anybody who may look reads it, an administrator sets it.
+  app.get("/api/v1/capture-settings", requireOperator, (_request, response) => response.json({ settings: context.captureOnDetect.get(), recent: context.captureOnDetect.recent() }));
+  app.put("/api/v1/capture-settings", context.requireAdmin, (request, response) => {
+    try {
+      const settings = context.captureOnDetect.set(request.body);
+      audit.record({ actor: who(request), action: "evidence.auto_capture.settings", outcome: "allowed", target: settings.enabled ? "on" : "off" });
+      return response.json({ settings });
+    } catch (error) {
+      if (error instanceof CaptureSettingsInvalid) return response.status(400).json({ error: error.message });
+      throw error;
+    }
+  });
   const withCamera = (request: Request, response: Response): CameraConnection | null => {
     const camera = vault.get(param(request, "id"));
     if (!camera) { response.sendStatus(404); return null; }

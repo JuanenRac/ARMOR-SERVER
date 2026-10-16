@@ -54,6 +54,9 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
       source: { type: "camera", id: observation.camera_id }, severity: observation.severity === "high" ? "high" : "warning", code: "camera_motion",
       detail: { reasons: observation.reasons.join("; "), motion: Math.round(observation.motion * 100), radar_tracks: observation.radar_tracks, profile: observation.profile },
     });
+    // The perimeter is armed and a camera saw something: the evidence is taken now, without waiting for anybody (it has its own cooldown and settings).
+    const watched = vault.get(observation.camera_id);
+    if (watched) void context.captureOnDetect.trigger(watched).catch(() => undefined);
     audit.record({ action: "ai.observation", outcome: "allowed", target: observation.camera_id, detail: `${observation.severity}${alarm ? ", alarm raised" : ", one is already open"}` });
     return response.json({ raised: Boolean(alarm), ...(alarm ? { alarm_id: alarm.id } : { reason: "already_open" }) });
   });

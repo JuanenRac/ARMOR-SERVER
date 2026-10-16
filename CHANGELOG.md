@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [0.6.1] - Photos and video taken by themselves when a camera sees something while armed
+
+- When the AI observation service reports something on a camera while the system is armed, the server now takes the evidence by itself: a photo or several, and a video of the configured length, through the same snapshot and recording of the evidence library.
+- New settings in GET and PUT /api/v1/capture-settings (everybody who may look reads them, an administrator sets them): on or off, photos on or off, how many (1 to 60) and how far apart (1 to 300 s), video on or off and its length (3 to 300 s) and a cooldown per camera (5 s to an hour).
+- A camera is not captured again during its cooldown, a recording a person started is left alone, a photo or recording that fails is skipped, and each capture is audited.
+- The latest captures are returned with the settings; the settings survive a restart.
+- The OpenAPI file documents the route, and tests cover the validation, the burst of photos, the video, the cooldown, a failing camera and the roles.
+
 ## [0.6.0] - A login for a network node is sealed for it alone, and the Zigbee zones of the alarm panels are told to them
 
 - The login of a device of the network (a router, a NAS, a camera) that an inspection order carries now reaches only the node that spoke with its own token, and travels sealed for that node (HMAC-SHA256 keystream and tag, key from the node's token): it is not readable on plain HTTP and no other node can open it.
