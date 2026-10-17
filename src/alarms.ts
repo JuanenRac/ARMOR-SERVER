@@ -435,6 +435,10 @@ export class AlarmRules {
       const key = `${base}:${item.id}:tamper`;
       if (item.state === "tamper") this.centre.raise(key, { source: { type: "alarm", id: `${message.node_id}/${item.id}` }, severity: "high", code: "alarm_tamper", detail: { node: message.node_id, zone: item.id } });
       else this.centre.clear(key);
+      // a zone the node cannot read is not guarding: a warning that lasts as long as the trouble (it never sounds the siren, and the node will not arm with it unless it is left out)
+      const troubleKey = `${base}:${item.id}:trouble`;
+      if (item.state === "trouble") this.centre.raise(troubleKey, { source: { type: "alarm", id: `${message.node_id}/${item.id}` }, severity: "warning", code: "alarm_zone_trouble", detail: { node: message.node_id, zone: item.id } });
+      else this.centre.clear(troubleKey);
     }
     if (message.locked_out) this.centre.raise(`${base}:locked_out`, { source, severity: "warning", code: "alarm_locked_out", detail: { node: message.node_id } });
     else this.centre.clear(`${base}:locked_out`);

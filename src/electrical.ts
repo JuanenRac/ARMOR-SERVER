@@ -9,7 +9,7 @@ import { CoarseTier } from "./history.js";
 import { finite, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
 
 export type ElectricalChannel = {
-  id: string; domain: "ac" | "dc"; label?: string; voltage_v?: number; current_a?: number; power_w?: number; energy_kwh?: number; frequency_hz?: number; power_factor?: number;
+  id: string; domain: "ac" | "dc"; label?: string; voltage_v?: number; current_a?: number; power_w?: number; energy_kwh?: number; power_estimated?: boolean; frequency_hz?: number; power_factor?: number;
   state?: "closed" | "open" | "unknown"; alarm?: boolean; alarm_code?: string;
 };
 export type Side = "none" | "a" | "b";
@@ -27,7 +27,7 @@ const RANGES: Record<string, readonly [number, number]> = {
   voltage_v: [0, 1000], current_a: [-1000, 1000], power_w: [-1_000_000, 1_000_000], energy_kwh: [0, 10_000_000], frequency_hz: [0, 100], power_factor: [-1, 1],
 };
 const inRange = (value: unknown, low: number, high: number): value is number => finite(value) && value >= low && value <= high;
-const CHANNEL_KEYS = ["id", "domain", "label", "voltage_v", "current_a", "power_w", "energy_kwh", "frequency_hz", "power_factor", "state", "alarm", "alarm_code"] as const;
+const CHANNEL_KEYS = ["id", "domain", "label", "voltage_v", "current_a", "power_w", "energy_kwh", "power_estimated", "frequency_hz", "power_factor", "state", "alarm", "alarm_code"] as const;
 
 function parseChannel(value: unknown, index: number): ElectricalChannel {
   const channel = record(value, `channel ${index}`);
@@ -37,6 +37,7 @@ function parseChannel(value: unknown, index: number): ElectricalChannel {
   if ("label" in channel && (typeof channel.label !== "string" || Array.from(channel.label).length < 1 || Array.from(channel.label).length > 40)) throw new Error(`invalid channel ${index}.label`);
   for (const [key, [low, high]] of Object.entries(RANGES)) if (key in channel && !inRange(channel[key], low, high)) throw new Error(`invalid channel ${index}.${key}`);
   if ("state" in channel && channel.state !== "closed" && channel.state !== "open" && channel.state !== "unknown") throw new Error(`invalid channel ${index}.state`);
+  if ("power_estimated" in channel && typeof channel.power_estimated !== "boolean") throw new Error(`invalid channel ${index}.power_estimated`);
   if ("alarm" in channel && typeof channel.alarm !== "boolean") throw new Error(`invalid channel ${index}.alarm`);
   if ("alarm_code" in channel && (typeof channel.alarm_code !== "string" || !alarmCode.test(channel.alarm_code))) throw new Error(`invalid channel ${index}.alarm_code`);
   return channel as unknown as ElectricalChannel;
@@ -140,6 +141,8 @@ export type ElectricalTotals = {
   nodes: number; channels: number; stale: number;
   /** The power drawn from the grid in watts (negative when the house feeds it), from the channel called `grid` of the nodes that are not stale; null when none reports it. */
   grid_w: number | null;
+  /** True when the grid figure includes a channel the node only estimated (apparent power from a current and a nominal voltage). */
+  grid_estimated: boolean;
   /** The energy that has passed through the grid channel, in kilowatt-hours; null when none says. */
   grid_kwh: number | null;
   /** Channels that raised an alarm. */
@@ -233,19 +236,19 @@ export class ElectricalStore {
 
   totals(): ElectricalTotals {
     this.sweep();
-    let channels = 0, stale = 0, alarms = 0, grid: number | null = null, gridEnergy: number | null = null;
+    let channels = 0, stale = 0, alarms = 0, grid: number | null = null, gridEnergy: number | null = null, gridEstimated = false;
     for (const entry of this.#entries.values()) {
       channels += entry.reading.channels.length;
       if (entry.stale) { stale += 1; continue; }
       for (const channel of entry.reading.channels) {
         if (channel.alarm === true) alarms += 1;
         if (channel.id === "grid" && channel.domain === "ac") {
-          if (channel.power_w !== undefined) grid = (grid ?? 0) + channel.power_w;
+          if (channel.power_w !== undefined) { grid = (grid ?? 0) + channel.power_w; if (channel.power_estimated === true) gridEstimated = true; }
           if (channel.energy_kwh !== undefined) gridEnergy = (gridEnergy ?? 0) + channel.energy_kwh;
         }
       }
     }
-    return { nodes: this.#entries.size, channels, stale, grid_w: grid === null ? null : round(grid, 0), grid_kwh: gridEnergy === null ? null : round(gridEnergy, 2), alarms };
+    return { nodes: this.#entries.size, channels, stale, grid_w: grid === null ? null : round(grid, 0), grid_estimated: gridEstimated, grid_kwh: gridEnergy === null ? null : round(gridEnergy, 2), alarms };
   }
 
   /** The recent samples of one channel, oldest first; `minutes` bounds how far back. Past a day the five-minute averages answer. */

@@ -57,6 +57,8 @@ export class ArmorStore {
   #updatedAt = new Date(0).toISOString();
   readonly #nodes = new Map<string, StoredNode>();
   readonly #panels = new Map<string, PanelInfo>();
+  /** The wall panels (ARMOR-HMI) that said they are alive: they are not radars, so they are not nodes, do not count and cannot be a node that went down. */
+  readonly #wallPanels = new Map<string, { online: boolean; timestamp_ms: number }>();
   readonly #minTargets: number;
   /** The nodes that have sent telemetry since this server started: for them, silence is judged by the telemetry, not by the heartbeat. */
   readonly #telemetrySeen = new Set<string>();
@@ -121,6 +123,12 @@ export class ArmorStore {
   }
 
   health(message: Health): SystemState {
+    if (message.kind === "panel") {
+      if (!this.#wallPanels.has(message.node_id) && this.#wallPanels.size >= 32) throw new Error("too many panels");
+      const before = this.#wallPanels.get(message.node_id);
+      if (!(before && message.timestamp_ms < before.timestamp_ms && message.online)) this.#wallPanels.set(message.node_id, { online: message.online, timestamp_ms: Math.max(message.timestamp_ms, before?.timestamp_ms ?? 0) });
+      return this.snapshot();
+    }
     const previous = this.#nodes.get(message.node_id);
     if (!previous && this.#nodes.size >= MAX_NODES) throw new Error("too many nodes");
     // An "offline" message is always applied: it is normally the MQTT last will, which the node had to write
@@ -177,6 +185,11 @@ export class ArmorStore {
     if (this.#nodes.has(message.node_id)) return this.#bump(false);
     this.#persistence?.save(this.#persisted(), false);   // no node to show yet: the address is still worth keeping
     return this.snapshot();
+  }
+
+  /** The wall panels that have spoken: online while their last message is not a goodbye and is recent. */
+  wallPanels(nowMs: number = Date.now(), silentAfterMs: number = 120_000): { id: string; online: boolean; last_ms: number }[] {
+    return [...this.#wallPanels.entries()].map(([id, item]) => ({ id, online: item.online && nowMs - item.timestamp_ms < silentAfterMs, last_ms: item.timestamp_ms }));
   }
 
   /** Forget a decommissioned node. Returns false when the node is unknown. A node that speaks again is simply new. */

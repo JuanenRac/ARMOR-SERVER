@@ -6,7 +6,7 @@
  */
 export type RadarTrack = { sensor_id: number; track_id: number; x_mm: number; y_mm: number; speed_mm_s: number };
 export type Telemetry = { node_id: string; timestamp_ms: number; lux: number; targets: RadarTrack[] };
-export type Health = { node_id: string; timestamp_ms: number; online: boolean };
+export type Health = { node_id: string; timestamp_ms: number; online: boolean; /** A wall panel (ARMOR-HMI) says "panel": the server keeps it apart from the radars. */ kind?: "radar" | "panel" };
 /** What a node says about itself so that a console can offer its web panel (see ARMOR-COMMON's info schema). */
 export type Info = { node_id: string; timestamp_ms: number; name: string; firmware: string; ip: string; port: number };
 
@@ -78,11 +78,12 @@ export function parseTelemetry(value: unknown): Telemetry {
 
 export function parseHealth(value: unknown): Health {
   const body = record(value, "health");
-  onlyKnown(body, ["node_id", "timestamp_ms", "online"], "health");
+  onlyKnown(body, ["node_id", "timestamp_ms", "online", "kind"], "health");
   const node = readNodeId(body);
   const timestamp = readTimestamp(body);
   if (typeof body.online !== "boolean") throw new Error("invalid online flag");
-  return { node_id: node, timestamp_ms: timestamp, online: body.online };
+  if ("kind" in body && body.kind !== "radar" && body.kind !== "panel") throw new Error("invalid kind");
+  return { node_id: node, timestamp_ms: timestamp, online: body.online, ...(body.kind === "panel" ? { kind: "panel" as const } : {}) };
 }
 
 const IPV4 = /^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}$/;

@@ -82,6 +82,7 @@ export function registerSystemRoutes(app: Express, context: AppContext, version:
   // Every service of the system, running or not: the programs of this machine (from systemd) and the field nodes (from what they last said). Read only.
   app.get("/api/v1/system/services", requireOperator, async (_request, response) => {
     const nodes: FieldNode[] = [
+      ...store.wallPanels().map(panel => ({ id: panel.id, kind: "hmi", online: panel.online, last_ms: panel.last_ms || null })),
       ...Object.values(store.snapshot().nodes).map(node => ({ id: node.node_id, kind: "radar", online: node.online, last_ms: node.timestamp_ms || null, firmware: node.panel?.firmware ?? null })),
       ...context.electricalNodes.list().map(node => ({ id: node.node_id, kind: "electrical", online: !node.stale, last_ms: Date.parse(node.received_at) || null })),
       ...context.alarmNodes.list().map(node => ({ id: node.node_id, kind: "alarm", online: !node.stale, last_ms: Date.parse(node.received_at) || null })),

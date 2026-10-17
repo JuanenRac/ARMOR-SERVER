@@ -171,6 +171,19 @@ test("a sounding alarm is critical and ends with the disarm; a tamper is high; a
   assert.deepEqual(active(), []);
 });
 
+test("a zone that cannot be read is a warning for as long as it lasts, and never a siren", async () => {
+  const { AlarmCentre, AlarmRules } = await import("../src/alarms.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "armor-alarm-trouble-"));
+  const centre = new AlarmCentre({ file: path.join(dir, "alarms.json") });
+  const rules = new AlarmRules(centre, () => "disarmed");
+  const active = () => centre.active().filter(alarm => !alarm.cleared_at).map(alarm => `${alarm.code}:${alarm.severity}:${alarm.source.id}`).sort();
+  const base = state();
+  rules.handleAlarmNode({ ...base, zones: [base.zones[0], { ...base.zones[1], state: "trouble" }] }, base);
+  assert.deepEqual(active(), ["alarm_zone_trouble:warning:alarm-1/window"]);
+  rules.handleAlarmNode(base, base);
+  assert.deepEqual(active(), []);
+});
+
 // ---- the routes ---------------------------------------------------------------------------------------------------------------------------
 
 test("by default the server sends nothing to any panel: the route refuses, and the status says it is off", async () => {

@@ -14,7 +14,7 @@ JSON POST. When `ARMOR_ALERT_WEBHOOK_SECRET` is set the body is signed: check
 `TLS_KEY_PATH`), authentication by session or token, four roles, rate limits and an audit trail; keep it behind them when you expose it.
 
 When `ARMOR_MQTT_URL` is explicitly configured, the Node server subscribes to
-`armor/node/+/telemetry` and `armor/node/+/health` at QoS 1. Invalid JSON,
+`armor/node/+/telemetry` and `armor/node/+/health` at QoS 1 (a health message with `"kind":"panel"` comes from a wall panel and is kept apart from the radars). Invalid JSON,
 unknown topic families and malformed payloads are rejected before reaching the
 state projection. The broker credential is read only from the process environment.
 

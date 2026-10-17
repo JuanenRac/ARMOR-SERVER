@@ -39,10 +39,10 @@ test("the store keeps the latest reading, samples now and then, goes stale, come
   assert.equal(store.history("electrical-1", "grid", 60)!.length, 2);
   assert.equal(store.history("electrical-1", "nope", 60), undefined);
   assert.equal(store.history("other", "grid", 60), undefined);
-  assert.deepEqual(store.totals(), { nodes: 1, channels: 1, stale: 0, grid_w: 3200, grid_kwh: 5231, alarms: 0 });
+  assert.deepEqual(store.totals(), { nodes: 1, channels: 1, stale: 0, grid_w: 3200, grid_estimated: false, grid_kwh: 5231, alarms: 0 });
   clock += 61_000;
   assert.equal(store.list()[0].stale, true);
-  assert.deepEqual(store.totals(), { nodes: 1, channels: 1, stale: 1, grid_w: null, grid_kwh: null, alarms: 0 });   // a silent node counts for nothing
+  assert.deepEqual(store.totals(), { nodes: 1, channels: 1, stale: 1, grid_w: null, grid_estimated: false, grid_kwh: null, alarms: 0 });   // a silent node counts for nothing
   store.ingest(message({ node_id: "electrical-1" }));
   assert.equal(store.list()[0].stale, false);
   assert.deepEqual(told.filter(item => item !== "message electrical-1"), ["stale electrical-1", "back electrical-1"]);
@@ -55,7 +55,15 @@ test("the store keeps the latest reading, samples now and then, goes stale, come
 test("the sums count the grid channel of the nodes that report and the alarms they raise", () => {
   const store = new ElectricalStore();
   store.ingest(message({ channels: [{ id: "grid", domain: "ac", power_w: -800, energy_kwh: 10.5 }, { id: "heater", domain: "ac", power_w: 1500, alarm: true, alarm_code: "over_current" }, { id: "dc-bus", domain: "dc", power_w: 400 }] }));
-  assert.deepEqual(store.totals(), { nodes: 1, channels: 3, stale: 0, grid_w: -800, grid_kwh: 10.5, alarms: 1 });
+  assert.deepEqual(store.totals(), { nodes: 1, channels: 3, stale: 0, grid_w: -800, grid_estimated: false, grid_kwh: 10.5, alarms: 1 });
+});
+
+test("a grid figure made from an estimated power says that it is an estimate", () => {
+  const store = new ElectricalStore();
+  store.ingest(message({ channels: [{ id: "grid", domain: "ac", power_w: 2100, power_estimated: true }] }));
+  assert.equal(store.totals().grid_estimated, true);
+  assert.equal(store.totals().grid_w, 2100);
+  assert.throws(() => parseElectricalMessage(JSON.parse(JSON.stringify({ ...message(), channels: [{ id: "grid", domain: "ac", power_estimated: "yes" }] }))), /power_estimated/);
 });
 
 test("the routes take a node's reading with the ingest token and give it to an operator", async () => {

@@ -1,7 +1,8 @@
 // What a node sent that the server took, ignored or refused: forward-compatible reading and the log Studio shows.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { forwardCompatible } from "../src/contracts.js";
+import { forwardCompatible, parseHealth } from "../src/contracts.js";
+import { ArmorStore as Store } from "../src/store.js";
 import { IngestLog } from "../src/ingest_log.js";
 import { parseSolarMessage } from "../src/solar.js";
 import { SECRETS, startServer, studioCookie } from "./helpers.js";
@@ -55,4 +56,15 @@ test("the route takes a message with an unknown field, and an operator reads the
     assert.deepEqual([ok.accepted, ok.ignored_fields], [1, ["inverter.future_gauge"]]);
     assert.match(topics.find(topic => topic.topic === "http:solar")!.last_error ?? "", /pv_w/);
   } finally { await running.stop(); }
+});
+
+test("a wall panel's health is kept apart: it is not a radar node and does not count as one", () => {
+  const store = new Store();
+  store.health(parseHealth({ node_id: "hall-panel", timestamp_ms: Date.now(), online: true, kind: "panel" }));
+  assert.equal(Object.keys(store.snapshot().nodes).length, 0);
+  assert.equal(store.wallPanels().length, 1);
+  assert.equal(store.wallPanels()[0].id, "hall-panel");
+  store.health(parseHealth({ node_id: "hall-panel", timestamp_ms: Date.now() + 10, online: false, kind: "panel" }));
+  assert.equal(store.wallPanels()[0].online, false);
+  assert.throws(() => parseHealth({ node_id: "x", timestamp_ms: 1, online: true, kind: "toaster" }), /kind/);
 });
