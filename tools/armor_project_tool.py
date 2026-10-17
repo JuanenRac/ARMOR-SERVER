@@ -178,6 +178,12 @@ def test_project(project: Path, manifest: dict[str, object]) -> None:
         output = project / "build" / "node_enclosure_radar.stl"
         output.parent.mkdir(exist_ok=True)
         command(project, [openscad, "-o", str(output), "scad/node_enclosure_radar.scad"])
+        # Every piece is rendered on its own, so an assert of the source (a board that does not fit, a cable hole in a wall) or a part that is not a solid fails here and not on the printer.
+        for view_mode, piece in ((2, "base"), (3, "cover")):
+            command(project, [openscad, "-D", f"view_mode={view_mode}", "-o", str(project / "build" / f"node_enclosure_radar_{piece}.stl"), "scad/node_enclosure_radar.scad"])
+        for preset in ("solar", "electrical", "alarm"):
+            for part in ("box", "lid"):
+                command(project, [openscad, "-D", f'part="{part}"', "-D", f'preset="{preset}"', "-o", str(project / "build" / f"node_box_{preset}_{part}.stl"), "scad/node_box.scad"])
     elif name == "ARMOR-DEVOPS":
         check_tool("docker", "Docker Compose is required to validate ARMOR-DEVOPS")
         # `docker compose config` only checks the topology is well formed; it
