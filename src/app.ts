@@ -179,7 +179,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   }, 30_000);
   watchSockets.unref();
 
-  const mqtt = config.mqtt ? attachMqtt(context.store, config.mqtt.url, config.mqtt.username, config.mqtt.password, context.ingestLog) : null;
+  const mqtt = config.mqtt ? attachMqtt(context.store, config.mqtt.url, config.mqtt.username, config.mqtt.password, context.ingestLog, config.mqtt.ca?.pem) : null;
   /** A message of a node that was refused: said in the log and kept (with the start of what was sent) for Studio's System menu. */
   const rejected = (topic: string, raw: Buffer, error: unknown, fallback: string): void => {
     const why = error instanceof Error ? error.message : fallback;

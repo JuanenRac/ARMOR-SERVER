@@ -9,6 +9,7 @@ import { checkConnection, readConnection, writeConnection } from "../connection.
 import { isLoopbackHost } from "../config.js";
 import type { SolarTotals } from "../solar.js";
 import type { AppContext } from "../context.js";
+import { mqttTlsState } from "../mqtt_tls.js";
 import { buildPreflight } from "../preflight.js";
 import { listServices, procPausedReader, programVersions, systemctlReader, type FieldNode, type UnitReader } from "../services.js";
 
@@ -116,7 +117,7 @@ export function registerSystemRoutes(app: Express, context: AppContext, version:
   // Where the server listens and where Studio is served (an administrator). The change is kept in a file and takes effect when the server is started again.
   const connectionState = () => {
     const saved = readConnection(config.dataDir);
-    return { active: { host: config.host, port: config.port, tls: Boolean(config.tls), studio_origins: config.studioOrigins }, saved, restart_required: (saved.host !== undefined && saved.host !== config.host) || (saved.port !== undefined && saved.port !== config.port) || saved.studio_port !== undefined };
+    return { active: { host: config.host, port: config.port, tls: Boolean(config.tls), studio_origins: config.studioOrigins }, mqtt_tls: mqttTlsState(config.mqtt), saved, restart_required: (saved.host !== undefined && saved.host !== config.host) || (saved.port !== undefined && saved.port !== config.port) || saved.studio_port !== undefined };
   };
   app.get("/api/v1/system/connection", requireAdmin, (_request, response) => response.json(connectionState()));
   app.put("/api/v1/system/connection", requireAdmin, (request, response) => {

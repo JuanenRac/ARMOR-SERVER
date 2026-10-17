@@ -35,8 +35,12 @@ export function bodyMatchesTopic(topic: string, body: { node_id: string }): bool
 export const WALL_CLOCK_FROM_MS = 1_000_000_000_000;
 export const stampOf = (timestampMs: number, receivedMs: number): number => (timestampMs < WALL_CLOCK_FROM_MS ? receivedMs : timestampMs);
 
-export function attachMqtt(store: ArmorStore, brokerUrl: string, username?: string, password?: string, log?: IngestLog): MqttClient {
-  const client = connect(brokerUrl, { username, password, reconnectPeriod: 2_000, clean: true, protocolVersion: 5 });
+/**
+ * `ca` (the PEM of ARMOR_MQTT_CA_FILE) is the one authority trusted for an mqtts:// broker: the certificate of the broker must be signed by it and must vouch for the name or the address
+ * in the URL. Without it an mqtts:// address is checked against the machine's usual authorities, and an mqtt:// address is not encrypted, as before.
+ */
+export function attachMqtt(store: ArmorStore, brokerUrl: string, username?: string, password?: string, log?: IngestLog, ca?: string): MqttClient {
+  const client = connect(brokerUrl, { username, password, reconnectPeriod: 2_000, clean: true, protocolVersion: 5, ...(ca ? { ca: [ca], rejectUnauthorized: true } : {}) });
   client.on("connect", () => client.subscribe(["armor/node/+/telemetry", "armor/node/+/health", "armor/node/+/info"], { qos: 1 }));
   client.on("message", (topic, raw) => {
     try {

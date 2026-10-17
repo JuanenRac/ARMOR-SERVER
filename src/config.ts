@@ -8,6 +8,7 @@ import { validTelegramChat, validTelegramToken, validWebhookId } from "./channel
 import fs from "node:fs";
 import path from "node:path";
 import { originsWithStudioPort, readConnection } from "./connection.js";
+import { isTlsUrl, readCaFile, type MqttCa } from "./mqtt_tls.js";
 import { DEFAULT_LOCAL_NETWORKS, parseRanges } from "./origin.js";
 
 export const MIN_SECRET_LENGTH = 24;
@@ -55,7 +56,7 @@ export type ArmorConfig = {
   maxMediaBytes: number;
   mediaRetentionMs: number;
   discoveryCidr: string | null;
-  mqtt: { url: string; username?: string; password?: string } | null;
+  mqtt: { url: string; username?: string; password?: string; /** The authority pinned for an mqtts:// broker (ARMOR_MQTT_CA_FILE), when there is one. */ ca?: MqttCa } | null;
   /** Seconds without a message after which a field node is reported offline. */
   nodeStaleAfterS: number;
   /** Milliseconds a two-target condition must persist before it becomes "high" (0 = immediately). */
@@ -303,6 +304,15 @@ export function readConfig(env: Env = process.env): ArmorConfig {
   const tls = tlsCertPath && tlsKeyPath ? { certPath: tlsCertPath, keyPath: tlsKeyPath } : null;
 
   const mqttUrl = env.ARMOR_MQTT_URL?.trim();
+  // The optional encryption of the link to the broker (see mqtt_tls.ts): a pinned authority only makes sense with an mqtts:// address, and a mistake here must stop the server rather than
+  // leave it talking plain MQTT while its owner believes it is encrypted.
+  const mqttCaFile = env.ARMOR_MQTT_CA_FILE?.trim() ?? "";
+  let mqttCa: MqttCa | undefined;
+  if (mqttCaFile) {
+    if (!mqttUrl) throw new ConfigError("ARMOR_MQTT_CA_FILE is set but ARMOR_MQTT_URL is not");
+    if (!isTlsUrl(mqttUrl)) throw new ConfigError("ARMOR_MQTT_CA_FILE needs an mqtts:// address in ARMOR_MQTT_URL (with mqtt:// the link would stay unencrypted)");
+    try { mqttCa = readCaFile(mqttCaFile); } catch (error) { throw new ConfigError(`ARMOR_MQTT_CA_FILE (${mqttCaFile}): ${error instanceof Error ? error.message : "it cannot be used"}`); }
+  }
   // What an administrator set from Studio (the address, the port, the port of Studio) wins over the environment; see connection.ts.
   const dataDir = path.resolve(env.ARMOR_DATA_DIR ?? "data");
   const saved = readConnection(dataDir);
@@ -332,7 +342,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     maxMediaBytes: integer(env, "ARMOR_MEDIA_MAX_BYTES", 20 * 1024 ** 3, 64 * 1024 ** 2, Number.MAX_SAFE_INTEGER),
     mediaRetentionMs: integer(env, "ARMOR_MEDIA_RETENTION_DAYS", 30, 0, 3650) * 86_400_000,
     discoveryCidr: cidr,
-    mqtt: mqttUrl ? { url: mqttUrl, username: env.ARMOR_MQTT_USERNAME?.trim() || undefined, password: env.ARMOR_MQTT_PASSWORD || undefined } : null,
+    mqtt: mqttUrl ? { url: mqttUrl, username: env.ARMOR_MQTT_USERNAME?.trim() || undefined, password: env.ARMOR_MQTT_PASSWORD || undefined, ...(mqttCa ? { ca: mqttCa } : {}) } : null,
     nodeStaleAfterS: integer(env, "ARMOR_NODE_STALE_AFTER_S", 30, 5, 3600),
     alertDwellMs: integer(env, "ARMOR_ALERT_DWELL_MS", 2000, 0, 60_000),
     escalateAfterMin: integer(env, "ARMOR_ESCALATE_AFTER_MIN", 0, 0, 1440),

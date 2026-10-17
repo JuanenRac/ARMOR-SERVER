@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.7.3] - An optional encrypted link to the broker (mqtts)
+
+- ARMOR_MQTT_CA_FILE names the certificate of the installation's own authority. With an mqtts:// address the server trusts that authority only and the broker's certificate must vouch for the name or address in the URL; without the variable an mqtts:// address is checked against the usual authorities of the machine, and an mqtt:// address is unchanged.
+- The server refuses to start if the file is not one valid certificate, is expired, or is set with an mqtt:// address (the link would stay unencrypted while the owner believed otherwise).
+- GET /api/v1/system/connection (administrator) also answers mqtt_tls: whether the link is encrypted and the name, SHA-256 fingerprint and end date of the pinned authority - never a path or the certificate text.
+- Tests: the certificate file, the configuration, and a TLS broker stand-in that accepts the pinned authority and refuses another authority and a name the certificate does not vouch for; also run against a real Mosquitto 2.0.
+
 ## [0.7.2] - Silence the siren of a panel with the PIN
 
 - POST /api/v1/alarm/command accepts action silence: the same rules as a disarm (administrator, the PIN of the signed-in user checked by the server and never sent to the node, the same lockout, audit entries control.silence, the remote policy and the three switches).
