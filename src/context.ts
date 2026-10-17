@@ -16,6 +16,8 @@ import { cameraPublic, cameraView, type CameraConnection } from "./cameras/model
 import type { ArmorConfig } from "./config.js";
 import { hasBearer, SessionStore, type HeaderSource } from "./http/auth.js";
 import { UserStore, type PublicUser } from "./users.js";
+import { classify, type Origin } from "./origin.js";
+import { TotpStore } from "./totp.js";
 import { EvidenceLibrary } from "./media/evidence.js";
 import { RelayManager, StreamTickets } from "./media/relay.js";
 import { CameraWatcher } from "./cameras/health.js";
@@ -66,6 +68,11 @@ export type AppContext = {
   audit: AuditLog;
   studioSessions: SessionStore;
   operatorSessions: SessionStore;
+  /** The second factor of the sign-in, and the proof of identity that critical actions ask for when the session came from outside the house. */
+  totp: TotpStore;
+  /** Where a request comes from, by the address the server sees (behind a proxy: the one ARMOR_TRUST_PROXY names). */
+  originOfRequest: (request: { ip?: string }) => Origin;
+  requireElevated: RequestHandler;
   users: UserStore;
   /** Language, theme and the saved weather place, kept per account rather than per browser or address. */
   preferences: PreferencesStore;
@@ -159,7 +166,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   // The name of a session cookie depends on whether the server speaks HTTPS: a browser that once met this server over HTTPS keeps its Secure cookie for the
   // host, and a page over plain HTTP is not allowed to replace a Secure cookie of the same name - the login seemed to work and then nothing stuck (found for real
   // after the HTTPS trial was undone). Different names for the two cases cannot shadow each other.
-  const studioSessions = new SessionStore({ cookieName: config.cookieSecure ? "__Host-armor_studio_sid" : "armor_studio_sid", cookiePath: "/", ttlMs: config.studioSessionTtlMs, secure: config.cookieSecure, file: path.join(config.dataDir, "sessions.json") });
+  const studioSessions = new SessionStore({ cookieName: config.cookieSecure ? "__Host-armor_studio_sid" : "armor_studio_sid", cookiePath: "/", ttlMs: config.studioSessionTtlMs, secure: config.cookieSecure, file: path.join(config.dataDir, "sessions.json"), remoteIdleMs: config.remoteIdleMs });
   const operatorSessions = new SessionStore({ cookieName: config.cookieSecure ? "__Secure-armor_operator_sid" : "armor_operator_sid", cookiePath: "/api/v1", ttlMs: config.operatorSessionTtlMs, secure: config.cookieSecure });
   if (config.cameraKeyIsFallback) warn("ARMOR_CAMERA_CONFIG_KEY is not set; using the migration fallback derived from ARMOR_CONTROL_TOKEN");
   const vault = new CameraVault({
@@ -327,6 +334,15 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     audit.record({ action: "admin.access", outcome: "denied", actor: studioUser(request)?.username, target: `${request.method} ${request.path}` });
     return response.status(studioUser(request) ? 403 : 401).json({ error: "an administrator is required" });
   };
+  const totp = new TotpStore({ file: path.join(config.dataDir, "totp.json"), secret: config.cameraConfigKey });
+  const originOfRequest = (request: { ip?: string }): Origin => classify(request.ip, config.localNetworks, config.vpnNetworks);
+  // The critical actions (users, firmware, importing the installation) ask a session that came from outside the house for a new proof of identity, good for a few minutes
+  // (POST /api/v1/studio/elevate). From inside the house nothing changes.
+  const requireElevated: RequestHandler = (request, response, next) => {
+    if (studioSessions.originOf(request) !== "remote" || studioSessions.elevated(request)) return next();
+    audit.record({ action: "elevation.needed", outcome: "denied", actor: studioUser(request)?.username, target: `${request.method} ${request.path}` });
+    return response.status(403).json({ error: "this needs the password or the code again", code: "elevation_required" });
+  };
   const requireAi: RequestHandler = (request, response, next) => {
     if (config.aiToken && hasBearer(request, config.aiToken)) return next();
     audit.record({ action: "ai.access", outcome: "denied", target: `${request.method} ${request.path}` });
@@ -337,7 +353,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    alarmDesign, alarmZoneFeed, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    alarmDesign, alarmZoneFeed, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

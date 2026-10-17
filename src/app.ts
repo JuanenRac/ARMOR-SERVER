@@ -90,6 +90,18 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
 
   // A signed-in console that keeps working keeps its session: the cookie is renewed once half of its life has gone.
   app.use((request, response, next) => { context.studioSessions.renew(request, response); context.operatorSessions.renew(request, response); next(); });
+  // What a session from outside the house may do (ARMOR_REMOTE_POLICY): from "operate" on, administering (users, the installation, the firmware, the broker) is for the house or the VPN;
+  // "view" lets it only look. The answer says what is needed, so the clients can explain it. Sessions made inside the house are not touched.
+  app.use((request, response, next) => {
+    if (config.remotePolicy === "full" || context.studioSessions.originOf(request) !== "remote") return next();
+    const reads = request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS";
+    const own = /^\/api\/v1\/(studio\/(session|sessions|elevate|totp)|push\/(un)?register)/.test(request.path) || (request.method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/stream-ticket$/.test(request.path));
+    const admin = /^\/api\/v1\/(admin|users|installation|system\/ingest|preferences)(\/|$)/.test(request.path);
+    if (reads && !(admin && config.remotePolicy === "view")) return next();
+    if (own || (config.remotePolicy === "operate" && !admin)) return next();
+    context.audit.record({ action: "remote.policy", outcome: "denied", actor: context.studioUser(request)?.username, target: `${request.method} ${request.path}`, detail: config.remotePolicy });
+    return response.status(403).json({ error: "this is only possible from the house or over the VPN", code: "remote_policy", needs: "vpn" });
+  });
 
   registerIngestRoutes(app, context, Date.now(), version);
   registerSessionRoutes(app, context);

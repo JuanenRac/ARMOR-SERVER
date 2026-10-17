@@ -41,14 +41,21 @@ export type SessionOptions = {
   cookieName: string; cookiePath: string; ttlMs: number; secure: boolean; capacity?: number;
   /** Where the sessions are kept so a restart (an update, a reboot) does not sign everyone out. Only a hash of each session id is written. */
   file?: string;
+  /** A session that came from outside the house is asked to be used: with no request for this long it ends (milliseconds; none when absent). */
+  remoteIdleMs?: number;
 };
+
+/** What is known of a session besides who it belongs to: where it came from and when, so the person can see their sessions and end the ones they do not know. */
+export type SessionMeta = { origin?: "local" | "remote"; ip?: string; agent?: string; ttlMs?: number };
+type SessionRecord = { expiry: number; userId?: string; origin?: "local" | "remote"; ip?: string; agent?: string; created?: number; lastSeen?: number; ttlMs?: number; elevatedUntil?: number };
+export type SessionView = { id: string; created: number; last_seen: number; origin: "local" | "remote"; ip: string; agent: string; current: boolean };
 
 /** What is stored and looked up: never the cookie value itself. */
 const keyOf = (id: string): string => createHash("sha256").update(id).digest("hex");
 
 /** In-memory sessions: random ids, absolute expiry, a hard cap and lazy pruning. */
 export class SessionStore {
-  readonly #sessions = new Map<string, { expiry: number; userId?: string }>();
+  readonly #sessions = new Map<string, SessionRecord>();
   readonly #options: SessionOptions;
   readonly #now: () => number;
 
@@ -61,10 +68,15 @@ export class SessionStore {
   #load(): void {
     if (!this.#options.file) return;
     try {
-      const saved = JSON.parse(fs.readFileSync(this.#options.file, "utf8")) as { sessions?: Record<string, { expiry?: unknown; userId?: unknown }> };
+      const saved = JSON.parse(fs.readFileSync(this.#options.file, "utf8")) as { sessions?: Record<string, Record<string, unknown>> };
       const now = this.#now();
+      const num = (value: unknown): number | undefined => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
+      const text = (value: unknown, max: number): string | undefined => (typeof value === "string" ? value.slice(0, max) : undefined);
       for (const [key, session] of Object.entries(saved.sessions ?? {})) {
-        if (/^[0-9a-f]{64}$/.test(key) && typeof session.expiry === "number" && session.expiry > now) this.#sessions.set(key, { expiry: session.expiry, userId: typeof session.userId === "string" ? session.userId : undefined });
+        if (/^[0-9a-f]{64}$/.test(key) && typeof session.expiry === "number" && session.expiry > now) {
+          this.#sessions.set(key, { expiry: session.expiry, userId: typeof session.userId === "string" ? session.userId : undefined, origin: session.origin === "remote" ? "remote" : session.origin === "local" ? "local" : undefined,
+            ip: text(session.ip, 64), agent: text(session.agent, 120), created: num(session.created), lastSeen: num(session.lastSeen), ttlMs: num(session.ttlMs), elevatedUntil: num(session.elevatedUntil) });
+        }
       }
     } catch { /* No file yet, or an unreadable one: start with no sessions. */ }
   }
@@ -101,14 +113,16 @@ export class SessionStore {
   }
 
   /** Create a session (for a user, when there is one) and set its HttpOnly cookie. Returns the expiry as an ISO date. */
-  open(response: Response, userId?: string): string {
+  open(response: Response, userId?: string, meta: SessionMeta = {}): string {
     this.#prune();
     const id = randomBytes(32).toString("base64url");
-    const expiresAt = this.#now() + this.#options.ttlMs;
-    this.#sessions.set(keyOf(id), { expiry: expiresAt, userId });
+    const ttlMs = meta.ttlMs ?? this.#options.ttlMs;
+    const now = this.#now();
+    const expiresAt = now + ttlMs;
+    this.#sessions.set(keyOf(id), { expiry: expiresAt, userId, origin: meta.origin, ip: meta.ip?.slice(0, 64), agent: meta.agent?.slice(0, 120), created: now, lastSeen: now, ...(meta.ttlMs ? { ttlMs: meta.ttlMs } : {}) });
     this.#save();
     response.cookie(this.#options.cookieName, id, {
-      httpOnly: true, sameSite: "strict", secure: this.#options.secure, maxAge: this.#options.ttlMs, path: this.#options.cookiePath,
+      httpOnly: true, sameSite: "strict", secure: this.#options.secure, maxAge: ttlMs, path: this.#options.cookiePath,
     });
     return new Date(expiresAt).toISOString();
   }
@@ -117,12 +131,43 @@ export class SessionStore {
     const id = requestCookies(request)[this.#options.cookieName];
     const key = id ? keyOf(id) : undefined;
     const session = key ? this.#sessions.get(key) : undefined;
-    if (!session || session.expiry <= this.#now()) {
+    const idle = this.#options.remoteIdleMs;
+    if (!session || session.expiry <= this.#now() || (idle && session.origin === "remote" && this.#now() - (session.lastSeen ?? session.created ?? 0) > idle)) {
       if (key && this.#sessions.delete(key)) this.#save();
       return false;
     }
     return true;
   }
+
+  #current(request: HeaderSource): { key: string; session: SessionRecord } | undefined {
+    const id = requestCookies(request)[this.#options.cookieName];
+    const key = id ? keyOf(id) : undefined;
+    const session = key && this.has(request) ? this.#sessions.get(key) : undefined;
+    return key && session ? { key, session } : undefined;
+  }
+
+  /** Where the session of this request came from; sessions made before this was recorded count as local. */
+  originOf(request: HeaderSource): "local" | "remote" | undefined { const found = this.#current(request); return found ? found.session.origin ?? "local" : undefined; }
+
+  /** The sessions of a user, newest first. `id` is a short prefix of the hash of the cookie: enough to end that session, useless to take it over. */
+  list(userId: string, request?: HeaderSource): SessionView[] {
+    const mine = request ? this.#current(request)?.key : undefined;
+    const now = this.#now();
+    return [...this.#sessions].filter(([, session]) => session.userId === userId && session.expiry > now)
+      .map(([key, session]) => ({ id: key.slice(0, 16), created: session.created ?? 0, last_seen: session.lastSeen ?? session.created ?? 0, origin: session.origin ?? "local" as const, ip: session.ip ?? "", agent: session.agent ?? "", current: key === mine }))
+      .sort((a, b) => b.created - a.created);
+  }
+
+  /** Ends one session of the user by its short id; false when there is none. */
+  revokeId(userId: string, shortId: string): boolean {
+    if (!/^[0-9a-f]{16}$/.test(shortId)) return false;
+    for (const [key, session] of this.#sessions) if (session.userId === userId && key.startsWith(shortId)) { this.#sessions.delete(key); this.#save(); return true; }
+    return false;
+  }
+
+  /** The session of this request has proved itself again (password or second factor) and may do critical things until `untilMs`. */
+  elevate(request: HeaderSource, untilMs: number): boolean { const found = this.#current(request); if (!found) return false; found.session.elevatedUntil = untilMs; this.#save(); return true; }
+  elevated(request: HeaderSource): boolean { return (this.#current(request)?.session.elevatedUntil ?? 0) > this.#now(); }
 
   /**
    * A session in use does not run out: once more than half of its life is gone, the next request that carries it gets a full life again
@@ -132,11 +177,16 @@ export class SessionStore {
     const id = requestCookies(request)[this.#options.cookieName];
     const session = id ? this.#sessions.get(keyOf(id)) : undefined;
     const now = this.#now();
-    if (!id || !session || session.expiry <= now || session.expiry - now > this.#options.ttlMs / 2) return false;
-    session.expiry = now + this.#options.ttlMs;
+    if (!id || !session || session.expiry <= now) return false;
+    const idle = this.#options.remoteIdleMs;
+    if (idle && session.origin === "remote" && now - (session.lastSeen ?? session.created ?? 0) > idle) return false;   // gone: has() ends it
+    session.lastSeen = now;
+    const ttlMs = session.ttlMs ?? this.#options.ttlMs;
+    if (session.expiry - now > ttlMs / 2) return false;
+    session.expiry = now + ttlMs;
     this.#save();
     response.cookie(this.#options.cookieName, id, {
-      httpOnly: true, sameSite: "strict", secure: this.#options.secure, maxAge: this.#options.ttlMs, path: this.#options.cookiePath,
+      httpOnly: true, sameSite: "strict", secure: this.#options.secure, maxAge: ttlMs, path: this.#options.cookiePath,
     });
     return true;
   }

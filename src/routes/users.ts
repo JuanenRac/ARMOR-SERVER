@@ -9,7 +9,7 @@ import type { AppContext } from "../context.js";
 import { UserError } from "../users.js";
 
 export function registerUserRoutes(app: Express, context: AppContext): void {
-  const { audit, studioSessions, users, studioUser, requireAdmin } = context;
+  const { audit, studioSessions, users, studioUser, requireAdmin, requireElevated } = context;
   const accountLimit = rateLimit({ windowMs: 15 * 60_000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "too many account changes" } });
 
   const fail = (response: Response, error: unknown) => {
@@ -23,7 +23,7 @@ export function registerUserRoutes(app: Express, context: AppContext): void {
     return response.json({ users: users.list().map(user => ({ ...user, current: user.id === me })), minPasswordLength: users.minPasswordLength });
   });
 
-  app.post("/api/v1/users", requireAdmin, (request, response) => {
+  app.post("/api/v1/users", requireAdmin, requireElevated, (request, response) => {
     const input = body(request), actor = studioUser(request)?.username;
     try {
       const user = users.create({ username: input.username, password: input.password, role: input.role ?? "operator" });
@@ -35,7 +35,7 @@ export function registerUserRoutes(app: Express, context: AppContext): void {
     }
   });
 
-  app.patch("/api/v1/users/:id", requireAdmin, (request, response) => {
+  app.patch("/api/v1/users/:id", requireAdmin, requireElevated, (request, response) => {
     const input = body(request), actor = studioUser(request), id = String(request.params.id);
     try {
       const before = users.get(id)?.username;
@@ -53,7 +53,7 @@ export function registerUserRoutes(app: Express, context: AppContext): void {
     }
   });
 
-  app.delete("/api/v1/users/:id", requireAdmin, (request, response) => {
+  app.delete("/api/v1/users/:id", requireAdmin, requireElevated, (request, response) => {
     const actor = studioUser(request), id = String(request.params.id);
     try {
       if (id === actor?.id) throw new UserError("self_delete", "you cannot delete the user you are signed in as", 409);
@@ -72,7 +72,7 @@ export function registerUserRoutes(app: Express, context: AppContext): void {
   // The PIN that disarms the system (and the duress PIN that disarms it and warns in silence): an administrator sets or clears anybody's; you set or clear your own after confirming
   // your password. The PIN is never shown again.
   const pinInput = (request: { body?: unknown }) => { const input = body(request); return { pin: input.pin, duress: input.duress_pin }; };
-  app.put("/api/v1/users/:id/pin", requireAdmin, (request, response) => {
+  app.put("/api/v1/users/:id/pin", requireAdmin, requireElevated, (request, response) => {
     const actor = studioUser(request), id = String(request.params.id);
     try {
       const { pin, duress } = pinInput(request);
@@ -84,7 +84,7 @@ export function registerUserRoutes(app: Express, context: AppContext): void {
       return fail(response, error);
     }
   });
-  app.delete("/api/v1/users/:id/pin", requireAdmin, (request, response) => {
+  app.delete("/api/v1/users/:id/pin", requireAdmin, requireElevated, (request, response) => {
     const actor = studioUser(request), id = String(request.params.id);
     try {
       const user = users.clearPin(id);

@@ -47,7 +47,7 @@ export function registerFirmwareRoutes(app: Express, context: AppContext): void 
     return response.json({ nodes: await Promise.all(addresses.map(address => firmware.probe(address))) });
   });
 
-  app.post("/api/v1/admin/firmware/jobs", requireAdmin, (request, response) => {
+  app.post("/api/v1/admin/firmware/jobs", requireAdmin, context.requireElevated, (request, response) => {
     const input = body(request);
     const kind = kindOf(input.kind);
     if (!kind) return response.status(422).json({ error: "unknown_kind" });

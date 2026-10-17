@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## [0.6.7] - Using the server from outside the house
+
+- **Where a request comes from:** `ARMOR_LOCAL_NETWORKS` and `ARMOR_VPN_NETWORKS` say what is the house; every session records whether it came from inside or outside, the address and the browser, and `GET /api/v1/studio/sessions` lists them so the person can end the ones they do not know (also `end-others`).
+- **Shorter sessions from outside:** 12 hours and 30 minutes without use (`ARMOR_REMOTE_SESSION_TTL_MS`, `ARMOR_REMOTE_IDLE_MS`).
+- **Second factor (TOTP, RFC 6238):** set up with the password, confirmed with the first code, ten recovery codes shown once; the sign-in then answers with a challenge and gives no cookie until the code (or a recovery code) is right; a code is accepted once; five wrong codes make the next tries wait; an administrator can reset it. `ARMOR_TOTP_REQUIRED=remote|always` demands it (a person without it sets it up from inside first).
+- **A new proof for critical actions from outside:** managing users and PINs and starting a firmware update ask a remote session to prove itself again (`POST /api/v1/studio/elevate`, good for five minutes). Inside the house nothing more is asked.
+- **`ARMOR_REMOTE_POLICY`** (`full`, `operate`, `view`) closes administering, or everything but looking, to sessions from outside, answering `remote_policy`; `GET /api/v1/remote/check` shows what the server sees of a request.
+- `ARMOR_COOKIE_SECURE` left empty (what the Compose file passes) now follows the installation again: Secure with TLS or an https public origin.
+- A page, `docs/REMOTE_ACCESS.md`, and the routes in the OpenAPI file. Tests: 409 (before 402).
+
 ## [0.6.6] - Releases that must be signed, the wall panel's voice through the server and a few contracts brought together
 
 - **A firmware release is installed only when its manifest is signed** (`<image>.sig2`, Ed25519, the key of the releases): "Node firmware" used to check only the `.sha256` published in the same release, so whoever could change a release on GitHub could change both and have the server push his firmware to every panel. A release without the signature or with another key is refused (`no_signature`, `bad_signature`); an image uploaded by hand is still the administrator's own act. A test compares the key with the one the nodes carry.

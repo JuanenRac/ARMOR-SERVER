@@ -8,6 +8,7 @@ import { validTelegramChat, validTelegramToken, validWebhookId } from "./channel
 import fs from "node:fs";
 import path from "node:path";
 import { originsWithStudioPort, readConnection } from "./connection.js";
+import { DEFAULT_LOCAL_NETWORKS, parseRanges } from "./origin.js";
 
 export const MIN_SECRET_LENGTH = 24;
 
@@ -30,6 +31,17 @@ export type ArmorConfig = {
   resetStudioPassword: boolean;
   studioSessionTtlMs: number;
   operatorSessionTtlMs: number;
+  /** Where a request comes from (see origin.ts): the house and its VPN are local, the rest is remote. */
+  localNetworks: ReturnType<typeof parseRanges>;
+  vpnNetworks: ReturnType<typeof parseRanges>;
+  /** When the second factor is asked: never unless the person turned it on, from outside the house, or always. */
+  totpPolicy: "off" | "remote" | "always";
+  /** A session that came from outside the house: how long it lives, how long it may sit unused, and how long a new proof of identity allows critical actions. */
+  remoteSessionTtlMs: number;
+  remoteIdleMs: number;
+  elevationMs: number;
+  /** What a session from outside the house may do: everything (`full`, the critical things after a new proof), operate the alarm and look (`operate`) or only look (`view`). */
+  remotePolicy: "full" | "operate" | "view";
   studioOrigins: string[];
   cookieSecure: boolean;
   dataDir: string;
@@ -123,6 +135,15 @@ export function loadDotEnv(file: string, env: Env = process.env): void {
   }
 }
 
+const ranges = (env: Env, key: string, fallback: string) => {
+  try { return parseRanges(env[key]?.trim() || fallback); } catch (error) { throw new ConfigError(`${key}: ${error instanceof Error ? error.message : "not a list of address ranges"}`); }
+};
+const oneOf = <T extends string>(env: Env, key: string, allowed: readonly T[], fallback: T): T => {
+  const value = (env[key] ?? "").trim().toLowerCase();
+  if (value === "") return fallback;
+  if (!(allowed as readonly string[]).includes(value)) throw new ConfigError(`${key} must be one of ${allowed.join(", ")}`);
+  return value as T;
+};
 const integer = (env: Env, key: string, fallback: number, min: number, max: number): number => {
   const raw = env[key]?.trim();
   if (raw === undefined || raw === "") return fallback;
@@ -292,8 +313,14 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     studioUsername, studioPassword, passwordMinLength: isLoopbackHost(effectiveHost) ? 8 : 12, resetStudioPassword: env.ARMOR_STUDIO_RESET_PASSWORD === "1",
     studioSessionTtlMs: integer(env, "ARMOR_STUDIO_SESSION_TTL_MS", 7 * 86_400_000, 60_000, 30 * 86_400_000),
     operatorSessionTtlMs: integer(env, "ARMOR_OPERATOR_SESSION_TTL_MS", 28_800_000, 60_000, 7 * 86_400_000),
+    localNetworks: ranges(env, "ARMOR_LOCAL_NETWORKS", DEFAULT_LOCAL_NETWORKS), vpnNetworks: ranges(env, "ARMOR_VPN_NETWORKS", ""),
+    totpPolicy: oneOf(env, "ARMOR_TOTP_REQUIRED", ["off", "remote", "always"] as const, "off"),
+    remoteSessionTtlMs: integer(env, "ARMOR_REMOTE_SESSION_TTL_MS", 12 * 3_600_000, 60_000, 30 * 86_400_000),
+    remoteIdleMs: integer(env, "ARMOR_REMOTE_IDLE_MS", 30 * 60_000, 60_000, 7 * 86_400_000),
+    elevationMs: integer(env, "ARMOR_ELEVATION_MS", 5 * 60_000, 30_000, 3_600_000),
+    remotePolicy: oneOf(env, "ARMOR_REMOTE_POLICY", ["full", "operate", "view"] as const, "full"),
     studioOrigins: originsWithStudioPort([...origins], saved.studio_port),
-    cookieSecure: env.ARMOR_COOKIE_SECURE === "1" || (env.ARMOR_COOKIE_SECURE === undefined && tls !== null),
+    cookieSecure: env.ARMOR_COOKIE_SECURE === "1" || ((env.ARMOR_COOKIE_SECURE === undefined || env.ARMOR_COOKIE_SECURE.trim() === "") && (tls !== null || (env.ARMOR_PUBLIC_ORIGIN ?? "").trim().startsWith("https://"))),
     dataDir,
     ffmpegPath: env.ARMOR_FFMPEG_PATH?.trim() ?? "",
     maxMjpegRelays: integer(env, "ARMOR_MAX_MJPEG_RELAYS", 8, 1, 64),
