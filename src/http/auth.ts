@@ -191,6 +191,11 @@ export class SessionStore {
     return true;
   }
 
+  /** A stable handle for the session of a request (a hash, never the cookie), to keep something per session. */
+  handleOf(request: HeaderSource): string | undefined {
+    return this.has(request) ? keyOf(requestCookies(request)[this.#options.cookieName]!) : undefined;
+  }
+
   /** The user a valid session belongs to. */
   userId(request: HeaderSource): string | undefined {
     return this.has(request) ? this.#sessions.get(keyOf(requestCookies(request)[this.#options.cookieName]))?.userId : undefined;

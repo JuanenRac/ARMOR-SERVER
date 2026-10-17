@@ -104,3 +104,15 @@ test("a file that is not an installation, or a part that does not check out, is 
 });
 
 function report(body: Record<string, Record<string, string>>, group: "applied" | "failed", part: string): string { return body[group]?.[part] ?? ""; }
+
+test("an installation file bigger than the 64 KB of the other routes is read (up to 9 MB), not refused before it is looked at", async () => {
+  const origin = await startServer();
+  try {
+    const cookie = await studioCookie(origin.base);
+    const big = await call(origin.base, cookie, "POST", "/api/v1/admin/installation", { bundle: { padding: "x".repeat(300_000) } });
+    assert.equal(big.status, 400, "it got to the check of the file");
+    assert.equal(big.body.error, "invalid_bundle");
+    const huge = await fetch(`${origin.base}/api/v1/admin/installation`, { method: "POST", headers: { ...json, cookie }, body: JSON.stringify({ bundle: { padding: "x".repeat(9_500_000) } }) });
+    assert.equal(huge.status, 413);
+  } finally { await origin.stop(); }
+});

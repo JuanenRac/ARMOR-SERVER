@@ -41,6 +41,7 @@ import { registerPreferencesRoutes } from "./routes/preferences.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerFirmwareRoutes } from "./routes/firmware.js";
+import { registerNodePanelRoutes } from "./node_panel_proxy.js";
 import { registerVoiceRoutes } from "./routes/voice.js";
 import { registerAiRoutes } from "./routes/ai.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
@@ -78,7 +79,8 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   });
   // The site design and the electrical design have their own, larger body limit (routes/alarms.ts); everything else is small.
   const smallJson = express.json({ limit: "64kb", type: "application/json" });
-  app.use((request, response, next) => ((request.path === "/api/v1/site" || request.path === "/api/v1/electrical/design" || request.path === "/api/v1/network/design" || request.path === "/api/v1/alarm/design") && request.method === "PUT" ? next() : smallJson(request, response, next)));
+  // The panel of a node is passed on as it comes (its body goes to the node untouched), and the installation file has its own, larger limit (9 MB): neither is read here.
+  app.use((request, response, next) => (/^\/api\/v1\/nodes\/[^/]+\/panel(\/|$)/.test(request.path) || (request.method === "POST" && request.path === "/api/v1/admin/installation") || ((request.path === "/api/v1/site" || request.path === "/api/v1/electrical/design" || request.path === "/api/v1/network/design" || request.path === "/api/v1/alarm/design") && request.method === "PUT") ? next() : smallJson(request, response, next)));
   app.use(cors({ origin: config.studioOrigins, credentials: true, methods: ["GET", "POST", "PUT", "PATCH", "DELETE"] }));
   // Field-node ingest has its own, larger budget (routes/ingest.ts): a burst of node messages must never lock an operator out.
   // A signed-in operator is identified, so the console's own polling never spends the anonymous budget (which exists to slow a flood
@@ -96,7 +98,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     if (config.remotePolicy === "full" || context.studioSessions.originOf(request) !== "remote") return next();
     const reads = request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS";
     const own = /^\/api\/v1\/(studio\/(session|sessions|elevate|totp)|push\/(un)?register)/.test(request.path) || (request.method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/stream-ticket$/.test(request.path));
-    const admin = /^\/api\/v1\/(admin|users|installation|system\/ingest|preferences)(\/|$)/.test(request.path);
+    const admin = /^\/api\/v1\/(admin|users|installation|system\/ingest|preferences|nodes\/[^/]+\/panel)(\/|$)/.test(request.path);
     if (reads && !(admin && config.remotePolicy === "view")) return next();
     if (own || (config.remotePolicy === "operate" && !admin)) return next();
     context.audit.record({ action: "remote.policy", outcome: "denied", actor: context.studioUser(request)?.username, target: `${request.method} ${request.path}`, detail: config.remotePolicy });
@@ -119,6 +121,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerSystemRoutes(app, context, version);
   registerAdminRoutes(app, context);
   registerFirmwareRoutes(app, context);
+  registerNodePanelRoutes(app, context);
   registerVoiceRoutes(app, context);
   registerAiRoutes(app, context);
   registerNotificationRoutes(app, context);

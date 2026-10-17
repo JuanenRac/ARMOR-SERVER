@@ -156,3 +156,29 @@ test("the remote policy: from outside, `operate` keeps administering for the hou
     assert.equal(made.status, 201);
   } finally { await inside.stop(); }
 });
+
+test("a sign-in from outside the house at a new place is told to the places the alarms go to, once, and it can be turned off", async () => {
+  for (const [alerts, expected] of [["1", 1], ["0", 0]] as const) {
+    const running = await startServer({ ARMOR_LOCAL_NETWORKS: "10.99.0.0/16", ARMOR_LOGIN_ALERTS: alerts });   // the test client (127.0.0.1) is then "outside"
+    const sent: Array<{ event: string; login_user?: string; login_from?: string }> = [];
+    const original = running.app.context.notifier.send.bind(running.app.context.notifier);
+    running.app.context.notifier.send = message => { sent.push(message as never); original(message); };
+    try {
+      for (let index = 0; index < 2; index += 1) {
+        const reply = await fetch(`${running.base}/api/v1/studio/session`, { method: "POST", headers: json, body: JSON.stringify(credentials) });
+        assert.equal(reply.status, 201);
+      }
+      const logins = sent.filter(message => message.event === "login.remote");
+      assert.equal(logins.length, expected, "the same place is not told twice");
+      if (expected) assert.deepEqual([logins[0]!.login_user, logins[0]!.login_from], [SECRETS.ARMOR_STUDIO_USERNAME, "127.0.0.1"]);
+    } finally { await running.stop(); }
+  }
+  // inside the house nothing is told
+  const home = await startServer();
+  const sent: string[] = [];
+  home.app.context.notifier.send = message => { sent.push(message.event); };
+  try {
+    assert.equal((await fetch(`${home.base}/api/v1/studio/session`, { method: "POST", headers: json, body: JSON.stringify(credentials) })).status, 201);
+    assert.deepEqual(sent, []);
+  } finally { await home.stop(); }
+});

@@ -36,6 +36,9 @@ async function fakeAgent(consoleEnabled = true): Promise<{ socket: string; seen:
       if (request.method === "POST" && url === "/v1/console/run") return consoleEnabled ? send(202, { id: "c1", state: "running", output: "", offset: 0 }) : send(403, { error: "console_disabled" });
       if (request.method === "GET" && url.startsWith("/v1/console/jobs/")) return send(200, { id: "c1", state: "done", code: 0, output: "hi\n", offset: 3, cwd: "/tmp" });
       if (request.method === "POST" && url.includes("/cancel")) return send(200, { ok: true });
+      if (request.method === "GET" && url === "/v1/remote") return send(200, { wireguard: { configured: false, peers: [] }, ddns: { configured: false } });
+      if (request.method === "POST" && url.startsWith("/v1/remote/")) return send(url.endsWith("/peers") ? 201 : 200, url.endsWith("/peers") ? { name: body.name, config: "[Interface]\nPrivateKey = SECRETKEY", qr_svg: null } : { ok: true });
+      if (request.method === "GET" && url.startsWith("/v1/remote/wireguard/peers/")) return send(200, { name: "phone", config: "[Interface]\nPrivateKey = SECRETKEY", qr_svg: null });
       return send(404, { error: "not_found" });
     });
   });
@@ -147,5 +150,33 @@ test("five wrong passwords close the console's door for a while, and a console t
     assert.equal((await call(running, cookie, "POST", "/api/v1/admin/console/unlock", { password: SECRETS.ARMOR_STUDIO_PASSWORD })).status, 429, "even the right one waits");
     const state = await call(running, cookie, "GET", "/api/v1/admin/console");
     assert.equal(state.body.enabled, false);
+  } finally { await running.stop(); await agent.close(); }
+});
+
+test("the VPN and the dynamic DNS name are asked for through the agent, with a new proof from outside, and no key or token is written down", async () => {
+  const agent = await fakeAgent();
+  const running = await startServer({ ARMOR_MAINT_SOCKET: agent.socket, ARMOR_MAINT_TOKEN: TOKEN, ARMOR_LOCAL_NETWORKS: "10.99.0.0/16" });   // the test client is then "outside"
+  try {
+    const cookie = await studioCookie(running.base);
+    assert.equal((await call(running, cookie, "GET", "/api/v1/admin/remote")).status, 200);
+    // from outside the house every change asks for the password again
+    const refused = await call(running, cookie, "POST", "/api/v1/admin/remote/wireguard/peers", { name: "phone" });
+    assert.deepEqual([refused.status, refused.body.code], [403, "elevation_required"]);
+    assert.equal((await call(running, cookie, "POST", "/api/v1/studio/elevate", { password: SECRETS.ARMOR_STUDIO_PASSWORD })).status, 200);
+    assert.equal((await call(running, cookie, "POST", "/api/v1/admin/remote/wireguard/peers", { name: "bad name" })).status, 422);
+    const made = await call(running, cookie, "POST", "/api/v1/admin/remote/wireguard/peers", { name: "phone", full_tunnel: true });
+    assert.deepEqual([made.status, made.body.name], [201, "phone"]);
+    assert.match(String(made.body.config), /PrivateKey/);
+    assert.equal((await call(running, cookie, "POST", "/api/v1/admin/remote/wireguard/setup", { endpoint: "casa.example.org:51820", lan: "192.168.0.0/24", port: 51820, evil: "x" })).status, 200);
+    assert.equal((await call(running, cookie, "GET", "/api/v1/admin/remote/wireguard/peers/phone")).status, 200);
+    assert.equal((await call(running, cookie, "DELETE", "/api/v1/admin/remote/wireguard/peers/phone")).status, 200);
+    assert.equal((await call(running, cookie, "POST", "/api/v1/admin/remote/ddns/setup", { provider: "duckdns", domain: "casa", token: "tok-ABCDEFGH-1234" })).status, 200);
+    assert.equal((await call(running, cookie, "POST", "/api/v1/admin/remote/ddns/update")).status, 200);
+    assert.equal((await call(running, cookie, "POST", "/api/v1/admin/remote/ddns/remove")).status, 200);
+    const setup = agent.seen.find(item => item.url === "/v1/remote/wireguard/setup")!;
+    assert.deepEqual(Object.keys(setup.body).sort(), ["endpoint", "lan", "port"], "only the known fields go to the agent");
+    const audit = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8");
+    for (const action of ["remote.vpn.setup", "remote.vpn.peer.add", "remote.vpn.peer.show", "remote.vpn.peer.remove", "remote.ddns.setup", "remote.ddns.update", "remote.ddns.remove"]) assert.match(audit, new RegExp(action.replace(/\./g, "\\.")), action);
+    assert.doesNotMatch(audit, /SECRETKEY|tok-ABCDEFGH-1234/);
   } finally { await running.stop(); await agent.close(); }
 });

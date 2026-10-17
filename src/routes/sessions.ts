@@ -14,12 +14,19 @@ type Challenge = { userId: string; username: string; role: string; origin: "loca
 const CHALLENGE_MS = 120_000;
 
 export function registerSessionRoutes(app: Express, context: AppContext): void {
-  const { config, audit, studioSessions, operatorSessions, requireOperator, users, studioUser, totp, originOfRequest } = context;
+  const { config, audit, studioSessions, operatorSessions, requireOperator, users, studioUser, totp, originOfRequest, notifier, store } = context;
+  /** The places a person has already signed in from outside the house (kept while the server runs): a new one is told to the places the alarms go to. */
+  const knownPlaces = new Set<string>();
   const challenges = new Map<string, Challenge>();
   const agentOf = (request: { header(name: string): string | undefined }): string => (request.header("user-agent") ?? "").replace(/[\r\n]/g, " ").slice(0, 120);
   const open = (response: Parameters<typeof studioSessions.open>[0], user: { id: string; username: string; role: string }, origin: "local" | "remote", ip: string, agent: string) => {
     const expiresAt = studioSessions.open(response, user.id, { origin, ip, agent, ...(origin === "remote" ? { ttlMs: config.remoteSessionTtlMs } : {}) });
     audit.record({ action: "studio.login", outcome: "allowed", actor: user.username, detail: `${origin} ${ip}` });
+    if (origin === "remote" && config.loginAlerts && !knownPlaces.has(`${user.id}|${ip}`)) {
+      if (knownPlaces.size >= 500) knownPlaces.delete(knownPlaces.values().next().value!);
+      knownPlaces.add(`${user.id}|${ip}`);
+      notifier.send({ service: "armor-server", event: "login.remote", at: new Date().toISOString(), mode: store.snapshot().mode, login_user: user.username, login_from: ip });
+    }
     return { expiresAt, user: { id: user.id, username: user.username, role: user.role } };
   };
   // Twelve tries per person and place, so that someone trying passwords for one account (or a phone with an old password in a loop) does not lock everybody else out, and a wider

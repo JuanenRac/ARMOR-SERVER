@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## [0.6.8] - The panel of a node through the server, a warning for every new sign-in from outside, and the VPN and the dynamic DNS name from Studio
+
+- **The panel of a node, reached through the server:** `/api/v1/nodes/<id>/panel/` passes an administrator to the web panel of a node that is not published anywhere. The address of the node comes from a list an administrator keeps (`/api/v1/admin/node-panels`: only addresses of the house, never one taken from the request), the connection to an HTTPS node is made only when its certificate is the one that was trusted (its SHA-256 is looked at and trusted from Studio) and nothing is written to it before that, the cookie of the node stays on the server (the browser never sees it and the node never sees the server's), the browser's Origin, Referer and Authorization are dropped, a path with `..` in any disguise is refused, bodies are limited (64 KB, 8 MB for firmware and settings) and every write is in the audit trail without its content.
+- From outside the house a new panel asks for a new proof of identity once and then goes on until it has sat unused for fifteen minutes; with the policy `operate` or `view` the routes that change the node (firmware, factory reset, restart, users, settings) are refused from outside, and a viewer never gets in.
+- **A warning for a new sign-in from outside:** the first time a person signs in from outside the house from an address they had not used, the places the alarms go to (Telegram, ntfy, Home Assistant, the webhook, the broker) are told, in the language of the installation (`ARMOR_LOGIN_ALERTS=0` turns it off). The new event `login.remote` is in the shared contract.
+- **The VPN and the dynamic DNS name, asked for through the maintenance agent:** `/api/v1/admin/remote` and the routes under it set up WireGuard, add and remove devices (their configuration, with a private key, is never cached and never written down), and keep a name pointing at the house; each change asks a session from outside for a new proof and is in the audit trail without a key or a token.
+- The installation file can now really be 9 MB: the general 64 KB reader no longer cuts it before its own reader sees it.
+- The routes are in the OpenAPI file and the new alert event in the contract with its conformance vectors. Tests: 417 (before 409).
+
 ## [0.6.7] - Using the server from outside the house
 
 - **Where a request comes from:** `ARMOR_LOCAL_NETWORKS` and `ARMOR_VPN_NETWORKS` say what is the house; every session records whether it came from inside or outside, the address and the browser, and `GET /api/v1/studio/sessions` lists them so the person can end the ones they do not know (also `end-others`).

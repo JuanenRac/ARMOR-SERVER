@@ -167,4 +167,80 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
     audit.record({ action: "console.cancel", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: id });
     relay(response, reply);
   });
+
+  // ---- the way in from outside the house: the VPN (WireGuard) and the dynamic DNS name -----------------------------------------------------------------------------
+  // The work is done by the maintenance agent (as root, with two helper scripts); here an administrator asks for it, a new proof of identity is wanted from outside the house, and
+  // the audit trail says what was done without a key, a token or a configuration in it. What carries a private key (the configuration of a device) is never cached.
+  const PEER = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
+  const text = (value: unknown, max: number): string | undefined => (typeof value === "string" && value.length > 0 && value.length <= max && !/[\r\n\0]/.test(value) ? value : undefined);
+  const pick = (input: Record<string, unknown>, keys: Array<[string, number]>): Record<string, unknown> => {
+    const out: Record<string, unknown> = {};
+    for (const [key, max] of keys) { const value = text(input[key], max); if (value !== undefined) out[key] = value; }
+    return out;
+  };
+
+  app.get("/api/v1/admin/remote", requireAdmin, async (_request, response) => {
+    const reply = await ask(response, "GET", "/v1/remote");
+    if (!reply) return;
+    response.setHeader("Cache-Control", "no-store");
+    relay(response, reply);
+  });
+
+  app.post("/api/v1/admin/remote/wireguard/setup", requireAdmin, context.requireElevated, async (request, response) => {
+    const input = body(request);
+    const payload: Record<string, unknown> = pick(input, [["endpoint", 260], ["lan", 20], ["subnet", 20], ["route_lan", 15]]);
+    if (typeof input.port === "number" && Number.isInteger(input.port)) payload.port = input.port;
+    const reply = await ask(response, "POST", "/v1/remote/wireguard/setup", payload);
+    if (!reply) return;
+    audit.record({ action: "remote.vpn.setup", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: String(payload.endpoint ?? "") });
+    relay(response, reply);
+  });
+
+  app.post("/api/v1/admin/remote/wireguard/peers", requireAdmin, context.requireElevated, async (request, response) => {
+    const input = body(request);
+    const name = typeof input.name === "string" ? input.name : "";
+    if (!PEER.test(name)) return response.status(422).json({ error: "bad_name" });
+    const reply = await ask(response, "POST", "/v1/remote/wireguard/peers", { name, full_tunnel: input.full_tunnel === true });
+    if (!reply) return;
+    audit.record({ action: "remote.vpn.peer.add", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: name });
+    response.setHeader("Cache-Control", "no-store");
+    relay(response, reply);
+  });
+
+  app.get("/api/v1/admin/remote/wireguard/peers/:name", requireAdmin, context.requireElevated, async (request, response) => {
+    const name = String(request.params.name ?? "");
+    if (!PEER.test(name)) return response.status(422).json({ error: "bad_name" });
+    const reply = await ask(response, "GET", `/v1/remote/wireguard/peers/${name}`);
+    if (!reply) return;
+    audit.record({ action: "remote.vpn.peer.show", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: name });
+    response.setHeader("Cache-Control", "no-store");
+    relay(response, reply);
+  });
+
+  app.delete("/api/v1/admin/remote/wireguard/peers/:name", requireAdmin, context.requireElevated, async (request, response) => {
+    const name = String(request.params.name ?? "");
+    if (!PEER.test(name)) return response.status(422).json({ error: "bad_name" });
+    const reply = await ask(response, "POST", `/v1/remote/wireguard/peers/${name}/remove`, {});
+    if (!reply) return;
+    audit.record({ action: "remote.vpn.peer.remove", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: name });
+    relay(response, reply);
+  });
+
+  app.post("/api/v1/admin/remote/ddns/setup", requireAdmin, context.requireElevated, async (request, response) => {
+    const input = body(request);
+    const payload = pick(input, [["provider", 12], ["domain", 63], ["token", 200], ["zone", 32], ["record_name", 253], ["url", 1000]]);
+    const reply = await ask(response, "POST", "/v1/remote/ddns/setup", payload);
+    if (!reply) return;
+    audit.record({ action: "remote.ddns.setup", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: String(payload.provider ?? "") });
+    relay(response, reply);
+  });
+
+  for (const action of ["update", "remove"] as const) {
+    app.post(`/api/v1/admin/remote/ddns/${action}`, requireAdmin, context.requireElevated, async (request, response) => {
+      const reply = await ask(response, "POST", `/v1/remote/ddns/${action}`, {});
+      if (!reply) return;
+      audit.record({ action: `remote.ddns.${action}`, outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request) });
+      relay(response, reply);
+    });
+  }
 }

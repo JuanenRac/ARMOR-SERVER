@@ -40,6 +40,8 @@ export type ArmorConfig = {
   remoteSessionTtlMs: number;
   remoteIdleMs: number;
   elevationMs: number;
+  /** Tell the places the alarms go to when someone signs in from outside the house from a place that person had not signed in from before. */
+  loginAlerts: boolean;
   /** What a session from outside the house may do: everything (`full`, the critical things after a new proof), operate the alarm and look (`operate`) or only look (`view`). */
   remotePolicy: "full" | "operate" | "view";
   studioOrigins: string[];
@@ -317,6 +319,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     totpPolicy: oneOf(env, "ARMOR_TOTP_REQUIRED", ["off", "remote", "always"] as const, "off"),
     remoteSessionTtlMs: integer(env, "ARMOR_REMOTE_SESSION_TTL_MS", 12 * 3_600_000, 60_000, 30 * 86_400_000),
     remoteIdleMs: integer(env, "ARMOR_REMOTE_IDLE_MS", 30 * 60_000, 60_000, 7 * 86_400_000),
+    loginAlerts: env.ARMOR_LOGIN_ALERTS !== "0",
     elevationMs: integer(env, "ARMOR_ELEVATION_MS", 5 * 60_000, 30_000, 3_600_000),
     remotePolicy: oneOf(env, "ARMOR_REMOTE_POLICY", ["full", "operate", "view"] as const, "full"),
     studioOrigins: originsWithStudioPort([...origins], saved.studio_port),
