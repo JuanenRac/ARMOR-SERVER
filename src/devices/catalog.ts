@@ -71,7 +71,7 @@ export type DeviceState = Record<string, StateValue>;
 const FIELDS: Record<string, { type: "boolean" } | { type: "number"; min: number; max: number }> = {
   triggered: { type: "boolean" }, open: { type: "boolean" }, on: { type: "boolean" }, locked: { type: "boolean" }, tamper: { type: "boolean" },
   temperature: { type: "number", min: -80, max: 200 }, humidity: { type: "number", min: 0, max: 100 }, battery: { type: "number", min: 0, max: 100 },
-  brightness: { type: "number", min: 0, max: 100 }, voltage_v: { type: "number", min: 0, max: 1000 }, current_a: { type: "number", min: 0, max: 1000 }, power_w: { type: "number", min: 0, max: 100000 }, energy_kwh: { type: "number", min: 0, max: 10_000_000 },
+  brightness: { type: "number", min: 0, max: 100 }, voltage_v: { type: "number", min: 0, max: 1000 }, current_a: { type: "number", min: 0, max: 1000 }, power_w: { type: "number", min: -100000, max: 100000 }, energy_kwh: { type: "number", min: 0, max: 10_000_000 },
   lux: { type: "number", min: 0, max: 200000 }, rssi: { type: "number", min: -150, max: 0 }, co_ppm: { type: "number", min: 0, max: 10000 },
 };
 export const STATE_FIELDS = Object.keys(FIELDS);

@@ -17,6 +17,15 @@ export type PublicCamera = Omit<CameraConnection, "secrets"> & { username: strin
 export type CameraView = Omit<PublicCamera, "username">;
 
 export const CAMERA_ID = /^[A-Za-z0-9._-]{3,80}$/;
+
+/**
+ * On many cheap cameras the address of the snapshot carries the login (http://user:pass@cam/snapshot.cgi, or ?user=...&pwd=...). The server never uses that address for anything, and
+ * what it stored in clear was handed to every viewer and written in the installation file. The login of a camera belongs in its credentials (the encrypted ones); an address
+ * that carries one is refused, and one stored before is shown with the login hidden.
+ */
+const LOGIN_PARAMETER = /([?&](?:user|username|usr|login|pass|passwd|password|pwd|token|key|secret|auth)=)[^&\s]*/gi;
+export const hideSnapshotLogin = (url: string): string => url.replace(/(:\/\/)[^\/\s@]*@/, "$1***@").replace(LOGIN_PARAMETER, "$1***");
+const snapshotHasLogin = (url: string): boolean => hideSnapshotLogin(url) !== url;
 const HOSTNAME = /^[A-Za-z0-9.-]+$/;
 
 export const validPort = (value: unknown, fallback: number): number =>
@@ -25,7 +34,7 @@ export const validPort = (value: unknown, fallback: number): number =>
 export function cameraPublic(camera: CameraConnection, ffmpegConfigured: boolean): PublicCamera {
   const { secrets, ...rest } = camera;
   const hasCredentials = Boolean(secrets?.username && secrets.password);
-  return { ...rest, username: secrets?.username ?? "", hasCredentials, liveVideoAvailable: Boolean(ffmpegConfigured && hasCredentials && camera.rtspPath) };
+  return { ...rest, snapshotUrl: hideSnapshotLogin(rest.snapshotUrl), username: secrets?.username ?? "", hasCredentials, liveVideoAvailable: Boolean(ffmpegConfigured && hasCredentials && camera.rtspPath) };
 }
 
 export function cameraView(camera: CameraConnection, ffmpegConfigured: boolean): CameraView {
@@ -55,8 +64,12 @@ export function parseCameraInput(body: unknown, existing?: CameraConnection): Ca
             : undefined;
   if ((username || password) && !secrets) return null;
   if (username.length > 128 || password.length > 256) return null;
+  // The form shows the address with its login hidden: sent back untouched, it means "keep what is stored"; a new address that carries a login is refused.
+  let snapshotUrl = text("snapshotUrl").slice(0, 500);
+  if (snapshotUrl.includes("***")) snapshotUrl = existing && hideSnapshotLogin(existing.snapshotUrl) === snapshotUrl ? existing.snapshotUrl : "";
+  else if (snapshotHasLogin(snapshotUrl)) return null;
   return {
-    id, name: name.slice(0, 80), host, snapshotUrl: text("snapshotUrl").slice(0, 500),
+    id, name: name.slice(0, 80), host, snapshotUrl,
     rtspPath: text("rtspPath").replace(/^\/+/, "").slice(0, 500),
     previewPath: text("previewPath").replace(/^\/+/, "").slice(0, 500),
     onvifPort: validPort(input.onvifPort, 80), rtspPort: validPort(input.rtspPort, 554),

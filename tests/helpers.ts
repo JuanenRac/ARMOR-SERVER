@@ -5,6 +5,9 @@ import { createArmorApp, type ArmorApp } from "../src/app.js";
 import type { ContextOverrides } from "../src/context.js";
 import { readConfig, type ArmorConfig } from "../src/config.js";
 
+// The energy of a "day" is counted in the time zone of the installation; the tests count it in UTC so that they mean the same on every machine.
+process.env.ARMOR_TZ = "UTC";
+
 export const SECRETS = {
   ARMOR_INGEST_TOKEN: "i".repeat(32),
   ARMOR_CONTROL_TOKEN: "c".repeat(32),

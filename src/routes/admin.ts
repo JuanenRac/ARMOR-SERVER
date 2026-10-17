@@ -138,8 +138,12 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
       if (removed.status >= 300) return relay(response, removed);
     }
     const created = await ask(response, "POST", "/v1/mqtt/accounts", { role: identity[0], name: nodeId });
-    if (!created) return;
-    if (created.status >= 300) return relay(response, created);
+    if (!created || created.status >= 300) {
+      // The old account was removed first (the agent has no rotate): if the new one could not be made the node has no access until this is tried again. Said in the trail, so that it is not found out later.
+      if (existing) audit.record({ action: "admin.node.provision", outcome: "failed", actor: actor(request), target: nodeId, detail: "the old account was removed and the new one could not be made: provision the node again" });
+      if (!created) return;
+      return relay(response, created);
+    }
     const account = { user: String(created.body.user), password: String(created.body.password) };
     audit.record({ action: "admin.node.provision", outcome: "allowed", actor: actor(request), target: nodeId, detail: existing ? "account renewed" : "account made" });
     response.setHeader("Cache-Control", "no-store");

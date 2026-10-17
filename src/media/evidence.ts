@@ -242,8 +242,14 @@ export class EvidenceLibrary {
       this.#active.delete(camera.id);
       try {
         // Some Windows FFmpeg builds exit non-zero after a deliberate stop even
-        // with a valid MP4 trailer, so the finished file is the evidence.
-        if ((!active.stopRequested && code !== 0) || !fs.existsSync(temporaryPath) || fs.statSync(temporaryPath).size < 4096) {
+        // with a valid MP4 trailer, so the finished file is the evidence. The same holds when
+        // the stop was not asked for (the camera was unplugged, the connection reset): the
+        // MP4 is fragmented and playable however it ends, and the minutes before a camera
+        // is torn off the wall are the most valuable ones - they are kept, not deleted.
+        if (!active.stopRequested && code !== 0 && fs.existsSync(temporaryPath) && fs.statSync(temporaryPath).size >= 4096) {
+          this.#options.warn?.(`ARMOR_RECORDING=INTERRUPTED camera=${camera.id} exit=${code ?? "unknown"} detail=${errorOutput.replace(/rtsp:\/\/[^\s@]+@/gi, "rtsp://***@").slice(0, 400)}; the part recorded is kept`);
+        }
+        if (!fs.existsSync(temporaryPath) || fs.statSync(temporaryPath).size < 4096) {
           this.#options.warn?.(`ARMOR_RECORDING=FAILED camera=${camera.id} exit=${code ?? "unknown"} detail=${errorOutput.replace(/rtsp:\/\/[^\s@]+@/gi, "rtsp://***@").slice(0, 700)}`);
           throw mediaError("recording could not be finalized");
         }

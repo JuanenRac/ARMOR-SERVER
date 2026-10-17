@@ -53,14 +53,25 @@ export type ArmorApp = { server: Server; context: AppContext; close(): Promise<v
 const headerReader = (request: IncomingMessage) => ({ header: (name: string) => { const value = request.headers[name.toLowerCase()]; return Array.isArray(value) ? value[0] : value; } });
 
 export function createArmorApp(config: ArmorConfig, version: string, overrides: ContextOverrides = {}): ArmorApp {
-  const clients = new WebSocketServer({ noServer: true });
+  // The server never reads what a client sends over the socket, so it accepts almost nothing of it (the default is 100 MiB, buffered).
+  const clients = new WebSocketServer({ noServer: true, maxPayload: 1024 });
+  /** A client that is too far behind (its network is slow, or it stopped reading) is dropped rather than made to wait in memory: the next state it would get is only newer than the last. */
+  const MAX_BUFFERED_BYTES = 2 * 1024 * 1024;
   const broadcast = (state: SystemState) => {
     const line = JSON.stringify({ type: "state", state });
-    for (const client of clients.clients) if (client.readyState === client.OPEN) client.send(line);
+    for (const client of clients.clients) {
+      if (client.readyState !== client.OPEN) continue;
+      if (client.bufferedAmount > MAX_BUFFERED_BYTES) { client.terminate(); continue; }
+      client.send(line);
+    }
   };
+  /** Who each open socket was admitted as. A session can end while the socket stays open (the user was removed, their role or password changed, the session expired). */
+  const admitted = new WeakMap<object, { reader: ReturnType<typeof headerReader>; viaToken: boolean; alive: boolean }>();
   const context = createContext(config, { ...overrides, broadcast });
   const app = express();
   app.disable("x-powered-by");
+  // Behind a reverse proxy the client is whoever the proxy says in X-Forwarded-For - but only a proxy that was named (ARMOR_TRUST_PROXY) is believed.
+  if (config.trustProxy !== false) app.set("trust proxy", config.trustProxy);
   app.use((_request, response, next) => {
     response.set({ "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Cross-Origin-Resource-Policy": "same-site" });
     next();
@@ -130,8 +141,28 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     const originOk = !origin || (() => { try { return new URL(origin).host === request.headers.host; } catch { return false; } })() || config.studioOrigins.includes(origin);
     const allowed = path === "/api/v1/events" && (hasBearer(reader, config.controlToken) || (originOk && context.operatorAuthorized(reader)));
     if (!allowed) return socket.destroy();
-    return clients.handleUpgrade(request, socket, head, client => clients.emit("connection", client, request));
+    const viaToken = hasBearer(reader, config.controlToken);
+    return clients.handleUpgrade(request, socket, head, client => {
+      admitted.set(client, { reader, viaToken, alive: true });
+      client.on("pong", () => { const entry = admitted.get(client); if (entry) entry.alive = true; });
+      client.on("message", () => client.close(1003, "this socket only listens"));
+      client.on("error", () => client.terminate());
+      clients.emit("connection", client, request);
+    });
   });
+  // Every half minute: a socket that did not answer the last ping is gone, and one admitted by a session that no longer stands is closed (4401), so a user who was removed stops
+  // seeing the live state with a tab that is still open.
+  const watchSockets = setInterval(() => {
+    for (const client of clients.clients) {
+      const entry = admitted.get(client);
+      if (!entry) continue;
+      if (!entry.alive) { client.terminate(); continue; }
+      if (!entry.viaToken && !context.operatorAuthorized(entry.reader)) { client.close(4401, "the session ended"); continue; }
+      entry.alive = false;
+      try { client.ping(); } catch { client.terminate(); }
+    }
+  }, 30_000);
+  watchSockets.unref();
 
   const mqtt = config.mqtt ? attachMqtt(context.store, config.mqtt.url, config.mqtt.username, config.mqtt.password, context.ingestLog) : null;
   /** A message of a node that was refused: said in the log and kept (with the start of what was sent) for Studio's System menu. */
@@ -146,7 +177,8 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       prefix: config.haDiscovery.prefix, solar: () => context.solar.list(), electrical: () => context.electricalNodes.list(), alarm: () => context.alarmNodes.list(),
       publish: (topic, payload) => { if (!mqtt.connected) throw new Error("the MQTT broker is not connected"); mqtt.publish(topic, payload, { qos: 1, retain: true }); }, warn: message => console.warn(message),
     });
-    mqtt.on("connect", () => { discovery.forget(); discovery.round(true); });
+    // Every time the broker is (re)connected the rounds run again: they were stopped when it dropped, and a restart of the broker loses what was retained in memory.
+    mqtt.on("connect", () => { discovery.forget(); discovery.round(true); discovery.start(); });
     discovery.start();
     mqtt.on("close", () => discovery.stop());
   }
@@ -254,7 +286,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   let sweepFailing = false;
   const sweeper = setInterval(() => {
     try {
-      context.escalator.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.networkNodes.sweep();
+      context.escalator.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.reportSilentNodes(); context.networkNodes.sweep();
       sweepFailing = false;
     } catch (error) {
       if (!sweepFailing) console.warn("ARMOR_SWEEP=FAILED", error instanceof Error ? error.message : "unknown error");
@@ -273,10 +305,11 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     server, context,
     close: async () => {
       clearInterval(sweeper);
+      clearInterval(watchSockets);
       clearInterval(historySaver);
       saveHistory();
       for (const timer of watchdogs) clearTimeout(timer);
-      context.store.flush();
+      context.store.flush(); context.knownNodes.flush();
       context.studioSessions.flush();
       clearTimeout(resume); context.devices.flush(); context.alarms.flush(); context.automations.close();
       await context.evidence.stopAll();   // a recording that is running is closed, not cut off

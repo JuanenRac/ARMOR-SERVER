@@ -8,7 +8,12 @@ import { alertTitle, type AlertLanguage } from "./alert_text.js";
 import type { AlertMessage } from "./notify.js";
 
 export type Attempt = { ok: boolean; /** What happened, without any secret. */ detail: string; /** A client error will not get better by trying again. */ final?: boolean };
-export type NotifyChannel = { id: "telegram" | "homeassistant" | "ntfy" | "fcm"; deliver(message: AlertMessage, text: string, language: AlertLanguage, signal: AbortSignal): Promise<Attempt> };
+export type NotifyChannel = {
+  id: "telegram" | "homeassistant" | "ntfy" | "fcm";
+  /** True for a place that can carry a SILENT alarm (a duress disarm): somewhere a person standing at the panel, or holding the phone that disarmed, cannot see or hear it. */
+  quiet?: true;
+  deliver(message: AlertMessage, text: string, language: AlertLanguage, signal: AbortSignal): Promise<Attempt>;
+};
 
 export type TelegramOptions = { token: string; chatIds: string[]; api?: string; fetchImpl?: typeof fetch };
 export type NtfyOptions = { /** The address of the topic, such as https://ntfy.sh/my-armor-topic or the one of a self-hosted ntfy. */ url: string; token?: string; fetchImpl?: typeof fetch };
@@ -31,7 +36,7 @@ export function telegramChannel(options: TelegramOptions): NotifyChannel {
   const api = (options.api ?? "https://api.telegram.org").replace(/\/$/, "");
   const delivered = new WeakMap<object, Set<string>>();
   return {
-    id: "telegram",
+    id: "telegram", quiet: true,
     async deliver(message, text, language, signal) {
       const got = delivered.get(message) ?? new Set<string>();
       delivered.set(message, got);
@@ -82,7 +87,7 @@ export function homeAssistantChannel(options: HomeAssistantOptions): NotifyChann
 export function ntfyChannel(options: NtfyOptions): NotifyChannel {
   const doFetch = options.fetchImpl ?? fetch;
   return {
-    id: "ntfy",
+    id: "ntfy", quiet: true,
     async deliver(message, text, language, signal) {
       try {
         const priority = message.severity === "critical" || message.event === "alarm.escalated" ? "5" : message.severity === "warning" ? "3" : "4";

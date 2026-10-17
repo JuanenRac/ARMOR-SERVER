@@ -269,8 +269,20 @@ test("disarming over HTTP asks for the PIN: wrong, locked, duress with a silent 
     assert.equal(((await api(running.base, guardCookie, "GET", "/api/v1/alarms")).body.active as unknown[]).length, 0, "the right PIN raises nothing");
     await api(running.base, guardCookie, "POST", "/api/v1/mode", { mode: "armed" });
     assert.equal((await post("9753")).status, 200, "the duress PIN disarms as well");
-    const active = (await api(running.base, guardCookie, "GET", "/api/v1/alarms")).body.active as Array<{ code: string; severity: string }>;
-    assert.deepEqual(active.map(alarm => [alarm.code, alarm.severity]), [["duress_disarm", "critical"]]);
+    // The duress alarm is SILENT: not on the list of an operator, not on the summary a wall panel reads, not in the history any console reads, not counted by the voice or the system;
+    // the administrator, who answers for the house, does see it and is the only one who can acknowledge it.
+    const operatorSees = (await api(running.base, guardCookie, "GET", "/api/v1/alarms")).body as { active: unknown[]; recent: unknown[] };
+    assert.deepEqual([operatorSees.active, operatorSees.recent], [[], []], "an operator does not see it");
+    const summary = (await api(running.base, guardCookie, "GET", "/api/v1/panel/summary")).body as { alarms: { active: number; items: unknown[] } };
+    assert.deepEqual([summary.alarms.active, summary.alarms.items], [0, []], "the wall panel does not see it");
+    const events = (await api(running.base, guardCookie, "GET", "/api/v1/history?type=alarm")).body as { events: Array<{ type: string }> };
+    assert.equal(events.events.filter(event => event.type === "alarm").length, 0, "it is not in the history");
+    assert.equal(running.app.context.alarms.active().length, 0, "nor on the default list");
+    const adminSees = (await api(running.base, cookie, "GET", "/api/v1/alarms")).body.active as Array<{ id: string; code: string; severity: string; silent?: boolean }>;
+    assert.deepEqual(adminSees.map(alarm => [alarm.code, alarm.severity, alarm.silent]), [["duress_disarm", "critical", true]]);
+    assert.equal((await api(running.base, guardCookie, "POST", `/api/v1/alarms/${adminSees[0]!.id}/acknowledge`)).status, 404, "an operator cannot acknowledge what he cannot see");
+    assert.equal((await api(running.base, guardCookie, "POST", "/api/v1/alarms/acknowledge")).body.acknowledged, 0, "acknowledging everything does not touch it");
+    assert.equal((await api(running.base, cookie, "POST", `/api/v1/alarms/${adminSees[0]!.id}/acknowledge`)).status, 200);
   } finally { await running.stop(); }
 });
 

@@ -57,13 +57,24 @@ export class CameraVault {
   list(): CameraConnection[] { return [...this.#cameras.values()]; }
   get(id: string): CameraConnection | undefined { return this.#cameras.get(id); }
 
-  save(camera: CameraConnection): void { this.#cameras.set(camera.id, camera); this.#persist(); }
-  remove(id: string): boolean { const removed = this.#cameras.delete(id); if (removed) this.#persist(); return removed; }
+  save(camera: CameraConnection): void {
+    this.#cameras.set(camera.id, camera);
+    if (camera.secrets) this.#unreadable.delete(camera.id);   // new credentials replace the ones that could not be opened
+    this.#persist();
+  }
+  remove(id: string): boolean { const removed = this.#cameras.delete(id); this.#unreadable.delete(id); if (removed) this.#persist(); return removed; }
+
+  /**
+   * The encrypted credentials of the cameras that could not be opened with the key in use (the key was changed by mistake, a backup came back with another .env): they are kept as they
+   * are and written back with the rest, so that putting the right key back brings them back. Rewriting the file without them lost them for good.
+   */
+  readonly #unreadable = new Map<string, StoredCamera["secrets"]>();
 
   #persist(): void {
     const stored: StoredCamera[] = this.list().map(camera => {
       const { secrets, ...rest } = camera;
-      return { ...rest, ...(secrets ? { secrets: encryptSecrets(secrets, this.#key) } : {}) };
+      const kept = secrets ? undefined : this.#unreadable.get(camera.id);
+      return { ...rest, ...(secrets ? { secrets: encryptSecrets(secrets, this.#key) } : kept ? { secrets: kept } : {}) };
     });
     fs.mkdirSync(path.dirname(this.#file), { recursive: true });
     const temporary = `${this.#file}.tmp`;
@@ -89,11 +100,15 @@ export class CameraVault {
         }
         // Keep the camera without its credentials rather than dropping it: the
         // operator can enter the password again.
-        if (!plain) unreadable += 1;
+        if (!plain) { unreadable += 1; this.#unreadable.set(stored.id, secrets); }
       }
       this.#cameras.set(stored.id, { ...rest, secrets: plain });
     }
     if (migrated) { this.#persist(); this.#warn(`ARMOR_CAMERA_CONFIG_MIGRATED count=${migrated}`); }
-    if (unreadable) this.#warn(`ARMOR_CAMERA_CONFIG_UNREADABLE count=${unreadable} (the camera key changed; re-enter those passwords)`);
+    if (unreadable) {
+      // A copy of the file as it is, once, before anything can rewrite it: the original ciphertext is also kept in memory and written back, but a copy costs nothing.
+      try { fs.copyFileSync(this.#file, `${this.#file}.unreadable-${new Date().toISOString().replace(/[:.]/g, "")}`); } catch { /* the copy is a courtesy */ }
+      this.#warn(`ARMOR_CAMERA_CONFIG_UNREADABLE count=${unreadable} (the camera key changed; put the right key back, or re-enter those passwords)`);
+    }
   }
 }

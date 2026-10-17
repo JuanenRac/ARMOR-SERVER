@@ -5,11 +5,12 @@ field node, its last observation.
 
 ## Alert level
 
-`alertLevelFor(mode, targets)`: no target is `normal`, any target is `review`, and two or more targets
-while `armed` is `high`. Two rules refine it:
+`alertLevelFor(mode, targets, minTargets)`: no target is `normal`, any target is `review`, and `minTargets` or more
+targets while `armed` is `high`. The server passes `ARMOR_ALERT_MIN_TARGETS` (1 unless the installation sets another
+value: one person is enough), so a single target while armed is `high`. Two rules refine it:
 
-* **Dwell time** (`dwell_ms`, default 2000 ms): `high` is reached only when the two-target condition
-  has held continuously for that long; until then the level stays `review`. The timer restarts when the
+* **Dwell time** (`dwell_ms`, default 2000 ms): `high` is reached only when the condition
+  (enough targets while armed) has held continuously for that long; until then the level stays `review`. The timer restarts when the
   condition breaks.
 * **Ignore zones**: a target inside a rectangular zone (optionally for one node and sensor) is not
   counted.

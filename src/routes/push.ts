@@ -6,7 +6,7 @@
 import type { Express, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
-import { FcmInvalid } from "../push_fcm.js";
+import { FcmFull, FcmInvalid } from "../push_fcm.js";
 
 export function registerPushRoutes(app: Express, context: AppContext): void {
   const { fcmDevices, requireOperator, requireAdmin, audit, studioUser } = context;
@@ -19,10 +19,11 @@ export function registerPushRoutes(app: Express, context: AppContext): void {
   app.post("/api/v1/push/register", requireOperator, limit, (request, response) => {
     if (!context.fcmEnabled) return response.status(409).json({ error: "push_off" });
     try {
-      const added = fcmDevices.add(tokenOf(request.body));
+      const added = fcmDevices.add(tokenOf(request.body), who(request) ?? "");
       if (added) audit.record({ actor: who(request), action: "push.register", outcome: "allowed", target: "a phone" });
       return response.status(added ? 201 : 200).json({ registered: true, devices: fcmDevices.count() });
     } catch (error) {
+      if (error instanceof FcmFull) return response.status(409).json({ error: "push_full" });
       if (error instanceof FcmInvalid) return response.status(400).json({ error: "invalid_token" });
       throw error;
     }

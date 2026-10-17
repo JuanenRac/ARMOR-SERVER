@@ -87,6 +87,8 @@ export class AutomationEngine {
   #automations = new Map<string, Automation>();
   readonly #recent = new Map<string, number[]>();
   readonly #timers = new Set<NodeJS.Timeout>();
+  /** The timer of each pending reversal, by key: a second trigger replaces it, so the first cannot switch the thing back before the new time is up. */
+  readonly #reversalTimers = new Map<string, NodeJS.Timeout>();
   /** The "switch it back after N seconds" that are still to be done: kept in the file, so that a restart in between does not leave a siren or a light on for ever. */
   readonly #pending = new Map<string, PendingReversal>();
   #saveTimer: NodeJS.Timeout | undefined;
@@ -121,8 +123,11 @@ export class AutomationEngine {
     const key = `${entry.automation_id}:${entry.device_id}`;
     this.#pending.set(key, entry);
     this.#save();
+    const earlier = this.#reversalTimers.get(key);
+    if (earlier) { clearTimeout(earlier); this.#timers.delete(earlier); }
     const timer = setTimeout(() => {
       this.#timers.delete(timer);
+      this.#reversalTimers.delete(key);
       this.#pending.delete(key);
       this.#save();
       const automation = this.#automations.get(entry.automation_id) ?? ({ id: entry.automation_id, name: entry.automation_id, enabled: true, trigger: { type: "mode", mode: "armed" }, when_mode: "any", actions: [], runs: 0 } as unknown as Automation);
@@ -131,6 +136,7 @@ export class AutomationEngine {
     }, waitMs);
     timer.unref();
     this.#timers.add(timer);
+    this.#reversalTimers.set(key, timer);
   }
 
   #save(): void {
@@ -149,7 +155,7 @@ export class AutomationEngine {
     } catch (error) { this.#options.warn?.(`the automations file could not be written: ${(error as Error).message}`); }
   }
 
-  close(): void { for (const timer of this.#timers) clearTimeout(timer); this.#timers.clear(); this.flush(); }
+  close(): void { for (const timer of this.#timers) clearTimeout(timer); this.#timers.clear(); this.#reversalTimers.clear(); this.flush(); }
 
   list(): Automation[] { return [...this.#automations.values()]; }
   get(id: string): Automation | undefined { return this.#automations.get(id); }
@@ -243,6 +249,8 @@ export class AutomationEngine {
     }
   }
   handleAlarm(alarm: Alarm): void {
+    // A silent alarm (a duress disarm) sets nothing off: a siren or a light that answers it would tell whoever is forcing the person that it has been noticed.
+    if (alarm.silent) return;
     this.#fire(a => a.trigger.type === "alarm" && (!a.trigger.severity || a.trigger.severity === alarm.severity) && (!a.trigger.source_type || a.trigger.source_type === alarm.source.type) && (!a.trigger.source_id || a.trigger.source_id === alarm.source.id));
   }
   handleMode(mode: SecurityMode): void { this.#fire(a => a.trigger.type === "mode" && a.trigger.mode === mode); }

@@ -48,6 +48,12 @@ export type DeviceChange = {
 const TOPIC = /^[A-Za-z0-9_\-./+#$ ]{1,200}$/;
 const validTopic = (topic: unknown, allowWildcards = false): topic is string =>
   typeof topic === "string" && TOPIC.test(topic) && !topic.startsWith("$") && (allowWildcards || !/[+#]/.test(topic)) && !topic.includes("//");
+/**
+ * The topics of the A.R.M.O.R. nodes and of the server itself (armor/alarm, armor/electrical, armor/node, armor/server, armor/network, armor/solar) and the discovery of Home Assistant are
+ * not for a "device": a plug whose command topic is armor/alarm/<n>/command would let any operator disarm a panel without a PIN, and one on armor/server/alert would inject false
+ * alarms. Only armor/device/# (what the registry itself uses) and the topics of other makers (zigbee2mqtt/..., tasmota/..., shellies/...) are for devices.
+ */
+const reservedTopic = (topic: string): boolean => /^(armor\/(?!device\/)|homeassistant\/)/i.test(topic);
 const text = (value: unknown, max: number): string => (typeof value === "string" ? value.trim().slice(0, max) : "");
 const payloadWord = (value: unknown): string | undefined => (typeof value === "string" && value.length > 0 && value.length <= 200 ? value : undefined);
 
@@ -116,7 +122,9 @@ export class DeviceRegistry {
     let source: DeviceSource;
     if (src.type === "mqtt") {
       if (!validTopic(src.topic)) throw new DeviceError("invalid_topic", "the state topic is not a valid MQTT topic");
+      if (reservedTopic(src.topic)) throw new DeviceError("reserved_topic", "that topic belongs to the A.R.M.O.R. nodes or to Home Assistant, not to a device");
       if (src.availability_topic !== undefined && src.availability_topic !== "" && !validTopic(src.availability_topic)) throw new DeviceError("invalid_topic", "the availability topic is not a valid MQTT topic");
+      if (typeof src.availability_topic === "string" && reservedTopic(src.availability_topic)) throw new DeviceError("reserved_topic", "that topic belongs to the A.R.M.O.R. nodes or to Home Assistant, not to a device");
       const map = cleanMap(src.map);
       source = { type: "mqtt", topic: src.topic, ...(map && map.length ? { map } : {}), ...(src.availability_topic ? { availability_topic: src.availability_topic as string } : {}) };
     } else source = { type: "push" };
@@ -124,6 +132,7 @@ export class DeviceRegistry {
     const c = (input.commands ?? {}) as { mqtt?: Record<string, unknown>; http?: Record<string, unknown> };
     if (c.mqtt && c.mqtt.topic !== undefined && c.mqtt.topic !== "") {
       if (!validTopic(c.mqtt.topic)) throw new DeviceError("invalid_topic", "the command topic is not a valid MQTT topic");
+      if (reservedTopic(c.mqtt.topic)) throw new DeviceError("reserved_topic", "that topic belongs to the A.R.M.O.R. nodes or to Home Assistant, not to a device");
       commands.mqtt = { topic: c.mqtt.topic, ...(payloadWord(c.mqtt.on) ? { on: payloadWord(c.mqtt.on) } : {}), ...(payloadWord(c.mqtt.off) ? { off: payloadWord(c.mqtt.off) } : {}), ...(payloadWord(c.mqtt.toggle) ? { toggle: payloadWord(c.mqtt.toggle) } : {}), ...(c.mqtt.assume_state === true ? { assume_state: true } : {}) };
     }
     if (c.http) {

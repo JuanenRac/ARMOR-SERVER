@@ -23,9 +23,9 @@ export const USERNAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._@-]{2,39}$/;
 export const MAX_USERS = 50;
 const MAX_PASSWORD_LENGTH = 200;
 export const PIN_PATTERN = /^[0-9]{4,10}$/;
-/** Wrong PINs in a row, and how long the next tries are refused: a minute, five, fifteen, then fifteen again. */
+/** Wrong PINs in a row, and how long the next tries are refused: a minute, five, fifteen, then an hour every time. The count is kept on disk: a restart is not a way round it. */
 const PIN_FAILS_BEFORE_LOCK = 3;
-const PIN_LOCKS_MS = [60_000, 300_000, 900_000];
+const PIN_LOCKS_MS = [60_000, 300_000, 900_000, 3_600_000];
 
 /** A rule the request broke: `code` is stable for clients, `status` is the HTTP answer. */
 export class UserError extends Error {
@@ -61,6 +61,7 @@ export class UserStore {
   constructor(options: UserStoreOptions) {
     this.#options = options;
     this.#load();
+    this.#loadPinTries();
     this.#seed();
   }
 
@@ -119,6 +120,30 @@ export class UserStore {
   #setPassword(user: UserRecord, password: string): void {
     const salt = randomBytes(16);
     user.salt = salt.toString("base64"); user.hash = hash(password, salt).toString("base64"); user.updatedAt = this.#now();
+  }
+
+  /** Where the count of wrong PINs is kept: beside the users file. A power cut is how an intruder would try to get round the lock, so the count survives a restart. */
+  get #pinTriesFile(): string { return path.join(path.dirname(this.#options.file), "pin-tries.json"); }
+
+  #loadPinTries(): void {
+    try {
+      const saved = JSON.parse(fs.readFileSync(this.#pinTriesFile, "utf8")) as { tries?: Record<string, { fails?: unknown; locks?: unknown; until?: unknown }> };
+      for (const [id, item] of Object.entries(saved.tries ?? {})) {
+        if (!this.#users.some(user => user.id === id)) continue;
+        const fails = Number(item?.fails), locks = Number(item?.locks), until = Number(item?.until);
+        if ([fails, locks, until].every(Number.isFinite) && fails >= 0 && locks >= 0) this.#pinTries.set(id, { fails: Math.min(fails, PIN_FAILS_BEFORE_LOCK), locks: Math.min(locks, 1000), until });
+      }
+    } catch { /* no wrong PIN is remembered */ }
+  }
+
+  #savePinTries(): void {
+    try {
+      const file = this.#pinTriesFile;
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      const temporary = `${file}.${process.pid}.tmp`;
+      fs.writeFileSync(temporary, JSON.stringify({ schema: 1, tries: Object.fromEntries(this.#pinTries) }), { encoding: "utf8", mode: 0o600 });
+      durableRename(temporary, file);
+    } catch (error) { this.#options.warn?.(`the count of wrong PINs could not be written: ${(error as Error).message}`); }
   }
 
   #save(): void {
@@ -229,7 +254,7 @@ export class UserStore {
       user.pin = made(pin);
       if (wantsDuress) user.duress = made(duress as string); else delete user.duress;
       user.updatedAt = this.#now();
-      this.#pinTries.delete(id);
+      if (this.#pinTries.delete(id)) this.#savePinTries();
       this.#save();
     } catch (error) { Object.assign(user, keep); throw error; }
     return UserStore.#view(user);
@@ -240,12 +265,12 @@ export class UserStore {
     if (!user) throw new UserError("not_found", "no such user", 404);
     delete user.pin; delete user.duress;
     user.updatedAt = this.#now();
-    this.#pinTries.delete(id);
+    if (this.#pinTries.delete(id)) this.#savePinTries();
     this.#save();
     return UserStore.#view(user);
   }
 
-  /** Checks a PIN typed to disarm. Three wrong ones in a row lock the user for a minute, then five, then fifteen; a right one (either) clears the count. Takes the same work whichever PIN it is. */
+  /** Checks a PIN typed to disarm. Three wrong ones in a row lock the user for a minute, then five, then fifteen, then an hour (the count survives a restart); a right one (either) clears the count. Takes the same work whichever PIN it is. */
   verifyPin(id: string, pin: unknown, nowMs: number = Date.now()): PinResult {
     const user = this.#users.find(item => item.id === id);
     if (!user || !user.pin) return "none";
@@ -259,10 +284,11 @@ export class UserStore {
       return record !== undefined && typed !== "" && expected.length === actual.length && timingSafeEqual(expected, actual);
     };
     const isPin = matches(user.pin), isDuress = matches(user.duress);
-    if (isPin || isDuress) { this.#pinTries.delete(id); return isDuress ? "duress" : "ok"; }
+    if (isPin || isDuress) { if (this.#pinTries.delete(id)) this.#savePinTries(); return isDuress ? "duress" : "ok"; }
     tries.fails += 1;
     if (tries.fails >= PIN_FAILS_BEFORE_LOCK) { tries.until = nowMs + PIN_LOCKS_MS[Math.min(tries.locks, PIN_LOCKS_MS.length - 1)]; tries.locks += 1; tries.fails = 0; }
     this.#pinTries.set(id, tries);
+    this.#savePinTries();
     return tries.until > nowMs ? "locked" : "bad";
   }
 

@@ -4,20 +4,26 @@
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import type { Express } from "express";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { hasBearer } from "../http/auth.js";
 
 export function registerSessionRoutes(app: Express, context: AppContext): void {
   const { config, audit, studioSessions, operatorSessions, requireOperator, users, studioUser } = context;
-  const loginLimit = rateLimit({ windowMs: 15 * 60_000, limit: 12, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "too many Studio login attempts" } });
+  // Twelve tries per person and place, so that someone trying passwords for one account (or a phone with an old password in a loop) does not lock everybody else out, and a wider
+  // limit per place on top, so that trying many accounts from one place is slowed too.
+  const loginLimit = rateLimit({
+    windowMs: 15 * 60_000, limit: 12, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "too many Studio login attempts" },
+    keyGenerator: request => `${ipKeyGenerator(request.ip ?? "")}|${typeof request.body?.username === "string" ? request.body.username.trim().toLowerCase().slice(0, 60) : ""}`,
+  });
+  const placeLimit = rateLimit({ windowMs: 15 * 60_000, limit: 60, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "too many Studio login attempts" }, keyGenerator: request => ipKeyGenerator(request.ip ?? "") });
 
   app.get("/api/v1/studio/session", (request, response) => {
     const user = studioUser(request);
     return response.json({ authenticated: Boolean(user), ...(user ? { user: { id: user.id, username: user.username, role: user.role } } : {}) });
   });
 
-  app.post("/api/v1/studio/session", loginLimit, async (request, response) => {
+  app.post("/api/v1/studio/session", placeLimit, loginLimit, async (request, response) => {
     const username = typeof request.body?.username === "string" ? request.body.username : "";
     const password = typeof request.body?.password === "string" ? request.body.password : "";
     // The same work is done whether or not the user exists, so the response time never reveals which value was wrong.

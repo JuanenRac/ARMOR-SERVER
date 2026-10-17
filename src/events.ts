@@ -18,7 +18,7 @@ export type ArmorEventBody =
   /** A device changed: a binary field (triggered, open, on, locked, tamper) or whether it is online. */
   | { type: "device"; device_id: string; kind: string; field: string; from: boolean | number | null; to: boolean | number }
   /** The life of an alarm: raised, acknowledged by someone, or cleared because its cause ended. */
-  | { type: "alarm"; alarm_id: string; state: "raised" | "acknowledged" | "cleared"; severity: "critical" | "high" | "warning"; source: string; source_type: "node" | "camera" | "device" | "solar" | "electrical" | "network" | "alarm"; code: string };
+  | { type: "alarm"; alarm_id: string; state: "raised" | "acknowledged" | "cleared"; severity: "critical" | "high" | "warning"; source: string; source_type: "node" | "camera" | "device" | "solar" | "electrical" | "network" | "alarm"; code: string; /** A silent alarm: told only to the places nobody at the panel can see, never written in the history (see alarms.ts). */ silent?: true };
 export type ArmorEvent = ArmorEventBody & { id: number; at: string };
 
 const MAX_BYTES = 5 * 1024 * 1024;

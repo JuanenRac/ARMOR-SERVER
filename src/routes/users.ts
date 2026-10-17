@@ -38,9 +38,13 @@ export function registerUserRoutes(app: Express, context: AppContext): void {
   app.patch("/api/v1/users/:id", requireAdmin, (request, response) => {
     const input = body(request), actor = studioUser(request), id = String(request.params.id);
     try {
+      const before = users.get(id)?.username;
       const changed = users.update(id, { username: input.username, password: input.password, role: input.role });
+      if (before && before !== changed.user.username) context.fcmDevices.rename(before, changed.user.username);
       // A different password or role must take effect at once: the user's other sessions end (this one stays when it is your own).
       if (changed.passwordChanged || changed.roleChanged) studioSessions.revokeUser(id, id === actor?.id ? request : undefined);
+      // The phones of a person whose sessions were closed stop receiving the alarms until the app registers again with a new session.
+      if ((changed.passwordChanged || changed.roleChanged) && id !== actor?.id) context.fcmDevices.removeUser(changed.user.username);
       audit.record({ action: "user.update", outcome: "allowed", actor: actor?.username, target: changed.user.username, detail: [input.username !== undefined && "name", changed.passwordChanged && "password", changed.roleChanged && "role"].filter(Boolean).join(",") });
       return response.json(changed.user);
     } catch (error) {
@@ -56,6 +60,7 @@ export function registerUserRoutes(app: Express, context: AppContext): void {
       const target = users.get(id);
       users.remove(id);
       studioSessions.revokeUser(id);
+      if (target) context.fcmDevices.removeUser(target.username);
       audit.record({ action: "user.delete", outcome: "allowed", actor: actor?.username, target: target?.username });
       return response.sendStatus(204);
     } catch (error) {

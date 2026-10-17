@@ -315,6 +315,9 @@ test("the electrical design is kept on the server, apart from the site design, w
 test("electrical devices: a breaker and a meter report voltage, current, power and energy, and switching one that matters asks first", async () => {
   assert.deepEqual(cleanState({ voltage_v: 231.456, current_a: 4.5, power_w: 1040, energy_kwh: 12.3, evil: 1, voltage_v2: 3 }), { voltage_v: 231.46, current_a: 4.5, power_w: 1040, energy_kwh: 12.3 });
   assert.deepEqual(cleanState({ voltage_v: 5000, current_a: -1 }), {});
+  // power is signed: a meter that feeds the grid (panels, a battery) reports a negative one, and the total must see it
+  assert.deepEqual(cleanState({ power_w: -850 }), { power_w: -850 });
+  assert.deepEqual(cleanState({ power_w: -500000 }), {});
   assert.equal(defaultRisk("smart_breaker"), "circuit");
   assert.equal(defaultRisk("smart_plug"), "low");
   const running = await startServer();

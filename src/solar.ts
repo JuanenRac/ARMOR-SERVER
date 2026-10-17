@@ -6,6 +6,7 @@
  */
 import { finite, integer, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
 import { CoarseTier, type Sample } from "./history.js";
+import { dayOf } from "./day.js";
 
 export type SolarMode = "power_on" | "standby" | "line" | "battery" | "fault" | "power_saving" | "shutdown" | "unknown";
 export const SOLAR_MODES: readonly SolarMode[] = ["power_on", "standby", "line", "battery", "fault", "power_saving", "shutdown", "unknown"];
@@ -207,7 +208,7 @@ export type SolarEnergyDay = { date: string; pv_kwh: number; load_kwh: number; b
 /** What is kept of the history of the devices and of the energy between runs. */
 export type SolarHistoryFile = { devices: Record<string, { samples: SolarSample[]; coarse: SolarSample[] }>; energy: Record<string, EnergyDay> };
 const KEEP_ENERGY_DAYS = 400, MAX_ENERGY_GAP_MS = 120_000;
-const dateOf = (ms: number): string => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const dateOf = (ms: number): string => dayOf(ms);
 
 export type SolarStoreOptions = {
   now?: () => number;

@@ -69,7 +69,11 @@ export function registerHistoryRoutes(app: Express, context: AppContext): void {
   app.delete("/api/v1/nodes/:id", requireOperator, (request, response) => {
     const id = String(request.params.id);
     if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id)) return response.status(400).json({ error: "invalid node id" });
-    const removed = store.removeNode(id);
+    // The id can be a radar node, an electrical node, an alarm panel or a network watcher: all of them are forgotten, with their silence.
+    const memory = [store.removeNode(id), context.electricalNodes.remove(id), context.alarmNodes.remove(id), context.networkNodes.remove(id)];
+    const remembered = (["electrical", "alarm", "network"] as const).map(kind => context.knownNodes.forget(kind, id));
+    const removed = [...memory, ...remembered].some(Boolean);
+    context.alarmRules.forgetNode(id);
     audit.record({ action: "node.remove", outcome: removed ? "allowed" : "failed", target: id });
     return removed ? response.sendStatus(204) : response.status(404).json({ error: "unknown node" });
   });

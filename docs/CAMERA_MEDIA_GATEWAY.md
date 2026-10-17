@@ -9,7 +9,7 @@ ARMOR-SERVER; clients receive JSON, MJPEG and files only.
 
 | Action | Needs |
 |---|---|
-| List cameras (`camera-views`, no username) | nothing (local, read-only) |
+| List cameras (`camera-views`, no username) | a signed-in user: an operator, a panel or a viewer (read-only). The snapshot address is shown with any login hidden, and an address that carries one is refused |
 | Configure, remove, discover, PTZ, snapshot, record, list/delete evidence | an operator: the Studio session cookie, an operator session or the operator token |
 | Watch live video (`/cameras/:id/mjpeg`) | an operator **or** a stream ticket issued for that same camera |
 | Get a stream ticket | an operator |

@@ -75,6 +75,8 @@ export function registerSolarRoutes(app: Express, context: AppContext): void {
   app.post("/api/v1/solar/devices/:node/:device/example", requireOperator, (request, response) => {
     const registration = solarRegistry.get(String(request.params.node), String(request.params.device));
     if (!registration) return response.status(404).json({ error: "declare the device first" });
+    // A device that is really reporting keeps its reading, its history and its silence watch: an example would replace the first, wipe the second and stop the third.
+    if (solar.list().some(item => item.node_id === registration.node_id && item.device === registration.device && !item.example)) return response.status(409).json({ error: "the device is reporting for real; an example would replace its reading", code: "real_data" });
     try {
       solar.ingest(exampleReading(registration, Date.now()), { example: true });
       audit.record({ action: "solar.example", outcome: "allowed", actor: actor(request), target: `${registration.node_id}/${registration.device}` });

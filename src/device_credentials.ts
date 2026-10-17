@@ -33,6 +33,8 @@ function open(stored: Stored, key: Buffer): DeviceLogin | undefined {
 
 export class DeviceCredentials {
   readonly #logins = new Map<string, Stored>();
+  /** Logins that could not be opened with the key in use: kept as they are and written back, so that the right key brings them back (rewriting the file without them lost them for good). */
+  readonly #unreadable = new Map<string, Stored>();
   readonly #file: string;
   readonly #key: Buffer;
 
@@ -41,7 +43,7 @@ export class DeviceCredentials {
     this.#key = keyOf(options.secret);
     try {
       const saved = JSON.parse(fs.readFileSync(this.#file, "utf8")) as { logins?: Record<string, Stored> };
-      for (const [id, stored] of Object.entries(saved.logins ?? {})) if (DEVICE.test(id) && open(stored, this.#key)) this.#logins.set(id, stored);   // one that cannot be read is dropped
+      for (const [id, stored] of Object.entries(saved.logins ?? {})) if (DEVICE.test(id)) (open(stored, this.#key) ? this.#logins : this.#unreadable).set(id, stored);   // one that cannot be read now is kept, not used
     } catch { /* no file yet */ }
   }
 
@@ -54,6 +56,7 @@ export class DeviceCredentials {
     if (password.length > 128 || /[\r\n\0]/.test(password)) throw new CredentialsInvalid("the password is at most 128 characters");
     if (!this.#logins.has(deviceId) && this.#logins.size >= 500) throw new CredentialsInvalid("too many devices have a login");
     this.#logins.set(deviceId, seal({ user, password }, this.#key));
+    this.#unreadable.delete(deviceId);
     this.#persist();
   }
 
@@ -72,7 +75,8 @@ export class DeviceCredentials {
 
   remove(deviceId: string): boolean {
     const removed = this.#logins.delete(deviceId);
-    if (removed) this.#persist();
+    const forgotten = this.#unreadable.delete(deviceId);
+    if (removed || forgotten) this.#persist();
     return removed;
   }
 
@@ -81,7 +85,7 @@ export class DeviceCredentials {
   #persist(): void {
     fs.mkdirSync(path.dirname(this.#file), { recursive: true });
     const temporary = `${this.#file}.tmp`;
-    fs.writeFileSync(temporary, JSON.stringify({ schema: 1, logins: Object.fromEntries(this.#logins) }), { encoding: "utf8", mode: 0o600 });
+    fs.writeFileSync(temporary, JSON.stringify({ schema: 1, logins: Object.fromEntries([...this.#unreadable, ...this.#logins]) }), { encoding: "utf8", mode: 0o600 });
     durableRename(temporary, this.#file);
   }
 }

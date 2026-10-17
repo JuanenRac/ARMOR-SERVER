@@ -33,7 +33,7 @@ export type SystemState = { mode: SecurityMode; revision: number; nodes: Record<
 
 type StoredNode = Omit<NodeState, "stale" | "panel"> & { received_at_ms: number; status: NodeStatus; high_since_ms: number | null };
 
-/** `minTargets` targets (2 unless the installation says otherwise) while armed is high, any target is a review, none is normal. */
+/** `minTargets` targets while armed is high, any target is a review, none is normal. This function's own default is 2; the server passes ARMOR_ALERT_MIN_TARGETS, which is 1 unless the installation says otherwise. */
 export const alertLevelFor = (mode: SecurityMode, targetCount: number, minTargets = 2): AlertLevel =>
   targetCount >= minTargets && mode === "armed" ? "high" : targetCount > 0 ? "review" : "normal";
 

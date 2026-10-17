@@ -12,6 +12,8 @@ import { MAX_SITE_BYTES, SiteConflict, SiteInvalid } from "../site.js";
 export function registerAlarmRoutes(app: Express, context: AppContext): void {
   const { alarms, automations, audit, store, site, electrical, devices, requireOperator, studioUser } = context;
   const actor = (request: Parameters<typeof studioUser>[0]): string => studioUser(request)?.username ?? "operator";
+  // The silent alarms (a duress disarm) are seen, acknowledged and deleted by an administrator signed in to Studio, and by nobody else: not an operator, a panel, a viewer or a token.
+  const sees = (request: Parameters<typeof studioUser>[0]): { silent: boolean } => ({ silent: studioUser(request)?.role === "admin" });
   const body = (request: { body?: unknown }): Record<string, unknown> => (typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {});
   const fail = (response: Response, error: unknown) => {
     if (error instanceof AutomationError) return response.status(error.status).json({ error: error.message, code: error.code });
@@ -33,7 +35,7 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
 
   // ---- the mode, from Studio ----
   // Disarming asks for the PIN of the signed-in user (always when the user has one; and, with ARMOR_DISARM_PIN=required, a user without one cannot disarm). The duress PIN disarms like
-  // the right one and raises a critical alarm that tells the other places, in silence. Three wrong PINs lock the user for a minute, then five, then fifteen.
+  // the right one and raises a critical alarm that tells the other places, in silence. Three wrong PINs lock the user for a minute, then five, then fifteen, then an hour.
   app.post("/api/v1/mode", requireOperator, (request, response) => {
     const input = body(request), mode = input.mode, user = studioUser(request);
     if (mode !== "armed" && mode !== "disarmed") return response.status(400).json({ error: "the mode is armed or disarmed", code: "invalid_mode" });
@@ -51,14 +53,15 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
   });
 
   // ---- alarms ----
-  app.get("/api/v1/alarms", requireOperator, (_request, response) => response.json({ active: alarms.active(), recent: alarms.recent() }));
+  app.get("/api/v1/alarms", requireOperator, (request, response) => response.json({ active: alarms.active(sees(request)), recent: alarms.recent(50, sees(request)) }));
   app.post("/api/v1/alarms/acknowledge", requireOperator, (request, response) => {
-    const count = alarms.acknowledgeAll(actor(request));
+    // The wall panel's account proves nobody is standing there (anyone can tap): what it acknowledges stays unverified and a critical alarm keeps being escalated.
+    const count = alarms.acknowledgeAll(actor(request), { verified: studioUser(request)?.role !== "panel" });
     audit.record({ action: "alarm.acknowledge", outcome: "allowed", actor: actor(request), detail: `all (${count})` });
     return response.json({ acknowledged: count });
   });
   app.post("/api/v1/alarms/:id/acknowledge", requireOperator, (request, response) => {
-    const alarm = alarms.acknowledge(String(request.params.id), actor(request));
+    const alarm = alarms.acknowledge(String(request.params.id), actor(request), { ...sees(request), verified: studioUser(request)?.role !== "panel" });
     if (!alarm) return response.status(404).json({ error: "no such alarm", code: "not_found" });
     audit.record({ action: "alarm.acknowledge", outcome: "allowed", actor: actor(request), target: alarm.id });
     return response.json(alarm);
@@ -66,18 +69,18 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
   // Clearing the record is the operator's too (it used to need an administrator and, when the role was missing, silently did nothing): it takes away every alarm
   // somebody has acknowledged - ended or not, since what is being lived with is not news - and leaves the ones nobody has seen.
   app.delete("/api/v1/alarms", requireOperator, (request, response) => {
-    const deleted = alarms.clearAcknowledged();
+    const deleted = alarms.clearAcknowledged(sees(request));
     audit.record({ action: "alarm.clear_record", outcome: "allowed", actor: actor(request), detail: String(deleted) });
     return response.json({ deleted });
   });
   app.delete("/api/v1/alarms/:id", requireOperator, (request, response) => {
     // An alarm that is going on and that nobody has seen is not taken off the list (it would be silenced until its cause ended, with nothing in the history): acknowledge it first.
-    const target = [...alarms.active(), ...alarms.recent()].find(alarm => alarm.id === String(request.params.id));
+    const target = [...alarms.active(sees(request)), ...alarms.recent(50, sees(request))].find(alarm => alarm.id === String(request.params.id));
     if (target && !target.cleared_at && !target.acknowledged_at) {
       audit.record({ action: "alarm.delete", outcome: "denied", actor: actor(request), target: target.id, detail: `${target.code}: not acknowledged` });
       return response.status(409).json({ error: "acknowledge the alarm before taking it off the list", code: "acknowledge_first" });
     }
-    const removed = alarms.remove(String(request.params.id));
+    const removed = alarms.remove(String(request.params.id), sees(request));
     if (!removed) return response.status(404).json({ error: "no such alarm", code: "not_found" });
     audit.record({ action: "alarm.delete", outcome: "allowed", actor: actor(request), target: removed.id, detail: removed.code });
     return response.json(removed);

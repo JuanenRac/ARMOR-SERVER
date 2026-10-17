@@ -54,7 +54,8 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
         const summary = { mode: state.mode, alarms: alarms.active().length, online: nodes.filter(node => node.online).length, nodes: nodes.length };
         executed = true; speech = spokenResult(language, { intent: "status", ...summary }); result = summary;
       } else if (answer.accepted && answer.intent === "silence") {
-        const acknowledged = alarms.acknowledgeAll(actor(request));
+        // A voice command proves nobody either (anybody near the microphone can say it): the alarms leave the unread list but a critical one keeps being escalated.
+        const acknowledged = alarms.acknowledgeAll(actor(request), { verified: false });
         audit.record({ action: "alarm.acknowledge", outcome: "allowed", actor: actor(request), detail: `voice, all (${acknowledged})` });
         executed = true; speech = spokenResult(language, { intent: "silence", acknowledged }); result = { acknowledged };
       } else if (answer.accepted && answer.intent && ANSWERED_HERE.has(answer.intent)) {

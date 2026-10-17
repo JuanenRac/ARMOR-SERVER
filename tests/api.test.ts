@@ -29,11 +29,12 @@ test("health is public and status is readable", async () => {
   const status = await (await call("/api/v1/status", { cookie })).json() as { mode: string };
   assert.equal(status.mode, "disarmed");
   const anonymous = await (await call("/api/v1/info")).json() as Record<string, unknown>;
-  assert.equal(anonymous.version, "test");
+  assert.deepEqual(anonymous, { service: "armor-server" }, "a stranger learns neither the version nor the uptime");
   assert.equal("mode" in anonymous, false);
   assert.equal("live_video" in anonymous, false);
   const info = await (await call("/api/v1/info", { cookie })).json() as { version: string; live_video: boolean; mode: string };
   assert.equal(info.mode, "disarmed");
+  assert.equal(info.version, "test");
   assert.equal(info.live_video, false);
 });
 

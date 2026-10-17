@@ -12,7 +12,7 @@ export class IgnoreZonesInvalid extends Error {}
 
 export type IgnoreZone = { x: number; y: number; w: number; h: number };
 export const MAX_IGNORE_ZONES = 16;
-const CAMERA = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+import { CAMERA_ID } from "./cameras/model.js";
 
 export function parseIgnoreZones(value: unknown): IgnoreZone[] {
   if (!Array.isArray(value)) throw new IgnoreZonesInvalid("zones must be an array");
@@ -36,14 +36,17 @@ export class IgnoreZones {
   constructor(private readonly file: string) {
     try {
       const stored = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
-      for (const [camera, zones] of Object.entries(stored)) if (CAMERA.test(camera)) this.#byCamera.set(camera, parseIgnoreZones(zones));
+      for (const [camera, zones] of Object.entries(stored)) {
+        if (!CAMERA_ID.test(camera)) continue;
+        try { this.#byCamera.set(camera, parseIgnoreZones(zones)); } catch { /* one damaged entry loses only its own camera's zones */ }
+      }
     } catch { this.#byCamera = new Map(); }
   }
 
   get(camera: string): IgnoreZone[] { return (this.#byCamera.get(camera) ?? []).map(zone => ({ ...zone })); }
 
   set(camera: string, value: unknown): IgnoreZone[] {
-    if (!CAMERA.test(camera)) throw new IgnoreZonesInvalid("invalid camera id");
+    if (!CAMERA_ID.test(camera)) throw new IgnoreZonesInvalid("invalid camera id");
     const zones = parseIgnoreZones(value);
     if (zones.length) this.#byCamera.set(camera, zones); else this.#byCamera.delete(camera);
     this.#save();

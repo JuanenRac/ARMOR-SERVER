@@ -133,10 +133,12 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
     if (!command.trim() || command.length > 4000) return response.status(422).json({ error: "invalid_command" });
     const cwd = typeof input.cwd === "string" && input.cwd.startsWith("/") ? input.cwd.slice(0, 400) : "/root";
     const timeout = Math.min(3600, Math.max(1, Number(input.timeout) || 120));
+    // Every command is written down before anything else, with who asked and where; what it printed is not (it may hold a secret). It is written before it is sent: an agent that
+    // does not answer (a timeout, a broken socket) may have run it as root all the same.
+    audit.record({ action: "console.run", outcome: "allowed", actor: actor(request), target: cwd, detail: `requested: ${command.slice(0, 290)}` });
     const reply = await ask(response, "POST", "/v1/console/run", { command, cwd, timeout });
-    if (!reply) return;
-    // Every command is written down before anything else, with who asked and where; what it printed is not (it may hold a secret).
-    audit.record({ action: "console.run", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: cwd, detail: command.slice(0, 300) });
+    if (!reply) { audit.record({ action: "console.run", outcome: "failed", actor: actor(request), target: cwd, detail: "the agent did not answer: the command may have run" }); return; }
+    audit.record({ action: "console.run", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: cwd, detail: `answered ${reply.status}` });
     if (reply.status < 300) unlocked.set(actor(request) ?? "", Date.now() + UNLOCK_MS);   // using it keeps it open
     relay(response, reply);
   });

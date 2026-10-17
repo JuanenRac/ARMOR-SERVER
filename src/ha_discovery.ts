@@ -6,6 +6,7 @@
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import type { AlarmNodeView } from "./alarm.js";
+import { SOLAR_FAULTS } from "./alarms.js";
 import type { ElectricalNodeView } from "./electrical.js";
 import type { SolarDeviceView } from "./solar.js";
 
@@ -38,7 +39,7 @@ function inverter(view: SolarDeviceView): Described {
     measurement("battery_a", "Battery current", "battery_a", "A", "current"), measurement("grid_v", "Grid voltage", "grid_v", "V", "voltage"), measurement("heatsink_c", "Heat sink temperature", "heatsink_c", "°C", "temperature"),
     { component: "sensor", key: "mode", name: "Mode", template: "{{ value_json.mode }}", icon: "mdi:solar-power" },
     { component: "binary_sensor", key: "grid_charging", name: "Charging from the grid", template: "{{ 'ON' if value_json.ac_charging else 'OFF' }}", payloadOn: "ON" },
-    { component: "binary_sensor", key: "fault", name: "Fault", template: "{{ 'ON' if value_json.mode == 'fault' or (value_json.warnings | length) > 0 else 'OFF' }}", payloadOn: "ON", deviceClass: "problem" },
+    { component: "binary_sensor", key: "fault", name: "Fault", template: `{{ 'ON' if value_json.mode == 'fault' or (value_json.warnings | select('in', [${[...SOLAR_FAULTS].map(name => `'${name}'`).join(", ")}]) | list | length) > 0 else 'OFF' }}`, payloadOn: "ON", deviceClass: "problem" },
   ];
   const r = view.reading;
   if (r.kind === "inverter" && typeof r.pv_energy_total_wh === "number") entities.push(measurement("pv_energy_total", "Energy made in all", "pv_energy_total_wh / 1000", "kWh", "energy", "total_increasing"));
@@ -131,15 +132,24 @@ export class DiscoveryPublisher {
   /** One round: what changed since the last one goes out; with `all`, everything does. Returns how many messages were sent. */
   round(all = false): number {
     let sent = 0;
-    for (const message of discoveryMessages(this.options.prefix, this.options.solar(), this.options.electrical(), this.options.alarm())) {
+    const current = discoveryMessages(this.options.prefix, this.options.solar(), this.options.electrical(), this.options.alarm());
+    for (const message of current) {
       if (!all && this.#sent.get(message.topic) === message.payload) continue;
       try { this.options.publish(message.topic, message.payload); this.#sent.set(message.topic, message.payload); sent += 1; }
+      catch (error) { this.options.warn?.(`ARMOR_HA_DISCOVERY=NOT_SENT ${error instanceof Error ? error.message : "unknown error"}`); return sent; }
+    }
+    // What was announced and is not there any more (a node taken away): an empty retained message makes Home Assistant forget the entity instead of showing it unavailable for ever.
+    const still = new Set(current.map(message => message.topic));
+    for (const topic of [...this.#sent.keys()]) {
+      if (still.has(topic)) continue;
+      try { this.options.publish(topic, ""); this.#sent.delete(topic); sent += 1; }
       catch (error) { this.options.warn?.(`ARMOR_HA_DISCOVERY=NOT_SENT ${error instanceof Error ? error.message : "unknown error"}`); return sent; }
     }
     return sent;
   }
   /** Starts the rounds: a quick one every 15 s for what is new, a full one every `everyMs` (ten minutes). */
   start(): void {
+    if (this.#timer) return;   // already running (the broker reconnected: this is called again)
     const full = this.options.everyMs ?? 600_000;
     let lastFull = 0;
     this.#timer = setInterval(() => { const all = Date.now() - lastFull >= full; if (all) lastFull = Date.now(); this.round(all); }, 15_000);

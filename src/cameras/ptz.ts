@@ -84,8 +84,22 @@ async function onvifProfile(camera: CameraConnection): Promise<{ endpoint: strin
   return { endpoint: approvedCameraEndpoint(camera, ptz), token: xmlUnescape(token) };
 }
 
+/** The ONVIF PTZ endpoint and media profile of each camera: a held button repeats the move every second, and asking the camera for its capabilities and profiles each time was three requests for one. */
+const profileCache = new Map<string, { value: { endpoint: string; token: string }; until: number }>();
+const PROFILE_TTL_MS = 10 * 60_000;
+
 async function onvifMove(camera: CameraConnection, command: PtzCommand): Promise<void> {
+  const key = `${camera.id}@${camera.host}:${camera.onvifPort}`;
+  const cached = profileCache.get(key);
+  if (cached && cached.until > Date.now()) {
+    try { await onvifSend(camera, command, cached.value); return; } catch { profileCache.delete(key); }   // it may have changed: ask again once
+  }
   const profile = await onvifProfile(camera);
+  await onvifSend(camera, command, profile);
+  profileCache.set(key, { value: profile, until: Date.now() + PROFILE_TTL_MS });
+}
+
+async function onvifSend(camera: CameraConnection, command: PtzCommand, profile: { endpoint: string; token: string }): Promise<void> {
   if (command === "stop") {
     await onvifPost(camera, profile.endpoint, "http://www.onvif.org/ver20/ptz/wsdl/Stop", `<tptz:Stop xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"><tptz:ProfileToken>${xmlEscape(profile.token)}</tptz:ProfileToken><tptz:PanTilt>true</tptz:PanTilt><tptz:Zoom>true</tptz:Zoom></tptz:Stop>`);
     return;
@@ -114,7 +128,7 @@ function cameraHttp(camera: CameraConnection, method: string, requestPath: strin
         response.on("end", () => {
           if (response.statusCode === 401 && !authorization) {
             const header = response.headers["www-authenticate"];
-            const answer = answerChallenge(Array.isArray(header) ? header[0] : header, credentials, method, requestPath);
+            const answer = answerChallenge(Array.isArray(header) ? header[0] : header, credentials, method, requestPath, `${camera.id}@${camera.host}:${camera.onvifPort}`);
             if (answer) { execute(answer); return; }
           }
           resolve({ status: response.statusCode ?? 0, body: payload });

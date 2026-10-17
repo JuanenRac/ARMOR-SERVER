@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { counterStep, ElectricalEnergy } from "../src/electrical_energy.js";
 
+// A "day" is counted in the time zone of the installation; this file counts it in UTC so that it means the same on every machine.
+process.env.ARMOR_TZ = "UTC";
+
 const at = (iso: string) => Date.parse(iso);
 
 test("a counter adds the difference between two readings, wraps at the top of the meter and starts again after a reset", () => {

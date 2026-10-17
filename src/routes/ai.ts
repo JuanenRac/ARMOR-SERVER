@@ -9,6 +9,9 @@ import type { AppContext } from "../context.js";
 import { AiError, FRAME_HEIGHT, FRAME_WIDTH, parseObservation } from "../ai.js";
 import { coveringNodes } from "../ai_cover.js";
 
+/** A camera that keeps seeing movement is one alarm per this long, not one for ever (the alarm of an observation is an event: it ends the moment it is raised and leaves the list when somebody acknowledges it). */
+const MOTION_WINDOW_MS = 5 * 60_000;
+
 export function registerAiRoutes(app: Express, context: AppContext): void {
   const { ai, alarms, audit, store, vault, requireAi, site } = context;
   const framesLimit = rateLimit({ windowMs: 60_000, limit: 240, standardHeaders: "draft-8", legacyHeaders: false });
@@ -51,9 +54,9 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
     if (!vault.get(observation.camera_id)) return response.status(404).json({ error: "unknown_camera" });
     // An observation is only worth an alarm while the perimeter is armed; while it is not, it is told so and nothing is raised.
     if (store.snapshot().mode !== "armed") return response.json({ raised: false, reason: "disarmed" });
-    const alarm = alarms.raise(`ai:camera:${observation.camera_id}:motion`, {
+    const alarm = alarms.raise(`ai:camera:${observation.camera_id}:motion:${Math.floor(Date.now() / MOTION_WINDOW_MS)}`, {
       source: { type: "camera", id: observation.camera_id }, severity: observation.severity === "high" ? "high" : "warning", code: "camera_motion",
-      detail: { reasons: observation.reasons.join("; "), motion: Math.round(observation.motion * 100), radar_tracks: observation.radar_tracks, profile: observation.profile },
+      detail: { reasons: observation.reasons.join("; "), motion: Math.round(observation.motion * 100), radar_tracks: observation.radar_tracks, profile: observation.profile }, instant: true,
     });
     // The perimeter is armed and a camera saw something: the evidence is taken now, without waiting for anybody (it has its own cooldown and settings).
     const watched = vault.get(observation.camera_id);

@@ -26,6 +26,27 @@ export function tailLines(file: string, limit: number, maxBytes = 512 * 1024): s
   } catch { return []; }
 }
 
+/**
+ * Every line of the audit trail that mentions `containing`, oldest first, from the current file AND the rotated ones (the audit log rotates at 5 MiB and keeps three older files; a
+ * proof of custody that read only the end of the current file left out the history of any file older than the last few days). `from` is the time of the oldest line kept at all.
+ */
+export function auditLinesAbout(dataDir: string, containing: string): { lines: Array<Record<string, unknown>>; from: string | null } {
+  const lines: Array<Record<string, unknown>> = [];
+  let from: string | null = null;
+  for (const name of ["audit.log.3", "audit.log.2", "audit.log.1", "audit.log"]) {
+    let text: string;
+    try { text = fs.readFileSync(path.join(dataDir, name), "utf8"); } catch { continue; }
+    for (const raw of text.split("\n")) {
+      if (!raw) continue;
+      let parsed: Record<string, unknown>;
+      try { parsed = JSON.parse(raw) as Record<string, unknown>; } catch { continue; }
+      if (from === null && typeof parsed.at === "string") from = parsed.at;
+      if (raw.includes(containing)) lines.push(parsed);
+    }
+  }
+  return { lines, from };
+}
+
 /** What the wall panel's energy page shows: the power of the panels and of the house, the battery's charge and power, and whether the solar equipment reports at all. Always a few dozen bytes. */
 export function energySummary(totals: SolarTotals): { reporting: boolean; pv_w: number; load_w: number; battery_w: number | null; soc_percent: number | null; mode: string | null; inverters: number; batteries: number; stale: number } {
   return {
@@ -43,7 +64,11 @@ export function registerSystemRoutes(app: Express, context: AppContext, version:
   // The check before arming: what would leave the perimeter blind or noisy. Read only; the console, the phone and the wall panel ask it before they arm.
   app.get("/api/v1/preflight", requireOperator, (_request, response) => response.json(buildPreflight({
     nodes: Object.values(store.snapshot().nodes).map(node => ({ node_id: node.node_id, online: node.online })),
-    panels: context.alarmNodes.list().map(node => ({ node_id: node.node_id, stale: node.stale, open_zones: node.state.open_zones })),
+    // A panel that was there before the last restart and has not spoken since is as silent as one that went quiet: it is listed here too (it is not in memory to be asked).
+    panels: [
+      ...context.alarmNodes.list().map(node => ({ node_id: node.node_id, stale: node.stale, open_zones: node.state.open_zones })),
+      ...context.knownNodes.silent(config.nodeStaleAfterS * 2000).filter(node => node.kind === "alarm" && !context.alarmNodes.list().some(live => live.node_id === node.id)).map(node => ({ node_id: node.id, stale: true, open_zones: [] as string[] })),
+    ],
     cameras: context.cameraWatcher.snapshot().map(camera => ({ id: camera.id, status: camera.status })),
     devices: devices.list().map(device => ({ id: device.id, kind: device.kind, online: device.online, state: device.state as Record<string, unknown>, expected_interval_s: device.expected_interval_s })),
     alarms: alarms.active(),

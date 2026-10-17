@@ -57,9 +57,23 @@ export function digestAuthorization(challenge: DigestChallenge, options: DigestO
 export const basicAuthorization = (username: string, password: string): string =>
   `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
 
-/** Authorization header answering a challenge (Basic or Digest), or null when it cannot be answered. */
-export function answerChallenge(header: string | undefined, credentials: { username: string; password: string }, method: string, uri: string): string | null {
-  if (header && /^\s*Basic\b/i.test(header)) return basicAuthorization(credentials.username, credentials.password);
+/** The cameras (by `remember`) that have already asked for Digest: after that, a "Basic" challenge from the same address is not answered. */
+const askedForDigest = new Set<string>();
+
+/**
+ * Authorization header answering a challenge (Basic or Digest), or null when it cannot be answered. Basic sends the password as it is, so a device that answers a camera's address with
+ * "WWW-Authenticate: Basic" after that camera has asked for Digest (something else on that address, or a machine in the middle) is not given the password: with `remember` set
+ * (an id of the camera and its address), the first Digest challenge is remembered and a later Basic one is refused.
+ */
+export function answerChallenge(header: string | undefined, credentials: { username: string; password: string }, method: string, uri: string, remember?: string): string | null {
+  if (header && /^\s*Basic\b/i.test(header)) {
+    if (remember && askedForDigest.has(remember)) return null;
+    return basicAuthorization(credentials.username, credentials.password);
+  }
   const challenge = parseDigestChallenge(header);
+  if (challenge && remember) askedForDigest.add(remember);
   return challenge ? digestAuthorization(challenge, { ...credentials, method, uri }) : null;
 }
+
+/** For the tests: forget which cameras asked for Digest. */
+export const forgetDigestMemory = (): void => askedForDigest.clear();

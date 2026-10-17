@@ -31,7 +31,7 @@ export function rtspDescribe(camera: CameraConnection, requestPath: string, time
       const status = Number(/^RTSP\/1\.0 (\d{3})/.exec(data)?.[1] ?? 0);
       if (!authenticated && status === 401) {
         const challenge = /WWW-Authenticate:\s*([^\r\n]+)/i.exec(data)?.[1];
-        const authorization = answerChallenge(challenge, credentials, "DESCRIBE", source);
+        const authorization = answerChallenge(challenge, credentials, "DESCRIBE", source, `${camera.id}@${camera.host}:${camera.rtspPort}`);
         if (authorization) { authenticated = true; data = ""; send(2, authorization); return; }
       }
       finish(status);

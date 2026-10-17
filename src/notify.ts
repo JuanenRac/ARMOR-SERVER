@@ -24,6 +24,8 @@ export type AlertMessage = {
   /** For an escalation: the minutes the alarm has waited for a person. */
   minutes?: number;
   alarm_id?: string; severity?: "critical" | "high" | "warning"; code?: string; device_id?: string; solar_id?: string; electrical_id?: string; alarm_node_id?: string; network_id?: string;
+  /** A silent alarm (a duress disarm): sent only to the places that carry silent news (the webhook, Telegram, ntfy), never to the broker, a push or Home Assistant. */
+  silent?: true;
   /** For an automation that notifies: which one, and the alarm or device that set it off when there is one. */
   automation?: string;
 };
@@ -55,7 +57,7 @@ export function alertMessageFor(event: ArmorEvent, mode: SecurityMode): AlertMes
   if (event.type === "alarm" && event.state === "raised" && event.source_type === "electrical") return { ...base, event: "alarm.raised", alarm_id: event.alarm_id, severity: event.severity, code: event.code, electrical_id: event.source };
   // The panel of an ARMOR-ALARM node (sounding, tamper, locked out, gone quiet) and the local network (a new device, an open port, the internet down): the most serious
   // events of the system must reach the same places as any other alarm, whether the server is armed or not (the panel decides on its own whether it is armed).
-  if (event.type === "alarm" && event.state === "raised" && event.source_type === "alarm") return { ...base, event: "alarm.raised", alarm_id: event.alarm_id, severity: event.severity, code: event.code, alarm_node_id: event.source };
+  if (event.type === "alarm" && event.state === "raised" && event.source_type === "alarm") return { ...base, event: "alarm.raised", alarm_id: event.alarm_id, severity: event.severity, code: event.code, alarm_node_id: event.source, ...(event.silent ? { silent: true as const } : {}) };
   if (event.type === "alarm" && event.state === "raised" && event.source_type === "network") return { ...base, event: "alarm.raised", alarm_id: event.alarm_id, severity: event.severity, code: event.code, network_id: event.source };
   return null;
 }
@@ -80,15 +82,23 @@ export type ChannelTest = { channel: string; ok: boolean; detail: string };
 
 const MAX_QUEUE = 100;
 
+/** A critical alarm (or one that has gone unattended) does not wait behind the messages of lesser news. */
+const urgent = (message: AlertMessage): boolean => message.severity === "critical" || message.event === "alarm.escalated";
+
+/**
+ * One place the alarms go (the webhook, Telegram, ntfy, ...) with its own queue and its own worker: a place that is down - each message of it takes minutes of retries - delays
+ * only itself, never the news for the other places, and an urgent message goes in front of the ones that are not.
+ */
+type Lane = { id: string; action: string; queue: AlertMessage[]; running: boolean; attempt: (message: AlertMessage) => Promise<{ ok: boolean; detail: string; final?: boolean }> };
+
 export class AlertNotifier {
   readonly #options: NotifierOptions;
   readonly #fetch: typeof fetch;
   readonly #delays: number[];
   #publish: ((topic: string, payload: string) => void) | undefined;
-  readonly #queue: AlertMessage[] = [];
-  #running = false;
+  readonly #lanes = new Map<string, Lane>();
   #closed = false;
-  #timer: NodeJS.Timeout | undefined;
+  readonly #timers = new Set<NodeJS.Timeout>();
 
   constructor(options: NotifierOptions) {
     this.#options = options;
@@ -135,33 +145,52 @@ export class AlertNotifier {
   /** Send a message to the MQTT alarm topic and the webhook (used by automations as well). */
   send(message: AlertMessage): void {
     if (this.#closed) return;
-    try { this.#publish?.(ALERT_TOPIC, JSON.stringify(message)); } catch { /* MQTT down: the webhook still goes out. */ }
-    if (!this.#options.webhookUrl && this.#channels.length === 0) return;
-    if (this.#queue.length >= MAX_QUEUE) {
-      this.#queue.shift();
-      this.#options.audit.record({ action: "alert.webhook", outcome: "failed", detail: "queue full, oldest message dropped" });
+    // A silent alarm is not put on the broker (anything that listens to it - a panel on the wall - would show it); it goes only to the places that can carry silent news.
+    if (!message.silent) { try { this.#publish?.(ALERT_TOPIC, JSON.stringify(message)); } catch { /* MQTT down: the webhook still goes out. */ } }
+    if (this.#options.webhookUrl) this.#enqueue(this.#lane("webhook", "alert.webhook", item => this.#postWebhook(item)), message);
+    for (const channel of this.#channels) {
+      if (message.silent && channel.quiet !== true) continue;
+      this.#enqueue(this.#lane(channel.id, `alert.${channel.id}`, item => channel.deliver(item, alertText(item, this.#language), this.#language, AbortSignal.timeout(this.#options.timeoutMs ?? 5_000))), message);
     }
-    this.#queue.push(message);
-    void this.#drain();
+  }
+
+  #lane(id: string, action: string, attempt: Lane["attempt"]): Lane {
+    let lane = this.#lanes.get(id);
+    if (!lane) { lane = { id, action, queue: [], running: false, attempt }; this.#lanes.set(id, lane); }
+    else lane.attempt = attempt;
+    return lane;
+  }
+
+  #enqueue(lane: Lane, message: AlertMessage): void {
+    if (lane.queue.length >= MAX_QUEUE) {
+      lane.queue.shift();
+      this.#options.audit.record({ action: lane.action, outcome: "failed", detail: "queue full, oldest message dropped" });
+    }
+    if (urgent(message)) {
+      const firstLesser = lane.queue.findIndex(item => !urgent(item));
+      lane.queue.splice(firstLesser < 0 ? lane.queue.length : firstLesser, 0, message);
+    } else lane.queue.push(message);
+    void this.#drain(lane);
   }
 
   /** Resolves when everything queued has been attempted (for tests and shutdown). */
   async idle(): Promise<void> {
-    while (this.#running || this.#queue.length > 0) await new Promise(resolve => setTimeout(resolve, 5));
+    while ([...this.#lanes.values()].some(lane => lane.running || lane.queue.length > 0)) await new Promise(resolve => setTimeout(resolve, 5));
   }
 
   close(): void {
     this.#closed = true;
-    if (this.#timer) clearTimeout(this.#timer);
-    this.#queue.length = 0;
+    for (const timer of this.#timers) clearTimeout(timer);
+    this.#timers.clear();
+    for (const lane of this.#lanes.values()) lane.queue.length = 0;
   }
 
-  async #drain(): Promise<void> {
-    if (this.#running) return;
-    this.#running = true;
+  async #drain(lane: Lane): Promise<void> {
+    if (lane.running) return;
+    lane.running = true;
     try {
-      for (let message = this.#queue.shift(); message && !this.#closed; message = this.#queue.shift()) await this.#deliver(message);
-    } finally { this.#running = false; }
+      for (let message = lane.queue.shift(); message && !this.#closed; message = lane.queue.shift()) await this.#withRetries(lane.action, message, () => lane.attempt(message as AlertMessage));
+    } finally { lane.running = false; }
   }
 
   async #postWebhook(message: AlertMessage): Promise<{ ok: boolean; detail: string; final?: boolean }> {
@@ -186,16 +215,8 @@ export class AlertNotifier {
       if (result.ok) { this.#options.audit.record({ action, outcome: "allowed", target: message.event }); return; }
       detail = result.detail;
       if (result.final) break;
-      if (attempt < this.#delays.length) await new Promise<void>(resolve => { this.#timer = setTimeout(resolve, this.#delays[attempt]); this.#timer.unref(); });
+      if (attempt < this.#delays.length) await new Promise<void>(resolve => { const timer = setTimeout(() => { this.#timers.delete(timer); resolve(); }, this.#delays[attempt]); timer.unref(); this.#timers.add(timer); });
     }
     this.#options.audit.record({ action, outcome: "failed", target: message.event, detail });
-  }
-
-  async #deliver(message: AlertMessage): Promise<void> {
-    if (this.#options.webhookUrl) await this.#withRetries("alert.webhook", message, () => this.#postWebhook(message));
-    const text = alertText(message, this.#language);
-    for (const channel of this.#channels) {
-      await this.#withRetries(`alert.${channel.id}`, message, () => channel.deliver(message, text, this.#language, AbortSignal.timeout(this.#options.timeoutMs ?? 5_000)));
-    }
   }
 }

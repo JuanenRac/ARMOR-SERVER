@@ -168,7 +168,8 @@ export async function carryOut(intent: string, language: VoiceLanguage, context:
     case "lights_on":
     case "lights_off": {
       const command = intent === "lights_on" ? "on" : "off";
-      const lights = context.devices.list().filter(device => device.kind === "smart_light");
+      // Like POST /devices/:id/command: a light an administrator marked as something that matters (an incubator's, an aquarium's) is not switched by a voice.
+      const lights = context.devices.list().filter(device => device.kind === "smart_light" && device.risk === "low");
       if (lights.length === 0) return { speech: words.lightsNone, result: { lights: 0 } };
       const failed: string[] = [];
       for (const light of lights) {

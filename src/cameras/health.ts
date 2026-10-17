@@ -16,6 +16,8 @@ export type CameraHealth = { id: string; status: CameraStatus; since_ms: number 
 export type WatcherOptions = {
   list: () => CameraConnection[];
   onEvent: (event: ArmorEventBody) => void;
+  /** Called on every pass for a camera that answered (after a restart the watcher has no memory of it having been down, so it never says that it came back). */
+  onAnswered?: (cameraId: string) => void;
   probe?: (host: string, port: number) => Promise<boolean>;
   now?: () => number;
   /** Consecutive failed checks before a camera is reported offline. */
@@ -72,6 +74,7 @@ export class CameraWatcher {
     // A camera that has never been reachable stays "unknown" until the threshold, then offline.
     const changed = status !== (previous?.status ?? "unknown");
     this.#state.set(camera.id, { id: camera.id, status, since_ms: changed || !previous ? now : previous.since_ms, last_checked_ms: now, consecutive_failures: failures });
+    if (reachable) this.#options.onAnswered?.(camera.id);
     // The first sighting of an online camera is not news; a first sighting that is offline is.
     if (changed && !(status === "online" && !previous)) this.#options.onEvent({ type: "camera", camera_id: camera.id, from: previous?.status ?? "unknown", to: status });
   }

@@ -31,7 +31,7 @@ export class Escalator {
     for (const id of this.#told) if (!live.has(id)) this.#told.delete(id);
     let count = 0;
     for (const alarm of list) {
-      if (alarm.severity !== "critical" || alarm.acknowledged_at || alarm.cleared_at || this.#told.has(alarm.id)) continue;
+      if (alarm.severity !== "critical" || (alarm.acknowledged_at && !alarm.acknowledged_unverified) || alarm.cleared_at || this.#told.has(alarm.id)) continue;
       const waited = now - Date.parse(alarm.raised_at);
       if (!Number.isFinite(waited) || waited < afterMin * 60_000) continue;
       this.#told.add(alarm.id);

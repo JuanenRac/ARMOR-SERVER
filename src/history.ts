@@ -34,7 +34,9 @@ export class CoarseTier {
     const sample: Sample = { t: this.#bucket * COARSE_EVERY_MS + COARSE_EVERY_MS / 2 };
     for (const [key, sum] of this.#sums) sample[key] = Math.round((sum / this.#count) * 1000) / 1000;
     for (const [key, text] of this.#last) sample[key] = text;
-    this.samples.push(sample);
+    // The bucket may already be there: it was saved while it was still open, the server restarted and the same five minutes were filled again. One point per time.
+    const last = this.samples[this.samples.length - 1];
+    if (last && last.t === sample.t) this.samples[this.samples.length - 1] = sample; else this.samples.push(sample);
     if (this.samples.length > COARSE_KEEP) this.samples.splice(0, this.samples.length - COARSE_KEEP);
     this.#sums.clear(); this.#last.clear(); this.#count = 0;
   }
@@ -45,7 +47,8 @@ export class CoarseTier {
     const open: Sample = { t: this.#bucket * COARSE_EVERY_MS + COARSE_EVERY_MS / 2 };
     for (const [key, sum] of this.#sums) open[key] = Math.round((sum / this.#count) * 1000) / 1000;
     for (const [key, text] of this.#last) open[key] = text;
-    return [...this.samples, open];
+    const last = this.samples[this.samples.length - 1];
+    return last && last.t === open.t ? [...this.samples.slice(0, -1), open] : [...this.samples, open];
   }
 
   load(samples: readonly Sample[]): void { this.samples.splice(0, this.samples.length, ...samples.slice(-COARSE_KEEP)); }

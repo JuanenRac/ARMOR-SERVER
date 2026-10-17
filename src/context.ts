@@ -32,6 +32,7 @@ import { AlarmZoneFeed } from "./alarm_zone_feed.js";
 import { CaptureOnDetect } from "./capture_on_detect.js";
 import { IgnoreZones } from "./ignore_zones.js";
 import { FcmDevices, fcmChannel, parseServiceAccount } from "./push_fcm.js";
+import { KnownNodes } from "./known_nodes.js";
 import { SiteStore } from "./site.js";
 import { SolarStore } from "./solar.js";
 import { ElectricalStore } from "./electrical.js";
@@ -110,6 +111,10 @@ export type AppContext = {
   ignoreZones: IgnoreZones;
   /** The Android phones that asked for push through Firebase; empty and unused unless ARMOR_FCM_SERVICE_ACCOUNT is set. */
   fcmDevices: FcmDevices;
+  /** The electrical nodes, alarm panels and network watchers that have ever spoken, and when: a restart does not make a node that is dead at that moment disappear. */
+  knownNodes: KnownNodes;
+  /** Reports as silent the known nodes that have said nothing since the server started (called now and then). */
+  reportSilentNodes: () => void;
   /** Whether push through Firebase is on. */
   fcmEnabled: boolean;
   /** The way to the admin agent, or null when there is none (see admin.ts). */
@@ -167,6 +172,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const evidence = new EvidenceLibrary({ root: path.join(config.dataDir, "media"), ffmpegPath: config.ffmpegPath, maxBytes: config.maxMediaBytes, retentionMs: config.mediaRetentionMs, warn });
   const relays = new RelayManager({ ffmpegPath: config.ffmpegPath, maxRelays: config.maxMjpegRelays, fps: config.liveFps, width: config.liveWidth });
   const events = new EventLog({ file: path.join(config.dataDir, "events.log") });
+  const knownNodes = new KnownNodes({ file: path.join(config.dataDir, "known-nodes.json"), now: overrides.now, warn });
   const rules = new RulesFile(path.join(config.dataDir, "rules.json"), config.alertDwellMs, warn);
   // The other places the alarms go. The address of Telegram can only be changed by the environment, for the tests that stand in for it.
   const channels: NotifyChannel[] = [];
@@ -179,6 +185,8 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const deviceLink: AppContext["deviceLink"] = {};
   // Everything that happens goes through one place: written to the history, announced, checked for alarms, offered to the automations.
   const record = (body: ArmorEventBody): void => {
+    // A silent alarm (a duress disarm) is told to the places nobody at the panel can see and is NOT written in the history that every console reads.
+    if (body.type === "alarm" && body.silent) { notifier.notify({ ...body, id: 0, at: new Date().toISOString() }, store.snapshot().mode); return; }
     const event = events.append(body);
     notifier.notify(event, store.snapshot().mode);
     alarmRules.handleEvent(event);
@@ -213,7 +221,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   });
   const site = new SiteStore(path.join(config.dataDir, "site.json"));
   const electricalEnergy = new ElectricalEnergy();
-  const electricalNodes = new ElectricalStore({ now: overrides.now, onMessage: message => { alarmRules.handleElectrical(message); const at = (overrides.now ?? Date.now)(); for (const channel of message.channels) electricalEnergy.add(message.node_id, channel.id, channel.energy_kwh, at); }, onStale: (node, stale) => alarmRules.handleElectricalStale(node, stale) });
+  const electricalNodes = new ElectricalStore({ now: overrides.now, onMessage: message => { knownNodes.seen("electrical", message.node_id); alarmRules.handleElectrical(message); const at = (overrides.now ?? Date.now)(); for (const channel of message.channels) electricalEnergy.add(message.node_id, channel.id, channel.energy_kwh, at); }, onStale: (node, stale) => alarmRules.handleElectricalStale(node, stale) });
   const electrical = new SiteStore(path.join(config.dataDir, "electrical.json"), () => new Date(), "electrical design");
   const networkNotes = new DeviceNotes(path.join(config.dataDir, "network-devices.json"));
   const systemMonitor = new SystemMonitor();
@@ -230,7 +238,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   };
   const networkNodes = new NetworkStore({
     now: overrides.now, notes: networkNotes, outagesFile: path.join(config.dataDir, "network-outages.json"),
-    onMessage: message => alarmRules.handleNetwork(message),
+    onMessage: message => { knownNodes.seen("network", message.node_id); alarmRules.handleNetwork(message); },
     onEvent: (node, event) => {
       alarmRules.handleNetworkEvent(node, event, id => networkNotes.isTrusted(id), id => describeNetworkDevice(node, id));
       // A device somebody asked to be told about came onto the network: say so once.
@@ -248,7 +256,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     enabled: config.electricalSwitching, nodes: electricalNodes, audit, now: overrides.now,
     publish: (topic, payload) => { if (!switchLink.publish) throw new Error("the MQTT broker is not connected"); switchLink.publish(topic, payload); },
   });
-  const alarmNodes = new AlarmStore({ now: overrides.now, onMessage: (message, previous) => alarmRules.handleAlarmNode(message, previous), onStale: (node, stale, phase) => alarmRules.handleAlarmNodeStale(node, stale, phase) });
+  const alarmNodes = new AlarmStore({ now: overrides.now, onMessage: (message, previous) => { knownNodes.seen("alarm", message.node_id, message.phase); alarmRules.handleAlarmNode(message, previous); }, onStale: (node, stale, phase) => alarmRules.handleAlarmNodeStale(node, stale, phase) });
   const alarmLink: AppContext["alarmLink"] = {};
   const captureOnDetect = new CaptureOnDetect({ file: path.join(config.dataDir, "capture-on-detect.json"), audit, now: overrides.now, tools: { snapshot: camera => evidence.snapshot(camera), startRecording: camera => evidence.startRecording(camera), stopRecording: id => evidence.stopRecording(id), isRecording: id => evidence.isRecording(id) } });
   const ignoreZones = new IgnoreZones(path.join(config.dataDir, "camera-ignore-zones.json"));
@@ -266,7 +274,15 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     onEvent: record,
   });
   const escalator = new Escalator({ afterMin: config.escalateAfterMin, active: () => alarms.active(), send: message => notifier.send(message), mode: () => store.snapshot().mode, now: overrides.now });
-  const cameraWatcher = new CameraWatcher({ list: () => vault.list(), onEvent: record });
+  const cameraWatcher = new CameraWatcher({ list: () => vault.list(), onEvent: record, onAnswered: id => alarmRules.cameraAnswered(id) });
+  // The nodes that were there before this run and have said nothing since: a node that is dead when the server comes up never goes stale, because it never existed in memory.
+  const reportSilentNodes = (): void => {
+    for (const node of knownNodes.silent(config.nodeStaleAfterS * 2000)) {
+      if (node.kind === "electrical") alarmRules.handleElectricalStale(node.id, true);
+      else if (node.kind === "alarm") alarmRules.handleAlarmNodeStale(node.id, true, node.phase);
+      else alarmRules.handleNetworkStale(node.id, true);
+    }
+  };
   // Arming looks at what is already wrong (see AlarmRules.onArmed): the changes that would have raised it happened while it did not matter.
   alarmRules.onArmed = () => alarmRules.raisePresentProblems({
     nodesDown: Object.entries(store.snapshot().nodes).filter(([, node]) => !node.online || node.stale).map(([id]) => id),
@@ -321,7 +337,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    alarmDesign, alarmZoneFeed, captureOnDetect, ignoreZones, fcmDevices, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    alarmDesign, alarmZoneFeed, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

@@ -3,7 +3,7 @@
  * every value and refuses to start on a weak or inconsistent one.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
-import { isAlertLanguage, type AlertLanguage } from "./alert_text.js";
+import { ALERT_LANGUAGES, isAlertLanguage, type AlertLanguage } from "./alert_text.js";
 import { validTelegramChat, validTelegramToken, validWebhookId } from "./channels.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -71,6 +71,18 @@ export type ArmorConfig = {
   alarmCommands: boolean;
   /** ARMOR_DISARM_PIN=required: disarming from Studio, the phone or the wall panel needs the PIN of the signed-in user, and a user without a PIN cannot disarm. Otherwise a PIN is asked only of users who have one. */
   disarmPinRequired: boolean;
+  /**
+   * ARMOR_CONTROL_DISARM=1: the control token may disarm (POST /api/v1/control/disarm) even while ARMOR_DISARM_PIN=required. That route carries no PIN and no person, so with the PIN
+   * required it is shut unless the installation says it wants it (a script that must be able to disarm).
+   */
+  controlDisarm: boolean;
+  /** ARMOR_EVIDENCE_KEY: the key that signs the proofs of custody. When it is not set the camera key signs them (which is the control token when no camera key is set either, as before). */
+  evidenceKey: string | null;
+  /**
+   * ARMOR_TRUST_PROXY: how many proxies (a number), which proxies (an address, a subnet, or "loopback, uniquelocal") stand in front of this server and may say, in X-Forwarded-For, who the
+   * client is. Without it every client behind a reverse proxy (Studio's nginx in Docker) has the proxy's address, and the rate limits of the sign-in count everybody as one. false when not set.
+   */
+  trustProxy: boolean | number | string;
   /** Home Assistant's MQTT discovery of what the nodes report (read-only sensors): off unless ARMOR_HA_DISCOVERY=1; the prefix is Home Assistant's (default "homeassistant"). See ha_discovery.ts. */
   haDiscovery: { prefix: string } | null;
   /** The admin agent (ARMOR-DEVOPS): where its Unix socket is and the token it wants; null when this install has no agent, and Studio then cannot administer services. */
@@ -204,7 +216,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     homeAssistant = { url: parsed.origin, webhookId: haWebhookId };
   }
   const languageRaw = env.ARMOR_ALERT_LANGUAGE?.trim().toLowerCase() ?? "es";
-  if (!isAlertLanguage(languageRaw)) throw new ConfigError("ARMOR_ALERT_LANGUAGE must be one of en, es, de, fr, it, ja, zh");
+  if (!isAlertLanguage(languageRaw)) throw new ConfigError(`ARMOR_ALERT_LANGUAGE must be one of ${ALERT_LANGUAGES.join(", ")}`);
   const alertLanguage: AlertLanguage = languageRaw;
   const alertWebhookSecret = env.ARMOR_ALERT_WEBHOOK_SECRET?.trim() ?? "";
   if (alertWebhookUrl && !alertWebhookSecret) warnings.push("ARMOR_ALERT_WEBHOOK_SECRET is not set; alarm calls will not be signed");
@@ -225,6 +237,22 @@ export function readConfig(env: Env = process.env): ArmorConfig {
   const electricalSwitching = env.ARMOR_ELECTRICAL_SWITCHING === "1";
   const alarmCommands = env.ARMOR_ALARM_COMMANDS === "1";
   const disarmPinRequired = env.ARMOR_DISARM_PIN?.trim() === "required";
+  const controlDisarm = env.ARMOR_CONTROL_DISARM === "1";
+  const evidenceKey = env.ARMOR_EVIDENCE_KEY?.trim() ? secret(env, "ARMOR_EVIDENCE_KEY") : null;
+  const trustRaw = env.ARMOR_TRUST_PROXY?.trim() ?? "";
+  if (trustRaw && !/^[A-Za-z0-9.:,_/ -]{1,200}$/.test(trustRaw)) throw new ConfigError("ARMOR_TRUST_PROXY is a number of proxies, or addresses, subnets or names (such as loopback, uniquelocal) separated by commas");
+  const trustProxy: boolean | number | string = trustRaw === "" || trustRaw === "false" || trustRaw === "0" ? false : trustRaw === "true" ? true : /^\d+$/.test(trustRaw) ? Number(trustRaw) : trustRaw;
+  // The tokens are different secrets with different power: the ingest token sits in the flash of every node, so if it were also the control token whoever read one board could arm and
+  // disarm the house. A value copied into two variables is refused, not noticed in an incident.
+  const secrets: Array<[string, string]> = [["ARMOR_INGEST_TOKEN", ingestToken], ["ARMOR_CONTROL_TOKEN", controlToken]];
+  if (env.ARMOR_OPERATOR_TOKEN?.trim()) secrets.push(["ARMOR_OPERATOR_TOKEN", operatorToken]);
+  if (configuredKey) secrets.push(["ARMOR_CAMERA_CONFIG_KEY", cameraConfigKey]);
+  if (env.ARMOR_AI_TOKEN?.trim()) secrets.push(["ARMOR_AI_TOKEN", env.ARMOR_AI_TOKEN.trim()]);
+  if (evidenceKey) secrets.push(["ARMOR_EVIDENCE_KEY", evidenceKey]);
+  for (let first = 0; first < secrets.length; first += 1) for (let second = first + 1; second < secrets.length; second += 1) {
+    if (secrets[first]![1] === secrets[second]![1]) throw new ConfigError(`${secrets[first]![0]} and ${secrets[second]![0]} must be different values`);
+  }
+  if (!env.ARMOR_OPERATOR_TOKEN?.trim() && !isLoopbackHost(host)) warnings.push("ARMOR_OPERATOR_TOKEN is not set: the operator token is the control token. Set a different one so that a service with operator rights cannot also arm and disarm.");
   if (!disarmPinRequired) warnings.push("ARMOR_DISARM_PIN is not \"required\": anyone signed in as a user without a PIN can disarm the system; set a PIN for each user and ARMOR_DISARM_PIN=required.");
   const haPrefix = (env.ARMOR_HA_DISCOVERY_PREFIX ?? "homeassistant").trim();
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(haPrefix)) throw new ConfigError("ARMOR_HA_DISCOVERY_PREFIX is one word of letters, digits, - and _");
@@ -280,7 +308,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     escalateAfterMin: integer(env, "ARMOR_ESCALATE_AFTER_MIN", 0, 0, 1440),
     alertMinTargets: integer(env, "ARMOR_ALERT_MIN_TARGETS", 1, 1, 20),
     cameraCheckS: integer(env, "ARMOR_CAMERA_CHECK_S", 20, 0, 3600),
-    alertWebhookUrl, alertWebhookSecret, telegram, ntfy, fcmServiceAccount, homeAssistant, alertLanguage, electricalSwitching, alarmCommands, disarmPinRequired, haDiscovery, admin, maintenance, voice, aiToken,
+    alertWebhookUrl, alertWebhookSecret, telegram, ntfy, fcmServiceAccount, homeAssistant, alertLanguage, electricalSwitching, alarmCommands, disarmPinRequired, controlDisarm, evidenceKey, trustProxy, haDiscovery, admin, maintenance, voice, aiToken,
     tls,
     warnings,
   };

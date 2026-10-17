@@ -14,6 +14,12 @@ export type Proof = {
   issuer: "armor-server";
   file: ProofFile;
   custody: CustodyLine[];
+  /**
+   * Whether the audit trail reaches back to the moment the file was made: false when the oldest line still kept is later than that (older lines were rotated away), so the custody
+   * shown starts in the middle of the story. `audit_from` is the time of that oldest line. Absent in the proofs issued before this was recorded.
+   */
+  custody_complete?: boolean;
+  audit_from?: string | null;
   signature: { algorithm: "HMAC-SHA256"; value: string };
 };
 
@@ -26,25 +32,31 @@ function canonical(proof: Omit<Proof, "signature">): string {
     version: proof.version, issued_at: proof.issued_at, issuer: proof.issuer,
     file: { camera: file.camera, kind: file.kind, name: file.name, bytes: file.bytes, created_at: file.created_at, sha256: file.sha256, protected: file.protected },
     custody: proof.custody.map(line => ({ at: line.at, action: line.action, outcome: line.outcome, actor: line.actor ?? null, target: line.target ?? null })),
+    ...(proof.custody_complete !== undefined ? { custody_complete: proof.custody_complete, audit_from: proof.audit_from ?? null } : {}),
   });
 }
 
-export function buildProof(secret: string, file: ProofFile, custody: CustodyLine[], issuedAt: Date = new Date()): Proof {
-  const body: Omit<Proof, "signature"> = { version: 1, issued_at: issuedAt.toISOString(), issuer: "armor-server", file, custody };
+export function buildProof(secret: string, file: ProofFile, custody: CustodyLine[], issuedAt: Date = new Date(), coverage?: { auditFrom: string | null }): Proof {
+  const complete = coverage === undefined ? undefined : coverage.auditFrom !== null && Date.parse(coverage.auditFrom) <= Date.parse(file.created_at);
+  const body: Omit<Proof, "signature"> = { version: 1, issued_at: issuedAt.toISOString(), issuer: "armor-server", file, custody, ...(complete === undefined ? {} : { custody_complete: complete, audit_from: coverage!.auditFrom }) };
   return { ...body, signature: { algorithm: "HMAC-SHA256", value: createHmac("sha256", key(secret)).update(canonical(body)).digest("hex") } };
 }
 
 /** Whether the document is exactly what this server signed (nothing added, removed or changed). */
-export function verifyProof(secret: string, value: unknown): value is Proof {
+export function verifyProof(secret: string | readonly string[], value: unknown): value is Proof {
   if (typeof value !== "object" || value === null) return false;
   const proof = value as Proof;
   if (proof.version !== 1 || proof.issuer !== "armor-server" || typeof proof.signature?.value !== "string" || !/^[0-9a-f]{64}$/.test(proof.signature.value)) return false;
   if (typeof proof.file !== "object" || proof.file === null || !Array.isArray(proof.custody) || proof.custody.length > 5000) return false;
   const { signature, ...body } = proof;
-  let expected: Buffer;
-  try { expected = createHmac("sha256", key(secret)).update(canonical(body)).digest(); } catch { return false; }
   const given = Buffer.from(signature.value, "hex");
-  return given.length === expected.length && timingSafeEqual(given, expected);
+  // Any of the keys the server has signed with (a proof outlives the rotation of a key: it is checked against the keys still known).
+  for (const candidate of typeof secret === "string" ? [secret] : secret) {
+    let expected: Buffer;
+    try { expected = createHmac("sha256", key(candidate)).update(canonical(body)).digest(); } catch { return false; }
+    if (given.length === expected.length && timingSafeEqual(given, expected)) return true;
+  }
+  return false;
 }
 
 /** The lines of the audit trail that concern one file (by its path) in the order they happened. */

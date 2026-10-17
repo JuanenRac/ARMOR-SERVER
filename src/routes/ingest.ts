@@ -20,8 +20,10 @@ export function registerIngestRoutes(app: Express, context: AppContext, startedA
   // The perimeter state (armed or not, where the targets are) is for operators only: a stranger on the
   // network must not learn whether the system is armed.
   app.get("/api/v1/status", requireOperator, (_request, response) => response.json(store.snapshot()));
+  // The exact version and how long the server has been up tell a stranger which known flaws to try and when it last restarted (after a power cut): they are for a signed-in client.
   app.get("/api/v1/info", (request, response) => response.json({
-    service: "armor-server", version, uptime_s: Math.round((Date.now() - startedAt) / 1000),
+    service: "armor-server",
+    ...(operatorAuthorized(request) || context.studioUser(request) ? { version, uptime_s: Math.round((Date.now() - startedAt) / 1000) } : {}),
     ...(operatorAuthorized(request) ? { mode: store.snapshot().mode, live_video: Boolean(config.ffmpegPath), mqtt: Boolean(config.mqtt) } : {}),
   }));
 
@@ -46,6 +48,11 @@ export function registerIngestRoutes(app: Express, context: AppContext, startedA
     if (!hasBearer(request, config.controlToken)) { audit.record({ action: "control.mode", outcome: "denied" }); return response.sendStatus(401); }
     const mode = request.params.mode;
     if (mode !== "arm" && mode !== "disarm") return response.sendStatus(404);
+    // This route knows no person and takes no PIN: with the PIN required for disarming it is closed to disarm unless the installation asked for it (ARMOR_CONTROL_DISARM=1).
+    if (mode === "disarm" && config.disarmPinRequired && !config.controlDisarm) {
+      audit.record({ action: "control.disarm", outcome: "denied", detail: "the PIN is required" });
+      return response.status(403).json({ error: "disarming with the control token is off while the PIN is required; disarm from Studio, the phone or the wall panel", code: "pin_required" });
+    }
     audit.record({ action: `control.${mode}`, outcome: "allowed" });
     return response.json(store.arm(mode === "arm" ? "armed" : "disarmed"));
   });

@@ -18,7 +18,8 @@ export function counterStep(previous: number, current: number): { kwh: number; r
   return { kwh: current, reset: true };
 }
 
-export const dayOf = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+import { dayOf } from "./day.js";
+export { dayOf };
 
 export class ElectricalEnergy {
   readonly #channels = new Map<string, { last: number | null; days: EnergyDay[] }>();
