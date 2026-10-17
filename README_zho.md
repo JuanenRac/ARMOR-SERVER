@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-417%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-418%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Version-0.6.9-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
 ---
 
-**诚实性检查 - 今天真正能运行的部分:** 下面的每条路由、会话、加密和证据规则都是真实的，并有测试覆盖（`npm test`：417 个测试，包括针对隔离服务器的完整 HTTP 集成测试套件，以及检查每条路由都已写入 OpenAPI 文件）。它在 CM5 测试台上日常运行，配有真实的 MQTT 代理、ESP32-S3 板上真实雷达节点的固件、真实的 IP 摄像头（实时视频、快照、录像、Hi3510 设备上的 PTZ）、Studio 控制台、Android 应用以及语音和观察服务。**尚未**证明的是：用真实 ONVIF 摄像头测试 ONVIF、任何 Jetson 硬件、用真实节点测试太阳能、电气、报警主机和触摸屏的路由（它们用生成的消息测试：目前只有雷达板存在），以及用真实 Firebase 项目测试 Firebase 推送。
+**诚实性检查 - 今天真正能运行的部分:** 下面的每条路由、会话、加密和证据规则都是真实的，并有测试覆盖（`npm test`：418 个测试，包括针对隔离服务器的完整 HTTP 集成测试套件，以及检查每条路由都已写入 OpenAPI 文件）。它在 CM5 测试台上日常运行，配有真实的 MQTT 代理、ESP32-S3 板上真实雷达节点的固件、真实的 IP 摄像头（实时视频、快照、录像、Hi3510 设备上的 PTZ）、Studio 控制台、Android 应用以及语音和观察服务。**尚未**证明的是：用真实 ONVIF 摄像头测试 ONVIF、任何 Jetson 硬件、用真实节点测试太阳能、电气、报警主机和触摸屏的路由（它们用生成的消息测试：目前只有雷达板存在），以及用真实 Firebase 项目测试 Firebase 推送。
 
 ---
 
@@ -38,7 +38,7 @@
 |---|---|
 | 版本 | `0.6.9` |
 | 成熟度 | 成熟 |
-| 测试 | 417 (`npm test`) |
+| 测试 | 418 (`npm test`) |
 | 技术栈 | Node.js 22+ / TypeScript / Docker Compose |
 | 真实硬件 | CM5 测试台的日常使用：真实的 MQTT 代理、真实的 IP 摄像头、ESP32-S3 板上的真实雷达节点，以及与之配合的 Studio、Android 应用和语音、观察服务 |
 
@@ -113,7 +113,7 @@ ARMOR-SERVER/
 │   ├── devices/    catalog, registry, commands, mapping (the device model and its MQTT bridge)
 │   ├── cameras/    model, vault, digest, ptz, rtsp, discovery, health, errors
 │   └── media/      relay, evidence
-├── tests/          417 tests: unit + full HTTP integration
+├── tests/          418 tests: unit + full HTTP integration
 ├── docs/           state machine, camera gateway, integration, node firmware
 ├── tools/          project tooling and the CI checks
 ├── data/           runtime state (ignored by Git)
@@ -127,7 +127,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 417 tests: unit + full HTTP integration (every route must be in the OpenAPI file)
+npm test            # 418 tests: unit + full HTTP integration (every route must be in the OpenAPI file)
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```

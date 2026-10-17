@@ -354,3 +354,9 @@ test("the settings of the energy alarms are checked, kept across runs and change
     assert.deepEqual([read.settings.soc_low, read.settings.cell_spread_mv, read.settings.heatsink_high_c, read.defaults.soc_low], [30, 80, 85, 20]);
   } finally { await running.stop(); }
 });
+
+test("an inverter may say that its warnings are unknown, and only with a boolean", () => {
+  const known = parseSolarMessage(JSON.parse(JSON.stringify(inverter({ warnings_known: false }))));
+  assert.equal((known as SolarInverter).warnings_known, false);
+  assert.throws(() => parseSolarMessage(JSON.parse(JSON.stringify({ ...inverter(), warnings_known: "no" }))), /warnings_known/);
+});

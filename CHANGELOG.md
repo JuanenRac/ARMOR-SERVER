@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [0.7.0] - The server accepts the inverter warnings_known field
+
+An inverter message may carry warnings_known: false, which says that the inverter dialect cannot ask for its warnings (REVO), so the empty list means unknown and not none; the field is checked as a boolean and kept. Tests: 418 (before 417).
+
 ## [0.6.9] - The server now sends the marker a node demands when it signs in, adopts and updates it
 
 - **Adopting a node and updating its firmware from Studio now work against a real node:** the server signed in, changed the settings and restarted the node without `X-Requested-With`, the marker the node's panel demands for anything that changes it, so a real node answered 403 (the stand-in node of the tests did not ask for it; it does now).
