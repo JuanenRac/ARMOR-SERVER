@@ -57,6 +57,14 @@ const text = (value: unknown, min: number, max: number): value is string => type
 const bounded = (value: unknown, low: number, high: number): value is number => finite(value) && value >= low && value <= high;
 const whole = (value: unknown, low: number, high = Number.MAX_SAFE_INTEGER): value is number => integer(value) && value >= low && value <= high;
 
+/** Whether `cidr` (already well formed) lies inside 10/8, 172.16/12 or 192.168/16: the nodes never scan anything else. */
+function insidePrivateRange(cidr: string): boolean {
+  const [address, bits] = cidr.split("/") as [string, string];
+  const prefix = Number(bits);
+  const value = address.split(".").reduce((total, part) => total * 256 + Number(part), 0);
+  return ([[0x0a000000, 8], [0xac100000, 12], [0xc0a80000, 16]] as const).some(([base, length]) => prefix >= length && Math.floor(value / 2 ** (32 - length)) === base / 2 ** (32 - length));
+}
+
 function parseInterface(value: unknown): NetworkMessage["interface"] {
   const item = record(value, "interface");
   onlyKnown(item, ["name", "ip", "cidr", "gateway", "rx_bps", "tx_bps"], "interface");
@@ -64,6 +72,7 @@ function parseInterface(value: unknown): NetworkMessage["interface"] {
   if (!text(item.name, 1, 64)) throw new Error("invalid interface.name");
   if (typeof item.ip !== "string" || !IPV4.test(item.ip)) throw new Error("invalid interface.ip");
   if (typeof item.cidr !== "string" || !CIDR.test(item.cidr)) throw new Error("invalid interface.cidr");
+  if (!insidePrivateRange(item.cidr)) throw new Error("the network a node watches is a private range (10/8, 172.16/12 or 192.168/16)");
   if ("gateway" in item && (typeof item.gateway !== "string" || !IPV4.test(item.gateway))) throw new Error("invalid interface.gateway");
   for (const key of ["rx_bps", "tx_bps"]) if (key in item && !whole(item[key], 0)) throw new Error(`invalid interface.${key}`);
   return item as unknown as NetworkMessage["interface"];

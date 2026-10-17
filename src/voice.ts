@@ -1,6 +1,6 @@
 /**
  * Written and spoken commands: the console or the phone sends what the person said (already turned into text where they are), the voice gateway (ARMOR-VOICE-AI, a
- * small service on this machine that listens on the loopback address only) says which of its four closed commands it is - and holds the two-turn confirmation of the
+ * small service on this machine that listens on the loopback address only) says which of its closed commands it is - and holds the two-turn confirmation of the
  * ones that change the security state - and this server carries out what was accepted, with the session of the person who spoke. The gateway decides; it never acts.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */

@@ -18,6 +18,7 @@ A kind that runs on more than one board publishes **one image per board**, named
 
 The image is the application image of the project (`build/<node>-<board>/armor_<kind>.bin`), not the merged one with the bootloader. The hash file is the line
 `sha256sum armor_<kind>.bin` writes. A release without the hash file, or whose image does not match it, is never used.
+Next to each image goes `<image>.sig2`: the Ed25519 signature (128 hex digits) of the manifest `armor-fw/1|<project>|<board>|<version>|<sha256>` made with the key of the A.R.M.O.R. releases (the one the nodes carry in `fw_trust.hpp`). The server checks it before it sends the image to any node, with the project written inside the image, the board of the file name and the version of the tag; a release without it, or signed by another key, is refused (`no_signature`, `bad_signature`). Only an image the administrator uploads by hand skips this: it is his own act.
 
 ## How a node is updated
 

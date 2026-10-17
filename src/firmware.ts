@@ -1,6 +1,6 @@
 /**
  * Updating the firmware of field nodes from Studio, without opening the page of each node. The server does the work: it holds the image (a file the administrator
- * uploaded, or the newest release of the node's repository on GitHub, downloaded here and checked against the SHA-256 the release publishes) and sends it, one node at
+ * uploaded, or the newest release of the node's repository on GitHub, downloaded here and checked against the SHA-256 the release publishes and the Ed25519 signature of its manifest) and sends it, one node at
  * a time, to the node's own update route with the node's own administrator login - used for the job and never kept or written anywhere - then waits for the node to come
  * back with the new version. So it works for every kind of node, also one with no route to the Internet.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
@@ -29,6 +29,24 @@ export function imageNames(kind: NodeKind, board?: string): { image: string[] } 
   const plain = RELEASE_SOURCES[kind].asset, stem = plain.replace(/\.bin$/, "");
   if (!board) return { image: [plain] };
   return { image: board === DEFAULT_BOARDS[kind] ? [`${stem}-${board}.bin`, plain] : [`${stem}-${board}.bin`] };
+}
+
+/**
+ * The public key of the A.R.M.O.R. releases (Ed25519, 32 bytes as hex): the same one the nodes trust in `firmware_base/core/fw_trust.hpp` (a test compares them when ARMOR-COMMON is next to
+ * this repository). A release image is installed only when the manifest `armor-fw/1|<project>|<board>|<version>|<sha256>` is signed with it (`<image>.sig2`): the SHA-256 beside the image
+ * only says the download is whole, and whoever can change a release on GitHub can change it too.
+ */
+export const RELEASE_PUBLIC_KEY_HEX = "664478b12a8799ab18970f58e974f14a6d0bf5623f0a22c65c3aaa32997054d2";
+
+/** True when `signatureHex` (128 hex digits) is the signature of the manifest of this image by the key `keyHex`. A part that holds a space or a '|' is refused: it could be read as another part. */
+export function manifestSignatureOk(keyHex: string, project: string, board: string, version: string, sha256: string, signatureHex: string): boolean {
+  if ([project, board, version, sha256].some(part => !part || /[|\s]/.test(part))) return false;
+  const signature = signatureHex.trim();
+  if (!/^[0-9a-fA-F]{128}$/.test(signature) || !/^[0-9a-f]{64}$/.test(keyHex)) return false;
+  try {
+    const key = crypto.createPublicKey({ key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(keyHex, "hex")]), format: "der", type: "spki" });
+    return crypto.verify(null, Buffer.from(`armor-fw/1|${project}|${board}|${version}|${sha256}`, "utf8"), key, Buffer.from(signature, "hex"));
+  } catch { return false; }
 }
 
 export const MIN_IMAGE_BYTES = 100 * 1024;
@@ -68,6 +86,9 @@ type Image = { bytes: Buffer; sha256: string; version?: string };
 
 export type FirmwareOptions = {
   now?: () => number;
+  /** The key a release must be signed with (default: the key of the A.R.M.O.R. releases) and whether a release without a valid signature is refused (default: yes; only a test turns it off). */
+  releaseKeyHex?: string;
+  requireSignature?: boolean;
   /** The port of a node's panel: 80, except in tests. */
   nodePort?: () => number;
   /** Where releases are read from (GitHub's API); a test points it at a stand-in. */
@@ -109,6 +130,8 @@ export class FirmwareService {
   readonly #now: () => number;
   readonly #nodePort: () => number;
   readonly #releaseApi: () => string;
+  readonly #releaseKeyHex: string;
+  readonly #requireSignature: boolean;
   readonly #restartWaitMs: number;
   readonly #pollMs: number;
   readonly #settleMs: number;
@@ -121,6 +144,8 @@ export class FirmwareService {
     this.#now = options.now ?? Date.now;
     this.#nodePort = options.nodePort ?? (() => 0);
     this.#releaseApi = options.releaseApi ?? (() => "https://api.github.com");
+    this.#releaseKeyHex = options.releaseKeyHex ?? RELEASE_PUBLIC_KEY_HEX;
+    this.#requireSignature = options.requireSignature ?? true;
     this.#restartWaitMs = options.restartWaitMs ?? 120_000;
     this.#pollMs = options.pollMs ?? 2_000;
     this.#settleMs = options.settleMs ?? 4_000;
@@ -166,8 +191,11 @@ export class FirmwareService {
     const checksum = name ? release.assets?.find(item => item.name === `${name}.sha256`)?.browser_download_url : undefined;
     if (!version || !asset) throw new FirmwareError(board && board !== DEFAULT_BOARDS[kind] ? "no_image_for_board" : "no_image_in_release");
     if (!checksum) throw new FirmwareError("no_checksum");
-    const [imageReply, checksumReply] = await Promise.all([this.#get(asset).catch(() => undefined), this.#get(checksum).catch(() => undefined)]);
-    if (!imageReply?.ok || !checksumReply?.ok) throw new FirmwareError("download_failed");
+    const signatureAsset = name ? release.assets?.find(item => item.name === `${name}.sig2`)?.browser_download_url : undefined;
+    if (this.#requireSignature && !signatureAsset) throw new FirmwareError("no_signature");
+    const [imageReply, checksumReply, signatureReply] = await Promise.all([this.#get(asset).catch(() => undefined), this.#get(checksum).catch(() => undefined),
+      signatureAsset ? this.#get(signatureAsset).catch(() => undefined) : Promise.resolve(undefined)]);
+    if (!imageReply?.ok || !checksumReply?.ok || (this.#requireSignature && !signatureReply?.ok)) throw new FirmwareError("download_failed");
     const expected = parseChecksum(await checksumReply.text());
     if (!expected) throw new FirmwareError("no_checksum");
     const declared = Number(imageReply.headers.get("content-length") ?? 0);
@@ -175,6 +203,12 @@ export class FirmwareService {
     const bytes = Buffer.from(await imageReply.arrayBuffer());
     if (bytes.length < MIN_IMAGE_BYTES || bytes.length > maxImageBytes(kind)) throw new FirmwareError("bad_size");
     if (sha256Of(bytes) !== expected) throw new FirmwareError("checksum_mismatch");
+    if (this.#requireSignature) {
+      // the board is the one in the name of the image taken; the plain name is the kind's default board
+      const taken = /^armor_[a-z]+-(.+)\.bin$/.exec(name ?? "")?.[1] ?? DEFAULT_BOARDS[kind];
+      const project = imageProject(bytes);
+      if (!project || !signatureReply || !manifestSignatureOk(this.#releaseKeyHex, project, taken, version, expected, await signatureReply.text())) throw new FirmwareError("bad_signature");
+    }
     return { bytes, sha256: expected, version };
   }
 

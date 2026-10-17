@@ -14,7 +14,8 @@ const MOTION_WINDOW_MS = 5 * 60_000;
 
 export function registerAiRoutes(app: Express, context: AppContext): void {
   const { ai, alarms, audit, store, vault, requireAi, site } = context;
-  const framesLimit = rateLimit({ windowMs: 60_000, limit: 240, standardHeaders: "draft-8", legacyHeaders: false });
+  // The service asks for one picture per camera every few seconds: 240 a minute for all the cameras of a house is too tight for ten of them, so it has its own, larger allowance.
+  const framesLimit = rateLimit({ windowMs: 60_000, limit: 1_200, standardHeaders: "draft-8", legacyHeaders: false });
   const param = (request: Request, name: string) => String(request.params[name] ?? "");
 
   /** The mode, the nodes with their radar tracks and light, and the cameras the service can look at. */
@@ -56,7 +57,7 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
     if (store.snapshot().mode !== "armed") return response.json({ raised: false, reason: "disarmed" });
     const alarm = alarms.raise(`ai:camera:${observation.camera_id}:motion:${Math.floor(Date.now() / MOTION_WINDOW_MS)}`, {
       source: { type: "camera", id: observation.camera_id }, severity: observation.severity === "high" ? "high" : "warning", code: "camera_motion",
-      detail: { reasons: observation.reasons.join("; "), motion: Math.round(observation.motion * 100), radar_tracks: observation.radar_tracks, profile: observation.profile }, instant: true,
+      detail: { reasons: observation.reasons.join("; "), motion: Math.round(observation.motion * 100), ...(observation.motion_ratio !== undefined ? { motion_ratio: Math.round(observation.motion_ratio * 1000) / 10 } : {}), radar_tracks: observation.radar_tracks, profile: observation.profile }, instant: true,
     });
     // The perimeter is armed and a camera saw something: the evidence is taken now, without waiting for anybody (it has its own cooldown and settings).
     const watched = vault.get(observation.camera_id);

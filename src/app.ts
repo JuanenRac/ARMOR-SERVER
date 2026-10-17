@@ -85,7 +85,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   // from an unknown client); the sign-in route has its own, much tighter limit.
   app.use(rateLimit({
     windowMs: 60_000, limit: 240, standardHeaders: "draft-8", legacyHeaders: false,
-    skip: request => (request.method === "POST" && (request.path === "/api/v1/telemetry" || request.path === "/api/v1/health" || request.path === "/api/v1/solar" || request.path === "/api/v1/electrical/readings" || request.path === "/api/v1/network/state")) || context.operatorAuthorized(request),
+    skip: request => (request.method === "POST" && (request.path === "/api/v1/telemetry" || request.path === "/api/v1/health" || request.path === "/api/v1/solar" || request.path === "/api/v1/electrical/readings" || request.path === "/api/v1/network/state" || request.path === "/api/v1/alarm/state" || request.path === "/api/v1/devices/state")) || context.operatorAuthorized(request),
   }));
 
   // A signed-in console that keeps working keeps its session: the cookie is renewed once half of its life has gone.

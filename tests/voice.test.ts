@@ -167,3 +167,28 @@ test("the commands that ask say what the server knows, in the language of the pe
     assert.match(audit, /device\.command.*voice/);
   } finally { await running.stop(); await gateway.close(); }
 });
+
+test("the wall panel's audio reaches the voice gateway through this server, with the voice token and nothing else", async () => {
+  const seen: Array<{ bytes: number; language: string; client: string; token: string }> = [];
+  const gateway = http.createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", chunk => chunks.push(chunk as Buffer));
+    request.on("end", () => {
+      seen.push({ bytes: Buffer.concat(chunks).length, language: String(request.headers["x-armor-language"]), client: String(request.headers["x-armor-client"]), token: String(request.headers["x-armor-voice-token"]) });
+      response.writeHead(200, json); response.end(JSON.stringify({ heard: "status", reply: "ok" }));
+    });
+  });
+  await new Promise<void>(resolve => gateway.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${(gateway.address() as { port: number }).port}`;
+  const running = await startServer({ ARMOR_VOICE_URL: url, ARMOR_VOICE_TOKEN: TOKEN });
+  try {
+    const send = (token: string | undefined, bytes: number, path = "/api/v1/voice/turn") => fetch(`${running.base}${path}`, { method: "POST", headers: { "Content-Type": "audio/L16;rate=16000", "X-Armor-Language": "es", ...(token ? { "X-Armor-Voice-Token": token } : {}) }, body: new Uint8Array(bytes) });
+    assert.equal((await send(undefined, 100)).status, 401);
+    assert.equal((await send("x".repeat(32), 100)).status, 401);
+    const ok = await send(TOKEN, 3200);
+    assert.deepEqual([ok.status, await ok.json()], [200, { heard: "status", reply: "ok" }]);
+    assert.equal((await send(TOKEN, 3200, "/api/v1/voice/v1/turn")).status, 200);
+    assert.equal((await send(TOKEN, 500_000)).status, 413);
+    assert.deepEqual(seen.map(item => [item.bytes, item.language, item.token]), [[3200, "es", TOKEN], [3200, "es", TOKEN]]);
+  } finally { await running.stop(); await new Promise<void>(resolve => gateway.close(() => resolve())); }
+});

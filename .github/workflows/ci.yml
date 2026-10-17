@@ -41,6 +41,27 @@ jobs:
       - name: Validate manifest, version, changelog and README parity
         run: python tools/armor_ci_validate.py
 
+      # The tests that compare a repository with the contracts (the conformance vectors, the messages a firmware prints, the firmware the nodes share) need the other repositories
+      # next to this one. A checkout only brings its own, so without these steps those tests were skipped and the run came out green having compared nothing.
+      - name: Fetch the repositories the tests compare against
+        if: ${{ github.event.repository.name != 'ARMOR-COMMON' }}
+        run: |
+          git clone --depth 1 https://github.com/JuanenRac/ARMOR-COMMON.git ../ARMOR-COMMON
+          if [ "${{ github.event.repository.name }}" = "ARMOR-SERVER" ]; then
+            git clone --depth 1 https://github.com/JuanenRac/ARMOR-SIMULATOR.git ../ARMOR-SIMULATOR
+          fi
+
+      - name: Fetch the node repositories, to compare the firmware they share
+        if: ${{ github.event.repository.name == 'ARMOR-COMMON' }}
+        run: |
+          for repository in ARMOR-ALARM ARMOR-ELECTRICAL ARMOR-HMI ARMOR-RADAR ARMOR-SOLAR; do
+            git clone --depth 1 "https://github.com/JuanenRac/${repository}.git" "../${repository}"
+          done
+
+      - name: Install the tools that read the HTTP contract
+        if: ${{ github.event.repository.name == 'ARMOR-COMMON' }}
+        run: python -m pip install --quiet pyyaml openapi-spec-validator
+
       - name: Set up Node.js
         if: ${{ hashFiles('package.json') != '' }}
         uses: actions/setup-node@v5
@@ -75,3 +96,5 @@ jobs:
         run: python tools/armor_project_tool.py build-test .
         env:
           PYTHONPATH: src
+          # A comparison with another repository that cannot be made is a failure here, not a skipped test.
+          ARMOR_REQUIRE_SIBLINGS: "1"

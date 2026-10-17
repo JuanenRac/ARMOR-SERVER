@@ -4,7 +4,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import test from "node:test";
-import { FirmwareService, imageNames, NODE_KINDS, parseChecksum, RELEASE_SOURCES } from "../src/firmware.js";
+import { FirmwareService, imageNames, NODE_KINDS, parseChecksum, RELEASE_PUBLIC_KEY_HEX, RELEASE_SOURCES } from "../src/firmware.js";
 import { startServer, studioCookie, type Running } from "./helpers.js";
 
 const json = { "Content-Type": "application/json" };
@@ -66,7 +66,7 @@ async function fakeGithub(release: { tag: string; image: Buffer; checksum?: stri
 
 async function withServer(node: { port: number }, github: { api: string } | null, run: (running: Running, cookie: string) => Promise<void>): Promise<void> {
   process.env.ARMOR_ADMIN_NODE_PORT = String(node.port);
-  const firmware = new FirmwareService({ nodePort: () => node.port, releaseApi: () => github?.api ?? "http://127.0.0.1:9", settleMs: 20, pollMs: 20, restartWaitMs: 3000, betweenMs: 10, retryMs: 10 });
+  const firmware = new FirmwareService({ nodePort: () => node.port, releaseApi: () => github?.api ?? "http://127.0.0.1:9", requireSignature: false, settleMs: 20, pollMs: 20, restartWaitMs: 3000, betweenMs: 10, retryMs: 10 });
   const running = await startServer({}, { firmware });
   try { await run(running, await studioCookie(running.base)); } finally { delete process.env.ARMOR_ADMIN_NODE_PORT; await running.stop(); }
 }
@@ -216,7 +216,7 @@ test("each board gets the image built for it, and the plain name only serves the
   const both = await serve({ "armor_electrical-s3-eth.bin": eth, "armor_electrical-s3-wifi.bin": wifi, "armor_electrical.bin": plain });
   const old = await serve({ "armor_electrical.bin": plain });
   try {
-    const service = (github: { api: string }) => new FirmwareService({ releaseApi: () => github.api });
+    const service = (github: { api: string }) => new FirmwareService({ releaseApi: () => github.api, requireSignature: false });
     assert.equal((await service(both).fetchRelease("electrical", "s3-wifi")).sha256, sha(wifi));    // its own, never the plain one
     assert.equal((await service(both).fetchRelease("electrical", "s3-eth")).sha256, sha(eth));      // the one built for it before the plain name
     assert.equal((await service(both).fetchRelease("electrical")).sha256, sha(plain));              // a board not known: the plain name, as before
@@ -224,6 +224,49 @@ test("each board gets the image built for it, and the plain name only serves the
     await assert.rejects(service(old).fetchRelease("electrical", "s3-wifi"), (error: unknown) => (error as { code?: string }).code === "no_image_for_board");   // and never another board
     await assert.rejects(service(both).fetchRelease("hmi", "lcd7box"), (error: unknown) => (error as { code?: string }).code === "no_image_in_release");
   } finally { await both.close(); await old.close(); }
+});
+
+test("a release is installed only when its manifest is signed with the key of the releases", async () => {
+  const pair = crypto.generateKeyPairSync("ed25519");
+  const keyHex = pair.publicKey.export({ format: "der", type: "spki" }).subarray(-32).toString("hex");
+  const other = crypto.generateKeyPairSync("ed25519");
+  const signed = (key: crypto.KeyObject, project: string, board: string, version: string, bytes: Buffer) => crypto.sign(null, Buffer.from(`armor-fw/1|${project}|${board}|${version}|${sha(bytes)}`, "utf8"), key).toString("hex");
+  const withProject = (fill: number, project: string) => { const bytes = image(fill); bytes.writeUInt32LE(0xabcd5432, 32); bytes.fill(0, 80, 112); bytes.write(project, 80, "latin1"); return bytes; };
+  const good = withProject(0x44, "armor_alarm");
+  const serve = async (assets: Record<string, string | Buffer>) => {
+    const server = http.createServer((request, response) => {
+      const url = request.url ?? "", base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+      if (/^\/repos\/[^/]+\/[^/]+\/releases\/latest$/.test(url)) { response.writeHead(200, json); response.end(JSON.stringify({ tag_name: "v1.2.3", assets: Object.keys(assets).map(name => ({ name, browser_download_url: `${base}/dl/${name}` })) })); return; }
+      const name = decodeURIComponent(url.replace(/^\/dl\//, ""));
+      if (name in assets) { response.writeHead(200); response.end(assets[name]); return; }
+      response.writeHead(404); response.end();
+    });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    return { api: `http://127.0.0.1:${(server.address() as { port: number }).port}`, close: () => new Promise<void>(resolve => server.close(() => resolve())) };
+  };
+  const release = (bytes: Buffer, signature?: string) => ({ "armor_alarm-s3-eth.bin": bytes, "armor_alarm-s3-eth.bin.sha256": `${sha(bytes)}  armor_alarm-s3-eth.bin
+`, ...(signature ? { "armor_alarm-s3-eth.bin.sig2": `${signature}
+` } : {}) });
+  const fetchWith = async (assets: Record<string, string | Buffer>) => {
+    const github = await serve(assets);
+    try { return await new FirmwareService({ releaseApi: () => github.api, releaseKeyHex: keyHex }).fetchRelease("alarm", "s3-eth"); } finally { await github.close(); }
+  };
+  const codeOf = (error: unknown) => (error as { code?: string }).code;
+  assert.equal((await fetchWith(release(good, signed(pair.privateKey, "armor_alarm", "s3-eth", "1.2.3", good)))).sha256, sha(good));
+  await assert.rejects(fetchWith(release(good)), (error: unknown) => codeOf(error) === "no_signature");                                                                    // a hash alone is not enough
+  await assert.rejects(fetchWith(release(good, signed(other.privateKey, "armor_alarm", "s3-eth", "1.2.3", good))), (error: unknown) => codeOf(error) === "bad_signature");   // another key
+  await assert.rejects(fetchWith(release(good, signed(pair.privateKey, "armor_alarm", "s3-eth", "1.2.2", good))), (error: unknown) => codeOf(error) === "bad_signature");   // an old signed manifest
+  await assert.rejects(fetchWith(release(good, signed(pair.privateKey, "armor_alarm", "s3-wifi", "1.2.3", good))), (error: unknown) => codeOf(error) === "bad_signature");  // another board's
+  await assert.rejects(fetchWith(release(good, signed(pair.privateKey, "armor_radar", "s3-eth", "1.2.3", good))), (error: unknown) => codeOf(error) === "bad_signature");   // another project's
+  const unnamed = image(0x55);
+  await assert.rejects(fetchWith(release(unnamed, signed(pair.privateKey, "armor_alarm", "s3-eth", "1.2.3", unnamed))), (error: unknown) => codeOf(error) === "bad_signature"); // an image that does not say what it is
+});
+
+test("the key the server trusts for releases is the one the nodes carry", () => {
+  const header = path.resolve("..", "ARMOR-COMMON", "firmware_base", "core", "fw_trust.hpp");
+  if (!fs.existsSync(header)) return;   // ARMOR-COMMON is not checked out next to this repository
+  const bytes = /kPublicKey\[32\] = \{([^}]+)\}/.exec(fs.readFileSync(header, "utf8"))?.[1].split(",").map(item => Number.parseInt(item.trim(), 16)) ?? [];
+  assert.equal(Buffer.from(bytes).toString("hex"), RELEASE_PUBLIC_KEY_HEX);
 });
 
 test("the kinds of node and the names of their images", () => {

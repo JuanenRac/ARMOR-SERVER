@@ -8,6 +8,7 @@ import type { AppContext } from "../context.js";
 import { hasBearer } from "../http/auth.js";
 import { ingestCaller } from "../http/node_token.js";
 import { forwardCompatible } from "../contracts.js";
+import { stampOf } from "../mqtt.js";
 import { ENERGY_ALARM_DEFAULTS, EnergySettingsInvalid } from "../energy_alarms.js";
 import { parseSolarMessage } from "../solar.js";
 import { ANT_CELL_COUNTS, ANT_CURRENTS, BATTERY_MODELS, CONNECTIONS, INVERTER_FAMILIES, INVERTER_MODELS, SolarRegistryError, exampleReading, modelLabel } from "../solar_registry.js";
@@ -24,7 +25,7 @@ export function registerSolarRoutes(app: Express, context: AppContext): void {
     if (!ingestCaller(request, config.ingestToken, config.ingestStrict, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
     try {
       const { value, ignored } = forwardCompatible(() => parseSolarMessage(request.body));
-      solar.ingest(value);
+      solar.ingest({ ...value, timestamp_ms: stampOf(value.timestamp_ms, Date.now()) });   // a node without a clock counts from zero: the arrival time is used, as over MQTT
       context.ingestLog.ok(`http:solar/${value.node_id}/${value.device}`, ignored);
       return response.status(202).json({ accepted: true, ...(ignored.length ? { ignored } : {}) });
     } catch (error) {

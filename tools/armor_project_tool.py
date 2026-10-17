@@ -99,9 +99,41 @@ def project_python(project: Path) -> str:
     return str(python)
 
 
+NODE_REPOSITORIES = ("ARMOR-ALARM", "ARMOR-ELECTRICAL", "ARMOR-HMI", "ARMOR-RADAR", "ARMOR-SOLAR")
+
+
+def siblings_required() -> bool:
+    """In CI (ARMOR_REQUIRE_SIBLINGS=1) a check that needs the other repositories next to this one fails when they are missing; on a machine it says it was skipped."""
+    return os.environ.get("ARMOR_REQUIRE_SIBLINGS", "") not in ("", "0")
+
+
+def test_common(project: Path) -> None:
+    """ARMOR-COMMON: its unit tests, then what it generates (the types and the conformance vectors must be the ones its sources produce) and that the firmware the five nodes share is identical to the base."""
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(project / "src") + os.pathsep + environment.get("PYTHONPATH", "")
+    command(project, [sys.executable, "-m", "unittest", "discover", "-s", "tests"], environment)
+    command(project, [sys.executable, "tools/generate_types.py", "--check"], environment)
+    command(project, [sys.executable, "tools/make_conformance.py", "--check"], environment)
+    present = [node for node in NODE_REPOSITORIES if (project.parent / node).is_dir()]
+    if len(present) == len(NODE_REPOSITORIES):
+        command(project, [sys.executable, "tools/sync_firmware_base.py", "check", "--root", str(project.parent)], environment)
+    elif siblings_required():
+        raise RuntimeError("the node repositories are not next to ARMOR-COMMON, so the shared firmware could not be compared (missing: " + ", ".join(sorted(set(NODE_REPOSITORIES) - set(present))) + ")")
+    else:
+        print("FIRMWARE_BASE=SKIPPED the node repositories are not next to ARMOR-COMMON")
+
+
+def host_tests(project: Path, build: Path) -> None:
+    """Run every test program the project's CMake registers (a list written by hand here left some of them out, among them the ones that check the signature of a firmware)."""
+    ctest = check_tool("ctest", "CTest (it comes with CMake) is required to run the host tests")
+    command(project, [ctest, "--test-dir", str(build), "--output-on-failure"])
+
+
 def test_project(project: Path, manifest: dict[str, object]) -> None:
     name = str(manifest["name"])
-    if name in PYTHON_PROJECTS:
+    if name == "ARMOR-COMMON":
+        test_common(project)
+    elif name in PYTHON_PROJECTS:
         environment = os.environ.copy()
         environment["PYTHONPATH"] = str(project / "src") + os.pathsep + environment.get("PYTHONPATH", "")
         command(project, [sys.executable, "-m", "unittest", "discover", "-s", "tests"], environment)
@@ -172,8 +204,7 @@ def test_radar(project: Path) -> None:
     command(project, [cmake, "-S", "tests", "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug"])
     command(project, [cmake, "--build", str(build)])
     suffix = ".exe" if os.name == "nt" else ""
-    for test in ("test_core", "test_node", "test_sensors", "test_board_wifi"):
-        command(project, [str(build / f"{test}{suffix}")])
+    host_tests(project, build)
     emitter = subprocess.run([str(build / f"emit_samples{suffix}")], cwd=project, capture_output=True, text=True, check=True)
     checker = subprocess.run([sys.executable, "tests/check_contract.py"], cwd=project, input=emitter.stdout, text=True, check=False)
     if checker.returncode:
@@ -191,8 +222,7 @@ def test_solar(project: Path) -> None:
     command(project, [cmake, "-S", "tests", "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug"])
     command(project, [cmake, "--build", str(build)])
     suffix = ".exe" if os.name == "nt" else ""
-    for test in ("test_solar", "test_node", "test_board_eth"):
-        command(project, [str(build / f"{test}{suffix}")])
+    host_tests(project, build)
     for emit in ("emit_samples", "emit_poller_samples"):
         emitter = subprocess.run([str(build / f"{emit}{suffix}")], cwd=project, capture_output=True, text=True, check=True)
         checker = subprocess.run([sys.executable, "tests/check_samples.py"], cwd=project, input=emitter.stdout, text=True, check=False)
@@ -207,8 +237,7 @@ def test_electrical(project: Path) -> None:
     command(project, [cmake, "-S", "tests", "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug"])
     command(project, [cmake, "--build", str(build)])
     suffix = ".exe" if os.name == "nt" else ""
-    for test in ("test_meters", "test_interlock", "test_switch_set"):
-        command(project, [str(build / f"{test}{suffix}")])
+    host_tests(project, build)
     emitter = subprocess.run([str(build / f"emit_samples{suffix}")], cwd=project, capture_output=True, text=True, check=True)
     checker = subprocess.run([sys.executable, "tests/check_samples.py"], cwd=project, input=emitter.stdout, text=True, check=False)
     if checker.returncode:
@@ -222,8 +251,7 @@ def test_alarm(project: Path) -> None:
     command(project, [cmake, "-S", "tests", "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug"])
     command(project, [cmake, "--build", str(build)])
     suffix = ".exe" if os.name == "nt" else ""
-    for test in ("test_alarm", "test_node", "test_release"):
-        command(project, [str(build / f"{test}{suffix}")])
+    host_tests(project, build)
     emitter = subprocess.run([str(build / f"emit_samples{suffix}")], cwd=project, capture_output=True, text=True, check=True)
     checker = subprocess.run([sys.executable, "tests/check_samples.py"], cwd=project, input=emitter.stdout, text=True, check=False)
     if checker.returncode:
@@ -236,9 +264,7 @@ def test_hmi(project: Path) -> None:
     build = project / "build" / "host"
     command(project, [cmake, "-S", "tests", "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug"])
     command(project, [cmake, "--build", str(build)])
-    suffix = ".exe" if os.name == "nt" else ""
-    for test in ("test_config", "test_view", "test_voice", "test_board"):
-        command(project, [str(build / f"{test}{suffix}")])
+    host_tests(project, build)
 
 
 def validate_markdown_links(project: Path) -> None:

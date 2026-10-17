@@ -6,7 +6,7 @@
 import type { Express } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
-import { parseHealth, parseTelemetry } from "../contracts.js";
+import { forwardCompatible, parseHealth, parseTelemetry } from "../contracts.js";
 import { stampOf } from "../mqtt.js";
 import { hasBearer } from "../http/auth.js";
 import { ingestCaller } from "../http/node_token.js";
@@ -34,14 +34,19 @@ export function registerIngestRoutes(app: Express, context: AppContext, startedA
   app.post("/api/v1/telemetry", ingestLimit, (request, response) => {
     if (!ingestCaller(request, config.ingestToken, config.ingestStrict, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
     // The answer is deliberately minimal: a field node's token must not reveal the rest of the perimeter.
-    try { return response.status(202).json({ accepted: true, revision: store.telemetry(stamped(parseTelemetry(request.body))).revision }); }
-    catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "invalid telemetry" }); }
+    try {
+      // As over MQTT, a field this server does not know yet is ignored and said, not a reason to lose the message (a newer node, an older server).
+      const { value, ignored } = forwardCompatible(() => parseTelemetry(request.body));
+      return response.status(202).json({ accepted: true, revision: store.telemetry(stamped(value)).revision, ...(ignored.length ? { ignored } : {}) });
+    } catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "invalid telemetry" }); }
   });
 
   app.post("/api/v1/health", ingestLimit, (request, response) => {
     if (!ingestCaller(request, config.ingestToken, config.ingestStrict, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
-    try { return response.status(202).json({ accepted: true, revision: store.health(stamped(parseHealth(request.body))).revision }); }
-    catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "invalid health" }); }
+    try {
+      const { value, ignored } = forwardCompatible(() => parseHealth(request.body));
+      return response.status(202).json({ accepted: true, revision: store.health(stamped(value)).revision, ...(ignored.length ? { ignored } : {}) });
+    } catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "invalid health" }); }
   });
 
   app.post("/api/v1/control/:mode", controlLimit, (request, response) => {

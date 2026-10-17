@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## [0.6.6] - Releases that must be signed, the wall panel's voice through the server and a few contracts brought together
+
+- **A firmware release is installed only when its manifest is signed** (`<image>.sig2`, Ed25519, the key of the releases): "Node firmware" used to check only the `.sha256` published in the same release, so whoever could change a release on GitHub could change both and have the server push his firmware to every panel. A release without the signature or with another key is refused (`no_signature`, `bad_signature`); an image uploaded by hand is still the administrator's own act. A test compares the key with the one the nodes carry.
+- **The wall panel can reach the voice gateway:** `POST /api/v1/voice/turn` (and `/api/v1/voice/v1/turn`, which is what the panel builds from the address `<server>/api/v1/voice`) takes the panel's audio with the voice token and passes it to the gateway on this machine, which listens on the loopback only; each panel has its own pending question.
+- **The contract and the server agree:** a node `firmware` may have four parts (the odometer from 0.8.0.0), and a node that reports a network outside 10/8, 172.16/12 and 192.168/16 is refused, as the shared vectors say.
+- Telemetry and health over HTTP ignore a field they do not know yet, and say so, as over MQTT; solar and electrical readings sent without a clock get the arrival time like the radar's.
+- A viewer's phone may take its push token back (`/push/unregister`); the observation service has its own, larger allowance of pictures and may say the share of the picture that moved (`motion_ratio`); `/alarm/state` and `/devices/state` are exempt from the anonymous limit like the other ingest routes.
+- Studio shows why a release was refused (new texts in eight languages); the OpenAPI file describes the voice routes. Tests: 402 (before 399, with the contract vectors now passing).
+
 ## [0.6.5] - A duress disarm that stays silent, alarms that tell the truth after a restart, and a safer push
 
 - A disarm with the duress PIN is now SILENT. The alarm it raises used to be an ordinary critical one: it showed on the wall panel's summary (which sounded the siren tone and turned the screen red in front of whoever was forcing the person), went to the broker topic every panel listens to, set off the automations, and could be acknowledged by the panel itself. It is now told only to the webhook, Telegram and ntfy, is not in the event history, the summary, the voice answers or the count of the system, sets nothing off, and only an administrator signed in to Studio sees it, acknowledges it or deletes it. The text says what to do ("do not call them, call for help").

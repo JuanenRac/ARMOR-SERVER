@@ -4,12 +4,15 @@
  * disarming need a second turn: the first answers `confirmation-needed` with a token, the second repeats the phrase with it.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
-import type { Express, Request } from "express";
+import express, { type Express, type Request } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { checkDisarm } from "./disarm_gate.js";
 import { askVoice, isVoiceLanguage, spokenResult, VoiceError, type VoiceLanguage } from "../voice.js";
 import { ANSWERED_HERE, carryOut } from "../voice_actions.js";
+import crypto from "node:crypto";
+
+const MAX_TURN_AUDIO_BYTES = 480_000;
 
 const MAX_TEXT = 200;
 
@@ -20,6 +23,32 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
 
   /** Whether written and spoken commands are available on this install (the phone asks before it shows the microphone). */
   app.get("/api/v1/voice/status", requireOperator, (_request, response) => response.json({ available: config.voice !== null }));
+
+  /**
+   * The wall panel speaks to the voice gateway through this server: the gateway listens on this machine only, and the panel is another device. The panel sends its audio here with the
+   * voice token it was given (the same one the gateway asks for); the server passes it on, with the address of the panel so each panel has its own pending question, and gives back
+   * the answer as it is. Both paths name the same thing: the second lets the panel's own setting be this server's address plus `/api/v1/voice` (it adds `/v1/turn` itself).
+   */
+  const turnLimit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
+  const turn = async (request: Request, response: import("express").Response) => {
+    if (!config.voice) return response.status(503).json({ error: "voice_unavailable" });
+    const given = Buffer.from(String(request.headers["x-armor-voice-token"] ?? "")), wanted = Buffer.from(config.voice.token);
+    if (given.length !== wanted.length || !crypto.timingSafeEqual(given, wanted)) { audit.record({ action: "voice.turn", outcome: "denied" }); return response.status(401).json({ error: "unauthorized" }); }
+    const body = Buffer.isBuffer(request.body) ? request.body : Buffer.alloc(0);
+    if (body.length === 0) return response.status(411).json({ error: "bad audio length" });
+    try {
+      const reply = await fetch(`${config.voice.url.replace(/\/$/, "")}/v1/turn`, {
+        method: "POST", body: new Uint8Array(body), signal: AbortSignal.timeout(30_000),
+        headers: { "Content-Type": "audio/L16;rate=16000", "X-Armor-Voice-Token": config.voice.token, "X-Armor-Language": String(request.headers["x-armor-language"] ?? "en"), "X-Armor-Client": request.ip ?? "panel" },
+      });
+      const text = await reply.text();
+      audit.record({ action: "voice.turn", outcome: reply.ok ? "allowed" : "denied", detail: String(reply.status) });
+      return response.status(reply.status).type("application/json").send(text.slice(0, 400_000));
+    } catch { return response.status(503).json({ error: "voice_not_answering" }); }
+  };
+  const turnBody = express.raw({ type: () => true, limit: MAX_TURN_AUDIO_BYTES });
+  app.post("/api/v1/voice/turn", turnLimit, turnBody, turn);
+  app.post("/api/v1/voice/v1/turn", turnLimit, turnBody, turn);
 
   app.post("/api/v1/voice/command", requireOperator, limit, async (request, response) => {
     const input = (typeof request.body === "object" && request.body !== null ? request.body : {}) as Record<string, unknown>;

@@ -9,6 +9,7 @@ import type { AppContext } from "../context.js";
 import { hasBearer } from "../http/auth.js";
 import { ingestCaller } from "../http/node_token.js";
 import { forwardCompatible } from "../contracts.js";
+import { stampOf } from "../mqtt.js";
 import { kindInfo } from "../devices/catalog.js";
 import { SWITCH_ACTIONS, parseElectricalMessage, type SwitchAction } from "../electrical.js";
 import { SwitchingError } from "../electrical_switching.js";
@@ -25,7 +26,7 @@ export function registerElectricalRoutes(app: Express, context: AppContext): voi
     if (!ingestCaller(request, config.ingestToken, config.ingestStrict, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
     try {
       const { value, ignored } = forwardCompatible(() => parseElectricalMessage(request.body));
-      electricalNodes.ingest(value);
+      electricalNodes.ingest({ ...value, timestamp_ms: stampOf(value.timestamp_ms, Date.now()) });
       context.ingestLog.ok(`http:electrical/${value.node_id}`, ignored);
       return response.status(202).json({ accepted: true, ...(ignored.length ? { ignored } : {}) });
     } catch (error) {

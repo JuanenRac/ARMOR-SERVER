@@ -86,7 +86,8 @@ export function parseHealth(value: unknown): Health {
 }
 
 const IPV4 = /^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}$/;
-const FIRMWARE = /^[0-9]+\.[0-9]+\.[0-9]+$/;
+// Three parts, or four from 0.8.0 on (the odometer of the family): see ARMOR-COMMON docs/CONTRACTS.md.
+const FIRMWARE = /^[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?$/;
 export const MAX_NAME = 48;
 
 export function parseInfo(value: unknown): Info {

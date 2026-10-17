@@ -20,6 +20,7 @@ manifest problem is reported without waiting on a slow build first.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -47,7 +48,7 @@ REQUIRED_MANIFEST_KEYS = (
 )
 VALID_MATURITY = {"scaffolding", "functional", "established", "production"}
 SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:\.\d+)?$")   # three components up to 0.7.9, four from 0.8.0
-VERSION_HEADING = re.compile(r"(?im)^#{1,3}\s*\[?(\d+\.\d+\.\d+)(?:\]|\s|$)")
+VERSION_HEADING = re.compile(r"(?im)^#{1,3}\s*\[?(\d+\.\d+\.\d+(?:\.\d+)?)(?:\]|\s|$)")
 
 # A version-shaped token sitting next to one of these "current version"
 # label words (any of the seven languages), or right after this project's
@@ -66,7 +67,7 @@ VERSION_PROSE_LABELS = (
 VERSION_PROSE_LABEL_PATTERN = re.compile(
     "|".join(f"(?<![A-Za-zÀ-ɏ])(?:{re.escape(label)})" for label in VERSION_PROSE_LABELS)
 )
-VERSION_PROSE_TOKEN = re.compile(r"\bv?(\d+\.\d+\.\d+)\b")
+VERSION_PROSE_TOKEN = re.compile(r"\bv?(\d+\.\d+\.\d+(?:\.\d+)?)\b")
 
 LOCAL_MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)\s]+)(?:\s+[\"'][^)]*)?\)")
 MARKDOWN_EXCLUDED_DIRECTORIES = {
@@ -107,7 +108,7 @@ def validate_changelog_order() -> None:
 
 def validate_readme_version_prose(manifest: dict) -> None:
     real_version = manifest["version"]
-    name_pattern = re.compile(re.escape(manifest["name"]) + r"\s+v(\d+\.\d+\.\d+)")
+    name_pattern = re.compile(re.escape(manifest["name"]) + r"\s+v(\d+\.\d+\.\d+(?:\.\d+)?)")
     offenders: list[str] = []
     for document_name in REQUIRED_DOCUMENTS:
         if not document_name.startswith("README"):
@@ -167,7 +168,12 @@ def main() -> int:
     if manifest["ecosystem"] != "A.R.M.O.R.":
         fail("manifest ecosystem must be A.R.M.O.R.")
     if manifest["name"] != ROOT.name:
-        fail(f"manifest name {manifest['name']!r} must match repository directory {ROOT.name!r}")
+        # A clone may live in a folder of another name (git clone ... armor-common, a worktree): in GitHub Actions the repository's own name is what counts, anywhere else it is a warning.
+        repository = os.environ.get("GITHUB_REPOSITORY", "").split("/")[-1]
+        if os.environ.get("GITHUB_ACTIONS") and repository and manifest["name"] != repository:
+            fail(f"manifest name {manifest['name']!r} must match the repository {repository!r}")
+        if not os.environ.get("GITHUB_ACTIONS"):
+            print(f"warning: manifest name {manifest['name']!r} differs from the folder {ROOT.name!r}", file=sys.stderr)
     if not isinstance(manifest["version"], str) or not SEMVER.fullmatch(manifest["version"]):
         fail("manifest version must be MAJOR.MINOR.PATCH (or MAJOR.MINOR.PATCH.BUILD from 0.8.0)")
     if manifest["maturity"] not in VALID_MATURITY:
@@ -175,7 +181,7 @@ def main() -> int:
     if not isinstance(manifest["technologies"], list) or not manifest["technologies"]:
         fail("manifest technologies must be a non-empty list")
     if not isinstance(manifest["native_version"], str) or not SEMVER.fullmatch(manifest["native_version"]):
-        fail("manifest native_version must be MAJOR.MINOR.PATCH")
+        fail("manifest native_version must be MAJOR.MINOR.PATCH (or MAJOR.MINOR.PATCH.BUILD from 0.8.0)")
     if manifest["native_version"] != manifest["version"]:
         fail(f"native_version {manifest['native_version']} differs from version {manifest['version']}")
 
