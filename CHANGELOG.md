@@ -4,14 +4,14 @@ All notable changes to this project are documented here.
 
 ## [0.7.1] - Zones in trouble, estimated powers and wall panels
 
-A zone in trouble raises a warning for as long as it lasts (it never sounds the siren), and the state is accepted by the alarm contract.
-A grid figure that includes an estimated channel is marked as estimated (grid_estimated); the channel keeps its power_estimated flag.
-A health message from a wall panel (kind panel) is kept apart: it is not a radar node, does not count and cannot be a node that went down; the services list it as a wall panel.
-Tests: 421 (before 418).
+- A zone in trouble raises a warning for as long as it lasts (it never sounds the siren), and the state is accepted by the alarm contract.
+- A grid figure that includes an estimated channel is marked as estimated (grid_estimated); the channel keeps its power_estimated flag.
+- A health message from a wall panel (kind panel) is kept apart: it is not a radar node, does not count and cannot be a node that went down; the services list it as a wall panel.
+- Tests: 421 (before 418).
 
 ## [0.7.0] - The server accepts the inverter warnings_known field
 
-An inverter message may carry warnings_known: false, which says that the inverter dialect cannot ask for its warnings (REVO), so the empty list means unknown and not none; the field is checked as a boolean and kept. Tests: 418 (before 417).
+- An inverter message may carry warnings_known: false, which says that the inverter dialect cannot ask for its warnings (REVO), so the empty list means unknown and not none; the field is checked as a boolean and kept. Tests: 418 (before 417).
 
 ## [0.6.9] - The server now sends the marker a node demands when it signs in, adopts and updates it
 
