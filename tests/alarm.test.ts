@@ -105,6 +105,8 @@ test("a command needs a node that is there, awake and that takes commands, and o
   assert.equal(code(() => b.service.request("alarm-1", "arm", undefined, false, "admin")), "invalid_mode");
   assert.equal(code(() => b.service.request("alarm-1", "disarm", "away", false, "admin")), "invalid_request");
   assert.equal(code(() => b.service.request("alarm-1", "disarm", undefined, true, "admin")), "invalid_request");
+  assert.equal(code(() => b.service.request("alarm-1", "silence", "away", false, "admin")), "invalid_request");
+  assert.equal(code(() => b.service.request("alarm-1", "silence", undefined, true, "admin")), "invalid_request");
   assert.equal(b.sent.length, 0);
   const first = b.service.request("alarm-1", "arm", "stay", true, "admin");
   assert.equal(code(() => b.service.request("alarm-1", "disarm", undefined, false, "admin")), "busy");
@@ -115,6 +117,24 @@ test("a command needs a node that is there, awake and that takes commands, and o
   assert.ok(!b.sent[0].payload.includes("pin"));
   b.tick(40_000);
   assert.equal(code(() => b.service.request("alarm-1", "disarm", undefined, false, "admin")), "node_unavailable");   // a quiet node is not sent anything
+});
+
+test("a silence is a command like a disarm: no mode, no force, no PIN on the wire, and its answer settles it", () => {
+  const b = bench();
+  b.nodes.ingest(state({ phase: "alarm", siren: true }));
+  const { command_id: id } = b.service.request("alarm-1", "silence", undefined, false, "admin");
+  const sentCommand = parseAlarmCommand(JSON.parse(b.sent[0].payload));
+  assert.deepEqual([sentCommand.action, sentCommand.mode, sentCommand.force], ["silence", undefined, undefined]);
+  assert.ok(!b.sent[0].payload.includes("pin") && !b.sent[0].payload.includes("mode"));
+  b.service.handleResult(b.answer({ command_id: id, action: "silence", phase: "alarm" }), "alarm-1");
+  assert.deepEqual([b.service.status().pending.length, b.service.status().recent[0].action, b.service.status().recent[0].accepted], [0, "silence", true]);
+  assert.throws(() => parseAlarmCommand({ ...sentCommand, mode: "away" }), /mode goes on an arm/);
+  assert.throws(() => parseAlarmCommand({ ...sentCommand, force: true }), /force goes on an arm/);
+  // commands off: not even a silence goes out
+  const off = bench({ enabled: false });
+  off.nodes.ingest(state());
+  assert.equal(code(() => off.service.request("alarm-1", "silence", undefined, false, "admin")), "commands_disabled");
+  assert.equal(off.sent.length, 0);
 });
 
 test("an answer settles the command it answers, and an answer to nothing is dropped and audited", () => {
@@ -184,6 +204,36 @@ test("a zone that cannot be read is a warning for as long as it lasts, and never
   assert.deepEqual(active(), []);
 });
 
+test("a siren silenced with the PIN leaves the alarm open and unacknowledged until the disarm", async () => {
+  const { AlarmCentre, AlarmRules } = await import("../src/alarms.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "armor-alarm-silenced-"));
+  const centre = new AlarmCentre({ file: path.join(dir, "alarms.json") });
+  const rules = new AlarmRules(centre, () => "disarmed");
+  const open = () => centre.active().filter(alarm => !alarm.cleared_at);
+  const ringing = state({ phase: "alarm", siren: true, events: [{ ago_s: 5, kind: "alarm", zone: "window" }] });
+  rules.handleAlarmNode(ringing, undefined);
+  const silenced = state({ phase: "alarm", siren: false, events: [{ ago_s: 5, kind: "alarm", zone: "window" }, { ago_s: 1, kind: "siren_silenced" }] });
+  rules.handleAlarmNode(silenced, ringing);
+  assert.deepEqual(open().map(alarm => [alarm.code, alarm.acknowledged_at]), [["alarm_sounding", undefined]]);
+  rules.handleAlarmNode(state({ phase: "disarmed", mode: "disarmed", events: [] }), silenced);
+  assert.deepEqual(open(), []);
+});
+
+test("silencing a siren over HTTP asks for the PIN of the user, like a disarm", async () => {
+  const running = await startServer({ ARMOR_ALARM_COMMANDS: "1", ARMOR_DISARM_PIN: "required" });
+  try {
+    const cookie = await studioCookie(running.base);
+    const call = async (method: string, route: string, body: unknown) => { const r = await fetch(`${running.base}${route}`, { method, headers: { "Content-Type": "application/json", cookie }, body: JSON.stringify(body) }); return { status: r.status, body: await r.json() as Record<string, unknown> }; };
+    const silence = (pin?: string) => call("POST", "/api/v1/alarm/command", { node: "alarm-1", action: "silence", ...(pin === undefined ? {} : { pin }) });
+    assert.equal((await silence("1234")).body.code, "pin_not_set");
+    const id = (((await (await fetch(`${running.base}/api/v1/users`, { headers: { cookie } })).json()) as { users: Array<{ id: string; current: boolean }> }).users).find(user => user.current)!.id;
+    assert.equal((await call("PUT", `/api/v1/users/${id}/pin`, { pin: "2468", duress_pin: "" })).status, 200);
+    assert.equal((await silence()).body.code, "wrong_pin");
+    assert.equal((await silence("0000")).body.code, "wrong_pin");
+    assert.equal((await silence("0000")).body.code, "pin_locked", "wrong PINs count together with those of a disarm");
+  } finally { await running.stop(); }
+});
+
 // ---- the routes ---------------------------------------------------------------------------------------------------------------------------
 
 test("by default the server sends nothing to any panel: the route refuses, and the status says it is off", async () => {
@@ -194,7 +244,7 @@ test("by default the server sends nothing to any panel: the route refuses, and t
     assert.equal((await post({ node: "alarm-1", action: "disarm" }, {})).status, 401);
     const off = await post({ node: "alarm-1", action: "disarm" });
     assert.deepEqual([off.status, ((await off.json()) as { code: string }).code], [403, "commands_disabled"]);
-    for (const bad of [{ node: "Bad Node", action: "disarm" }, { node: "alarm-1", action: "silence" }, { node: "alarm-1", action: "arm", mode: "night" }, { node: "alarm-1", action: "disarm", token: "1234" },
+    for (const bad of [{ node: "Bad Node", action: "disarm" }, { node: "alarm-1", action: "mute" }, { node: "alarm-1", action: "arm", mode: "night" }, { node: "alarm-1", action: "disarm", token: "1234" },
                        { node: "alarm-1", action: "arm", mode: "away", force: "yes" }, "no"]) assert.equal((await post(bad)).status, 400, JSON.stringify(bad));
     const status = await fetch(`${running.base}/api/v1/alarm/commands`, { headers: { cookie } });
     assert.equal(status.status, 200);

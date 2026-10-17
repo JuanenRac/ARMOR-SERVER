@@ -1,7 +1,7 @@
 /**
- * The way a command reaches the panel of an alarm node: the server may arm and disarm it, and it is OFF unless the operator turned it on (ARMOR_ALARM_COMMANDS=1). It is the
+ * The way a command reaches the panel of an alarm node: the server may arm, disarm and silence it, and it is OFF unless the operator turned it on (ARMOR_ALARM_COMMANDS=1). It is the
  * server's layer of the protection and never the only one: the node has its own setting (`server.commands`), the broker has its access list (`mqtt_identity.sh alarm-commands`)
- * and a disarm from here carries no PIN at all, which is why all three must agree. See ARMOR-ALARM's docs/ALARM_MESSAGES.md and docs/SAFETY.md.
+ * and a disarm or a silence from here carries no PIN at all, which is why all three must agree. See ARMOR-ALARM's docs/ALARM_MESSAGES.md and docs/SAFETY.md.
  *
  * What it enforces before a command is published, each refusal audited:
  *   - the commands are turned on in this server; the caller is an administrator (routes/alarm.ts);
@@ -52,7 +52,7 @@ export class AlarmCommands {
   get enabled(): boolean { return this.#options.enabled; }
 
   /**
-   * Ask a node's panel to arm (`away` or `stay`, optionally forcing) or to disarm. Returns the id of the command that was published (the node's answer arrives later, see
+   * Ask a node's panel to arm (`away` or `stay`, optionally forcing), to disarm or to silence its siren (the system stays armed and the alarm stays latched). Returns the id of the command that was published (the node's answer arrives later, see
    * `handleResult`); throws an `AlarmCommandError` when it must not be sent. `actor` is who asked, for the audit.
    */
   request(node: string, action: AlarmAction, mode: "away" | "stay" | undefined, force: boolean, actor: string): { command_id: string } {
@@ -62,9 +62,9 @@ export class AlarmCommands {
       throw new AlarmCommandError(code, message, status);
     };
     if (!this.#options.enabled) return denied("commands_disabled", "alarm commands are not turned on in this server", 403);
-    if (!(ACTIONS as readonly string[]).includes(action)) return denied("invalid_action", "the action is arm or disarm", 400);
+    if (!(ACTIONS as readonly string[]).includes(action)) return denied("invalid_action", "the action is arm, disarm or silence", 400);
     if (action === "arm" && mode !== "away" && mode !== "stay") return denied("invalid_mode", "an arm says away or stay", 400);
-    if (action === "disarm" && (mode !== undefined || force)) return denied("invalid_request", "a disarm has no mode and no force", 400);
+    if (action !== "arm" && (mode !== undefined || force)) return denied("invalid_request", `a ${action} has no mode and no force`, 400);
     const view = this.#options.nodes.list().find(item => item.node_id === node);
     if (!view) return denied("unknown_node", "no such alarm node", 404);
     if (view.stale) return denied("node_unavailable", "the node has not reported lately", 409);

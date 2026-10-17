@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.7.2] - Silence the siren of a panel with the PIN
+
+- POST /api/v1/alarm/command accepts action silence: the same rules as a disarm (administrator, the PIN of the signed-in user checked by the server and never sent to the node, the same lockout, audit entries control.silence, the remote policy and the three switches).
+- The alarm centre keeps a silenced panel as it is: the sounding alarm stays open and unacknowledged until the disarm, because the alarm is latched and nobody has looked at its cause.
+- The event kind siren_silenced and the action silence are part of the parsers, the OpenAPI file and the integration notes.
+- Tests: 424 (before 421).
+
 ## [0.7.1] - Zones in trouble, estimated powers and wall panels
 
 - A zone in trouble raises a warning for as long as it lasts (it never sounds the siren), and the state is accepted by the alarm contract.

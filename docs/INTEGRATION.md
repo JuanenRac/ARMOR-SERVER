@@ -31,7 +31,7 @@ The server also subscribes to `armor/solar/+/+/state` and `armor/electrical/+/st
 | `armor/network/+/state` | read | ARMOR-NETWORK nodes |
 | `armor/device/#` and the state topics of the devices registered | read | devices |
 | `armor/server/alert` | write | every alarm that is not silent |
-| `armor/alarm/<node>/command` | write | only with `ARMOR_ALARM_COMMANDS=1` (arm and disarm a panel) |
+| `armor/alarm/<node>/command` | write | only with `ARMOR_ALARM_COMMANDS=1` (arm, disarm and silence the siren of a panel) |
 | `armor/alarm/<node>/zigbee` | write | the state of the Zigbee zones of a panel |
 | `armor/electrical/<node>/command` | write | only with `ARMOR_ELECTRICAL_SWITCHING=1` (a switch of a node) |
 | the command topics of the devices registered | write | a plug, a light |
