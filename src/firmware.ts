@@ -274,7 +274,7 @@ export class FirmwareService {
 
   async #signInAndSend(target: JobTarget, base: string, image: Image, login: { user: string; password: string }, set: (state: TargetState) => void): Promise<{ error?: string; version?: string; sha256?: string }> {
     set("signing_in");
-    const signIn = await fetch(`${base}/api/v1/login`, { method: "POST", headers: { "Content-Type": "application/json", Connection: "close" }, body: JSON.stringify(login), signal: AbortSignal.timeout(10_000) }).catch(() => undefined);
+    const signIn = await fetch(`${base}/api/v1/login`, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "armor", Connection: "close" }, body: JSON.stringify(login), signal: AbortSignal.timeout(10_000) }).catch(() => undefined);
     const cookie = signIn?.headers.get("set-cookie")?.split(";")[0];
     if (!signIn) throw new FirmwareError("node_not_reachable");
     if (signIn.status === 401) throw new FirmwareError("panel_login_refused");

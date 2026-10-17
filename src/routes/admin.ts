@@ -153,15 +153,16 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
     try {
       const base = `http://${address}${testPort > 0 ? `:${testPort}` : ""}`;
       const signal = AbortSignal.timeout(8000);
-      const login = await fetch(`${base}/api/v1/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user, password }), signal });
+      // A node refuses anything that changes it without the marker a page from another site cannot add (the same one its own panel sends).
+      const login = await fetch(`${base}/api/v1/login`, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "armor" }, body: JSON.stringify({ user, password }), signal });
       const cookie = login.headers.get("set-cookie")?.split(";")[0];
       if (!login.ok || !cookie) return done(false, login.status === 401 ? "panel_login_refused" : "panel_login_failed");
       const saved = await fetch(`${base}/api/v1/config`, {
-        method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie },
+        method: "PUT", headers: { "Content-Type": "application/json", "X-Requested-With": "armor", Cookie: cookie },
         body: JSON.stringify({ mqtt: { enabled: true, uri: `mqtt://${brokerHost}:${brokerPort}`, username: account.user, password: account.password } }), signal,
       });
       if (!saved.ok) return done(false, "panel_config_refused");
-      await fetch(`${base}/api/v1/reboot`, { method: "POST", headers: { Cookie: cookie, "Content-Type": "application/json" }, body: "{}", signal }).catch(() => undefined);
+      await fetch(`${base}/api/v1/reboot`, { method: "POST", headers: { Cookie: cookie, "X-Requested-With": "armor", "Content-Type": "application/json" }, body: "{}", signal }).catch(() => undefined);
       audit.record({ action: "admin.node.configure", outcome: "allowed", actor: actor(request), target: nodeId, detail: `${address}` });
       return done(true);
     } catch {

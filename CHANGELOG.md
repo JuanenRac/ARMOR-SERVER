@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [0.6.9] - The server now sends the marker a node demands when it signs in, adopts and updates it
+
+- **Adopting a node and updating its firmware from Studio now work against a real node:** the server signed in, changed the settings and restarted the node without `X-Requested-With`, the marker the node's panel demands for anything that changes it, so a real node answered 403 (the stand-in node of the tests did not ask for it; it does now).
+- The routes of this repository are unchanged; tests: 417.
+
 ## [0.6.8] - The panel of a node through the server, a warning for every new sign-in from outside, and the VPN and the dynamic DNS name from Studio
 
 - **The panel of a node, reached through the server:** `/api/v1/nodes/<id>/panel/` passes an administrator to the web panel of a node that is not published anywhere. The address of the node comes from a list an administrator keeps (`/api/v1/admin/node-panels`: only addresses of the house, never one taken from the request), the connection to an HTTPS node is made only when its certificate is the one that was trusted (its SHA-256 is looked at and trusted from Studio) and nothing is written to it before that, the cookie of the node stays on the server (the browser never sees it and the node never sees the server's), the browser's Origin, Referer and Authorization are dropped, a path with `..` in any disguise is refused, bodies are limited (64 KB, 8 MB for firmware and settings) and every write is in the audit trail without its content.

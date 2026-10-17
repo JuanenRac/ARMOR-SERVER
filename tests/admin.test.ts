@@ -125,13 +125,16 @@ test("an operator who is not an administrator cannot reach any of it", async () 
 
 test("adopting a node makes its account, writes the broker into the node's panel with its own login and restarts it", async () => {
   const agent = await fakeAgent();
-  const seen: Array<{ url: string; cookie: string; body: string }> = [];
+  const seen: Array<{ url: string; cookie: string; body: string; marker: string }> = [];
   const panel = http.createServer((request, response) => {
     const chunks: Buffer[] = [];
     request.on("data", chunk => chunks.push(chunk as Buffer));
     request.on("end", () => {
       const body = Buffer.concat(chunks).toString("utf8");
-      seen.push({ url: `${request.method} ${request.url}`, cookie: String(request.headers.cookie ?? ""), body });
+      const marker = String(request.headers["x-requested-with"] ?? "");
+      seen.push({ url: `${request.method} ${request.url}`, cookie: String(request.headers.cookie ?? ""), body, marker });
+      // like a real node: a request that changes anything without the marker a page from another site cannot add is refused
+      if (request.method !== "GET" && marker !== "armor") { response.writeHead(403, json); return response.end(JSON.stringify({ error: "forbidden" })); }
       if (request.url === "/api/v1/login") {
         const ok = JSON.parse(body).password === "node-admin-pass";
         response.writeHead(ok ? 200 : 401, ok ? { ...json, "Set-Cookie": "armor_session=abc123; Path=/" } : json);
@@ -149,7 +152,7 @@ test("adopting a node makes its account, writes the broker into the node's panel
     assert.equal(good.status, 200);
     assert.deepEqual([good.body.written, good.body.broker.uri, good.body.broker.username], [true, "mqtt://192.168.0.180:18883", "field-node-nodo-radar-2"]);
     const put = seen.find(item => item.url === "PUT /api/v1/config");
-    assert.ok(put && put.cookie === "armor_session=abc123");
+    assert.ok(put && put.cookie === "armor_session=abc123" && put.marker === "armor", "the node is told with the marker it demands");
     assert.deepEqual(JSON.parse(put.body).mqtt, { enabled: true, uri: "mqtt://192.168.0.180:18883", username: "field-node-nodo-radar-2", password: "pw-field-node-nodo-radar-2" });
     assert.ok(seen.some(item => item.url === "POST /api/v1/reboot"));
 
