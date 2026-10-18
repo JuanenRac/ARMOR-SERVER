@@ -19,7 +19,7 @@ function cleanPlace(value: unknown): WeatherPlace | null | undefined {
   if (value === null) return null;
   if (!value || typeof value !== "object") return undefined;
   const p = value as Record<string, unknown>;
-  if (typeof p.name !== "string" || typeof p.region !== "string" || typeof p.country !== "string" || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return undefined;
+  if (typeof p.name !== "string" || typeof p.region !== "string" || typeof p.country !== "string" || !Number.isFinite(p.lat) || !Number.isFinite(p.lon) || Math.abs(p.lat as number) > 90 || Math.abs(p.lon as number) > 180) return undefined;
   return { name: p.name.slice(0, 120), region: p.region.slice(0, 120), country: p.country.slice(0, 120), lat: p.lat as number, lon: p.lon as number };
 }
 

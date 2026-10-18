@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [0.7.7] - Answers that cannot be cached and logins kept from contested addresses
+
+- Every answer of the API says it must not be cached and may run nothing in a browser (`Cache-Control: no-store`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`), and a server with its own certificate adds a short `Strict-Transport-Security`; the passed-on panel of a node keeps its own headers.
+- A stored login is not handed to a network node while that node reports an address conflict (two machines claiming the address) about the device in the last ten minutes: the node looks without a login.
+- A saved weather place whose latitude or longitude is outside the globe is ignored like any other damaged entry.
+
 ## [0.7.6] - Damaged state files
 
 - **A state file holding `null` no longer stops the server from starting:** the saved preferences and the saved cameras were read as an object without checking, so a file that had been emptied to `null` (a power cut, a hand edit) threw while the server was starting. They are now ignored like any other damaged file and start empty.

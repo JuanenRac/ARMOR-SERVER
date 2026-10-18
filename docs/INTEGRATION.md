@@ -43,6 +43,10 @@ The broker's access list must give the server's account exactly that and nothing
 server publish a command to a panel. A **silent** alarm (a disarm with the duress PIN) is never put on `armor/server/alert`; it goes only to the webhook, Telegram and ntfy.
 Commands to panels and switches are off unless the installation turns them on, and each one is checked and audited (see `docs/NODE_FIRMWARE.md` for what a node does with it).
 
+## Headers of the API
+
+Every answer under `/api/` carries `Cache-Control: no-store`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`; with a certificate of its own the server also sends a short `Strict-Transport-Security`. The panel of a node, passed on through `/api/v1/nodes/{id}/panel/`, keeps the headers of its own page.
+
 ## Alarms to Telegram and Home Assistant
 
 Besides MQTT and the signed webhook, an alarm can be sent to a Telegram chat and to Home Assistant. They are set up in the settings file of the server (Studio >

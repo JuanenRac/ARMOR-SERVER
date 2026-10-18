@@ -80,6 +80,14 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     response.set({ "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Cross-Origin-Resource-Policy": "same-site" });
     next();
   });
+  // The API answers data, never a page: nothing it says may be kept by a cache or run by a browser (the panel of a node, passed on as it comes, sets its own headers).
+  app.use((request, response, next) => {
+    if (request.path.startsWith("/api/") && !/^\/api\/v1\/nodes\/[^/]+\/panel(\/|$)/.test(request.path)) {
+      response.set({ "Cache-Control": "no-store", "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'" });
+    }
+    if (config.tls) response.set("Strict-Transport-Security", "max-age=86400");
+    next();
+  });
   // The site design and the electrical design have their own, larger body limit (routes/alarms.ts); everything else is small.
   const smallJson = express.json({ limit: "64kb", type: "application/json" });
   // The panel of a node is passed on as it comes (its body goes to the node untouched), and the installation file has its own, larger limit (9 MB): neither is read here.

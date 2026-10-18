@@ -29,7 +29,7 @@ test("a bad language, theme or place is refused with its own reason and changes 
   store.update("a", { language: "es" });
   for (const language of ["", "esp", "ES", "e", 5, null, {}]) assert.throws(() => store.update("a", { language }), /invalid_language/, JSON.stringify(language));
   for (const theme of ["", "x".repeat(25), "dark;drop", "dark/../", 7, null]) assert.throws(() => store.update("a", { theme }), /invalid_theme/, JSON.stringify(theme));
-  const bad = ["Madrid", 3, [], { ...place, lat: "40" }, { ...place, lon: NaN }, { ...place, lat: Infinity }, { ...place, name: 1 }, { name: "x" }];
+  const bad = ["Madrid", 3, [], { ...place, lat: "40" }, { ...place, lon: NaN }, { ...place, lat: Infinity }, { ...place, lat: 91 }, { ...place, lon: -180.5 }, { ...place, name: 1 }, { name: "x" }];
   for (const weatherPlace of bad) assert.throws(() => store.update("a", { weatherPlace }), /invalid_weather_place/, JSON.stringify(weatherPlace));
   assert.deepEqual(store.get("a"), { language: "es" });
 });

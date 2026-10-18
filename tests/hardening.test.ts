@@ -413,3 +413,14 @@ test("a proof is checked against every key the server still knows, so rotating o
   assert.equal(verifyProof(["new-evidence-key", "old-control-token"], proof), true);
   assert.equal(verifyProof([], proof), false);
 });
+
+test("an answer of the API is never cached and can run nothing in a browser", async () => {
+  const running = await startServer();
+  try {
+    const answer = await fetch(`${running.base}/api/v1/info`);
+    assert.equal(answer.headers.get("cache-control"), "no-store");
+    assert.equal(answer.headers.get("content-security-policy"), "default-src 'none'; frame-ancestors 'none'");
+    assert.equal(answer.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(answer.headers.get("strict-transport-security"), null, "without TLS there is nothing to pin");
+  } finally { await running.stop(); }
+});
