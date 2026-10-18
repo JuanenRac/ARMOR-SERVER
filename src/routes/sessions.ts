@@ -38,12 +38,18 @@ export function registerSessionRoutes(app: Express, context: AppContext): void {
   });
   const placeLimit = rateLimit({ windowMs: 15 * 60_000, limit: 60, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "too many Studio login attempts" }, keyGenerator: request => ipKeyGenerator(request.ip ?? "") });
 
+  // And one limit for the whole server, whatever the place or the account: many accounts tried from many addresses at once (each below its own limit) still cannot make the server hash
+  // passwords without end. Only refused tries count, so the people who sign in correctly are never held back by it.
+  const globalLimit = rateLimit({
+    windowMs: 60_000, limit: 40, skipSuccessfulRequests: true, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "too many Studio login attempts" }, keyGenerator: () => "all",
+  });
+
   app.get("/api/v1/studio/session", (request, response) => {
     const user = studioUser(request);
     return response.json({ authenticated: Boolean(user), ...(user ? { user: { id: user.id, username: user.username, role: user.role } } : {}) });
   });
 
-  app.post("/api/v1/studio/session", placeLimit, loginLimit, async (request, response) => {
+  app.post("/api/v1/studio/session", globalLimit, placeLimit, loginLimit, async (request, response) => {
     const username = typeof request.body?.username === "string" ? request.body.username : "";
     const password = typeof request.body?.password === "string" ? request.body.password : "";
     // The same work is done whether or not the user exists, so the response time never reveals which value was wrong.

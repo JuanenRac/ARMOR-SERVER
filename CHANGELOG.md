@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [0.7.8] - One limit of refused sign-ins for the whole server, and a complete settings example
+
+- The Studio sign-in has a third limit, for the whole server: forty refused tries a minute in all, whatever the place or the account, so that many accounts tried from many addresses at once cannot make the server hash passwords without end. Only refused tries count; correct sign-ins are never held back.
+- `.env.example` now names every setting the server reads (the data folder, the public address, the notices of sign-ins from outside, the recovery of the administrator password, the alarm commands, the Home Assistant prefix, and the webhook, Telegram, ntfy, Home Assistant and Firebase channels), and a test fails when a new setting is added to the code without being named there.
+
 ## [0.7.7] - Answers that cannot be cached and logins kept from contested addresses
 
 - Every answer of the API says it must not be cached and may run nothing in a browser (`Cache-Control: no-store`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`), and a server with its own certificate adds a short `Strict-Transport-Security`; the passed-on panel of a node keeps its own headers.
