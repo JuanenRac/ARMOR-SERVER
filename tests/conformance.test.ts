@@ -29,20 +29,66 @@ test("the limits in src/contracts.ts match the generated contract constants", { 
   assert.equal(Number(/MAX_LUX = (\d+)/.exec(text)?.[1]), MAX_LUX);
 });
 
-// The contract file carries ARMOR-COMMON's release in its name; the newest one is the current contract.
-const openapiDirectory = path.resolve(directory, "..", "openapi");
-const openapiFiles = fs.existsSync(openapiDirectory) ? fs.readdirSync(openapiDirectory).filter(name => /^armor-server-\d+\.\d+\.\d+\.yaml$/.test(name)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })) : [];
-const openapi = path.join(openapiDirectory, openapiFiles[openapiFiles.length - 1] ?? "armor-server.yaml");
-test("every route the server registers is described in the OpenAPI contract", { skip: fs.existsSync(openapi) ? false : "ARMOR-COMMON OpenAPI is not available" }, () => {
-  const described = fs.readFileSync(openapi, "utf8");
-  const routes = path.resolve(import.meta.dirname, "..", "src", "routes");
-  const missing: string[] = [];
-  for (const file of fs.readdirSync(routes)) {
-    for (const match of fs.readFileSync(path.join(routes, file), "utf8").matchAll(/app\.(get|post|put|delete)\(\s*"([^"]+)"/g)) {
-      const route = match[2].replace(/:([A-Za-z]+)/g, "{$1}");
-      // Media routes share one parameter block; compare on the path itself.
-      if (!described.includes(`  ${route}:`)) missing.push(`${match[1].toUpperCase()} ${route}`);
+// The HTTP contract of ARMOR-COMMON describes exactly the routes this server registers, each with its method and a typed answer.
+const openapi = path.resolve(directory, "..", "openapi", "armor-server.yaml");
+const sources = path.resolve(import.meta.dirname, "..", "src");
+const METHODS = ["get", "post", "put", "patch", "delete"];
+
+/** (method, path) of every operation the contract lists, read from its regular layout (a path at two spaces, a method at four, a response at eight). */
+function described(text: string): { operations: Set<string>; untyped: string[] } {
+  const operations = new Set<string>(), untyped: string[] = [];
+  const lines = text.split(/\r?\n/);
+  let route = "", method = "";
+  lines.forEach((line, index) => {
+    const path = /^ {2}(\/\S*):$/.exec(line);
+    if (path) { route = path[1]; method = ""; return; }
+    const verb = /^ {4}(get|post|put|patch|delete):/.exec(line);
+    if (verb) { method = verb[1]; operations.add(`${method} ${route}`); return; }
+    const answer = /^ {8}'(\d{3})':/.exec(line);
+    if (answer && method && answer[1] !== "204" && !lines.slice(index, line.endsWith(":") ? index + 4 : index + 1).some(part => part.includes("content:"))) untyped.push(`${method.toUpperCase()} ${route} ${answer[1]}`);
+  });
+  return { operations, untyped };
+}
+
+/** (method, path) of every route registered in the sources: literal paths, the ones registered in a loop over a list of names, and the panel proxy. */
+function registered(): Set<string> {
+  const found = new Set<string>();
+  const files = [...fs.readdirSync(path.join(sources, "routes")).map(name => path.join(sources, "routes", name)), path.join(sources, "node_panel_proxy.ts")];
+  const shape = (route: string) => route.replace(/:([A-Za-z]+)/g, "{$1}");
+  for (const file of files) {
+    const text = fs.readFileSync(file, "utf8");
+    for (const match of text.matchAll(/\bapp\.(get|post|put|patch|delete)\(\s*(["'`])([^"'`]+)\2/g)) {
+      let routes = [match[3]];
+      const template = /\$\{(\w+)\}/.exec(match[3]);
+      if (template) {
+        const loops = [...text.slice(0, match.index).matchAll(/for \(const \[?([^\]]*?)\]? of \[([\s\S]*?)\](?: as const)?\) \{/g)];
+        const loop = loops[loops.length - 1];
+        const names = loop[1].split(",").map(name => name.trim());
+        const options = names.length > 1 ? [...loop[2].matchAll(/\[\s*"([^"]+)"/g)].map(item => item[1]) : [...loop[2].matchAll(/"([^"]+)"/g)].map(item => item[1]);
+        assert.ok(options.length > 0, `cannot expand ${match[3]} in ${path.basename(file)}`);
+        routes = options.map(option => match[3].replace(`\${${template[1]}}`, option));
+      }
+      for (const route of routes) found.add(`${match[1]} ${shape(route)}`);
+    }
+    for (const match of text.matchAll(/\bapp\.all\(\[([^\]]+)\]/g)) {
+      for (const item of match[1].matchAll(/"([^"]+)"/g)) {
+        if (item[1].endsWith("/panel")) continue; // the bare panel address is the same operation as the one with a path
+        for (const method of ["get", "post", "put", "delete"]) found.add(`${method} ${shape(item[1]).replace("*rest", "{path}")}`);
+      }
     }
   }
-  assert.deepEqual(missing, [], `routes missing from the OpenAPI file: ${missing.join(", ")}`);
+  return found;
+}
+
+test("the routes the server registers are the operations the OpenAPI contract describes, by method and path", { skip: fs.existsSync(openapi) ? false : "ARMOR-COMMON OpenAPI is not available" }, () => {
+  const { operations } = described(fs.readFileSync(openapi, "utf8"));
+  const routes = registered();
+  assert.ok(routes.size > 150, `the route table was not read (${routes.size})`);
+  assert.ok(METHODS.every(method => [...routes].some(route => route.startsWith(`${method} `))), "a method was not found in the sources");
+  assert.deepEqual([...routes].filter(route => !operations.has(route)).sort(), [], "registered but not described");
+  assert.deepEqual([...operations].filter(route => !routes.has(route)).sort(), [], "described but not registered");
+});
+
+test("every answer in the OpenAPI contract says what its body is", { skip: fs.existsSync(openapi) ? false : "ARMOR-COMMON OpenAPI is not available" }, () => {
+  assert.deepEqual(described(fs.readFileSync(openapi, "utf8")).untyped, []);
 });
