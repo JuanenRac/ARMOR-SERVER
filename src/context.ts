@@ -14,7 +14,7 @@ import { CameraVault } from "./cameras/vault.js";
 import { DiscoveryGate } from "./cameras/discovery.js";
 import { cameraPublic, cameraView, type CameraConnection } from "./cameras/model.js";
 import type { ArmorConfig } from "./config.js";
-import { hasBearer, SessionStore, type HeaderSource } from "./http/auth.js";
+import { hasBearer, SessionStore, type EndedSession, type HeaderSource } from "./http/auth.js";
 import { UserStore, type PublicUser } from "./users.js";
 import { classify, type Origin } from "./origin.js";
 import { TotpStore } from "./totp.js";
@@ -56,10 +56,19 @@ import { ArmorStore, type SystemState } from "./store.js";
 import { PreferencesStore } from "./preferences.js";
 import { IngestLog } from "./ingest_log.js";
 import { EnergyAlarmStore } from "./energy_alarms.js";
+import { ClientRegistry, ConnectionTracker, identify, NodeLife, systemBody, systemFromAudit, type Sighting, type SystemInput } from "./connections.js";
 import path from "node:path";
 
 export type AppContext = {
   config: ArmorConfig;
+  /** The clients that connect (Studio, the phone, the panels of the nodes, the voice service...) and the connection events of the history. */
+  connections: ConnectionTracker;
+  /** Writes an event of the system (a node, the broker, a setting, a service...) in the history. */
+  recordSystem: (input: SystemInput) => void;
+  /** The sighting of the client that made this request, with the user when there is one. */
+  sightingOf: (request: HeaderSource & { ip?: string }, user?: string) => Sighting;
+  /** Which nodes are there, to tell when one appears or disappears. */
+  nodeLife: NodeLife;
   store: ArmorStore;
   events: EventLog;
   rules: RulesFile;
@@ -167,12 +176,15 @@ export type AppContext = {
 export type ContextOverrides = Partial<Pick<AppContext, "audit" | "admin" | "maintenance" | "firmware" | "ai">> & { broadcast?: (state: SystemState) => void; now?: () => number };
 
 export function createContext(config: ArmorConfig, overrides: ContextOverrides = {}): AppContext {
-  const audit = overrides.audit ?? createAuditLog(config.dataDir);
+  const baseAudit = overrides.audit ?? createAuditLog(config.dataDir);
+  // What the audit trail says is also told to the history, in its own vocabulary (see systemFromAudit): the audit entry is recorded first and a failure of the history never reaches the caller.
+  const audit: AuditLog = { record(event) { baseAudit.record(event); try { const input = systemFromAudit(event); if (input) recordSystem(input); } catch { /* the history never breaks what it records */ } } };
+  const ended: { tell?: (info: EndedSession, reason: "expired" | "logout" | "revoked") => void } = {};
   const warn = (message: string) => console.warn(message);
   // The name of a session cookie depends on whether the server speaks HTTPS: a browser that once met this server over HTTPS keeps its Secure cookie for the
   // host, and a page over plain HTTP is not allowed to replace a Secure cookie of the same name - the login seemed to work and then nothing stuck (found for real
   // after the HTTPS trial was undone). Different names for the two cases cannot shadow each other.
-  const studioSessions = new SessionStore({ cookieName: config.cookieSecure ? "__Host-armor_studio_sid" : "armor_studio_sid", cookiePath: "/", ttlMs: config.studioSessionTtlMs, secure: config.cookieSecure, file: path.join(config.dataDir, "sessions.json"), remoteIdleMs: config.remoteIdleMs });
+  const studioSessions = new SessionStore({ cookieName: config.cookieSecure ? "__Host-armor_studio_sid" : "armor_studio_sid", cookiePath: "/", ttlMs: config.studioSessionTtlMs, secure: config.cookieSecure, file: path.join(config.dataDir, "sessions.json"), remoteIdleMs: config.remoteIdleMs, onEnd: (info, reason) => ended.tell?.(info, reason) });
   const operatorSessions = new SessionStore({ cookieName: config.cookieSecure ? "__Secure-armor_operator_sid" : "armor_operator_sid", cookiePath: "/api/v1", ttlMs: config.operatorSessionTtlMs, secure: config.cookieSecure });
   if (config.cameraKeyIsFallback) warn("ARMOR_CAMERA_CONFIG_KEY is not set; using the migration fallback derived from ARMOR_CONTROL_TOKEN");
   const vault = new CameraVault({
@@ -185,6 +197,16 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const evidence = new EvidenceLibrary({ root: path.join(config.dataDir, "media"), ffmpegPath: config.ffmpegPath, maxBytes: config.maxMediaBytes, retentionMs: config.mediaRetentionMs, warn });
   const relays = new RelayManager({ ffmpegPath: config.ffmpegPath, maxRelays: config.maxMjpegRelays, fps: config.liveFps, width: config.liveWidth });
   const events = new EventLog({ file: path.join(config.dataDir, "events.log") });
+  const clients = new ClientRegistry({ file: path.join(config.dataDir, "connections.json"), now: overrides.now });
+  const connections = new ConnectionTracker(clients, body => events.append(body));
+  const recordSystem = (input: SystemInput): void => { events.append(systemBody(input)); };
+  const nodeLife = new NodeLife(path.join(config.dataDir, "node-life.json"), recordSystem);
+  const sightingOf = (request: HeaderSource & { ip?: string }, user?: string): Sighting => ({ ...identify(request), ...(request.ip ? { ip: request.ip } : {}), ...(user ? { user } : {}), origin: originOfRequest(request) });
+  ended.tell = (info, reason) => {
+    const user = info.userId ? users.get(info.userId)?.username : undefined;
+    connections.ended({ ...identify({ header: name => (name.toLowerCase() === "user-agent" ? info.agent : undefined) }), ...(info.agent ? { agent: info.agent } : {}), ...(info.ip ? { ip: info.ip } : {}), ...(user ? { user } : {}), ...(info.origin ? { origin: info.origin } : {}) },
+      reason === "expired" ? "session_expired" : reason === "logout" ? "logout" : "session_ended");
+  };
   const knownNodes = new KnownNodes({ file: path.join(config.dataDir, "known-nodes.json"), now: overrides.now, warn });
   const rules = new RulesFile(path.join(config.dataDir, "rules.json"), config.alertDwellMs, warn);
   // The other places the alarms go. The address of Telegram can only be changed by the environment, for the tests that stand in for it.
@@ -201,6 +223,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     // A silent alarm (a duress disarm) is told to the places nobody at the panel can see and is NOT written in the history that every console reads.
     if (body.type === "alarm" && body.silent) { notifier.notify({ ...body, id: 0, at: new Date().toISOString() }, store.snapshot().mode); return; }
     const event = events.append(body);
+    if (event.type === "node") { if (event.to === "online") nodeLife.report(event.node_id); else nodeLife.gone(event.node_id); }
     notifier.notify(event, store.snapshot().mode);
     alarmRules.handleEvent(event);
     if (event.type === "mode") automations.handleMode(event.mode);
@@ -234,7 +257,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   });
   const site = new SiteStore(path.join(config.dataDir, "site.json"));
   const electricalEnergy = new ElectricalEnergy();
-  const electricalNodes = new ElectricalStore({ now: overrides.now, onMessage: message => { knownNodes.seen("electrical", message.node_id); alarmRules.handleElectrical(message); const at = (overrides.now ?? Date.now)(); for (const channel of message.channels) electricalEnergy.add(message.node_id, channel.id, channel.energy_kwh, at); }, onStale: (node, stale) => alarmRules.handleElectricalStale(node, stale) });
+  const electricalNodes = new ElectricalStore({ now: overrides.now, onMessage: message => { knownNodes.seen("electrical", message.node_id); alarmRules.handleElectrical(message); const at = (overrides.now ?? Date.now)(); for (const channel of message.channels) electricalEnergy.add(message.node_id, channel.id, channel.energy_kwh, at); }, onStale: (node, stale) => { alarmRules.handleElectricalStale(node, stale); if (stale) nodeLife.gone(node); else nodeLife.report(node); } });
   const electrical = new SiteStore(path.join(config.dataDir, "electrical.json"), () => new Date(), "electrical design");
   const networkNotes = new DeviceNotes(path.join(config.dataDir, "network-devices.json"));
   const systemMonitor = new SystemMonitor();
@@ -260,7 +283,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
         networkNotes.spendWatch(event.device_id);
       }
     },
-    onStale: (node, stale) => alarmRules.handleNetworkStale(node, stale),
+    onStale: (node, stale) => { alarmRules.handleNetworkStale(node, stale); if (stale) nodeLife.gone(node); else nodeLife.report(node); },
   });
   const network = new SiteStore(path.join(config.dataDir, "network.json"), () => new Date(), "network design");
   const alarmDesign = new SiteStore(path.join(config.dataDir, "alarm_design.json"), () => new Date(), "alarm design");
@@ -269,11 +292,11 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     enabled: config.electricalSwitching, nodes: electricalNodes, audit, now: overrides.now,
     publish: (topic, payload) => { if (!switchLink.publish) throw new Error("the MQTT broker is not connected"); switchLink.publish(topic, payload); },
   });
-  const alarmNodes = new AlarmStore({ now: overrides.now, onMessage: (message, previous) => { knownNodes.seen("alarm", message.node_id, message.phase); alarmRules.handleAlarmNode(message, previous); }, onStale: (node, stale, phase) => alarmRules.handleAlarmNodeStale(node, stale, phase) });
+  const alarmNodes = new AlarmStore({ now: overrides.now, onMessage: (message, previous) => { knownNodes.seen("alarm", message.node_id, message.phase); alarmRules.handleAlarmNode(message, previous); }, onStale: (node, stale, phase) => { alarmRules.handleAlarmNodeStale(node, stale, phase); if (stale) nodeLife.gone(node); else nodeLife.report(node); } });
   const alarmLink: AppContext["alarmLink"] = {};
   const armProfiles = new ArmProfileStore(path.join(config.dataDir, "arm-profiles.json"), overrides.now ? () => new Date(overrides.now!()) : undefined, warn);
   alarmRules.profileNotify = id => armProfiles.find(id)?.notify ?? (armProfiles.find(id) ? "urgent" : undefined);
-  const nodeHealth = new NodeHealthStore({ now: overrides.now, onReport: view => alarmRules.handleNodeHealth(view), onForget: node => alarmRules.forgetNodeHealth(node) });
+  const nodeHealth = new NodeHealthStore({ now: overrides.now, onReport: view => { alarmRules.handleNodeHealth(view); nodeLife.report(view.node_id, view.firmware); }, onForget: node => alarmRules.forgetNodeHealth(node) });
   const captureOnDetect = new CaptureOnDetect({ file: path.join(config.dataDir, "capture-on-detect.json"), audit, now: overrides.now, tools: { snapshot: camera => evidence.snapshot(camera), startRecording: camera => evidence.startRecording(camera), stopRecording: id => evidence.stopRecording(id), isRecording: id => evidence.isRecording(id) } });
   const ignoreZones = new IgnoreZones(path.join(config.dataDir, "camera-ignore-zones.json"));
   const alarmZoneFeed = new AlarmZoneFeed(path.join(config.dataDir, "alarm-zone-links.json"), { publish: (topic, payload) => { if (!alarmLink.publish) throw new Error("the MQTT broker is not connected"); alarmLink.publish(topic, payload); }, devices: () => devices.list(), now: overrides.now, warn });
@@ -323,6 +346,8 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const viewerCloses = /^\/api\/v1\/(admin|users|system\/ingest|preferences|installation)(\/|$)/;
   const viewerMay = (method: string, path: string): boolean => (method === "GET" || method === "HEAD" ? !viewerCloses.test(path) : (method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/stream-ticket$/.test(path)) || ((method === "POST" || method === "DELETE") && (path === "/api/v1/push/register" || path === "/api/v1/push/unregister")));
   const requireOperator: RequestHandler = (request, response, next) => {
+    // Whoever is let in (or turned away as a viewer or a wall panel) is a client the history knows about; a request that is not signed in is not, so strangers cannot fill the list.
+    if (studioUser(request) || hasBearer(request, config.operatorToken) || operatorSessions.has(request)) { try { connections.seen(sightingOf(request, studioUser(request)?.username)); } catch { /* the list of clients never stops a request */ } }
     if (operatorAuthorized(request)) return next();
     const panel = studioUser(request);
     if (panel?.role === "viewer") {
@@ -339,7 +364,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(401).json({ error: "operator authorization is required" });
   };
   const requireAdmin: RequestHandler = (request, response, next) => {
-    if (studioUser(request)?.role === "admin") return next();
+    if (studioUser(request)?.role === "admin") { try { connections.seen(sightingOf(request, studioUser(request)?.username)); } catch { /* see above */ } return next(); }
     audit.record({ action: "admin.access", outcome: "denied", actor: studioUser(request)?.username, target: `${request.method} ${request.path}` });
     return response.status(studioUser(request) ? 403 : 401).json({ error: "an administrator is required" });
   };
@@ -353,7 +378,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(403).json({ error: "this needs the password or the code again", code: "elevation_required" });
   };
   const requireAi: RequestHandler = (request, response, next) => {
-    if (config.aiToken && hasBearer(request, config.aiToken)) return next();
+    if (config.aiToken && hasBearer(request, config.aiToken)) { try { connections.seen({ ...sightingOf(request), kind: "other", label: "observation-service" }); } catch { /* see above */ } return next(); }
     audit.record({ action: "ai.access", outcome: "denied", target: `${request.method} ${request.path}` });
     return response.status(401).json({ error: "the observation service token is required" });
   };
@@ -362,7 +387,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    alarmDesign, alarmZoneFeed, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, armProfiles, nodeHealth, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, armProfiles, nodeHealth, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

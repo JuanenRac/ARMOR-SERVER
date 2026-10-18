@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-428%20passing-2ea44f.svg" alt="Tests">
-  <img src="https://img.shields.io/badge/Version-0.7.4-0f6cbd.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Tests-460%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Version-0.7.5-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
 ---
 
-**Controllo di onestà - cosa funziona oggi:** Ogni rotta, sessione, cifratura e regola delle prove qui sotto è reale e coperta da test (`npm test`: 428 test, compresa una suite completa di integrazione HTTP contro un server isolato e un controllo che ogni rotta sia documentata nel file OpenAPI). Funziona in uso quotidiano sul banco di prova CM5 con un vero broker MQTT, il firmware di un vero nodo radar su una scheda ESP32-S3, vere telecamere IP (video dal vivo, istantanee, registrazioni, PTZ sulle unità Hi3510), la console Studio, l'app Android e i servizi di voce e di osservazione. Ciò che **non** è ancora provato: ONVIF con una vera telecamera ONVIF, qualsiasi hardware Jetson, le rotte solari, elettriche, delle centrali d'allarme e del pannello touch con nodi reali (si provano con messaggi generati: esiste solo la scheda radar) e il push tramite Firebase con un vero progetto Firebase.
+**Controllo di onestà - cosa funziona oggi:** Ogni rotta, sessione, cifratura e regola delle prove qui sotto è reale e coperta da test (`npm test`: 460 test, compresa una suite completa di integrazione HTTP contro un server isolato e un controllo che ogni rotta sia documentata nel file OpenAPI). Funziona in uso quotidiano sul banco di prova CM5 con un vero broker MQTT, il firmware di un vero nodo radar su una scheda ESP32-S3, vere telecamere IP (video dal vivo, istantanee, registrazioni, PTZ sulle unità Hi3510), la console Studio, l'app Android e i servizi di voce e di osservazione. Ciò che **non** è ancora provato: ONVIF con una vera telecamera ONVIF, qualsiasi hardware Jetson, le rotte solari, elettriche, delle centrali d'allarme e del pannello touch con nodi reali (si provano con messaggi generati: esiste solo la scheda radar) e il push tramite Firebase con un vero progetto Firebase.
 
 ---
 
@@ -36,9 +36,9 @@
 
 | | |
 |---|---|
-| Versione | `0.7.4` |
+| Versione | `0.7.5` |
 | Maturità | Consolidato |
-| Test | 428 (`npm test`) |
+| Test | 460 (`npm test`) |
 | Tecnologia | Node.js 22+ / TypeScript / Docker Compose |
 | Su hardware reale | Il banco di prova CM5, in uso quotidiano: un vero broker MQTT, vere telecamere IP, un vero nodo radar su una scheda ESP32-S3, Studio, l'app Android e i servizi di voce e osservazione contro di esso |
 
@@ -61,6 +61,7 @@
 * **Uso da fuori casa:** il server distingue la casa dall'esterno (una VPN conta come la casa), mantiene sessioni più brevi da fuori, chiede un secondo fattore (un'app di autenticazione, con codici di recupero) e di nuovo la password prima delle azioni critiche, permette di scegliere cosa può fare una sessione esterna (tutto, solo gestire l'allarme, solo guardare), avvisa le destinazioni degli allarmi quando qualcuno accede da un luogo nuovo e apre il pannello web di un nodo tramite il server - vincolato al certificato del nodo, con il suo cookie tenuto sul server - così nessun nodo viene mai pubblicato.
 * **Collegamento cifrato facoltativo con il broker (mqtts):** `ARMOR_MQTT_CA_FILE` indica il certificato dell'autorità propria dell'installazione; con un indirizzo `mqtts://` il server si fida solo di quell'autorità e controlla il nome del broker, e si rifiuta di partire se il file non è un certificato valido o l'indirizzo non è `mqtts://`. Studio mostra se il collegamento è cifrato e l'impronta dell'autorità. Provato contro un broker TLS di prova e contro un vero Mosquitto 2.0.
 * **Salute dei nodi e modalità di inserimento:** conserva l'ultimo rapporto e il registro dei riavvii di ogni nodo e solleva quattro avvisi (poca memoria, riavvii troppo frequenti, un broker che cade di continuo, segnale Wi-Fi debole); conserva i profili di inserimento (Fuori casa, In casa, Notte e i tuoi) e mette quello scelto dentro il comando di inserimento, solo per un nodo che dice di capirli. Un allarme forte o discreto segue il profilo; un inserimento senza profilo è il comando di sempre.
+* **Cronologia delle connessioni e del sistema:** oltre ad avvisi, nodi, telecamere, dispositivi e allarmi, la cronologia registra quali dispositivi e app si collegano (sessioni di Studio, app Android, pannelli dei nodi, servizio vocale: accessi, rifiuti, uscite, sessioni scadute, uso del secondo fattore, prima e ultima volta visti) e gli eventi del sistema (nodi che appaiono o scompaiono con il loro firmware, il collegamento con il broker, impostazioni cambiate e da chi, servizi, aggiornamenti, inserimento con il suo profilo). Si filtra per tipo, categoria, client e utente; indirizzo e user agent li vedono solo gli amministratori, e non si registra mai una password, un token, un cookie o un PIN.
 
 ## 🧩 Ruolo in A.R.M.O.R.
 
@@ -115,7 +116,7 @@ ARMOR-SERVER/
 │   ├── devices/    catalog, registry, commands, mapping (the device model and its MQTT bridge)
 │   ├── cameras/    model, vault, digest, ptz, rtsp, discovery, health, errors
 │   └── media/      relay, evidence
-├── tests/          428 tests: unit + full HTTP integration
+├── tests/          460 tests: unit + full HTTP integration
 ├── docs/           state machine, camera gateway, integration, node firmware
 ├── tools/          project tooling and the CI checks
 ├── data/           runtime state (ignored by Git)
@@ -129,7 +130,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 428 tests: unit + full HTTP integration (every route must be in the OpenAPI file)
+npm test            # 460 tests: unit + full HTTP integration (every route must be in the OpenAPI file)
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```

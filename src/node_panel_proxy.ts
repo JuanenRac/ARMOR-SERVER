@@ -244,6 +244,7 @@ export function registerNodePanelRoutes(app: Express, context: AppContext): void
       if (jars.size >= MAX_JARS) { const oldest = [...jars.entries()].sort((a, b) => a[1].last - b[1].last)[0]; if (oldest) jars.delete(oldest[0]); }
       jar = { cookies: new Map(), last: Date.now() };
       jars.set(key, jar);
+      try { context.connections.panelOpened(context.sightingOf(request, actor(request)), id); } catch { /* the history never stops the panel */ }
       audit.record({ action: "node-panel.open", outcome: "allowed", actor: actor(request), target: id, detail: `${studioSessions.originOf(request)} ${request.ip ?? ""}` });
     }
     jar.last = Date.now();

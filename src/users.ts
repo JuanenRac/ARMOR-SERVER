@@ -181,6 +181,7 @@ export class UserStore {
   }
 
   list(): PublicUser[] { return this.#users.map(UserStore.#view); }
+  byName(username: string): PublicUser | undefined { const user = this.#users.find(item => same(item.username, username.trim())); return user ? UserStore.#view(user) : undefined; }
   get(id: string): PublicUser | undefined { const user = this.#users.find(item => item.id === id); return user ? UserStore.#view(user) : undefined; }
 
   /** The user for a correct name and password. Takes the same time whether or not the name exists. */

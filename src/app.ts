@@ -191,6 +191,12 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     context.ingestLog.rejected(topic, why, raw);
     console.warn("ARMOR_MQTT=REJECTED", why);
   };
+  if (mqtt) {
+    // The link to the broker, in the history: one line when it is lost and one when it comes back (a broker that is down and retried every two seconds is not a line every two seconds).
+    let brokerUp = false;
+    mqtt.on("connect", () => { if (!brokerUp) { brokerUp = true; context.recordSystem({ category: "broker", action: "connected", subject: "mqtt" }); } });
+    mqtt.on("close", () => { if (brokerUp) { brokerUp = false; context.recordSystem({ category: "broker", action: "disconnected", subject: "mqtt" }); } });
+  }
   if (mqtt && config.haDiscovery) {
     // Home Assistant reads the same broker: it is told, once and then again now and then, what the nodes report (read-only sensors; ha_discovery.ts).
     const discovery = new DiscoveryPublisher({
@@ -322,6 +328,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   const sweeper = setInterval(() => {
     try {
       context.escalator.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.reportSilentNodes(); context.networkNodes.sweep();
+      context.studioSessions.sweep(); context.connections.registry.tick(); context.nodeLife.flush();
       sweepFailing = false;
     } catch (error) {
       if (!sweepFailing) console.warn("ARMOR_SWEEP=FAILED", error instanceof Error ? error.message : "unknown error");
@@ -345,7 +352,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       saveHistory();
       for (const timer of watchdogs) clearTimeout(timer);
       context.store.flush(); context.knownNodes.flush();
-      context.studioSessions.flush();
+      context.studioSessions.flush(); context.connections.registry.flush(); context.nodeLife.flush();
       clearTimeout(resume); context.devices.flush(); context.alarms.flush(); context.automations.close();
       await context.evidence.stopAll();   // a recording that is running is closed, not cut off
       context.notifier.close();

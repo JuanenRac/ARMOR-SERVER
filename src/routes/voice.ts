@@ -34,6 +34,7 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
     if (!config.voice) return response.status(503).json({ error: "voice_unavailable" });
     const given = Buffer.from(String(request.headers["x-armor-voice-token"] ?? "")), wanted = Buffer.from(config.voice.token);
     if (given.length !== wanted.length || !crypto.timingSafeEqual(given, wanted)) { audit.record({ action: "voice.turn", outcome: "denied" }); return response.status(401).json({ error: "unauthorized" }); }
+    try { context.connections.seen({ ...context.sightingOf(request), kind: "voice" }); } catch { /* the history never stops a turn */ }
     const body = Buffer.isBuffer(request.body) ? request.body : Buffer.alloc(0);
     if (body.length === 0) return response.status(411).json({ error: "bad audio length" });
     try {

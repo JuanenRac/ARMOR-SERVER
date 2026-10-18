@@ -43,7 +43,12 @@ export type SessionOptions = {
   file?: string;
   /** A session that came from outside the house is asked to be used: with no request for this long it ends (milliseconds; none when absent). */
   remoteIdleMs?: number;
+  /** Told when a session ends for a reason other than the person asking for a new one: it ran out (`expired`), the person signed out (`logout`) or it was ended from the list of sessions (`revoked`). */
+  onEnd?: (ended: EndedSession, reason: "expired" | "logout" | "revoked") => void;
 };
+
+/** What is known of a session that has just ended (never its cookie). */
+export type EndedSession = { userId?: string; origin?: "local" | "remote"; ip?: string; agent?: string };
 
 /** What is known of a session besides who it belongs to: where it came from and when, so the person can see their sessions and end the ones they do not know. */
 export type SessionMeta = { origin?: "local" | "remote"; ip?: string; agent?: string; ttlMs?: number };
@@ -104,9 +109,32 @@ export class SessionStore {
 
   get size(): number { return this.#sessions.size; }
 
+  /** Ends the sessions whose time is over (and tells `onEnd`), without waiting for someone to use or open a session. Called now and then by the server. */
+  sweep(): void {
+    const now = this.#now(), idle = this.#options.remoteIdleMs;
+    let changed = false;
+    for (const [key, session] of this.#sessions) {
+      if (session.expiry <= now || (idle && session.origin === "remote" && now - (session.lastSeen ?? session.created ?? 0) > idle)) { this.#drop(key, session, "expired"); changed = true; }
+    }
+    if (changed) this.#save();
+  }
+
+  #drop(key: string, session: SessionRecord, reason: "expired" | "logout" | "revoked"): void {
+    this.#sessions.delete(key);
+    try { this.#options.onEnd?.({ userId: session.userId, origin: session.origin, ip: session.ip, agent: session.agent }, reason); } catch { /* telling about it never stops it */ }
+  }
+
+  /** How many open sessions a user has whose agent is of this family (to count the sessions of a client in the list of connections). */
+  openFor(userId: string | undefined, matches: (agent: string) => boolean): number {
+    const now = this.#now();
+    let count = 0;
+    for (const session of this.#sessions.values()) if (session.expiry > now && session.userId === userId && matches(session.agent ?? "")) count += 1;
+    return count;
+  }
+
   #prune(): void {
     const now = this.#now();
-    for (const [id, session] of this.#sessions) if (session.expiry <= now) this.#sessions.delete(id);
+    for (const [id, session] of this.#sessions) if (session.expiry <= now) this.#drop(id, session, "expired");
     const capacity = this.#options.capacity ?? 256;
     // The oldest sessions go first, so a flood of logins cannot grow memory without bound.
     while (this.#sessions.size >= capacity) this.#sessions.delete(this.#sessions.keys().next().value!);
@@ -133,7 +161,8 @@ export class SessionStore {
     const session = key ? this.#sessions.get(key) : undefined;
     const idle = this.#options.remoteIdleMs;
     if (!session || session.expiry <= this.#now() || (idle && session.origin === "remote" && this.#now() - (session.lastSeen ?? session.created ?? 0) > idle)) {
-      if (key && this.#sessions.delete(key)) this.#save();
+      if (key && session) { this.#drop(key, session, "expired"); this.#save(); }
+      else if (key && this.#sessions.delete(key)) this.#save();
       return false;
     }
     return true;
@@ -161,7 +190,7 @@ export class SessionStore {
   /** Ends one session of the user by its short id; false when there is none. */
   revokeId(userId: string, shortId: string): boolean {
     if (!/^[0-9a-f]{16}$/.test(shortId)) return false;
-    for (const [key, session] of this.#sessions) if (session.userId === userId && key.startsWith(shortId)) { this.#sessions.delete(key); this.#save(); return true; }
+    for (const [key, session] of this.#sessions) if (session.userId === userId && key.startsWith(shortId)) { this.#drop(key, session, "revoked"); this.#save(); return true; }
     return false;
   }
 
@@ -204,13 +233,14 @@ export class SessionStore {
   /** End every session of a user, except the one making this request (so changing your own password does not sign you out). */
   revokeUser(userId: string, keep?: HeaderSource): void {
     const cookie = keep ? requestCookies(keep)[this.#options.cookieName] : undefined, kept = cookie ? keyOf(cookie) : undefined;
-    for (const [key, session] of this.#sessions) if (session.userId === userId && key !== kept) this.#sessions.delete(key);
+    for (const [key, session] of this.#sessions) if (session.userId === userId && key !== kept) this.#drop(key, session, "revoked");
     this.#save();
   }
 
   close(request: HeaderSource, response: Response): void {
     const id = requestCookies(request)[this.#options.cookieName];
-    if (id && this.#sessions.delete(keyOf(id))) this.#save();
+    const session = id ? this.#sessions.get(keyOf(id)) : undefined;
+    if (id && session) { this.#drop(keyOf(id), session, "logout"); this.#save(); }
     response.clearCookie(this.#options.cookieName, { path: this.#options.cookiePath });
   }
 }

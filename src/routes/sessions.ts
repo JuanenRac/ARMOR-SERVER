@@ -14,12 +14,13 @@ type Challenge = { userId: string; username: string; role: string; origin: "loca
 const CHALLENGE_MS = 120_000;
 
 export function registerSessionRoutes(app: Express, context: AppContext): void {
-  const { config, audit, studioSessions, operatorSessions, requireOperator, users, studioUser, totp, originOfRequest, notifier, store } = context;
+  const { config, audit, connections, sightingOf, studioSessions, operatorSessions, requireOperator, users, studioUser, totp, originOfRequest, notifier, store } = context;
   /** The places a person has already signed in from outside the house (kept while the server runs): a new one is told to the places the alarms go to. */
   const knownPlaces = new Set<string>();
   const challenges = new Map<string, Challenge>();
   const agentOf = (request: { header(name: string): string | undefined }): string => (request.header("user-agent") ?? "").replace(/[\r\n]/g, " ").slice(0, 120);
-  const open = (response: Parameters<typeof studioSessions.open>[0], user: { id: string; username: string; role: string }, origin: "local" | "remote", ip: string, agent: string) => {
+  const open = (response: Parameters<typeof studioSessions.open>[0], user: { id: string; username: string; role: string }, origin: "local" | "remote", ip: string, agent: string, request: Parameters<typeof sightingOf>[0], twoFactor: boolean) => {
+    connections.login(sightingOf(request, user.username), twoFactor);
     const expiresAt = studioSessions.open(response, user.id, { origin, ip, agent, ...(origin === "remote" ? { ttlMs: config.remoteSessionTtlMs } : {}) });
     audit.record({ action: "studio.login", outcome: "allowed", actor: user.username, detail: `${origin} ${ip}` });
     if (origin === "remote" && config.loginAlerts && !knownPlaces.has(`${user.id}|${ip}`)) {
@@ -49,6 +50,7 @@ export function registerSessionRoutes(app: Express, context: AppContext): void {
     const user = await users.authenticateLater(username, password);
     const origin = originOfRequest(request), ip = request.ip ?? "";
     if (!user) {
+      connections.refused(sightingOf(request, username.trim().slice(0, 60)), "login_failed", users.list().some(item => item.username.toLowerCase() === username.trim().toLowerCase()));
       audit.record({ action: "studio.login", outcome: "denied", actor: username.slice(0, 40), detail: `${origin} ${ip}` });
       return response.sendStatus(401);
     }
@@ -66,7 +68,7 @@ export function registerSessionRoutes(app: Express, context: AppContext): void {
       challenges.set(challenge, { userId: user.id, username: user.username, role: user.role, origin, ip, agent: agentOf(request), until: Date.now() + CHALLENGE_MS, tries: 0 });
       return response.status(200).json({ totp_required: true, challenge, expires_in_s: CHALLENGE_MS / 1000 });
     }
-    return response.status(201).json(open(response, user, origin, ip, agentOf(request)));
+    return response.status(201).json(open(response, user, origin, ip, agentOf(request), request, false));
   });
 
   /** The second step of the sign-in: the challenge of the first step and a code of the app (or a recovery code). */
@@ -79,12 +81,13 @@ export function registerSessionRoutes(app: Express, context: AppContext): void {
     if (wait > 0) return response.status(429).set("Retry-After", String(wait)).json({ error: "too many wrong codes", code: "totp_locked", retry_after_s: wait });
     pending.tries += 1;
     if (!totp.verify(pending.userId, code)) {
+      connections.refused(sightingOf(request, pending.username), "second_factor_failed", true);
       audit.record({ action: "studio.totp", outcome: "denied", actor: pending.username, detail: `${pending.origin} ${request.ip ?? ""}` });
       if (pending.tries >= 5) challenges.delete(challenge);
       return response.status(401).json({ error: "that code is not right", code: "bad_code" });
     }
     challenges.delete(challenge);
-    return response.status(201).json(open(response, { id: pending.userId, username: pending.username, role: pending.role }, originOfRequest(request), request.ip ?? "", agentOf(request)));
+    return response.status(201).json(open(response, { id: pending.userId, username: pending.username, role: pending.role }, originOfRequest(request), request.ip ?? "", agentOf(request), request, true));
   });
 
   // ---- the sessions of the person, and the proof of identity that critical actions ask for -----------------------------------------------------------

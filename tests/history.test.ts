@@ -44,7 +44,7 @@ test("the summary counts what is held and what happened in the last day", () => 
   const { log, clock } = seeded();
   const summary = log.summary(clock.now);
   assert.equal(summary.total, 6);
-  assert.deepEqual(summary.by_type, { alert: 3, node: 1, camera: 1, mode: 1, device: 0, alarm: 0 });
+  assert.deepEqual(summary.by_type, { alert: 3, node: 1, camera: 1, mode: 1, device: 0, alarm: 0, connection: 0, system: 0 });
   assert.deepEqual(summary.last_24h, { events: 3, high_alerts: 1, node_incidents: 0, camera_incidents: 0 });
   assert.equal(log.summary(clock.now - 4.6 * day).last_24h.camera_incidents, 1);
   assert.ok(summary.oldest_at && summary.newest_at && summary.oldest_at < summary.newest_at);
@@ -106,8 +106,11 @@ test("history routes: filters are validated, deletion needs a confirmation and i
     assert.equal(events.summary().total, 2, "nothing was removed by a refused request");
 
     assert.equal((await remove("?scope=older-than&days=30&confirm=delete").then(response => response.json()) as { deleted: number }).deleted, 0);
-    assert.deepEqual(await (await remove("?scope=all&type=camera&confirm=delete")).json(), { deleted: 1, remaining: 1 });
-    assert.deepEqual(await (await remove("?scope=all&confirm=delete")).json(), { deleted: 1, remaining: 0 });
+    // The service that asks is itself a client of the history (and removing history is a line of it): those are counted apart from the alert and the camera.
+    assert.equal(((await (await remove("?scope=all&type=camera&confirm=delete")).json()) as { deleted: number }).deleted, 1);
+    assert.deepEqual(events.list({ limit: 50 }).map(event => event.type), ["alert"]);
+    assert.equal(((await (await remove("?scope=all&confirm=delete")).json()) as { deleted: number }).deleted >= 1, true);
+    assert.deepEqual(events.list({ limit: 50, everything: true }).filter(event => event.type !== "system" && event.type !== "connection"), []);
     const audit = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8");
     assert.match(audit, /history\.delete/);
     assert.match(audit, /2 removed|1 removed/);

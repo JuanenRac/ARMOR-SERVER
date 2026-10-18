@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [0.7.5] - History of connections and of the system
+
+- **Connections in the history:** every sign-in, refused sign-in, wrong code of the second factor, sign-out, session ended from the list of sessions and session that ran out becomes a `connection` event with the kind of client (Studio, the Android app, the panel of a node, the voice service, other), the user, the version it says it is, where it came from (inside the house or outside) and whether the second factor was used. A service with a token and the panel of a node opened through the server are clients too, seen once.
+- **The list of clients:** `GET /api/v1/history/connections` gives every device or app the server has seen, with when it was first and last seen, its open sessions and its sign-ins and refusals, in a file that is bounded (300 clients, forgotten after 120 days). The clients tell what they are in the `X-Armor-Client` header (only informative).
+- **Events of the system:** nodes that appear, return, change firmware or disappear, the link to the broker (once when lost and once when back), settings changed (who and in which area, never the values), services started, stopped and restarted, updates checked, installed and rolled back, and the alarm armed, disarmed, acknowledged or asked to arm, disarm or silence with its profile. They come from the audit trail through a fixed vocabulary, without its free text; a disarm under duress is never written.
+- **Privacy:** the address and the user agent of a client are in the answers only for an administrator signed in to Studio; the name typed in a refused sign-in is kept only when it is a real account; no password, token, cookie, PIN or recovery code is ever recorded, and tests read the files of the history looking for them.
+- **The history API:** `type` accepts `connection` and `system`; new filters `category`, `kind`, `client` and `user`; the new events are left out unless asked for (`type`, a filter, or `all=1`) so that older clients never meet them; the summary counts them apart in `by_type` and the sessions that run out are noticed without waiting for a request.
+
 ## [0.7.4] - Node health and arming profiles
 
 - Node health: the report of every node arrives over MQTT (armor/health/{node}) or POST /api/v1/node-health, and GET /api/v1/node-health lists the latest report of each node with its status, warnings, restarts of the last day and the nodes that sent none; /api/v1/node-health/{id} adds the history and the restart log, DELETE forgets a node. Reports and restart logs survive a restart.
