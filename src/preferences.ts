@@ -35,7 +35,7 @@ export class PreferencesStore {
   #load(): void {
     let raw: { schema?: unknown; users?: Record<string, unknown> };
     try { raw = JSON.parse(fs.readFileSync(this.#file, "utf8")); } catch { return; }
-    if (raw.schema !== 1 || !raw.users || typeof raw.users !== "object") return;
+    if (!raw || typeof raw !== "object" || raw.schema !== 1 || !raw.users || typeof raw.users !== "object") return;
     for (const [userId, value] of Object.entries(raw.users)) {
       if (!value || typeof value !== "object") continue;
       const v = value as Record<string, unknown>;

@@ -85,7 +85,7 @@ export class CameraVault {
   #restore(): void {
     let parsed: { schema?: number; cameras?: StoredCamera[] };
     try { parsed = JSON.parse(fs.readFileSync(this.#file, "utf8")); } catch { return; /* First run: no cameras. */ }
-    if (parsed.schema !== 1 || !Array.isArray(parsed.cameras)) { this.#warn("camera file ignored: unknown schema"); return; }
+    if (!parsed || parsed.schema !== 1 || !Array.isArray(parsed.cameras)) { this.#warn("camera file ignored: unknown schema"); return; }
     let migrated = 0;
     let unreadable = 0;
     for (const stored of parsed.cameras) {

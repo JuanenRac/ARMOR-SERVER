@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [0.7.6] - Damaged state files
+
+- **A state file holding `null` no longer stops the server from starting:** the saved preferences and the saved cameras were read as an object without checking, so a file that had been emptied to `null` (a power cut, a hand edit) threw while the server was starting. They are now ignored like any other damaged file and start empty.
+- More tests: the second factor under repeated wrong codes, expired challenges and proofs from outside the house, the automation engine with a fake clock, account and PIN edges, MQTT ingestion with hostile messages on a real socket, and every state file damaged in several ways at once.
+
 ## [0.7.5] - History of connections and of the system
 
 - **Connections in the history:** every sign-in, refused sign-in, wrong code of the second factor, sign-out, session ended from the list of sessions and session that ran out becomes a `connection` event with the kind of client (Studio, the Android app, the panel of a node, the voice service, other), the user, the version it says it is, where it came from (inside the house or outside) and whether the second factor was used. A service with a token and the panel of a node opened through the server are clients too, seen once.
