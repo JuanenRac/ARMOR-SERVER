@@ -129,6 +129,32 @@ def host_tests(project: Path, build: Path) -> None:
     command(project, [ctest, "--test-dir", str(build), "--output-on-failure"])
 
 
+def unit_tests(project: Path, folder: str = "tests") -> None:
+    """The standard-library unit tests of a repository that is not a Python program (documentation, hardware): every tests/test_*.py. A repository without the folder says so and goes on."""
+    if not (project / folder).is_dir():
+        print(f"UNIT_TESTS=SKIPPED there is no {folder}/ folder")
+        return
+    command(project, [sys.executable, "-m", "unittest", "discover", "-s", folder, "-p", "test_*.py"])
+
+
+# The shell tests that need Docker, and the two that only repeat what the Python discovery already runs.
+DEVOPS_SHELL_TESTS_LEFT_OUT = {"test_compose.sh", "test_admin_agent.sh", "test_maintenance_agent.sh"}
+
+
+def devops_tests(project: Path) -> None:
+    """ARMOR-DEVOPS: the Python tests of its helpers (the admin agent, the maintenance agent, the packager) and every shell test of its scripts, all offline and in temporary folders.
+    They need Unix sockets, bash and openssl (Linux, macOS, WSL); on Windows they are reported as not run, never as passed."""
+    scripts = project / "scripts"
+    if os.name == "nt":
+        print("DEVOPS_TESTS=SKIPPED they need Unix sockets, bash and openssl: run build-test on Linux, macOS or WSL")
+        return
+    command(project, [sys.executable, "-W", "ignore", "-m", "unittest", "discover", "-s", "scripts", "-p", "test_*.py"])
+    bash = check_tool("bash", "bash is required to run the shell tests of ARMOR-DEVOPS")
+    for script in sorted(scripts.glob("test_*.sh")):
+        if script.name not in DEVOPS_SHELL_TESTS_LEFT_OUT:
+            command(project, [bash, str(script)])
+
+
 def test_project(project: Path, manifest: dict[str, object]) -> None:
     name = str(manifest["name"])
     if name == "ARMOR-COMMON":
@@ -174,6 +200,7 @@ def test_project(project: Path, manifest: dict[str, object]) -> None:
         gradle = "gradlew.bat" if os.name == "nt" and (project / "gradlew.bat").is_file() else ("./gradlew" if (project / "gradlew").is_file() else check_tool("gradle", "Gradle or the project wrapper is required; open the project in Android Studio once to generate/restore it"))
         command(project, [gradle, "test", "assembleDebug"])
     elif name == "ARMOR-HARDWARE":
+        unit_tests(project)
         openscad = check_tool("openscad", "OpenSCAD is required to validate the parametric enclosure")
         output = project / "build" / "node_enclosure_radar.stl"
         output.parent.mkdir(exist_ok=True)
@@ -185,6 +212,7 @@ def test_project(project: Path, manifest: dict[str, object]) -> None:
             for part in ("box", "lid"):
                 command(project, [openscad, "-D", f'part="{part}"', "-D", f'preset="{preset}"', "-o", str(project / "build" / f"node_box_{preset}_{part}.stl"), "scad/node_box.scad"])
     elif name == "ARMOR-DEVOPS":
+        devops_tests(project)
         check_tool("docker", "Docker Compose is required to validate ARMOR-DEVOPS")
         # `docker compose config` only checks the topology is well formed; it
         # still needs every variable the compose file interpolates to have
@@ -195,6 +223,7 @@ def test_project(project: Path, manifest: dict[str, object]) -> None:
         command(project, ["docker", "compose", "config", "--quiet"])
     elif name == "ARMOR-DOCS":
         validate_markdown_links(project)
+        unit_tests(project)
     else:
         raise RuntimeError(f"no build rule registered for {name}")
 
