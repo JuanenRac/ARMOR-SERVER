@@ -5,6 +5,7 @@
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import { onlyKnown, readNodeId, readTimestamp, record, integer } from "./contracts.js";
+import { parseArmProfile, type ArmProfile } from "./arm_profiles.js";
 
 export const PHASES = ["disarmed", "exit_delay", "armed", "entry_delay", "alarm"] as const;
 export type Phase = (typeof PHASES)[number];
@@ -26,8 +27,12 @@ export type AlarmEvent = { ago_s: number; kind: EventKind; zone?: string };
 export type AlarmMessage = {
   kind: "alarm"; node_id: string; timestamp_ms: number; phase: Phase; mode: Mode; siren: boolean; locked_out: boolean; commands_enabled: boolean;
   zones: AlarmZone[]; open_zones: string[]; events: AlarmEvent[];
+  /** The node understands the arming profiles of the arm command (an older firmware does not say it, and is armed without one). */
+  arm_profiles?: boolean;
+  /** The id of the arming profile the panel is armed (or arming) with. */
+  profile?: string;
 };
-export type AlarmCommand = { kind: "alarm_command"; node_id: string; timestamp_ms: number; command_id: string; action: AlarmAction; mode?: "away" | "stay"; force?: boolean };
+export type AlarmCommand = { kind: "alarm_command"; node_id: string; timestamp_ms: number; command_id: string; action: AlarmAction; mode?: "away" | "stay"; force?: boolean; profile?: ArmProfile };
 export type AlarmResult = { kind: "alarm_result"; node_id: string; timestamp_ms: number; command_id: string; action: AlarmAction; accepted: boolean; refusal: AlarmRefusal; phase: Phase };
 
 const zoneId = /^[a-z0-9][a-z0-9_-]{0,31}$/;
@@ -59,7 +64,7 @@ function parseEvent(value: unknown, index: number): AlarmEvent {
 /** The state of a node, with the rules that join fields: a zone named once, an open zone is a zone of the message, a disarmed panel has the mode disarmed and an armed one does not, a siren only in the alarm phase. */
 export function parseAlarmMessage(value: unknown): AlarmMessage {
   const body = record(value, "alarm message");
-  onlyKnown(body, ["kind", "node_id", "timestamp_ms", "phase", "mode", "siren", "locked_out", "commands_enabled", "zones", "open_zones", "events"], "alarm message");
+  onlyKnown(body, ["kind", "node_id", "timestamp_ms", "phase", "mode", "siren", "locked_out", "commands_enabled", "zones", "open_zones", "events", "arm_profiles", "profile"], "alarm message");
   for (const key of ["kind", "node_id", "timestamp_ms", "phase", "mode", "siren", "locked_out", "commands_enabled", "zones", "open_zones", "events"]) if (!(key in body)) throw new Error(`the alarm message is missing ${key}`);
   if (body.kind !== "alarm") throw new Error("invalid kind");
   const node = readNodeId(body), timestamp = readTimestamp(body);
@@ -81,6 +86,11 @@ export function parseAlarmMessage(value: unknown): AlarmMessage {
   if (body.phase === "disarmed" && body.mode !== "disarmed") throw new Error("a disarmed panel has the mode disarmed");
   if ((body.phase === "exit_delay" || body.phase === "armed" || body.phase === "entry_delay") && body.mode === "disarmed") throw new Error("an arming or armed panel has a mode other than disarmed");
   if (body.siren === true && body.phase !== "alarm") throw new Error("the siren sounds only in the alarm phase");
+  if ("arm_profiles" in body && typeof body.arm_profiles !== "boolean") throw new Error("invalid arm_profiles");
+  if ("profile" in body) {
+    if (typeof body.profile !== "string" || !/^[a-z0-9][a-z0-9_-]{0,15}$/.test(body.profile)) throw new Error("invalid profile");
+    if (body.mode === "disarmed") throw new Error("a panel that is not armed has no arming profile");
+  }
   return { ...(body as unknown as AlarmMessage), node_id: node, timestamp_ms: timestamp, zones, events };
 }
 
@@ -93,7 +103,7 @@ function readCommonFields(body: Record<string, unknown>, what: string): void {
 /** A command to the panel, as the contract has it: a mode exactly on an arm, force only on an arm. The server builds these; the parser is what the shared vectors check. */
 export function parseAlarmCommand(value: unknown): AlarmCommand {
   const body = record(value, "alarm command");
-  onlyKnown(body, ["kind", "node_id", "timestamp_ms", "command_id", "action", "mode", "force"], "alarm command");
+  onlyKnown(body, ["kind", "node_id", "timestamp_ms", "command_id", "action", "mode", "force", "profile"], "alarm command");
   readCommonFields(body, "alarm command");
   if (body.kind !== "alarm_command") throw new Error("invalid kind");
   const node = readNodeId(body), timestamp = readTimestamp(body);
@@ -101,6 +111,12 @@ export function parseAlarmCommand(value: unknown): AlarmCommand {
   if ("force" in body && typeof body.force !== "boolean") throw new Error("invalid force");
   if ((body.action === "arm") !== ("mode" in body)) throw new Error("a mode goes on an arm and on nothing else");
   if (body.action !== "arm" && body.force === true) throw new Error("force goes on an arm and on nothing else");
+  if ("profile" in body) {
+    if (body.action !== "arm") throw new Error("a profile goes on an arm and on nothing else");
+    const profile = parseArmProfile(body.profile, "profile");
+    if (profile.base !== body.mode) throw new Error("the base of the profile is the mode of the arm");
+    return { ...(body as unknown as AlarmCommand), node_id: node, timestamp_ms: timestamp, profile };
+  }
   return { ...(body as unknown as AlarmCommand), node_id: node, timestamp_ms: timestamp };
 }
 

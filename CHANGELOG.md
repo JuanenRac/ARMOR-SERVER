@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [0.7.4] - Node health and arming profiles
+
+- Node health: the report of every node arrives over MQTT (armor/health/{node}) or POST /api/v1/node-health, and GET /api/v1/node-health lists the latest report of each node with its status, warnings, restarts of the last day and the nodes that sent none; /api/v1/node-health/{id} adds the history and the restart log, DELETE forgets a node. Reports and restart logs survive a restart.
+- Four warnings reach the alarm centre: node_low_memory, node_frequent_resets, node_link_flapping and node_weak_signal, with hysteresis for the memory and a restart seen when the uptime or the connection count goes back.
+- Arming profiles: GET/PUT /api/v1/alarm/profiles keep up to eight modes (Away, Home and Night to start with; away and stay cannot be removed) with a revision against silent overwrites, and POST /api/v1/alarm/command accepts the id of one on an arm. The whole profile goes inside the command, only to a node whose state says arm_profiles; an arm without a profile is the command it always was.
+- A profile with notify normal makes the alarm a sounding panel raises high instead of critical; the active profile is in the alarm detail.
+- Tests for the parsers against the shared vectors, the store, the warnings and their levels, the routes and the commands (448 server tests in all).
+
 ## [0.7.3] - An optional encrypted link to the broker (mqtts)
 
 - ARMOR_MQTT_CA_FILE names the certificate of the installation's own authority. With an mqtts:// address the server trusts that authority only and the broker's certificate must vouch for the name or address in the URL; without the variable an mqtts:// address is checked against the usual authorities of the machine, and an mqtt:// address is unchanged.

@@ -17,7 +17,7 @@ import { ZoneLinksInvalid } from "../alarm_zone_feed.js";
 const NODE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 export function registerAlarmNodeRoutes(app: Express, context: AppContext): void {
-  const { config, alarmNodes, alarmCommands, requireOperator, requireAdmin, studioUser } = context;
+  const { config, alarmNodes, alarmCommands, armProfiles, requireOperator, requireAdmin, studioUser } = context;
   const ingestLimit = rateLimit({ windowMs: 60_000, limit: 6_000, standardHeaders: "draft-8", legacyHeaders: false });
   const commandLimit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "too many alarm commands" } });
 
@@ -54,15 +54,22 @@ export function registerAlarmNodeRoutes(app: Express, context: AppContext): void
   // Whether the commands are on, the ones waiting for an answer and what became of the latest ones.
   app.get("/api/v1/alarm/commands", requireOperator, (_request, response) => response.json(alarmCommands.status()));
 
-  // A command to one node: {"node", "action": "arm" | "disarm" | "silence", "mode": "away" | "stay" (on an arm), "force": boolean (on an arm)}. Answered 202 with the command id (the node's
+  // A command to one node: {"node", "action": "arm" | "disarm" | "silence", "mode": "away" | "stay" (on an arm), "force": boolean (on an arm), "profile": the id of an arming profile (on an arm; its base is the mode, which may then be left out)}. Answered 202 with the command id (the node's
   // answer arrives later in /commands); a refusal is 4xx with a code. A disarm or a silence needs the PIN of the signed-in user (see disarm_gate.ts); the PIN is checked here and never sent to the node.
   app.post("/api/v1/alarm/command", requireAdmin, commandLimit, (request, response) => {
     const body = typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {};
     const node = typeof body.node === "string" ? body.node : "";
-    const known = ["node", "action", "mode", "force", "pin"];
+    const known = ["node", "action", "mode", "force", "pin", "profile"];
     if (!NODE.test(node) || typeof body.action !== "string" || !(ACTIONS as readonly string[]).includes(body.action) || Object.keys(body).some(key => !known.includes(key))
-      || ("force" in body && typeof body.force !== "boolean") || ("mode" in body && body.mode !== "away" && body.mode !== "stay")) {
-      return response.status(400).json({ error: "node, an action (arm, disarm or silence) and, on an arm, a mode (away or stay) and optionally force are required", code: "invalid_request" });
+      || ("force" in body && typeof body.force !== "boolean") || ("mode" in body && body.mode !== "away" && body.mode !== "stay") || ("profile" in body && (typeof body.profile !== "string" || body.action !== "arm"))) {
+      return response.status(400).json({ error: "node, an action (arm, disarm or silence) and, on an arm, a mode (away or stay) and optionally force and a profile are required", code: "invalid_request" });
+    }
+    // An arm with a profile: the profile is looked up here and goes inside the command; its base is the mode (the mode may be left out), and a mode that says otherwise is a mistake, not a choice.
+    let profile: ReturnType<typeof armProfiles.find>;
+    if (typeof body.profile === "string") {
+      profile = armProfiles.find(body.profile);
+      if (!profile) return response.status(404).json({ error: "no such arming profile", code: "unknown_profile" });
+      if ("mode" in body && body.mode !== profile.base) return response.status(400).json({ error: "the base of the profile is the mode of the arm", code: "invalid_request" });
     }
     const user = studioUser(request);
     if (body.action === "disarm" || body.action === "silence") {
@@ -72,7 +79,7 @@ export function registerAlarmNodeRoutes(app: Express, context: AppContext): void
       if (verdict.duress) context.alarms.raiseDuress(user?.username ?? "administrator");
     }
     try {
-      const sent = alarmCommands.request(node, body.action as AlarmAction, body.mode as "away" | "stay" | undefined, body.force === true, studioUser(request)?.username ?? "administrator");
+      const sent = alarmCommands.request(node, body.action as AlarmAction, (profile?.base ?? body.mode) as "away" | "stay" | undefined, body.force === true, studioUser(request)?.username ?? "administrator", profile);
       return response.status(202).json({ accepted: true, command_id: sent.command_id });
     } catch (error) {
       if (error instanceof AlarmCommandError) return response.status(error.status).json({ error: error.message, code: error.code });

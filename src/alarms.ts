@@ -14,6 +14,7 @@ import type { ElectricalMessage } from "./electrical.js";
 import type { NetworkEvent, NetworkMessage } from "./network.js";
 import type { SolarMessage } from "./solar.js";
 import type { AlarmMessage } from "./alarm.js";
+import { HEALTH_CODES, type NodeHealthView } from "./node_health.js";
 import { ENERGY_ALARM_DEFAULTS, type EnergyAlarmSettings } from "./energy_alarms.js";
 import type { SecurityMode } from "./store.js";
 import { durableRename } from "./durable.js";
@@ -277,6 +278,9 @@ export class AlarmRules {
    */
   onArmed: (() => void) | undefined;
 
+  /** How loudly the profile a panel is armed with wants the server to tell people when it sounds ("urgent" is a critical alarm, "normal" a high one); undefined when the profile is not known. Set by the context. */
+  profileNotify: ((profile: string) => "urgent" | "normal" | undefined) | undefined;
+
   /** A problem that was there before arming, now that it matters. */
   raisePresentProblems(problems: { nodesDown: string[]; camerasDown: string[]; devicesTriggered: Array<{ id: string; kind: string }> }): void {
     for (const id of problems.nodesDown) this.centre.raise(`node:${id}:down`, { source: { type: "node", id }, severity: "warning", code: "node_down" });
@@ -429,7 +433,9 @@ export class AlarmRules {
     const base = `alarm:${message.node_id}`, source: AlarmSource = { type: "alarm", id: message.node_id };
     this.centre.clear(`${base}:offline`);   // it speaks: the silence is over (see handleSolar)
     const zone = message.events.filter(event => event.kind === "alarm" && event.zone !== undefined).at(-1)?.zone;
-    if (message.phase === "alarm") this.centre.raise(`${base}:sounding`, { source, severity: "critical", code: "alarm_sounding", detail: { node: message.node_id, mode: message.mode, siren: message.siren, ...(zone ? { zone } : {}) } });
+    // The profile the panel was armed with can ask for a quieter telling ("normal": high instead of critical, so it is not escalated); an unknown profile, or none, is critical as always.
+    const level = message.profile !== undefined && this.profileNotify?.(message.profile) === "normal" ? "high" : "critical";
+    if (message.phase === "alarm") this.centre.raise(`${base}:sounding`, { source, severity: level, code: "alarm_sounding", detail: { node: message.node_id, mode: message.mode, siren: message.siren, ...(message.profile !== undefined ? { profile: message.profile } : {}), ...(zone ? { zone } : {}) } });
     else this.centre.clear(`${base}:sounding`);
     for (const item of message.zones) {
       const key = `${base}:${item.id}:tamper`;
@@ -442,6 +448,25 @@ export class AlarmRules {
     }
     if (message.locked_out) this.centre.raise(`${base}:locked_out`, { source, severity: "warning", code: "alarm_locked_out", detail: { node: message.node_id } });
     else this.centre.clear(`${base}:locked_out`);
+  }
+
+  /**
+   * The health of a node of any family (armor/health/{node}), already judged by the health store: each of its four warnings is raised while it lasts and cleared when it ends. They are warnings, never
+   * more: a node short of memory or restarting is not an intruder, and none of them is told outside the consoles.
+   */
+  handleNodeHealth(view: NodeHealthView): void {
+    const source: AlarmSource = { type: "node", id: view.node_id };
+    for (const code of HEALTH_CODES) {
+      const key = `health:${view.node_id}:${code}`;
+      const warning = view.warnings.find(item => item.code === code);
+      if (warning) this.centre.raise(key, { source, severity: "warning", code, detail: { family: view.family, ...warning.detail } });
+      else this.centre.clear(key);
+    }
+  }
+
+  /** A node taken away takes its health warnings with it. */
+  forgetNodeHealth(node: string): void {
+    for (const code of HEALTH_CODES) this.centre.clear(`health:${node}:${code}`);
   }
 
   /** An alarm node went silent, or came back. Silence matters only while the panel was guarding, which the alarm raised before it fell silent says. */

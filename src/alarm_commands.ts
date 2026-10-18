@@ -13,6 +13,7 @@
 import { randomBytes } from "node:crypto";
 import type { AuditLog } from "./audit.js";
 import { ACTIONS, type AlarmAction, type AlarmRefusal, type AlarmResult, type AlarmStore, type Phase } from "./alarm.js";
+import type { ArmProfile } from "./arm_profiles.js";
 
 export class AlarmCommandError extends Error {
   constructor(readonly code: string, message: string, readonly status = 409) { super(message); }
@@ -20,8 +21,8 @@ export class AlarmCommandError extends Error {
 
 export type AlarmOutcome = AlarmRefusal | "timeout";
 /** What became of a command, as shown to an operator. */
-export type AlarmRecord = { command_id: string; node_id: string; action: AlarmAction; mode?: "away" | "stay"; accepted: boolean; refusal: AlarmOutcome; phase?: Phase; actor: string; at: string };
-export type PendingAlarm = { command_id: string; node_id: string; action: AlarmAction; mode?: "away" | "stay"; actor: string; at: string };
+export type AlarmRecord = { command_id: string; node_id: string; action: AlarmAction; mode?: "away" | "stay"; profile?: string; accepted: boolean; refusal: AlarmOutcome; phase?: Phase; actor: string; at: string };
+export type PendingAlarm = { command_id: string; node_id: string; action: AlarmAction; mode?: "away" | "stay"; profile?: string; actor: string; at: string };
 
 export type AlarmCommandsOptions = {
   /** The operator's decision: false unless ARMOR_ALARM_COMMANDS=1. */
@@ -52,11 +53,11 @@ export class AlarmCommands {
   get enabled(): boolean { return this.#options.enabled; }
 
   /**
-   * Ask a node's panel to arm (`away` or `stay`, optionally forcing), to disarm or to silence its siren (the system stays armed and the alarm stays latched). Returns the id of the command that was published (the node's answer arrives later, see
-   * `handleResult`); throws an `AlarmCommandError` when it must not be sent. `actor` is who asked, for the audit.
+   * Ask a node's panel to arm (`away` or `stay`, optionally forcing and, when the node understands them, with an arming profile whose base is the mode), to disarm or to silence its siren (the system stays armed and the alarm stays latched).
+   * Returns the id of the command that was published (the node's answer arrives later, see `handleResult`); throws an `AlarmCommandError` when it must not be sent. `actor` is who asked, for the audit. An arm without a profile is the command it always was.
    */
-  request(node: string, action: AlarmAction, mode: "away" | "stay" | undefined, force: boolean, actor: string): { command_id: string } {
-    const detail = (text: string): string => `${action}${mode ? ` ${mode}` : ""}${force ? " forced" : ""}: ${text}`;
+  request(node: string, action: AlarmAction, mode: "away" | "stay" | undefined, force: boolean, actor: string, profile?: ArmProfile): { command_id: string } {
+    const detail = (text: string): string => `${action}${mode ? ` ${mode}` : ""}${profile ? ` profile ${profile.id}` : ""}${force ? " forced" : ""}: ${text}`;
     const denied = (code: string, message: string, status = 409): never => {
       this.#options.audit.record({ action: "alarm.command", outcome: "denied", actor, target: node, detail: detail(code) });
       throw new AlarmCommandError(code, message, status);
@@ -64,23 +65,26 @@ export class AlarmCommands {
     if (!this.#options.enabled) return denied("commands_disabled", "alarm commands are not turned on in this server", 403);
     if (!(ACTIONS as readonly string[]).includes(action)) return denied("invalid_action", "the action is arm, disarm or silence", 400);
     if (action === "arm" && mode !== "away" && mode !== "stay") return denied("invalid_mode", "an arm says away or stay", 400);
-    if (action !== "arm" && (mode !== undefined || force)) return denied("invalid_request", `a ${action} has no mode and no force`, 400);
+    if (action !== "arm" && (mode !== undefined || force || profile !== undefined)) return denied("invalid_request", `a ${action} has no mode, no force and no profile`, 400);
+    if (profile !== undefined && profile.base !== mode) return denied("invalid_request", "the base of the profile is the mode of the arm", 400);
     const view = this.#options.nodes.list().find(item => item.node_id === node);
     if (!view) return denied("unknown_node", "no such alarm node", 404);
     if (view.stale) return denied("node_unavailable", "the node has not reported lately", 409);
     if (!view.state.commands_enabled) return denied("node_commands_off", "the node does not accept commands from the server", 409);
+    // A node of an older firmware would not understand the command at all (it would answer nothing): it is armed without a profile, or not at all.
+    if (profile !== undefined && view.state.arm_profiles !== true) return denied("profiles_unsupported", "the node does not understand arming profiles: arm it without one, or update its firmware", 409);
     for (const pending of this.#pending.values()) if (pending.node_id === node) return denied("busy", "a command to this node is still waiting for its answer", 409);
 
     const now = this.#options.now();
     const id = this.#options.random();
-    const command = { kind: "alarm_command", node_id: node, timestamp_ms: now, command_id: id, action, ...(action === "arm" ? { mode, ...(force ? { force: true } : {}) } : {}) };
+    const command = { kind: "alarm_command", node_id: node, timestamp_ms: now, command_id: id, action, ...(action === "arm" ? { mode, ...(force ? { force: true } : {}), ...(profile ? { profile } : {}) } : {}) };
     try {
       this.#options.publish(`armor/alarm/${node}/command`, JSON.stringify(command));
     } catch (error) {
       this.#options.audit.record({ action: "alarm.command", outcome: "failed", actor, target: node, detail: detail(error instanceof Error ? error.message : "not sent") });
       throw new AlarmCommandError("mqtt_unavailable", "the command could not be sent: the broker is not connected", 503);
     }
-    this.#pending.set(id, { command_id: id, node_id: node, action, ...(mode ? { mode } : {}), actor, at: new Date(now).toISOString(), startedMs: now });
+    this.#pending.set(id, { command_id: id, node_id: node, action, ...(mode ? { mode } : {}), ...(profile ? { profile: profile.id } : {}), actor, at: new Date(now).toISOString(), startedMs: now });
     this.#options.audit.record({ action: "alarm.command", outcome: "allowed", actor, target: node, detail: `${detail("sent")} ${id}` });
     return { command_id: id };
   }
@@ -94,7 +98,7 @@ export class AlarmCommands {
       return;
     }
     this.#pending.delete(result.command_id);
-    this.#keep({ command_id: result.command_id, node_id: result.node_id, action: result.action, ...(pending.mode ? { mode: pending.mode } : {}), accepted: result.accepted, refusal: result.refusal, phase: result.phase, actor: pending.actor, at: new Date(now).toISOString() });
+    this.#keep({ command_id: result.command_id, node_id: result.node_id, action: result.action, ...(pending.mode ? { mode: pending.mode } : {}), ...(pending.profile ? { profile: pending.profile } : {}), accepted: result.accepted, refusal: result.refusal, phase: result.phase, actor: pending.actor, at: new Date(now).toISOString() });
     this.#options.audit.record({ action: "alarm.command.result", outcome: result.accepted ? "allowed" : "denied", actor: pending.actor, target: result.node_id, detail: `${result.action} ${result.command_id}: ${result.refusal}` });
   }
 
@@ -104,7 +108,7 @@ export class AlarmCommands {
     for (const [id, pending] of this.#pending) {
       if (now - pending.startedMs < this.#options.answerTimeoutMs) continue;
       this.#pending.delete(id);
-      this.#keep({ command_id: id, node_id: pending.node_id, action: pending.action, ...(pending.mode ? { mode: pending.mode } : {}), accepted: false, refusal: "timeout", actor: pending.actor, at: new Date(now).toISOString() });
+      this.#keep({ command_id: id, node_id: pending.node_id, action: pending.action, ...(pending.mode ? { mode: pending.mode } : {}), ...(pending.profile ? { profile: pending.profile } : {}), accepted: false, refusal: "timeout", actor: pending.actor, at: new Date(now).toISOString() });
       this.#options.audit.record({ action: "alarm.command.result", outcome: "failed", actor: pending.actor, target: pending.node_id, detail: `${pending.action} ${id}: no answer` });
     }
   }

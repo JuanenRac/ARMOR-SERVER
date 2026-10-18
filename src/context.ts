@@ -40,6 +40,8 @@ import { SolarStore } from "./solar.js";
 import { ElectricalStore } from "./electrical.js";
 import { SwitchingService } from "./electrical_switching.js";
 import { AlarmStore } from "./alarm.js";
+import { ArmProfileStore } from "./arm_profiles.js";
+import { NodeHealthStore } from "./node_health.js";
 import { AlarmCommands } from "./alarm_commands.js";
 import { DeviceNotes, NetworkStore } from "./network.js";
 import { NetworkCommands } from "./network_commands.js";
@@ -108,6 +110,10 @@ export type AppContext = {
   alarmNodes: AlarmStore;
   /** The one way a command reaches an alarm node's panel: off unless the operator turned it on (see alarm_commands.ts). */
   alarmCommands: AlarmCommands;
+  /** The named ways of arming a panel (Away, Home, Night, the owner's own), sent inside the arm command (see arm_profiles.ts). */
+  armProfiles: ArmProfileStore;
+  /** The latest health report of every node and what is wrong with it (see node_health.ts). */
+  nodeHealth: NodeHealthStore;
   /** Where its commands are published; set when the broker is connected (never retained, at most once). */
   alarmLink: { publish?: (topic: string, payload: string) => void };
   /** The Zigbee sensors linked to the zones of the alarm panels, told to the panel while this server holds the radio. */
@@ -265,6 +271,9 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   });
   const alarmNodes = new AlarmStore({ now: overrides.now, onMessage: (message, previous) => { knownNodes.seen("alarm", message.node_id, message.phase); alarmRules.handleAlarmNode(message, previous); }, onStale: (node, stale, phase) => alarmRules.handleAlarmNodeStale(node, stale, phase) });
   const alarmLink: AppContext["alarmLink"] = {};
+  const armProfiles = new ArmProfileStore(path.join(config.dataDir, "arm-profiles.json"), overrides.now ? () => new Date(overrides.now!()) : undefined, warn);
+  alarmRules.profileNotify = id => armProfiles.find(id)?.notify ?? (armProfiles.find(id) ? "urgent" : undefined);
+  const nodeHealth = new NodeHealthStore({ now: overrides.now, onReport: view => alarmRules.handleNodeHealth(view), onForget: node => alarmRules.forgetNodeHealth(node) });
   const captureOnDetect = new CaptureOnDetect({ file: path.join(config.dataDir, "capture-on-detect.json"), audit, now: overrides.now, tools: { snapshot: camera => evidence.snapshot(camera), startRecording: camera => evidence.startRecording(camera), stopRecording: id => evidence.stopRecording(id), isRecording: id => evidence.isRecording(id) } });
   const ignoreZones = new IgnoreZones(path.join(config.dataDir, "camera-ignore-zones.json"));
   const alarmZoneFeed = new AlarmZoneFeed(path.join(config.dataDir, "alarm-zone-links.json"), { publish: (topic, payload) => { if (!alarmLink.publish) throw new Error("the MQTT broker is not connected"); alarmLink.publish(topic, payload); }, devices: () => devices.list(), now: overrides.now, warn });
@@ -353,7 +362,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    alarmDesign, alarmZoneFeed, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    alarmDesign, alarmZoneFeed, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, armProfiles, nodeHealth, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

@@ -14,7 +14,8 @@ import { WebSocketServer } from "ws";
 import type { ArmorConfig } from "./config.js";
 import { createContext, type AppContext, type ContextOverrides } from "./context.js";
 import { hasBearer } from "./http/auth.js";
-import { attachMqtt } from "./mqtt.js";
+import { attachMqtt, stampOf } from "./mqtt.js";
+import { healthTopic, parseNodeHealth } from "./node_health.js";
 import { registerAlarmRoutes } from "./routes/alarms.js";
 import { registerCameraRoutes } from "./routes/cameras.js";
 import { registerDeviceRoutes } from "./routes/devices.js";
@@ -24,6 +25,8 @@ import { registerSolarRoutes } from "./routes/solar.js";
 import { registerElectricalRoutes } from "./routes/electrical.js";
 import { registerNetworkRoutes } from "./routes/network.js";
 import { registerAlarmDesignRoutes } from "./routes/alarm_design.js";
+import { registerAlarmProfileRoutes } from "./routes/alarm_profiles.js";
+import { registerNodeHealthRoutes } from "./routes/node_health.js";
 import { registerMaintenanceRoutes } from "./routes/maintenance.js";
 import { networkTopic, parseNetworkMessage } from "./network.js";
 import { electricalTopic, parseElectricalMessage, parseElectricalResult } from "./electrical.js";
@@ -87,7 +90,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   // from an unknown client); the sign-in route has its own, much tighter limit.
   app.use(rateLimit({
     windowMs: 60_000, limit: 240, standardHeaders: "draft-8", legacyHeaders: false,
-    skip: request => (request.method === "POST" && (request.path === "/api/v1/telemetry" || request.path === "/api/v1/health" || request.path === "/api/v1/solar" || request.path === "/api/v1/electrical/readings" || request.path === "/api/v1/network/state" || request.path === "/api/v1/alarm/state" || request.path === "/api/v1/devices/state")) || context.operatorAuthorized(request),
+    skip: request => (request.method === "POST" && (request.path === "/api/v1/telemetry" || request.path === "/api/v1/health" || request.path === "/api/v1/solar" || request.path === "/api/v1/electrical/readings" || request.path === "/api/v1/network/state" || request.path === "/api/v1/alarm/state" || request.path === "/api/v1/node-health" || request.path === "/api/v1/devices/state")) || context.operatorAuthorized(request),
   }));
 
   // A signed-in console that keeps working keeps its session: the cookie is renewed once half of its life has gone.
@@ -116,6 +119,8 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerPushRoutes(app, context);
   registerNetworkRoutes(app, context);
   registerAlarmDesignRoutes(app, context);
+  registerAlarmProfileRoutes(app, context);
+  registerNodeHealthRoutes(app, context);
   registerMaintenanceRoutes(app, context);
   registerAlarmRoutes(app, context);
   registerSystemRoutes(app, context, version);
@@ -259,6 +264,18 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
         context.ingestLog.ok(topic, ignored);
       } catch (error) { rejected(topic, raw, error, "invalid alarm payload"); }
     });
+    // The health report of every family of node: armor/health/{node}, the same rule for the node named in the body. A report older than the one before is dropped, and a node without a clock is stamped on arrival.
+    mqtt.on("connect", () => mqtt.subscribe("armor/health/+", { qos: 1 }));
+    mqtt.on("message", (topic, raw) => {
+      const named = healthTopic(topic);
+      if (!named) return;
+      try {
+        const { value: parsed, ignored } = forwardCompatible(() => parseNodeHealth(JSON.parse(raw.toString("utf8"))));
+        if (parsed.node_id !== named) throw new Error("node_id does not match the topic");
+        context.nodeHealth.ingest({ ...parsed, timestamp_ms: stampOf(parsed.timestamp_ms, Date.now()) });
+        context.ingestLog.ok(topic, ignored);
+      } catch (error) { rejected(topic, raw, error, "invalid node health payload"); }
+    });
     mqtt.on("message", (topic, raw) => {
       const named = electricalTopic(topic);
       if (!named) return;
@@ -287,8 +304,11 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   context.electricalNodes.importHistory(electricalHistoryFile.read());
   const electricalEnergyFile = new JsonFile<ReturnType<typeof context.electricalEnergy.export>>(path.join(config.dataDir, "electrical-energy.json"));
   context.electricalEnergy.import(electricalEnergyFile.read());
+  // The last report of each node and its log of restarts outlive a restart of the server too.
+  const nodeHealthFile = new JsonFile<ReturnType<typeof context.nodeHealth.export>>(path.join(config.dataDir, "node-health.json"));
+  context.nodeHealth.import(nodeHealthFile.read());
   const saveHistory = (): void => {
-    try { solarHistoryFile.write(context.solar.exportHistory()); electricalHistoryFile.write(context.electricalNodes.exportHistory()); electricalEnergyFile.write(context.electricalEnergy.export()); }
+    try { solarHistoryFile.write(context.solar.exportHistory()); electricalHistoryFile.write(context.electricalNodes.exportHistory()); electricalEnergyFile.write(context.electricalEnergy.export()); nodeHealthFile.write(context.nodeHealth.export()); }
     catch (error) { console.warn("ARMOR_HISTORY=NOT_SAVED", error instanceof Error ? error.message : "unknown error"); }
   };
   const historySaver = setInterval(saveHistory, 60_000);

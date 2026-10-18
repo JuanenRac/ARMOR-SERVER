@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
   <img src="https://img.shields.io/badge/Tests-428%20passing-2ea44f.svg" alt="Tests">
-  <img src="https://img.shields.io/badge/Version-0.7.3-0f6cbd.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-0.7.4-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
@@ -36,7 +36,7 @@
 
 | | |
 |---|---|
-| Versione | `0.7.3` |
+| Versione | `0.7.4` |
 | Maturità | Consolidato |
 | Test | 428 (`npm test`) |
 | Tecnologia | Node.js 22+ / TypeScript / Docker Compose |
@@ -60,6 +60,7 @@
 * **Voce, osservazione e manutenzione:** comandi scritti e parlati (elenco chiuso, in otto lingue, con una conferma legata alla persona), il contesto per il servizio di osservazione (quali radar coprono quale telecamera), il firmware dei nodi aggiornato da Studio uno alla volta con avanzamento, e gli aggiornamenti dell'impianto da GitHub, quelli del sistema e una console root opzionale, tutto tramite l'assistente di manutenzione.
 * **Uso da fuori casa:** il server distingue la casa dall'esterno (una VPN conta come la casa), mantiene sessioni più brevi da fuori, chiede un secondo fattore (un'app di autenticazione, con codici di recupero) e di nuovo la password prima delle azioni critiche, permette di scegliere cosa può fare una sessione esterna (tutto, solo gestire l'allarme, solo guardare), avvisa le destinazioni degli allarmi quando qualcuno accede da un luogo nuovo e apre il pannello web di un nodo tramite il server - vincolato al certificato del nodo, con il suo cookie tenuto sul server - così nessun nodo viene mai pubblicato.
 * **Collegamento cifrato facoltativo con il broker (mqtts):** `ARMOR_MQTT_CA_FILE` indica il certificato dell'autorità propria dell'installazione; con un indirizzo `mqtts://` il server si fida solo di quell'autorità e controlla il nome del broker, e si rifiuta di partire se il file non è un certificato valido o l'indirizzo non è `mqtts://`. Studio mostra se il collegamento è cifrato e l'impronta dell'autorità. Provato contro un broker TLS di prova e contro un vero Mosquitto 2.0.
+* **Salute dei nodi e modalità di inserimento:** conserva l'ultimo rapporto e il registro dei riavvii di ogni nodo e solleva quattro avvisi (poca memoria, riavvii troppo frequenti, un broker che cade di continuo, segnale Wi-Fi debole); conserva i profili di inserimento (Fuori casa, In casa, Notte e i tuoi) e mette quello scelto dentro il comando di inserimento, solo per un nodo che dice di capirli. Un allarme forte o discreto segue il profilo; un inserimento senza profilo è il comando di sempre.
 
 ## 🧩 Ruolo in A.R.M.O.R.
 

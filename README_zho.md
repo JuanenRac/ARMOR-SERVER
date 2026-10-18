@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
   <img src="https://img.shields.io/badge/Tests-428%20passing-2ea44f.svg" alt="Tests">
-  <img src="https://img.shields.io/badge/Version-0.7.3-0f6cbd.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-0.7.4-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
@@ -36,7 +36,7 @@
 
 | | |
 |---|---|
-| 版本 | `0.7.3` |
+| 版本 | `0.7.4` |
 | 成熟度 | 成熟 |
 | 测试 | 428 (`npm test`) |
 | 技术栈 | Node.js 22+ / TypeScript / Docker Compose |
@@ -60,6 +60,7 @@
 * **语音、观察与维护：**文字和语音命令（封闭列表，八种语言，确认与人绑定）、观察服务的上下文（哪些雷达覆盖哪个摄像头）、从 Studio 逐个更新并显示进度的节点固件，以及通过维护助手完成的、来自 GitHub 的系统自身更新、操作系统更新和可选的 root 控制台。
 * **从家外使用：**服务器区分家中和外部（VPN 视为家中），外部会话更短，要求第二重验证（验证器应用，附恢复码），并在关键操作前再次要求密码；可选择外部会话能做什么（全部、仅操作警报、仅查看）；有人从新地点登录时通知警报接收渠道；并通过服务器打开节点的网页面板（绑定节点证书，其 Cookie 保存在服务器上），因此永远不需要公开任何节点。
 * **可选的与代理加密连接(mqtts):** `ARMOR_MQTT_CA_FILE` 指向本安装自有证书颁发机构的证书;使用 `mqtts://` 地址时,服务器只信任该机构并检查代理名称;如果文件不是有效证书或地址不是 `mqtts://`,服务器拒绝启动。Studio 显示连接是否加密以及机构的指纹。已针对 TLS 代理替身和真实的 Mosquitto 2.0 测试。
+* **节点健康与布防模式：** 保存每个节点的最新报告和重启记录，并发出四种警告（内存不足、重启过于频繁、代理反复断开、Wi-Fi 信号弱）；保存布防配置（离家、在家、夜间和您自己的），并把所选配置放进布防命令，只发给声明支持它的节点。警报的强弱遵循配置；不带配置的布防仍是原来的命令。
 
 ## 🧩 在 A.R.M.O.R. 中的角色
 
