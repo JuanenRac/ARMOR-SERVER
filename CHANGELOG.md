@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.0.0] - The details of a battery module, its event log and two new alerts
+
+- **Module details:** a battery module may carry its model, the versions of its board and software, its cells, the current it allows each way, the speed of its console, the health of each cell and the newest entry of its event log; every field is checked on arrival against the shared contract.
+- **The event log of a battery:** each new entry a node reads from a module is kept once, newest first, with the time the server saw it, survives a restart, and comes with the battery's device view; the protection fields are the console's own words, never decoded.
+- **Two new alerts:** a cell that the battery itself marks as abnormal, and a module that carries more current than it says it allows (each with a margin before it ends).
+- **Tests:** the new fields and the limits of each, the two alerts, the log (once per entry, in order, bounded and restored after a restart) and the device view.
+
 ## [0.7.9] - Calmer live feed, one table of broker topics, a last will for lost nodes and a generated settings table
 
 - The live state sent to the consoles is now one message per short window with the newest state, so a burst of reports from many nodes no longer sends the whole state once per report.

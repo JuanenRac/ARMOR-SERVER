@@ -407,6 +407,17 @@ export class AlarmRules {
         else if (message.state !== "charging" || message.temperature_min_c >= level.battery_temp_low_c + 2) this.centre.clear(`${base}:cold`);
       }
       for (const module of message.stack) {
+        // a cell the module's own console calls abnormal in its state of health: the weak cell of the stack
+        const abnormal = module.present && module.soh_abnormal ? module.soh_abnormal : [];
+        if (abnormal.length > 0) this.centre.raise(`${base}:soh:${module.n}`, { source, severity: "warning", code: "solar_cell_soh_abnormal", detail: { module: module.n, cell: abnormal[0]! + 1, cells: abnormal.length } });   // the first cell, counted from 1 as a person counts, and how many
+        else if (module.soh_counts !== undefined) this.centre.clear(`${base}:soh:${module.n}`);
+        // a current beyond what the module says it allows (its limits are in its info): charge is positive, discharge negative
+        if (module.present && module.current_a !== undefined) {
+          const limit = module.current_a >= 0 ? module.max_charge_a : module.max_discharge_a;
+          const amps = Math.abs(module.current_a);
+          if (limit !== undefined && limit > 0 && amps > limit) this.centre.raise(`${base}:overcurrent:${module.n}`, { source, severity: "warning", code: "solar_module_overcurrent", detail: { module: module.n, current_a: module.current_a, limit_a: limit } });
+          else if (limit !== undefined && limit > 0 && amps < limit * 0.9) this.centre.clear(`${base}:overcurrent:${module.n}`);
+        }
         if (!module.counters) continue;
         for (const [name, value] of Object.entries(module.counters)) {
           if (!SEVERE_COUNTERS.has(name)) continue;

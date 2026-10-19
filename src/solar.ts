@@ -5,6 +5,7 @@
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import { CellExtremes, type CellsFile, type DayCells } from "./solar_cells.js";
+import { SolarEventLog, type EventsFile, type LoggedEvent } from "./solar_events.js";
 import { finite, integer, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
 import { CoarseTier, type Sample } from "./history.js";
 import { dayOf } from "./day.js";
@@ -44,7 +45,32 @@ export type SolarModule = {
   cells_v?: number[]; temperatures_c?: number[]; capacity_ah?: number; full_capacity_ah?: number; cycles?: number; health_percent?: number;
   /** The counters of the life of the module its console prints (bat_ov_times, coc_times ...): the console's own names, lowercase; what they mean is not official. */
   counters?: Record<string, number>;
+  /** What the module says about itself: its model (a stack may mix models), its cells, the current it allows each way (amperes, positive) and the speed of its console. */
+  model?: string; board_version?: string; main_soft_version?: string; soft_version?: string; cell_count?: number; max_charge_a?: number; max_discharge_a?: number; console_baud?: number;
+  /** The state of health of each cell, in cell order, and the cells (0-based) the console does not call Normal. */
+  soh_counts?: number[]; soh_abnormal?: number[];
+  /** The newest entry of the module's event log, as the console prints it. */
+  last_event?: SolarEvent;
 };
+export type SolarEvent = {
+  index: number; time: string; voltage_v?: number; current_a?: number; temperature_c?: number; percent?: number;
+  base_state?: string; voltage_state?: string; current_state?: string; temperature_state?: string; coulomb_state?: string;
+  power_events?: string; battery_events?: string; system_fault?: string;
+};
+const EVENT_TEXTS = ["base_state", "voltage_state", "current_state", "temperature_state", "coulomb_state", "power_events", "battery_events", "system_fault"] as const;
+export function parseSolarEvent(value: unknown, where: string): SolarEvent {
+  const event = record(value, where);
+  onlyKnown(event, ["index", "time", "voltage_v", "current_a", "temperature_c", "percent", ...EVENT_TEXTS], where);
+  if (!integer(event.index) || event.index < 0 || event.index > 1_000_000) throw new Error(`invalid ${where}.index`);
+  const text = (item: unknown): item is string => typeof item === "string" && Array.from(item).length >= 1 && Array.from(item).length <= 40;
+  if (!text(event.time)) throw new Error(`invalid ${where}.time`);
+  if ("voltage_v" in event && !inRange(event.voltage_v, 0, 1000)) throw new Error(`invalid ${where}.voltage_v`);
+  if ("current_a" in event && !inRange(event.current_a, -1000, 1000)) throw new Error(`invalid ${where}.current_a`);
+  if ("temperature_c" in event && !inRange(event.temperature_c, -50, 200)) throw new Error(`invalid ${where}.temperature_c`);
+  if ("percent" in event && (!integer(event.percent) || event.percent < 0 || event.percent > 100)) throw new Error(`invalid ${where}.percent`);
+  for (const key of EVENT_TEXTS) if (key in event && !text(event[key])) throw new Error(`invalid ${where}.${key}`);
+  return event as unknown as SolarEvent;
+}
 
 /** The counters of protections and errors: when one goes up it is told (the others are only shown). The names are the ones the solar node sends. */
 export const SEVERE_COUNTERS: ReadonlySet<string> = new Set([
@@ -140,7 +166,7 @@ const BATTERY_OPTIONAL_RANGES: Record<string, readonly [number, number]> = {
 
 function parseModule(value: unknown, index: number): SolarModule {
   const module = record(value, `module ${index}`);
-  onlyKnown(module, ["n", "present", "voltage_v", "current_a", "temperature_c", "soc_percent", "state", "cells_v", "temperatures_c", "capacity_ah", "full_capacity_ah", "cycles", "health_percent", "counters"], `module ${index}`);
+  onlyKnown(module, ["n", "present", "voltage_v", "current_a", "temperature_c", "soc_percent", "state", "cells_v", "temperatures_c", "capacity_ah", "full_capacity_ah", "cycles", "health_percent", "counters", "model", "board_version", "main_soft_version", "soft_version", "cell_count", "max_charge_a", "max_discharge_a", "console_baud", "soh_counts", "soh_abnormal", "last_event"], `module ${index}`);
   if (!integer(module.n) || module.n < 1 || module.n > 16) throw new Error(`invalid module ${index}.n`);
   if (typeof module.present !== "boolean") throw new Error(`invalid module ${index}.present`);
   if ("voltage_v" in module && !inRange(module.voltage_v, 0, 1000)) throw new Error(`invalid module ${index}.voltage_v`);
@@ -159,6 +185,14 @@ function parseModule(value: unknown, index: number): SolarModule {
     const entries = Object.entries(counters);
     if (entries.length > 48 || !entries.every(([name, value]) => /^[a-z][a-z0-9_]{0,31}$/.test(name) && integer(value) && value >= 0 && value <= 9_999_999_999)) throw new Error(`invalid module ${index}.counters`);
   }
+  if ("model" in module && (typeof module.model !== "string" || Array.from(module.model).length < 1 || Array.from(module.model).length > 24)) throw new Error(`invalid module ${index}.model`);
+  for (const key of ["board_version", "main_soft_version", "soft_version"]) if (key in module && (typeof module[key] !== "string" || Array.from(module[key] as string).length < 1 || Array.from(module[key] as string).length > 24)) throw new Error(`invalid module ${index}.${key}`);
+  if ("cell_count" in module && (!integer(module.cell_count) || module.cell_count < 1 || module.cell_count > 32)) throw new Error(`invalid module ${index}.cell_count`);
+  for (const key of ["max_charge_a", "max_discharge_a"]) if (key in module && !inRange(module[key], 0, 1000)) throw new Error(`invalid module ${index}.${key}`);
+  if ("console_baud" in module && (!integer(module.console_baud) || module.console_baud < 300 || module.console_baud > 1_000_000)) throw new Error(`invalid module ${index}.console_baud`);
+  if ("soh_counts" in module && (!Array.isArray(module.soh_counts) || module.soh_counts.length > 32 || !module.soh_counts.every(v => integer(v) && v >= 0 && v <= 1_000_000))) throw new Error(`invalid module ${index}.soh_counts`);
+  if ("soh_abnormal" in module && (!Array.isArray(module.soh_abnormal) || module.soh_abnormal.length > 32 || !module.soh_abnormal.every(v => integer(v) && v >= 0 && v <= 31))) throw new Error(`invalid module ${index}.soh_abnormal`);
+  if ("last_event" in module) parseSolarEvent(module.last_event, `module ${index}.last_event`);
   return module as unknown as SolarModule;
 }
 
@@ -203,7 +237,7 @@ export function solarTopic(topic: string): [string, string] | undefined {
 
 // ---- the store --------------------------------------------------------------------------------------------------------------------------
 
-export type SolarDeviceView = { node_id: string; device: string; kind: "inverter" | "battery"; reading: SolarMessage; received_at: string; stale: boolean; example: boolean; /** Battery only: the extremes of the cells today, per module. */ day_cells?: DayCells };
+export type SolarDeviceView = { node_id: string; device: string; kind: "inverter" | "battery"; reading: SolarMessage; received_at: string; stale: boolean; example: boolean; /** Battery only: the extremes of the cells today, per module. */ day_cells?: DayCells; /** Battery only: the newest entries of the modules' event logs the node has read, newest first. */ events?: LoggedEvent[] };
 export type SolarTotals = {
   inverters: number; batteries: number; stale: number;
   /** Power from the panels and drawn by the load, in watts, summed over the inverters that are not stale. */
@@ -224,7 +258,7 @@ export type SolarSample = { t: number } & Record<string, number | string>;
 export type EnergyDay = { pv: number; load: number; bin: number; bout: number; ibin: number; ibout: number };
 export type SolarEnergyDay = { date: string; pv_kwh: number; load_kwh: number; battery_in_kwh: number; battery_out_kwh: number };
 /** What is kept of the history of the devices and of the energy between runs. */
-export type SolarHistoryFile = { devices: Record<string, { samples: SolarSample[]; coarse: SolarSample[] }>; energy: Record<string, EnergyDay>; cells?: CellsFile };
+export type SolarHistoryFile = { devices: Record<string, { samples: SolarSample[]; coarse: SolarSample[] }>; energy: Record<string, EnergyDay>; cells?: CellsFile; events?: EventsFile };
 const KEEP_ENERGY_DAYS = 400, MAX_ENERGY_GAP_MS = 120_000;
 const dateOf = (ms: number): string => dayOf(ms);
 
@@ -252,6 +286,7 @@ export class SolarStore {
   readonly #pending = new Map<string, { samples: SolarSample[]; coarse: SolarSample[] }>();
   readonly #energy = new Map<string, EnergyDay>();
   readonly #cells = new CellExtremes();
+  readonly #events = new SolarEventLog();
   readonly #options: Required<Pick<SolarStoreOptions, "now" | "staleAfterMs" | "sampleEveryMs" | "keepSamples" | "maxDevices">> & SolarStoreOptions;
 
   constructor(options: SolarStoreOptions = {}) {
@@ -294,12 +329,13 @@ export class SolarStore {
     }
     if (options.example === true) return;
     this.#cells.observe(key, message, now);
+    this.#events.observe(key, message, now);
     if (wasStale) this.#options.onStale?.(message.node_id, message.device, false);
     this.#options.onMessage?.(message);
   }
 
   /** Forget a device (its reading and its history). */
-  remove(node: string, device: string): boolean { this.#cells.forget(`${node}/${device}`); return this.#entries.delete(`${node}/${device}`); }
+  remove(node: string, device: string): boolean { this.#cells.forget(`${node}/${device}`); this.#events.forget(`${node}/${device}`); return this.#entries.delete(`${node}/${device}`); }
 
   /** Mark the devices that went quiet (and tell), or came back. Called now and then. */
   sweep(): void {
@@ -318,6 +354,7 @@ export class SolarStore {
       node_id: entry.reading.node_id, device: entry.reading.device, kind: entry.reading.kind, reading: entry.reading,
       received_at: new Date(entry.receivedAtMs).toISOString(), stale: entry.stale, example: entry.example,
       ...(entry.reading.kind === "battery" && !entry.example ? (() => { const day = this.#cells.get(`${entry.reading.node_id}/${entry.reading.device}`, this.#options.now()); return day ? { day_cells: day } : {}; })() : {}),
+      ...(entry.reading.kind === "battery" && !entry.example ? (() => { const events = this.#events.list(`${entry.reading.node_id}/${entry.reading.device}`); return events.length > 0 ? { events } : {}; })() : {}),
     })).sort((a, b) => (a.kind === b.kind ? `${a.node_id}/${a.device}`.localeCompare(`${b.node_id}/${b.device}`) : a.kind === "inverter" ? -1 : 1));
   }
 
@@ -404,13 +441,14 @@ export class SolarStore {
     const devices: SolarHistoryFile["devices"] = {};
     for (const [key, entry] of this.#entries) if (!entry.example) devices[key] = { samples: entry.samples, coarse: entry.coarse.all() };
     for (const [key, kept] of this.#pending) if (!(key in devices)) devices[key] = kept;
-    return { devices, energy: Object.fromEntries(this.#energy), cells: this.#cells.export() };
+    return { devices, energy: Object.fromEntries(this.#energy), cells: this.#cells.export(), events: this.#events.export() };
   }
 
   /** Takes back what `exportHistory` made. It only gives the history to devices as they report again. */
   importHistory(file: SolarHistoryFile | undefined): void {
     if (!file || typeof file !== "object") return;
     this.#cells.import(file.cells);
+    this.#events.import(file.events);
     const good = (list: unknown): SolarSample[] => (Array.isArray(list) ? list.filter((s): s is SolarSample => typeof s === "object" && s !== null && finite((s as { t?: unknown }).t)) : []);
     for (const [key, value] of Object.entries(file.devices ?? {})) {
       if (!/^[a-z0-9_-]+\/[a-z0-9_-]+$/.test(key) || this.#pending.size >= this.#options.maxDevices) continue;
