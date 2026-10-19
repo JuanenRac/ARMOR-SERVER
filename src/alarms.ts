@@ -272,6 +272,9 @@ export const SOLAR_FAULTS = new Set(["inverter_fault", "bus_over", "bus_under", 
 export class AlarmRules {
   constructor(private readonly centre: AlarmCentre, private readonly mode: () => SecurityMode, private readonly energy: () => EnergyAlarmSettings = () => ENERGY_ALARM_DEFAULTS) {}
 
+  /** Since when each battery has had its cells further apart than the level (the time of the first message of the stretch), for the alarm that wants the gap to persist. */
+  readonly #spreadSince = new Map<string, number>();
+
   /**
    * What is already wrong when the system is armed: a node that fell silent, a camera that stopped answering or a door left open while it was disarmed raised nothing then (they matter
    * only while armed), and the changes that would raise them have already happened. Set by the context, which knows the nodes, the cameras and the devices.
@@ -373,8 +376,15 @@ export class AlarmRules {
       // the cells of the stack, the temperature and the wear: warnings that end with a margin, so a value on the edge does not flap
       if (message.cell_min_v !== undefined && message.cell_max_v !== undefined) {
         const spreadMv = (message.cell_max_v - message.cell_min_v) * 1000;
-        if (spreadMv > level.cell_spread_mv) this.centre.raise(`${base}:cells`, { source, severity: "warning", code: "solar_cells_unbalanced" });
-        else if (spreadMv < level.cell_spread_mv * 0.8) this.centre.clear(`${base}:cells`);
+        if (spreadMv > level.cell_spread_mv) {
+          // Persistent: the gap must last `cell_spread_minutes` without dropping back under the level before it is an alarm (0: at once, as it always was).
+          const since = this.#spreadSince.get(id) ?? message.timestamp_ms;
+          this.#spreadSince.set(id, since);
+          if (message.timestamp_ms - since >= level.cell_spread_minutes * 60_000) this.centre.raise(`${base}:cells`, { source, severity: "warning", code: "solar_cells_unbalanced" });
+        } else {
+          this.#spreadSince.delete(id);
+          if (spreadMv < level.cell_spread_mv * 0.8) this.centre.clear(`${base}:cells`);
+        }
       }
       if (message.temperature_max_c !== undefined) {
         if (message.temperature_max_c >= level.battery_temp_high_c) this.centre.raise(`${base}:hot`, { source, severity: "warning", code: "solar_battery_hot" });

@@ -10,6 +10,8 @@ export type EnergyAlarmSettings = {
   soc_low: number; soc_ok: number;
   /** The difference between the highest and the lowest cell of a battery (millivolts) above which the cells are unbalanced. */
   cell_spread_mv: number;
+  /** How many minutes the gap must last, without a pause, before it raises the alarm (0: at once). A cell that is out for a minute at the end of a charge is not a fault; one that stays out is. */
+  cell_spread_minutes: number;
   /** A battery above `battery_temp_high_c` is hot; a battery that is charging below `battery_temp_low_c` is too cold to charge (degrees). */
   battery_temp_high_c: number; battery_temp_low_c: number;
   /** An inverter whose heat sink is above this is hot (degrees). */
@@ -18,10 +20,10 @@ export type EnergyAlarmSettings = {
   health_low_percent: number;
 };
 
-export const ENERGY_ALARM_DEFAULTS: EnergyAlarmSettings = { soc_low: 20, soc_ok: 30, cell_spread_mv: 100, battery_temp_high_c: 55, battery_temp_low_c: 0, heatsink_high_c: 85, health_low_percent: 60 };
+export const ENERGY_ALARM_DEFAULTS: EnergyAlarmSettings = { soc_low: 20, soc_ok: 30, cell_spread_mv: 100, cell_spread_minutes: 0, battery_temp_high_c: 55, battery_temp_low_c: 0, heatsink_high_c: 85, health_low_percent: 60 };
 
 const RANGES: Record<keyof EnergyAlarmSettings, readonly [number, number]> = {
-  soc_low: [1, 90], soc_ok: [2, 100], cell_spread_mv: [10, 1000], battery_temp_high_c: [30, 90], battery_temp_low_c: [-20, 15], heatsink_high_c: [50, 120], health_low_percent: [10, 95],
+  soc_low: [1, 90], soc_ok: [2, 100], cell_spread_mv: [10, 1000], cell_spread_minutes: [0, 240], battery_temp_high_c: [30, 90], battery_temp_low_c: [-20, 15], heatsink_high_c: [50, 120], health_low_percent: [10, 95],
 };
 
 export class EnergySettingsInvalid extends Error {}

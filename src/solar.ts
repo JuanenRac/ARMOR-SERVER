@@ -4,6 +4,7 @@
  * The parsers implement ARMOR-COMMON's solar_inverter and solar_battery schemas exactly (tests/conformance.test.ts runs the shared vectors).
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
+import { CellExtremes, type CellsFile, type DayCells } from "./solar_cells.js";
 import { finite, integer, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
 import { CoarseTier, type Sample } from "./history.js";
 import { dayOf } from "./day.js";
@@ -188,7 +189,7 @@ export function solarTopic(topic: string): [string, string] | undefined {
 
 // ---- the store --------------------------------------------------------------------------------------------------------------------------
 
-export type SolarDeviceView = { node_id: string; device: string; kind: "inverter" | "battery"; reading: SolarMessage; received_at: string; stale: boolean; example: boolean };
+export type SolarDeviceView = { node_id: string; device: string; kind: "inverter" | "battery"; reading: SolarMessage; received_at: string; stale: boolean; example: boolean; /** Battery only: the extremes of the cells today, per module. */ day_cells?: DayCells };
 export type SolarTotals = {
   inverters: number; batteries: number; stale: number;
   /** Power from the panels and drawn by the load, in watts, summed over the inverters that are not stale. */
@@ -209,7 +210,7 @@ export type SolarSample = { t: number } & Record<string, number | string>;
 export type EnergyDay = { pv: number; load: number; bin: number; bout: number; ibin: number; ibout: number };
 export type SolarEnergyDay = { date: string; pv_kwh: number; load_kwh: number; battery_in_kwh: number; battery_out_kwh: number };
 /** What is kept of the history of the devices and of the energy between runs. */
-export type SolarHistoryFile = { devices: Record<string, { samples: SolarSample[]; coarse: SolarSample[] }>; energy: Record<string, EnergyDay> };
+export type SolarHistoryFile = { devices: Record<string, { samples: SolarSample[]; coarse: SolarSample[] }>; energy: Record<string, EnergyDay>; cells?: CellsFile };
 const KEEP_ENERGY_DAYS = 400, MAX_ENERGY_GAP_MS = 120_000;
 const dateOf = (ms: number): string => dayOf(ms);
 
@@ -236,6 +237,7 @@ export class SolarStore {
   /** History read from the file before the device has reported again: it is given to the device when it does. */
   readonly #pending = new Map<string, { samples: SolarSample[]; coarse: SolarSample[] }>();
   readonly #energy = new Map<string, EnergyDay>();
+  readonly #cells = new CellExtremes();
   readonly #options: Required<Pick<SolarStoreOptions, "now" | "staleAfterMs" | "sampleEveryMs" | "keepSamples" | "maxDevices">> & SolarStoreOptions;
 
   constructor(options: SolarStoreOptions = {}) {
@@ -277,12 +279,13 @@ export class SolarStore {
       if (entry.samples.length > this.#options.keepSamples) entry.samples.splice(0, entry.samples.length - this.#options.keepSamples);
     }
     if (options.example === true) return;
+    this.#cells.observe(key, message, now);
     if (wasStale) this.#options.onStale?.(message.node_id, message.device, false);
     this.#options.onMessage?.(message);
   }
 
   /** Forget a device (its reading and its history). */
-  remove(node: string, device: string): boolean { return this.#entries.delete(`${node}/${device}`); }
+  remove(node: string, device: string): boolean { this.#cells.forget(`${node}/${device}`); return this.#entries.delete(`${node}/${device}`); }
 
   /** Mark the devices that went quiet (and tell), or came back. Called now and then. */
   sweep(): void {
@@ -300,6 +303,7 @@ export class SolarStore {
     return [...this.#entries.values()].map(entry => ({
       node_id: entry.reading.node_id, device: entry.reading.device, kind: entry.reading.kind, reading: entry.reading,
       received_at: new Date(entry.receivedAtMs).toISOString(), stale: entry.stale, example: entry.example,
+      ...(entry.reading.kind === "battery" && !entry.example ? (() => { const day = this.#cells.get(`${entry.reading.node_id}/${entry.reading.device}`, this.#options.now()); return day ? { day_cells: day } : {}; })() : {}),
     })).sort((a, b) => (a.kind === b.kind ? `${a.node_id}/${a.device}`.localeCompare(`${b.node_id}/${b.device}`) : a.kind === "inverter" ? -1 : 1));
   }
 
@@ -386,12 +390,13 @@ export class SolarStore {
     const devices: SolarHistoryFile["devices"] = {};
     for (const [key, entry] of this.#entries) if (!entry.example) devices[key] = { samples: entry.samples, coarse: entry.coarse.all() };
     for (const [key, kept] of this.#pending) if (!(key in devices)) devices[key] = kept;
-    return { devices, energy: Object.fromEntries(this.#energy) };
+    return { devices, energy: Object.fromEntries(this.#energy), cells: this.#cells.export() };
   }
 
   /** Takes back what `exportHistory` made. It only gives the history to devices as they report again. */
   importHistory(file: SolarHistoryFile | undefined): void {
     if (!file || typeof file !== "object") return;
+    this.#cells.import(file.cells);
     const good = (list: unknown): SolarSample[] => (Array.isArray(list) ? list.filter((s): s is SolarSample => typeof s === "object" && s !== null && finite((s as { t?: unknown }).t)) : []);
     for (const [key, value] of Object.entries(file.devices ?? {})) {
       if (!/^[a-z0-9_-]+\/[a-z0-9_-]+$/.test(key) || this.#pending.size >= this.#options.maxDevices) continue;

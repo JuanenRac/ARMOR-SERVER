@@ -11,6 +11,8 @@ All notable changes to this project are documented here.
 - Closing the server now also stops the system monitor and the pending live-state message.
 - The reading of the environment is split into one function per area (alarm channels, agents, the server's own HTTPS, the broker), with the same checks and messages as before.
 - New `docs/ENVIRONMENT.md`: every setting with its limits, default and example, generated from the code and the example file and checked by a test.
+- Each battery shows, per module, the lowest and the highest cell of the day with the cell number and the moment, the widest gap of the module, and the widest gap of the whole bank (`day_cells` in `GET /api/v1/solar`); they are kept across a restart and start again with the server's day.
+- The alarm for unbalanced cells can ask the gap to last: the new level `cell_spread_minutes` (0 to 240, 0 as before: at once) is the time the gap must stay over its level before the alarm is raised, and it starts again whenever the gap drops back under it.
 
 ## [0.7.8] - One limit of refused sign-ins for the whole server, and a complete settings example
 
