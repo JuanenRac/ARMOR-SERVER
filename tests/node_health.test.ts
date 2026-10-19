@@ -68,6 +68,31 @@ test("low memory warns below the line and clears only above the higher one, and 
   assert.deepEqual(codes(b.say(60, { uptime_s: 100_300, low_stack_tasks: 0 })), []);
 });
 
+test("the internal memory is judged on its own: a total that adds the external RAM does not hide it", () => {
+  const b = bench();
+  const rich = { heap_free: 7_900_000, heap_min: 7_800_000, psram_free: 7_700_000 };   // 8 MB of external RAM: the total never runs short
+  b.say(0, { uptime_s: 100_000, ...rich, heap_internal_free: 90_000, heap_internal_min: 70_000, heap_internal_largest: 40_000 });
+  assert.deepEqual(codes(b.say(60, { uptime_s: 100_060, ...rich, heap_internal_free: HEALTH_LEVELS.low_internal_b - 1, heap_internal_min: 20_000, heap_internal_largest: 20_000 })), ["node_low_memory"]);
+  const warned = b.store.list()[0].warnings[0].detail;
+  assert.deepEqual([warned.heap_internal_free, warned.heap_internal_min, warned.heap_internal_largest], [HEALTH_LEVELS.low_internal_b - 1, 20_000, 20_000]);
+  assert.deepEqual(codes(b.say(60, { uptime_s: 100_120, ...rich, heap_internal_free: HEALTH_LEVELS.low_internal_b + 1_000, heap_internal_min: 20_000, heap_internal_largest: 20_000 })), ["node_low_memory"]);   // hovering: still warned
+  assert.deepEqual(codes(b.say(60, { uptime_s: 100_180, ...rich, heap_internal_free: HEALTH_LEVELS.low_internal_clear_b, heap_internal_min: 20_000, heap_internal_largest: 20_000 })), []);
+  assert.deepEqual(codes(b.say(60, { uptime_s: 100_240, ...rich, heap_internal_free: 200_000, heap_internal_min: 20_000, heap_internal_largest: HEALTH_LEVELS.low_block_b - 1 })), ["node_low_memory"]);   // plenty free, but in pieces
+  assert.deepEqual(codes(b.say(60, { uptime_s: 100_300, ...rich })), []);   // a node that does not tell it is judged on the total alone, as before
+  const sample = b.store.get("alarm-1")?.samples.at(-2);
+  assert.deepEqual([sample?.heap_internal_free, sample?.heap_internal_largest], [200_000, HEALTH_LEVELS.low_block_b - 1]);
+});
+
+test("a report tells its internal memory whole and with sensible figures", () => {
+  const whole = { heap_internal_free: 72_704, heap_internal_min: 60_112, heap_internal_largest: 36_864, psram_free: 7_700_000 };
+  assert.equal(parseNodeHealth(report(whole)).heap_internal_largest, 36_864);
+  assert.throws(() => parseNodeHealth(report({ heap_internal_free: 72_704 })), /told whole/);
+  assert.throws(() => parseNodeHealth(report({ ...whole, heap_internal_min: 80_000 })), /never more than/);
+  assert.throws(() => parseNodeHealth(report({ ...whole, heap_internal_largest: 80_000 })), /never more than/);
+  assert.throws(() => parseNodeHealth(report({ ...whole, psram_free: -1 })), /invalid psram_free/);
+  assert.throws(() => parseNodeHealth(report({ ...whole, heap_internal_free: 7.5 })), /invalid heap_internal_free/);
+});
+
 test("a restart is seen when the uptime goes back, and three in a day (or a crash in the last hour) warn", () => {
   const b = bench();
   b.say(0, { uptime_s: 100_000 });
