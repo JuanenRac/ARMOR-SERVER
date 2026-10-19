@@ -54,3 +54,9 @@ test("a short Studio password is only a warning on a loopback-only server", () =
   assert.equal(readConfig({ ...SECRETS }).warnings.length, 1, "without ARMOR_DISARM_PIN=required the server says that anyone without a PIN can disarm");
   assert.throws(() => readConfig({ ...SECRETS, ARMOR_STUDIO_PASSWORD: "short-pw9", ARMOR_HOST: "192.168.0.10" }), ConfigError);
 });
+
+test("the bound on a node's own announcement of maintenance is 600 seconds unless set between 60 and 3600", () => {
+  assert.equal(readConfig({ ...SECRETS }).nodeMaintenanceMaxS, 600);
+  assert.equal(readConfig({ ...SECRETS, ARMOR_NODE_MAINTENANCE_MAX_S: "1800" }).nodeMaintenanceMaxS, 1800);
+  for (const value of ["59", "3601", "abc", "-5", "1.5"]) assert.throws(() => readConfig({ ...SECRETS, ARMOR_NODE_MAINTENANCE_MAX_S: value }), ConfigError, value);
+});

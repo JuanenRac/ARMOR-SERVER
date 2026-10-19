@@ -325,7 +325,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   };
   const nodeControl = new NodeControlService({
     publish: (topic, payload) => { if (!controlLink.publish) throw new Error("the MQTT broker is not connected"); controlLink.publish(topic, payload); },
-    audit, history: recordSystem, health: node => nodeHealth.get(node), nodes: () => nodeHealth.list(), now: overrides.now, file: path.join(config.dataDir, "node_control.json"),
+    audit, history: recordSystem, health: node => nodeHealth.get(node), nodes: () => nodeHealth.list(), now: overrides.now, file: path.join(config.dataDir, "node_control.json"), maintenanceMaxS: config.nodeMaintenanceMaxS,
     onHold: (node, held) => { if (held) alarmRules.holdOffline(node); else recheckSilence(node); },
   });
   controlHolder.service = nodeControl;

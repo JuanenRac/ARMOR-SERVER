@@ -170,6 +170,36 @@ export function controlTopic(topic: string, leaf: "command" | "result"): string 
   return NODE_ID.test(parts[2]) ? parts[2] : undefined;
 }
 
+// ---- the planned-maintenance signal of a node ------------------------------------------------------------------------------------------------
+
+export const MAINTENANCE_REASONS = ["restart", "pause", "standby", "update", "upload", "operator"] as const;
+export type MaintenanceReason = (typeof MAINTENANCE_REASONS)[number];
+/** What a node publishes (retained) to armor/control/{node_id}/maintenance just before it goes quiet on purpose, and again when it is back. */
+export type NodeMaintenance = { kind: "node_maintenance"; node_id: string; timestamp_ms: number; active: boolean; reason: MaintenanceReason; expected_s?: number; firmware: string; requested_by?: string };
+
+/** The signal as the contract has it (ARMOR-COMMON's node_maintenance), read strictly: a window that ends carries no expected time. */
+export function parseMaintenance(value: unknown): NodeMaintenance {
+  const body = record(value, "maintenance signal");
+  onlyKnown(body, ["kind", "node_id", "timestamp_ms", "active", "reason", "expected_s", "firmware", "requested_by"], "maintenance signal");
+  if (body.kind !== "node_maintenance") throw new Error("invalid kind");
+  if (typeof body.node_id !== "string" || !NODE_ID.test(body.node_id)) throw new Error("invalid node_id");
+  if (!integer(body.timestamp_ms) || body.timestamp_ms < 0) throw new Error("invalid timestamp_ms");
+  if (typeof body.active !== "boolean") throw new Error("invalid active");
+  if (!oneOf(MAINTENANCE_REASONS, body.reason)) throw new Error("invalid reason");
+  if ("expected_s" in body && (!integer(body.expected_s) || body.expected_s < 1 || body.expected_s > 3600)) throw new Error("invalid expected_s");
+  if (typeof body.firmware !== "string" || !FIRMWARE.test(body.firmware)) throw new Error("invalid firmware");
+  if ("requested_by" in body && (typeof body.requested_by !== "string" || !PERSON.test(body.requested_by))) throw new Error("invalid requested_by");
+  if (!body.active && "expected_s" in body) throw new Error("a window that ends has no expected time");
+  return body as unknown as NodeMaintenance;
+}
+
+/** armor/control/{node_id}/maintenance as the node id; `all` is the name of no node, so it never announces. */
+export function maintenanceTopic(topic: string): string | undefined {
+  const parts = topic.split("/");
+  if (parts.length !== 4 || parts[0] !== "armor" || parts[1] !== "control" || parts[3] !== "maintenance") return undefined;
+  return parts[2] !== "all" && NODE_ID.test(parts[2]) ? parts[2] : undefined;
+}
+
 // ---- what a request asks ---------------------------------------------------------------------------------------------------------------------
 
 export type ControlRequest = { operation: ControlOperation; mode: ControlMode; duration_s?: number; confirm?: string };

@@ -16,10 +16,10 @@ import { randomBytes } from "node:crypto";
 import type { AuditLog } from "./audit.js";
 import type { SystemInput } from "./connections.js";
 import { JsonFile } from "./history.js";
-import type { NodeHealthDetail, NodeHealthMessage, NodeHealthView } from "./node_health.js";
+import type { ControlWindow, NodeHealthDetail, NodeHealthMessage, NodeHealthView } from "./node_health.js";
 import {
-  ControlError, DURATIONS, MAX_SLOT, NODE_ID, ROLLING_GAP_S, parseControlCommand, personFor, rollingSchedule, type ControlCommand, type ControlMode, type ControlOperation, type ControlRefusal, type ControlResult,
-  type NodeControlState,
+  ControlError, DURATIONS, MAINTENANCE_REASONS, MAX_SLOT, NODE_ID, PERSON, ROLLING_GAP_S, parseControlCommand, personFor, rollingSchedule, type ControlCommand, type ControlMode, type ControlOperation, type ControlRefusal,
+  type ControlResult, type MaintenanceReason, type NodeControlState, type NodeMaintenance,
 } from "./node_control.js";
 
 export type LineStage = "pending" | "armed" | "sent" | "acknowledged" | "applied" | "offline" | "back" | "refused" | "no_answer" | "not_back";
@@ -34,10 +34,26 @@ export type ControlOperationRecord = {
   state: "arming" | "running" | "done"; nodes: ControlLine[];
 };
 
-/** What the server remembers of the orders it gave a node: the state they left it in. */
-export type NodeMemory = { state: NodeControlState; since_ms?: number; by?: string; until_ms?: number; maintenance_until_ms?: number };
+/**
+ * What the server remembers of the orders it gave a node and of what the node announced: the state they left it in, and the planned-maintenance window. There is ONE window per node: the
+ * operator's (`maintenance_until_ms`, the duration the operator chose, up to 8 hours) and the node's own announcement (`node_window`, cut by the server's bound) are two ways to open it, and
+ * the node counts as expected-offline while either is in force.
+ */
+export type NodeWindow = { reason: MaintenanceReason; stamp: number; started_ms: number; at_ms: number; until_ms: number; by?: string; uptime_s?: number };
+export type NodeMemory = {
+  state: NodeControlState; since_ms?: number; by?: string; until_ms?: number; maintenance_until_ms?: number; maintenance_by?: string;
+  node_window?: NodeWindow;
+  /** When the window that is open began, and who asked for it: set while any window is in force, so that its end (or its expiry) is said once. */
+  window_since_ms?: number; window_by?: string;
+  /** The last announcement seen, so that a retained message delivered again (a restart of the server or of the link) does not open a window twice. */
+  seen?: { stamp: number; reason: MaintenanceReason; at_ms: number };
+  /** A window ran out with the node silent: no new announcement is believed until the node has reported again. */
+  blocked_ms?: number;
+};
 /** The state of a node as the orders left it, for a console (see NodeHealthStore's `remembered`). */
-export type RememberedControl = { state: NodeControlState; maintenance: boolean; since_ms?: number; by?: string; until_s?: number; maintenance_until_s?: number };
+export type RememberedControl = { state: NodeControlState; maintenance: boolean; since_ms?: number; by?: string; until_s?: number; maintenance_until_s?: number; window?: ControlWindow };
+/** The planned-maintenance window of a node as the API lists it (`NodeMaintenanceWindow` of the shared HTTP description). */
+export type MaintenanceWindow = { node_id: string; source: "node" | "operator" | "both"; reason: MaintenanceReason; active: true; expires_in_s: number; requested_by?: string };
 
 export type ControlTarget = { id: string; family: string };
 export type ControlInput = { scope: "node" | "all"; operation: ControlOperation; mode: ControlMode; duration_s?: number; actor: string; origin?: string; targets: ControlTarget[] };
@@ -58,6 +74,8 @@ export type NodeControlOptions = {
   /** Called when the alerts about a node's silence must stop (a restart or a maintenance began) and when they may come back. */
   onHold?: (node: string, held: boolean) => void;
   armWaitMs?: number;
+  /** The most seconds a node's own announcement of maintenance holds back its silence alerts (60 to 3600; anything else is the default, 600). */
+  maintenanceMaxS?: number;
   /** How long after a restart was acknowledged the node may take to report again. */
   backWaitMs?: number;
   keep?: number;
@@ -71,10 +89,15 @@ type Pending = { op: string; node: string; action: "arm" | "execute" };
 type Saved = { schema: 1; operations: ControlOperationRecord[]; memory: Record<string, NodeMemory>; restarts: Record<string, number> };
 
 const WEEKS_MS = 28 * 86_400_000;
+const DAY_MS = 86_400_000;
+/** A node that has reported this long after its window began has not stayed silent for it. */
+const HEARD_AFTER_MS = 10_000;
+/** The announcements of one stretch of maintenance add up to no more than this many times the bound. */
+const WINDOW_TOTAL = 3;
 const iso = (ms: number): string => new Date(ms).toISOString();
 
 export class NodeControlService {
-  readonly #o: Required<Omit<NodeControlOptions, "file" | "onHold">> & Pick<NodeControlOptions, "file" | "onHold">;
+  readonly #o: Required<Omit<NodeControlOptions, "file" | "onHold" | "maintenanceMaxS">> & Pick<NodeControlOptions, "file" | "onHold"> & { maintenanceMaxS: number };
   readonly #records = new Map<string, ControlOperationRecord>();
   readonly #private = new Map<string, Map<string, Private>>();
   readonly #pending = new Map<string, Pending>();
@@ -87,7 +110,8 @@ export class NodeControlService {
 
   constructor(options: NodeControlOptions) {
     this.#o = {
-      ...options, now: options.now ?? (() => Date.now()), random: options.random ?? (() => randomBytes(8).toString("hex")), armWaitMs: options.armWaitMs ?? 20_000, backWaitMs: options.backWaitMs ?? 240_000,
+      ...options, now: options.now ?? (() => Date.now()), random: options.random ?? (() => randomBytes(8).toString("hex")), armWaitMs: options.armWaitMs ?? 20_000,
+      maintenanceMaxS: Number.isInteger(options.maintenanceMaxS) && options.maintenanceMaxS! >= 60 && options.maintenanceMaxS! <= 3600 ? options.maintenanceMaxS! : 600, backWaitMs: options.backWaitMs ?? 240_000,
       keep: options.keep ?? 300, keepMs: options.keepMs ?? WEEKS_MS, perMinute: options.perMinute ?? 10,
     };
     if (options.file) {
@@ -108,7 +132,7 @@ export class NodeControlService {
           this.#records.set(item.id, item);
         }
       }
-      for (const [node, memory] of Object.entries(saved?.memory ?? {}).slice(0, 256)) if (NODE_ID.test(node) && memory && typeof memory.state === "string") this.#memory.set(node, memory);
+      for (const [node, memory] of Object.entries(saved?.memory ?? {}).slice(0, 256)) if (NODE_ID.test(node) && memory && typeof memory.state === "string") this.#memory.set(node, NodeControlService.#clean(memory));
       for (const [node, at] of Object.entries(saved?.restarts ?? {}).slice(0, 256)) if (NODE_ID.test(node) && typeof at === "number") this.#restartedAt.set(node, at);
     }
     this.#syncHolds();
@@ -119,11 +143,35 @@ export class NodeControlService {
   list(): ControlOperationRecord[] { return [...this.#records.values()].reverse().map(item => structuredClone(item)); }
   get(id: string): ControlOperationRecord | undefined { const item = this.#records.get(id); return item ? structuredClone(item) : undefined; }
 
-  /** True while the alerts about this node's silence must not ring: it is in maintenance, or a restart that was ordered is under way. */
+  /** True while the alerts about this node's silence must not ring: a window of maintenance is in force (the operator's or the node's own, cut by the server's bound), or a restart that was ordered is under way. */
   isHeld(node: string): boolean {
-    const memory = this.#memory.get(node);
-    if (memory?.maintenance_until_ms !== undefined && memory.maintenance_until_ms > this.#o.now()) return true;
+    if (this.#window(node, this.#memory.get(node), this.#o.now())) return true;
     return this.#restarting(node);
+  }
+
+  /** The planned-maintenance window of a node, or undefined when it has none in force. */
+  windowOf(node: string): MaintenanceWindow | undefined { return this.#window(node, this.#memory.get(node), this.#o.now()); }
+
+  /** Every window in force, by node. */
+  windows(): MaintenanceWindow[] {
+    const now = this.#o.now();
+    const out: MaintenanceWindow[] = [];
+    for (const [node, memory] of this.#memory) { const window = this.#window(node, memory, now); if (window) out.push(window); }
+    return out.sort((a, b) => (a.node_id < b.node_id ? -1 : a.node_id > b.node_id ? 1 : 0));
+  }
+
+  /** The ONE window of a node: where it came from, why, who asked and how long it has; when both ways opened it, the later end wins (the node's own is never past the server's bound). */
+  #window(node: string, memory: NodeMemory | undefined, now: number): MaintenanceWindow | undefined {
+    if (!memory) return undefined;
+    const fromNode = memory.node_window !== undefined && memory.node_window.until_ms > now;
+    const fromOperator = memory.maintenance_until_ms !== undefined && memory.maintenance_until_ms > now;
+    if (!fromNode && !fromOperator) return undefined;
+    const until = Math.max(fromNode ? memory.node_window!.until_ms : 0, fromOperator ? memory.maintenance_until_ms! : 0);
+    const by = fromNode ? memory.node_window!.by : memory.maintenance_by;
+    return {
+      node_id: node, source: fromNode && fromOperator ? "both" : fromNode ? "node" : "operator", reason: fromNode ? memory.node_window!.reason : "operator", active: true,
+      expires_in_s: Math.max(0, Math.round((until - now) / 1000)), ...(by && PERSON.test(by) ? { requested_by: by } : {}),
+    };
   }
 
   /** The state the orders left a node in, or undefined while it is simply running. */
@@ -133,13 +181,30 @@ export class NodeControlService {
     const now = this.#o.now();
     const paused = memory.state === "paused" && memory.until_ms !== undefined && memory.until_ms <= now;
     const state: NodeControlState = paused ? "running" : memory.state;
-    const maintenance = memory.maintenance_until_ms !== undefined && memory.maintenance_until_ms > now;
-    if (state === "running" && !maintenance) return undefined;
+    const window = this.#window(node, memory, now);
+    if (state === "running" && !window) return undefined;
     return {
-      state, maintenance, ...(state !== "running" && memory.since_ms ? { since_ms: memory.since_ms } : {}), ...(state !== "running" && memory.by ? { by: memory.by } : {}),
+      state, maintenance: window !== undefined, ...(state !== "running" && memory.since_ms ? { since_ms: memory.since_ms } : {}), ...(state !== "running" && memory.by ? { by: memory.by } : {}),
       ...(state === "paused" && memory.until_ms !== undefined ? { until_s: Math.max(0, Math.round((memory.until_ms - now) / 1000)) } : {}),
-      ...(maintenance && memory.maintenance_until_ms !== undefined ? { maintenance_until_s: Math.max(0, Math.round((memory.maintenance_until_ms - now) / 1000)) } : {}),
+      ...(window ? { maintenance_until_s: window.expires_in_s, window: { source: window.source, reason: window.reason, remaining_s: window.expires_in_s, ...(window.requested_by ? { requested_by: window.requested_by } : {}) } } : {}),
     };
+  }
+
+  /** What was saved, read back with every field checked (a file that was edited or damaged never gives a window it should not). */
+  static #clean(raw: NodeMemory): NodeMemory {
+    const number = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
+    const memory: NodeMemory = { ...raw };
+    const w = raw.node_window as Partial<NodeWindow> | undefined;
+    if (w !== undefined) {
+      if (typeof w === "object" && w !== null && MAINTENANCE_REASONS.includes(w.reason as MaintenanceReason) && number(w.stamp) && number(w.started_ms) && number(w.at_ms) && number(w.until_ms)) {
+        memory.node_window = { reason: w.reason!, stamp: w.stamp, started_ms: w.started_ms, at_ms: w.at_ms, until_ms: w.until_ms, ...(typeof w.by === "string" && PERSON.test(w.by) ? { by: w.by } : {}), ...(number(w.uptime_s) ? { uptime_s: w.uptime_s } : {}) };
+      } else delete memory.node_window;
+    }
+    const seen = raw.seen as Partial<NonNullable<NodeMemory["seen"]>> | undefined;
+    if (seen !== undefined && !(typeof seen === "object" && seen !== null && number(seen.stamp) && number(seen.at_ms) && MAINTENANCE_REASONS.includes(seen.reason as MaintenanceReason))) delete memory.seen;
+    for (const key of ["window_since_ms", "blocked_ms", "maintenance_until_ms"] as const) if (memory[key] !== undefined && !number(memory[key])) delete memory[key];
+    for (const key of ["window_by", "maintenance_by"] as const) if (memory[key] !== undefined && !(typeof memory[key] === "string" && PERSON.test(memory[key]!))) delete memory[key];
+    return memory;
   }
 
   #restarting(node: string): boolean {
@@ -167,8 +232,9 @@ export class NodeControlService {
       case "pause": return control.state === "paused";
       case "standby": return control.state === "standby";
       case "resume": return control.state === "running";
-      case "maintenance_on": return control.maintenance;
-      case "maintenance_off": return !control.maintenance && control.source === "node";
+      // The node's own announcement ends by itself: it is not the operator's window, so an operator may still open (or end) theirs.
+      case "maintenance_on": return control.maintenance && control.window?.source !== "node";
+      case "maintenance_off": return !(control.maintenance && control.window?.source !== "node") && control.source === "node";
       default: return false;
     }
   }
@@ -309,9 +375,13 @@ export class NodeControlService {
       if (result.state === "running") { delete memory.since_ms; delete memory.by; delete memory.until_ms; }
       else { memory.since_ms = result.since_ms || now; memory.by = result.requested_by; if (result.state === "paused" && operation === "pause" && result.until_s !== undefined) memory.until_ms = now + result.until_s * 1000; else delete memory.until_ms; }
     }
-    if (result.maintenance === false) delete memory.maintenance_until_ms;
-    else if (result.maintenance === true && operation === "maintenance_on") memory.maintenance_until_ms = now + (result.until_s ?? DURATIONS.maintenance_on![2]) * 1000;
+    if (result.maintenance === false) { delete memory.maintenance_until_ms; delete memory.maintenance_by; }
+    else if (result.maintenance === true && operation === "maintenance_on") {
+      memory.maintenance_until_ms = now + (result.until_s ?? DURATIONS.maintenance_on![2]) * 1000;
+      if (result.requested_by) memory.maintenance_by = result.requested_by;
+    }
     this.#memory.set(node, memory);
+    this.#settle(node, now, "explicit");
   }
 
   // ---- the health of the nodes --------------------------------------------------------------------------------------------------------------
@@ -320,6 +390,12 @@ export class NodeControlService {
   handleReport(report: NodeHealthMessage): void {
     const now = this.#o.now();
     const memory = this.#memory.get(report.node_id);
+    if (memory) {
+      // The node is heard again: an announcement is believed once more, and a node that has started again (its uptime is less than it was when it said it was going) is back, so its own window ends.
+      if (memory.blocked_ms !== undefined) { delete memory.blocked_ms; this.#dirty = true; }
+      const window = memory.node_window;
+      if (window?.uptime_s !== undefined && report.uptime_s + 8 < window.uptime_s + Math.round((now - window.at_ms) / 1000)) { window.until_ms = now; this.#dirty = true; }
+    }
     if (report.control_state !== undefined || report.maintenance !== undefined) {
       const next: NodeMemory = { ...(memory ?? { state: "running" as NodeControlState }) };
       if (report.control_state !== undefined) {
@@ -327,11 +403,12 @@ export class NodeControlService {
         if (report.control_state === "running") { delete next.since_ms; delete next.by; delete next.until_ms; }
         else { if (report.control_since_ms !== undefined) next.since_ms = report.control_since_ms || next.since_ms; if (report.control_by !== undefined) next.by = report.control_by; if (report.control_until_s !== undefined) next.until_ms = now + report.control_until_s * 1000; }
       }
-      if (report.maintenance === false) delete next.maintenance_until_ms;
+      if (report.maintenance === false) { delete next.maintenance_until_ms; delete next.maintenance_by; }
       else if (report.maintenance === true && report.maintenance_until_s !== undefined) next.maintenance_until_ms = now + report.maintenance_until_s * 1000;
       this.#memory.set(report.node_id, next);
       this.#dirty = true;
     }
+    this.#settle(report.node_id, now, "explicit");
     for (const [id, secrets] of this.#private) {
       const record = this.#records.get(id);
       if (!record || record.operation !== "restart") continue;
@@ -349,6 +426,50 @@ export class NodeControlService {
       this.#after(record);
     }
     this.#syncHolds();
+  }
+
+  /**
+   * A node says it is going quiet on purpose (or that it is back): the retained `node_maintenance` message. It is believed for as long as the node expects (or the server's bound, whichever is
+   * shorter), never longer: a stuck or hostile node can not silence the alerts for ever. The same message delivered again opens nothing new; a node this server has never heard of is ignored.
+   */
+  handleMaintenance(signal: NodeMaintenance, topicNode: string): void {
+    const now = this.#o.now();
+    if (signal.node_id !== topicNode || !this.#o.health(topicNode)) {
+      this.#o.audit.record({ action: "node_control.maintenance", outcome: "denied", target: topicNode.slice(0, 64), detail: "not the signal of a node that reports" });
+      return;
+    }
+    let memory = this.#memory.get(topicNode);
+    if (!memory) {
+      if (this.#memory.size >= 256) return;
+      memory = { state: "running" };
+      this.#memory.set(topicNode, memory);
+    }
+    this.#tick(topicNode, memory, now);
+    if (!this.#memory.has(topicNode)) this.#memory.set(topicNode, memory);
+    const seen = memory.seen;
+    if (signal.timestamp_ms > 0 && seen && seen.stamp === signal.timestamp_ms && seen.reason === signal.reason) return;
+    memory.seen = { stamp: signal.timestamp_ms, reason: signal.reason, at_ms: now };
+    const bound = this.#o.maintenanceMaxS * 1000;
+    if (!signal.active) {
+      if (memory.node_window) memory.node_window.until_ms = now;
+      this.#settle(topicNode, now, "explicit");
+    } else if (memory.blocked_ms === undefined) {
+      const wanted = Math.min((signal.expected_s ?? Infinity) * 1000, bound);
+      const existing = memory.node_window;
+      if (existing && existing.until_ms > now) {
+        // A repeated announcement of the same reason adds nothing; a new reason has its own span; all of it together ends at WINDOW_TOTAL times the bound.
+        const until = existing.reason === signal.reason ? existing.until_ms : Math.min(Math.max(existing.until_ms, now + wanted), existing.started_ms + WINDOW_TOTAL * bound);
+        memory.node_window = { ...existing, reason: signal.reason, stamp: signal.timestamp_ms, until_ms: until, ...(signal.requested_by ? { by: signal.requested_by } : {}) };
+      } else {
+        const health = this.#o.health(topicNode)!;
+        const uptime = health.report.uptime_s + Math.max(0, Math.round((now - Date.parse(health.received_at)) / 1000));
+        memory.node_window = { reason: signal.reason, stamp: signal.timestamp_ms, started_ms: now, at_ms: now, until_ms: now + wanted, uptime_s: uptime, ...(signal.requested_by ? { by: signal.requested_by } : {}) };
+      }
+      this.#settle(topicNode, now, "explicit");
+    }
+    this.#dirty = true;
+    this.#syncHolds();
+    this.#save(true);
   }
 
   /** The broker says a node was lost without a goodbye (its last will). */
@@ -379,17 +500,65 @@ export class NodeControlService {
       }
       this.#recompute(record);
     }
-    for (const [node, memory] of this.#memory) {
-      if (memory.state === "paused" && memory.until_ms !== undefined && memory.until_ms <= now) { memory.state = "running"; delete memory.since_ms; delete memory.by; delete memory.until_ms; this.#dirty = true; }
-      if (memory.maintenance_until_ms !== undefined && memory.maintenance_until_ms <= now) { delete memory.maintenance_until_ms; this.#dirty = true; }
-      if (memory.state === "running" && memory.maintenance_until_ms === undefined) { this.#memory.delete(node); this.#dirty = true; }
-    }
+    for (const [node, memory] of [...this.#memory]) this.#tick(node, memory, now);
     for (const [id, record] of this.#records) {
       if (record.state === "done" && (now - Date.parse(record.updated_at) > this.#o.keepMs || this.#records.size > this.#o.keep)) { this.#records.delete(id); this.#private.delete(id); this.#dirty = true; }
     }
     for (const [node, at] of this.#restartedAt) if (now - at > 3_600_000) this.#restartedAt.delete(node);
     this.#syncHolds();
     this.#save(false);
+  }
+
+  // ---- the window ---------------------------------------------------------------------------------------------------------------------------
+
+  /** What time does to one node's memory: a pause ends, a window runs out (and is said so), what is no longer needed is forgotten. */
+  #tick(node: string, memory: NodeMemory, now: number): void {
+    if (memory.state === "paused" && memory.until_ms !== undefined && memory.until_ms <= now) { memory.state = "running"; delete memory.since_ms; delete memory.by; delete memory.until_ms; this.#dirty = true; }
+    this.#settle(node, now, "time");
+    if (memory.maintenance_until_ms !== undefined && memory.maintenance_until_ms <= now) { delete memory.maintenance_until_ms; delete memory.maintenance_by; this.#dirty = true; }
+    if (memory.node_window !== undefined && memory.node_window.until_ms <= now) { delete memory.node_window; this.#dirty = true; }
+    if (memory.seen !== undefined && now - memory.seen.at_ms > DAY_MS) { delete memory.seen; this.#dirty = true; }
+    if (memory.blocked_ms !== undefined && now - memory.blocked_ms > DAY_MS) { delete memory.blocked_ms; this.#dirty = true; }
+    if (memory.state === "running" && memory.maintenance_until_ms === undefined && memory.node_window === undefined && memory.window_since_ms === undefined && memory.seen === undefined && memory.blocked_ms === undefined) {
+      this.#memory.delete(node); this.#dirty = true;
+    }
+  }
+
+  /**
+   * Looks at the window of a node after something changed (an answer, a report, an announcement, the clock) and says what happened, once: it began (only when the node announced it), it ended
+   * (the node said so, or came back, or its time was up and it had been heard), or it EXPIRED: its time ran out and the node never came back. After an expiry the node counts as offline again
+   * (the holds are released) and no new announcement is believed until the node has reported.
+   */
+  #settle(node: string, now: number, cause: "time" | "explicit"): void {
+    const memory = this.#memory.get(node);
+    if (!memory) return;
+    const active = this.#window(node, memory, now) !== undefined;
+    if (active && memory.window_since_ms === undefined) {
+      memory.window_since_ms = now; this.#dirty = true;
+      if (memory.node_window) {
+        if (memory.node_window.by) memory.window_by = memory.node_window.by; else delete memory.window_by;
+        this.#windowEvent("maintenance_started", node, memory.node_window.reason, "allowed", memory.window_by);
+      } else if (memory.maintenance_by) memory.window_by = memory.maintenance_by;
+    } else if (!active && memory.window_since_ms !== undefined) {
+      const since = memory.window_since_ms;
+      const announced = memory.node_window;
+      const by = memory.window_by;
+      delete memory.window_since_ms; delete memory.window_by; delete memory.node_window; this.#dirty = true;
+      const reason = announced?.reason ?? "operator";
+      const health = this.#o.health(node);
+      const heard = health !== undefined && Date.parse(health.received_at) > since + HEARD_AFTER_MS;
+      if (cause === "time" && !heard) {
+        memory.blocked_ms = now;
+        this.#windowEvent("maintenance_expired", node, reason, "failed", by);
+      } else if (announced) this.#windowEvent("maintenance_ended", node, reason, "allowed", by);
+    }
+  }
+
+  #windowEvent(action: "maintenance_started" | "maintenance_ended" | "maintenance_expired", node: string, reason: MaintenanceReason, outcome: "allowed" | "failed", by?: string): void {
+    try {
+      const version = this.#o.health(node)?.firmware;
+      this.#o.history({ category: "node", action, subject: node, profile: reason, outcome, ...(by ? { by } : {}), ...(version ? { version } : {}) });
+    } catch { /* the history never breaks what it records */ }
   }
 
   // ---- bookkeeping --------------------------------------------------------------------------------------------------------------------------

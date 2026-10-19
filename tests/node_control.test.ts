@@ -8,8 +8,8 @@ import type { AuditEvent, AuditLog } from "../src/audit.js";
 import type { SystemInput } from "../src/connections.js";
 import { routeMessage } from "../src/mqtt_router.js";
 import {
-  CONTROL_OPERATIONS, CONTROL_REFUSALS, ControlError, DURATIONS, SAME_FAMILY_WINDOW_S, ROLLING_GAP_S, controlTopic, redactToken, parseControlCommand, parseControlResult, readControlRequest, rollingSchedule,
-  type ControlOperation, type ControlResult,
+  CONTROL_OPERATIONS, CONTROL_REFUSALS, ControlError, DURATIONS, SAME_FAMILY_WINDOW_S, ROLLING_GAP_S, controlTopic, maintenanceTopic, redactToken, parseControlCommand, parseControlResult, parseMaintenance, readControlRequest, rollingSchedule,
+  type ControlOperation, type ControlResult, type NodeMaintenance,
 } from "../src/node_control.js";
 import { NodeControlService, type ControlOperationRecord } from "../src/node_control_service.js";
 import { NodeHealthStore, type NodeHealthMessage } from "../src/node_health.js";
@@ -132,7 +132,7 @@ const report = (id: string, family: NodeHealthMessage["family"], extra: Partial<
 });
 type Sent = { topic: string; message: Record<string, unknown> };
 
-function bench(options: { nodes?: Array<[string, NodeHealthMessage["family"]]>; publishFails?: boolean; file?: string; perMinute?: number } = {}) {
+function bench(options: { nodes?: Array<[string, NodeHealthMessage["family"]]>; publishFails?: boolean; file?: string; perMinute?: number; maintenanceMaxS?: number } = {}) {
   let clock = 1_800_000_000_000;
   let stamp = 1000;
   const audits: AuditEvent[] = [];
@@ -144,7 +144,7 @@ function bench(options: { nodes?: Array<[string, NodeHealthMessage["family"]]>; 
   const audit: AuditLog = { record: event => { audits.push(event); } };
   const service: NodeControlService = new NodeControlService({
     publish: (topic, payload) => { if (state.fails) throw new Error("down"); sent.push({ topic, message: JSON.parse(payload) as Record<string, unknown> }); }, audit, history: input => { history.push(input); },
-    health: node => health.get(node), nodes: () => health.list(), now: () => clock, file: options.file, onHold: (node, held) => { holds.push([node, held]); }, perMinute: options.perMinute,
+    health: node => health.get(node), nodes: () => health.list(), now: () => clock, file: options.file, onHold: (node, held) => { holds.push([node, held]); }, perMinute: options.perMinute, maintenanceMaxS: options.maintenanceMaxS,
     random: (() => { let n = 0; return () => `c${String(++n).padStart(15, "0")}`; })(),
   });
   const nodes = options.nodes ?? [["radar-1", "radar"], ["solar-1", "solar"], ["electrical-1", "electrical"], ["alarm-1", "alarm"], ["hmi-1", "hmi"]];
@@ -449,7 +449,7 @@ test("the node health the consoles read carries the control state, from the node
   b.hear("radar-1", "radar", { control_state: "paused", control_since_ms: 1_760_000_000_000, control_by: "ana", control_until_s: 600 });
   assert.deepEqual(b.health.get("radar-1")!.control, { state: "paused", maintenance: false, since_ms: 1_760_000_000_000, by: "ana", until_s: 600, source: "node" });
   b.hear("solar-1", "solar", { control_state: "standby", control_since_ms: 0, control_by: "ana", maintenance: true, maintenance_until_s: 900 });
-  assert.deepEqual(b.health.get("solar-1")!.control, { state: "standby", maintenance: true, since_ms: 0, by: "ana", maintenance_until_s: 900, source: "node" });
+  assert.deepEqual(b.health.get("solar-1")!.control, { state: "standby", maintenance: true, since_ms: 0, by: "ana", maintenance_until_s: 900, window: { source: "operator", reason: "operator", remaining_s: 900 }, source: "node" });
   assert.equal(b.health.get("hmi-1")!.control, undefined, "nothing is known of a node that never was ordered");
   assert.equal(b.health.list().find(view => view.node_id === "radar-1")!.control?.state, "paused");
 });
@@ -739,4 +739,238 @@ test("a silent node is 409 node_unavailable, and a refused body leaves a line in
     clock += 600_000;
     assert.deepEqual(await codeOf(await send("POST", "/api/v1/nodes/radar-1/control", { operation: "diagnostics" })), [409, "node_unavailable"]);
   } finally { await running.stop(); }
+});
+
+// ---- the planned-maintenance window: the node's own announcement and the operator's, one concept -------------------------------------------------
+
+const announce = (node: string, over: Partial<NodeMaintenance> = {}): NodeMaintenance =>
+  parseMaintenance(Object.fromEntries(Object.entries({ kind: "node_maintenance", node_id: node, timestamp_ms: 7000, active: true, reason: "restart", expected_s: 90, firmware: "0.3.6", requested_by: "ana", ...over }).filter(([, value]) => value !== undefined)));
+const kinds = (b: ReturnType<typeof bench>): string[] => b.history.filter(event => event.action.startsWith("maintenance_")).map(event => `${event.action}:${event.subject}:${event.profile}:${event.outcome}`);
+
+test("node_maintenance parsing agrees with every shared conformance vector, and its topic names a node and never `all`", { skip: fs.existsSync(path.join(directory, "node_maintenance.json")) ? false : "ARMOR-COMMON is not checked out next to this repository" }, () => {
+  const all = vectors("node_maintenance");
+  assert.ok(all.length >= 20);
+  for (const vector of all) {
+    if (vector.valid) assert.doesNotThrow(() => parseMaintenance(vector.payload), `should accept: ${vector.name}`);
+    else assert.throws(() => parseMaintenance(vector.payload), `should reject: ${vector.name}`);
+  }
+  assert.equal(maintenanceTopic("armor/control/radar-1/maintenance"), "radar-1");
+  for (const topic of ["armor/control/all/maintenance", "armor/control/Radar/maintenance", "armor/control/radar-1/result", "armor/control/radar-1/maintenance/x", "armor/maintenance/radar-1"]) assert.equal(maintenanceTopic(topic), undefined, topic);
+});
+
+test("a node that announces a restart is expected offline for the time it says, and when it does not return the alerts resume and the history says so", () => {
+  const b = bench();
+  b.service.handleMaintenance(announce("radar-1"), "radar-1");
+  assert.equal(b.service.isHeld("radar-1"), true);
+  assert.deepEqual(b.holds, [["radar-1", true]]);
+  assert.deepEqual(b.service.windowOf("radar-1"), { node_id: "radar-1", source: "node", reason: "restart", active: true, expires_in_s: 90, requested_by: "ana" });
+  assert.deepEqual(kinds(b), ["maintenance_started:radar-1:restart:allowed"]);
+  assert.deepEqual(b.health.get("radar-1")!.control, { state: "running", maintenance: true, maintenance_until_s: 90, window: { source: "node", reason: "restart", remaining_s: 90, requested_by: "ana" }, source: "server" });
+  b.tick(60_000);
+  b.service.sweep();
+  assert.equal(b.service.isHeld("radar-1"), true);
+  assert.equal(b.service.windowOf("radar-1")!.expires_in_s, 30);
+  b.tick(31_000);   // the node has not come back
+  b.service.sweep();
+  assert.equal(b.service.isHeld("radar-1"), false, "it counts as offline again");
+  assert.deepEqual(b.holds, [["radar-1", true], ["radar-1", false]], "whoever listens is told, so the alerts come");
+  assert.deepEqual(kinds(b), ["maintenance_started:radar-1:restart:allowed", "maintenance_expired:radar-1:restart:failed"]);
+  assert.equal(b.service.windowOf("radar-1"), undefined);
+  assert.equal(b.service.windows().length, 0);
+  // saying it again does not open the window again while the node is silent
+  b.service.handleMaintenance(announce("radar-1", { timestamp_ms: 7500 }), "radar-1");
+  assert.equal(b.service.isHeld("radar-1"), false);
+  // and when it has reported, an announcement is believed once more
+  b.hear("radar-1", "radar", { uptime_s: 5 });
+  b.service.handleMaintenance(announce("radar-1", { timestamp_ms: 8000, reason: "update", expected_s: 120 }), "radar-1");
+  assert.equal(b.service.isHeld("radar-1"), true);
+  assert.equal(kinds(b).filter(item => item.startsWith("maintenance_expired")).length, 1);
+});
+
+test("the server's bound cuts what a node announces: no expected time, or an hour, is ten minutes unless the server is set otherwise", () => {
+  const b = bench();
+  b.service.handleMaintenance(announce("radar-1", { reason: "standby", expected_s: undefined }), "radar-1");
+  assert.equal(b.service.windowOf("radar-1")!.expires_in_s, 600);
+  b.service.handleMaintenance(announce("solar-1", { reason: "update", expected_s: 3600 }), "solar-1");
+  assert.equal(b.service.windowOf("solar-1")!.expires_in_s, 600, "a node can not ask for more than the bound");
+  const short = bench({ maintenanceMaxS: 120 });
+  short.service.handleMaintenance(announce("radar-1", { expected_s: 3600 }), "radar-1");
+  assert.equal(short.service.windowOf("radar-1")!.expires_in_s, 120);
+  const silly = bench({ maintenanceMaxS: 5 });   // a silly value is the default
+  silly.service.handleMaintenance(announce("radar-1", { expected_s: 3600 }), "radar-1");
+  assert.equal(silly.service.windowOf("radar-1")!.expires_in_s, 600);
+  // a stuck node that repeats itself gains nothing; a node that changes its reason gets a new span but all of it ends at three times the bound
+  const stuck = bench({ maintenanceMaxS: 100 });
+  stuck.service.handleMaintenance(announce("radar-1", { reason: "pause", expected_s: undefined, timestamp_ms: 1 }), "radar-1");
+  stuck.tick(50_000);
+  stuck.service.handleMaintenance(announce("radar-1", { reason: "pause", expected_s: undefined, timestamp_ms: 2 }), "radar-1");
+  assert.equal(stuck.service.windowOf("radar-1")!.expires_in_s, 50, "the same reason again adds nothing");
+  stuck.service.handleMaintenance(announce("radar-1", { reason: "update", expected_s: undefined, timestamp_ms: 3 }), "radar-1");
+  assert.equal(stuck.service.windowOf("radar-1")!.expires_in_s, 100);
+  for (let step = 0; step < 6; step += 1) { stuck.tick(60_000); stuck.service.handleMaintenance(announce("radar-1", { reason: step % 2 ? "update" : "upload", expected_s: undefined, timestamp_ms: 10 + step }), "radar-1"); }
+  stuck.tick(300_000);
+  stuck.service.sweep();
+  assert.equal(stuck.service.isHeld("radar-1"), false, "a stuck node can not silence the alerts for ever");
+});
+
+test("a node that returns closes its window: a report of a node that started again, or active false", () => {
+  const b = bench();
+  b.service.handleMaintenance(announce("radar-1", { expected_s: 300 }), "radar-1");
+  b.tick(20_000);
+  b.hear("radar-1", "radar", { uptime_s: 3700 });   // still the same run: it keeps going
+  assert.equal(b.service.isHeld("radar-1"), true);
+  b.tick(5_000);
+  b.hear("radar-1", "radar", { uptime_s: 4 });   // it started again
+  assert.equal(b.service.isHeld("radar-1"), false);
+  assert.deepEqual(b.holds, [["radar-1", true], ["radar-1", false]]);
+  assert.deepEqual(kinds(b), ["maintenance_started:radar-1:restart:allowed", "maintenance_ended:radar-1:restart:allowed"]);
+  b.tick(400_000);
+  b.service.sweep();
+  assert.equal(kinds(b).length, 2, "nothing expires that was closed");
+  // active false (retained too), with the reason the node gives
+  b.service.handleMaintenance(announce("solar-1", { reason: "pause", expected_s: undefined, timestamp_ms: 10 }), "solar-1");
+  assert.equal(b.service.isHeld("solar-1"), true);
+  b.service.handleMaintenance(announce("solar-1", { reason: "pause", active: false, expected_s: undefined, timestamp_ms: 11 }), "solar-1");
+  assert.equal(b.service.isHeld("solar-1"), false);
+  assert.deepEqual(kinds(b).slice(2), ["maintenance_started:solar-1:pause:allowed", "maintenance_ended:solar-1:pause:allowed"]);
+  // a node that stays on the air all along (a pause) ends quietly when its time is up: it was not silent
+  b.service.handleMaintenance(announce("hmi-1", { reason: "standby", expected_s: 120, timestamp_ms: 20 }), "hmi-1");
+  b.tick(60_000);
+  b.hear("hmi-1", "hmi", { uptime_s: 7000 });
+  b.tick(61_000);
+  b.service.sweep();
+  assert.deepEqual(kinds(b).slice(4), ["maintenance_started:hmi-1:standby:allowed", "maintenance_ended:hmi-1:standby:allowed"]);
+});
+
+test("the operator's window and the node's own are one: the later end wins, a node's is never past the bound, and each can end alone", () => {
+  const b = bench();
+  const run = (node: string, operation: ControlOperation, reply: Record<string, unknown>, duration?: number) => {
+    one(b, node, operation, { duration_s: duration });
+    const execute = b.armed(node, operation);
+    b.answer({ node_id: node, command_id: execute.command_id, action: "execute", operation, stage: "applied", state: "running", maintenance: false, requested_by: "ana", ...reply });
+  };
+  run("electrical-1", "maintenance_on", { maintenance: true, until_s: 1800 }, 1800);
+  assert.deepEqual(b.service.windowOf("electrical-1"), { node_id: "electrical-1", source: "operator", reason: "operator", active: true, expires_in_s: 1800, requested_by: "ana" });
+  b.service.handleMaintenance(announce("electrical-1", { reason: "update", expected_s: 3600, requested_by: "bea" }), "electrical-1");
+  assert.deepEqual(b.service.windowOf("electrical-1"), { node_id: "electrical-1", source: "both", reason: "update", active: true, expires_in_s: 1800, requested_by: "bea" });
+  assert.deepEqual(b.health.get("electrical-1")!.control, { state: "running", maintenance: true, maintenance_until_s: 1800, window: { source: "both", reason: "update", remaining_s: 1800, requested_by: "bea" }, source: "server" });
+  b.tick(601_000);   // the node's part (ten minutes) is over, the operator's is not
+  b.service.sweep();
+  assert.equal(b.service.isHeld("electrical-1"), true);
+  assert.equal(b.service.windowOf("electrical-1")!.source, "operator");
+  assert.equal(b.service.windowOf("electrical-1")!.expires_in_s, 1199);
+  assert.ok(!kinds(b).some(item => item.startsWith("maintenance_expired")), "the window as a whole has not ended");
+  // the operator ends theirs while the node's is still on: it stays
+  b.service.handleMaintenance(announce("alarm-1", { reason: "restart", expected_s: 300, timestamp_ms: 50 }), "alarm-1");
+  run("alarm-1", "maintenance_on", { maintenance: true, until_s: 3600 }, 3600);
+  assert.equal(b.service.windowOf("alarm-1")!.source, "both");
+  assert.equal(b.service.windowOf("alarm-1")!.expires_in_s, 3600);
+  b.tick(1000);
+  run("alarm-1", "maintenance_off", { maintenance: false });
+  assert.equal(b.service.windowOf("alarm-1")!.source, "node");
+  assert.equal(b.service.isHeld("alarm-1"), true);
+  // and the operator's window running out with the node silent is said too
+  b.tick(1_300_000);
+  b.service.sweep();
+  assert.equal(b.service.isHeld("electrical-1"), false);
+  assert.ok(kinds(b).some(item => item.startsWith("maintenance_expired:electrical-1")));
+  assert.ok(b.service.windows().every(window => window.node_id !== "electrical-1"));
+});
+
+test("a retained message read at the start is believed once, and a restart of the server keeps the window it had without extending it", () => {
+  const file = path.join(tempDir(), "node_control.json");
+  const b = bench({ file });
+  b.service.handleMaintenance(announce("radar-1", { expected_s: 300, timestamp_ms: 4242 }), "radar-1");
+  b.tick(100_000);
+  b.service.handleMaintenance(announce("radar-1", { expected_s: 300, timestamp_ms: 4242 }), "radar-1");   // the broker delivers the retained message again
+  assert.equal(b.service.windowOf("radar-1")!.expires_in_s, 200, "the same message does not start a new span");
+  b.service.flush();
+  const text = fs.readFileSync(file, "utf8");
+  assert.ok(!/"token"/.test(text));
+  const history: string[] = [];
+  const reopen = () => new NodeControlService({ publish: () => undefined, audit: { record: () => undefined }, history: input => { history.push(input.action); }, health: node => b.health.get(node), nodes: () => b.health.list(), now: () => b.now(), file });
+  const again = reopen();
+  assert.equal(again.isHeld("radar-1"), true, "the window outlives the server");
+  assert.equal(again.windowOf("radar-1")!.expires_in_s, 200);
+  again.handleMaintenance(announce("radar-1", { expected_s: 300, timestamp_ms: 4242 }), "radar-1");   // read again from the broker at the start
+  assert.equal(again.windowOf("radar-1")!.expires_in_s, 200);
+  assert.deepEqual(history, [], "nothing began a second time");
+  // a window that ran out while the server was off is over, and the same retained message does not bring it back
+  b.tick(400_000);
+  const later = reopen();
+  assert.equal(later.isHeld("radar-1"), false);
+  later.handleMaintenance(announce("radar-1", { expected_s: 300, timestamp_ms: 4242 }), "radar-1");
+  assert.equal(later.isHeld("radar-1"), false);
+  later.sweep();
+  assert.deepEqual(history, ["maintenance_expired"]);
+  // a node that is not known, or a signal that names another node, opens nothing
+  const unknown = bench();
+  unknown.service.handleMaintenance(announce("radar-9"), "radar-9");
+  unknown.service.handleMaintenance(announce("radar-1"), "solar-1");
+  assert.equal(unknown.service.windows().length, 0);
+  assert.equal(unknown.audits.filter(item => item.action === "node_control.maintenance").length, 2);
+  // a damaged file gives no window
+  fs.writeFileSync(file, JSON.stringify({ schema: 1, operations: [], restarts: {}, memory: { "radar-1": { state: "running", node_window: { reason: "deep_sleep", until_ms: 1e15 } }, "solar-1": { state: "running", node_window: { reason: "restart", stamp: 1, started_ms: 1, at_ms: 1, until_ms: "never" } } } }));
+  assert.equal(reopen().windows().length, 0);
+});
+
+test("no token is in a window, the history, the audit trail or the file, whatever mix of orders and announcements happened", () => {
+  const file = path.join(tempDir(), "node_control.json");
+  const b = bench({ file });
+  one(b, "radar-1", "maintenance_on", { duration_s: 600 });
+  const execute = b.armed("radar-1", "maintenance_on");
+  b.service.handleMaintenance(announce("radar-1"), "radar-1");
+  b.answer({ node_id: "radar-1", command_id: execute.command_id, action: "execute", operation: "maintenance_on", stage: "applied", state: "running", maintenance: true, requested_by: "ana", until_s: 600 });
+  b.service.flush();
+  const everything = JSON.stringify([b.service.windows(), b.service.windowOf("radar-1"), b.history, b.audits, b.health.get("radar-1"), b.service.list()]) + fs.readFileSync(file, "utf8");
+  assert.ok(!everything.includes(SECRET_TOKEN));
+  assert.ok(!/"token"/.test(everything));
+});
+
+test("through the server: the window is listed for any signed-in user, a node in it raises no offline alarm and one that never returns raises it at the bound", async () => {
+  let clock = Date.now();
+  const running = await startServer({ ARMOR_NODE_MAINTENANCE_MAX_S: "120" }, { now: () => clock });
+  try {
+    const { context } = running.app;
+    const open = (code: string) => context.alarms.active().some(alarm => alarm.code === code && !alarm.cleared_at);
+    context.nodeHealth.ingest(report("electrical-1", "electrical", { timestamp_ms: 1 }));
+    context.alarmRules.handleElectricalStale("electrical-1", true);
+    assert.ok(open("electrical_offline"));
+    const routes = [{ subscribe: ["armor/control/+/maintenance"], named: maintenanceTopic, parse: parseMaintenance, fallback: "invalid maintenance signal",
+      matches: (message: NodeMaintenance, named: string) => message.node_id === named, apply: (message: NodeMaintenance, named: string) => context.nodeControl.handleMaintenance(message, named) }];
+    const rejected: unknown[] = [];
+    const take = (topic: string, body: unknown): boolean => routeMessage(routes, context.ingestLog, (_t, _r, error) => rejected.push(error), topic, Buffer.from(JSON.stringify(body)));
+    const body = { kind: "node_maintenance", node_id: "electrical-1", timestamp_ms: 3000, active: true, reason: "update", expected_s: 3600, firmware: "0.3.6", requested_by: "ana" };
+    assert.equal(take("armor/control/solar-1/maintenance", body), true);   // it names another node than its topic
+    assert.equal(rejected.length, 1);
+    assert.equal(take("armor/control/all/maintenance", body), false);
+    assert.equal(take("armor/control/electrical-1/maintenance", { ...body, expected_s: 0 }), true);
+    assert.equal(rejected.length, 2);
+    assert.equal(context.nodeControl.windows().length, 0);
+    assert.equal(take("armor/control/electrical-1/maintenance", body), true);
+    assert.equal(rejected.length, 2);
+    assert.equal(open("electrical_offline"), false, "the alarm that was up ended");
+    context.alarmRules.handleElectricalStale("electrical-1", true);
+    assert.equal(open("electrical_offline"), false);
+    const cookie = await studioCookie(running.base);
+    const listed = (await (await fetch(`${running.base}/api/v1/nodes/maintenance`, { headers: { cookie } })).json()) as { windows: Array<Record<string, unknown>> };
+    assert.deepEqual(listed.windows, [{ node_id: "electrical-1", source: "node", reason: "update", active: true, expires_in_s: 120, requested_by: "ana" }]);
+    assert.equal((await fetch(`${running.base}/api/v1/nodes/maintenance`, { headers: { Authorization: `Bearer ${SECRETS.ARMOR_OPERATOR_TOKEN}` } })).status, 200);
+    assert.equal((await fetch(`${running.base}/api/v1/nodes/maintenance`)).status, 401);
+    const health = (await (await fetch(`${running.base}/api/v1/node-health`, { headers: { cookie } })).json()) as { nodes: Array<{ node_id: string; control?: Record<string, unknown> }> };
+    assert.deepEqual(health.nodes.find(node => node.node_id === "electrical-1")!.control, { state: "running", maintenance: true, maintenance_until_s: 120, window: { source: "node", reason: "update", remaining_s: 120, requested_by: "ana" }, source: "server" });
+    clock += 200_000;   // the node never came back
+    context.nodeControl.sweep();
+    assert.equal(open("electrical_offline"), true, "the bound passed with the node silent: the alarm comes");
+    const events = (await (await fetch(`${running.base}/api/v1/history?category=node&all=1`, { headers: { cookie } })).json()) as { events: Array<{ action: string; subject: string; profile: string; outcome: string }> };
+    assert.ok(events.events.some(event => event.action === "maintenance_expired" && event.subject === "electrical-1" && event.profile === "update" && event.outcome === "failed"));
+  } finally { await running.stop(); }
+});
+
+test("a window the node announced does not stop an operator from opening or ending theirs", () => {
+  const b = bench();
+  b.service.handleMaintenance(announce("radar-1", { expected_s: 300 }), "radar-1");
+  const view = () => b.health.list().find(item => item.node_id === "radar-1");
+  assert.equal(NodeControlService.alreadyIn("maintenance_on", view()), false, "the operator may open their own window");
+  assert.equal(NodeControlService.alreadyIn("maintenance_off", view()), false);
 });

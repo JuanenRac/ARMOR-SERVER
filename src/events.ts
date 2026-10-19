@@ -15,7 +15,8 @@ export type ConnectionAction = "first_seen" | "login" | "login_failed" | "second
 export type SystemCategory = "node" | "broker" | "settings" | "service" | "update" | "alarm" | "backup" | "batteries";
 export type SystemAction = "appeared" | "returned" | "disappeared" | "firmware_changed" | "connected" | "disconnected" | "created" | "changed" | "removed" | "started" | "stopped" | "restarted" | "checked" | "installed" | "rolled_back"
   | "armed" | "disarmed" | "silenced" | "acknowledged" | "arm_requested" | "disarm_requested" | "silence_requested" | "backup_made" | "backup_restored" | "battery_requested" | "battery_operation"
-  | "control_requested" | "control_acknowledged" | "control_refused" | "control_applied" | "control_back" | "control_lost";
+  | "control_requested" | "control_acknowledged" | "control_refused" | "control_applied" | "control_back" | "control_lost"
+  | "maintenance_started" | "maintenance_ended" | "maintenance_expired";
 export type ArmorEventBody =
   | { type: "alert"; node_id: string; from: AlertLevel; to: AlertLevel; targets: number }
   | { type: "node"; node_id: string; from: NodeStatus | null; to: NodeStatus }

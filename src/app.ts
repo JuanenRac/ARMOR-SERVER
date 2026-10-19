@@ -32,7 +32,7 @@ import { registerAlarmDesignRoutes } from "./routes/alarm_design.js";
 import { registerAlarmProfileRoutes } from "./routes/alarm_profiles.js";
 import { registerNodeHealthRoutes } from "./routes/node_health.js";
 import { registerNodeControlRoutes } from "./routes/node_control.js";
-import { controlTopic, parseControlResult, redactToken } from "./node_control.js";
+import { controlTopic, maintenanceTopic, parseControlResult, parseMaintenance, redactToken } from "./node_control.js";
 import { registerMaintenanceRoutes } from "./routes/maintenance.js";
 import { networkTopic, parseNetworkMessage } from "./network.js";
 import { electricalTopic, parseElectricalMessage, parseElectricalResult } from "./electrical.js";
@@ -260,6 +260,9 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       // access list allows no one else), and an answer of `all` is no answer.
       { subscribe: ["armor/control/+/result"], named: (topic: string) => controlTopic(topic, "result"), parse: parseControlResult, fallback: "invalid control result",
         matches: (message: ReturnType<typeof parseControlResult>, named: string) => message.node_id === named, apply: (message, named) => context.nodeControl.handleResult(message, named) },
+      // A node that is about to be quiet on purpose says so: armor/control/{node}/maintenance, retained (so it is also read when this server starts). The server believes it only for its own bound.
+      { subscribe: ["armor/control/+/maintenance"], named: maintenanceTopic, parse: parseMaintenance, fallback: "invalid maintenance signal",
+        matches: (message: ReturnType<typeof parseMaintenance>, named: string) => message.node_id === named, apply: (message, named) => context.nodeControl.handleMaintenance(message, named) },
       // The nodes that watch the local network: armor/network/{node}/state.
       { subscribe: ["armor/network/+/state"], named: networkTopic, parse: parseNetworkMessage, fallback: "invalid network payload",
         matches: (message: ReturnType<typeof parseNetworkMessage>, named: string) => message.node_id === named, apply: message => context.networkNodes.ingest(message) },

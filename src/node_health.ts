@@ -12,6 +12,7 @@
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import { integer, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
+import type { MaintenanceReason } from "./node_control.js";
 
 export const HEALTH_FAMILIES = ["radar", "solar", "electrical", "alarm", "hmi"] as const;
 export type HealthFamily = (typeof HEALTH_FAMILIES)[number];
@@ -133,7 +134,9 @@ export type NodeHealthView = {
   control?: ControlView;
 };
 /** The control state of a node as a console reads it. `source` says who knows: the node's own report, or what the server remembers of the orders it gave (an older firmware). */
-export type ControlView = { state: ControlState; maintenance: boolean; since_ms?: number; by?: string; until_s?: number; maintenance_until_s?: number; source: "node" | "server" };
+export type ControlView = { state: ControlState; maintenance: boolean; since_ms?: number; by?: string; until_s?: number; maintenance_until_s?: number; window?: ControlWindow; source: "node" | "server" };
+/** The planned-maintenance window of a node: who opened it (the node's own announcement, the operator, or both), why, who asked and how many seconds it has left. */
+export type ControlWindow = { source: "node" | "operator" | "both"; reason: MaintenanceReason; remaining_s: number; requested_by?: string };
 export type NodeHealthDetail = NodeHealthView & { samples: HealthSample[]; restarts: RestartPublic[] };
 export type NodeHealthTotals = { nodes: number; stale: number; with_warnings: number };
 
@@ -245,10 +248,11 @@ export class NodeHealthStore {
     if (report.control_state !== undefined || report.maintenance !== undefined) {
       const kept = this.#options.remembered?.(id);
       const state = report.control_state ?? kept?.state ?? "running";
+      // The flag the node reports is its own (an operator window it holds); a window the server holds for it, announced by the node or not, counts too.
       return { control: {
-        state, maintenance: report.maintenance ?? kept?.maintenance ?? false, source: "node",
+        state, maintenance: report.maintenance === true || kept?.maintenance === true, source: "node", ...(kept?.window ? { window: kept.window } : {}),
         ...(report.control_since_ms !== undefined ? { since_ms: report.control_since_ms } : {}), ...(report.control_by !== undefined ? { by: report.control_by } : {}),
-        ...(report.control_until_s !== undefined ? { until_s: report.control_until_s } : {}), ...(report.maintenance_until_s !== undefined ? { maintenance_until_s: report.maintenance_until_s } : {}),
+        ...(report.control_until_s !== undefined ? { until_s: report.control_until_s } : {}), ...(kept?.maintenance_until_s !== undefined ? { maintenance_until_s: kept.maintenance_until_s } : report.maintenance_until_s !== undefined ? { maintenance_until_s: report.maintenance_until_s } : {}),
       } };
     }
     const kept = this.#options.remembered?.(id);

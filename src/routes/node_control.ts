@@ -11,7 +11,7 @@ import { ControlError, COMMAND_ID, NODE_ID, personFor, readControlRequest } from
 import { NodeControlService } from "../node_control_service.js";
 
 export function registerNodeControlRoutes(app: Express, context: AppContext): void {
-  const { requireAdmin, studioSessions, audit, studioUser, nodeControl, nodeHealth, originOfRequest } = context;
+  const { requireAdmin, requireOperator, studioSessions, audit, studioUser, nodeControl, nodeHealth, originOfRequest } = context;
   const actor = (request: Request): string => personFor(studioUser(request)?.username);
   const orderLimit = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "too many orders to nodes", code: "rate_limited" } });
   /** A fresh proof, always: restarting an alarm panel or switching a radar off is not something a stolen session should be able to do from inside the house either. */
@@ -25,6 +25,9 @@ export function registerNodeControlRoutes(app: Express, context: AppContext): vo
     return response.status(500).json({ error: "internal error" });
   };
   const origin = (request: Request): string => studioSessions.originOf(request) ?? originOfRequest(request);
+
+  // The planned-maintenance windows in force (a node's own announcement and an operator's, one window per node); any signed-in user may read them.
+  app.get("/api/v1/nodes/maintenance", requireOperator, (_request, response) => response.json({ windows: nodeControl.windows() }));
 
   app.get("/api/v1/nodes/control/operations", requireAdmin, (_request, response) => response.json({ operations: nodeControl.list() }));
 
