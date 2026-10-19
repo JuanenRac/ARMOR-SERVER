@@ -12,7 +12,7 @@ import { kindInfo, type Severity } from "./devices/catalog.js";
 import type { ArmorEvent, ArmorEventBody } from "./events.js";
 import type { ElectricalMessage } from "./electrical.js";
 import type { NetworkEvent, NetworkMessage } from "./network.js";
-import type { SolarMessage } from "./solar.js";
+import { SEVERE_COUNTERS, type SolarMessage } from "./solar.js";
 import type { AlarmMessage } from "./alarm.js";
 import { HEALTH_CODES, type NodeHealthView } from "./node_health.js";
 import { ENERGY_ALARM_DEFAULTS, type EnergyAlarmSettings } from "./energy_alarms.js";
@@ -275,6 +275,9 @@ export class AlarmRules {
   /** Since when each battery has had its cells further apart than the level (the time of the first message of the stretch), for the alarm that wants the gap to persist. */
   readonly #spreadSince = new Map<string, number>();
 
+  /** The last value of each counter of each module of each battery, to tell when a protection counter goes up (the first time one is seen it is only remembered). */
+  readonly #counterSeen = new Map<string, number>();
+
   /**
    * What is already wrong when the system is armed: a node that fell silent, a camera that stopped answering or a door left open while it was disarmed raised nothing then (they matter
    * only while armed), and the changes that would raise them have already happened. Set by the context, which knows the nodes, the cameras and the devices.
@@ -393,6 +396,17 @@ export class AlarmRules {
       if (message.temperature_min_c !== undefined) {
         if (message.state === "charging" && message.temperature_min_c < level.battery_temp_low_c) this.centre.raise(`${base}:cold`, { source, severity: "warning", code: "solar_battery_cold" });
         else if (message.state !== "charging" || message.temperature_min_c >= level.battery_temp_low_c + 2) this.centre.clear(`${base}:cold`);
+      }
+      for (const module of message.stack) {
+        if (!module.counters) continue;
+        for (const [name, value] of Object.entries(module.counters)) {
+          if (!SEVERE_COUNTERS.has(name)) continue;
+          const seenKey = `${id}/${module.n}/${name}`;
+          const before = this.#counterSeen.get(seenKey);
+          if (this.#counterSeen.size < 2048 || before !== undefined) this.#counterSeen.set(seenKey, value);
+          // a counter that goes up is an event: told once for each new value (a counter that went down was reset by somebody and is only remembered)
+          if (before !== undefined && value > before) this.centre.raise(`${base}:counter:${module.n}:${name}:${value}`, { source, severity: "warning", code: "solar_counter_rose", instant: true, detail: { module: module.n, counter: name, from: before, to: value } });
+        }
       }
       if (message.health_percent !== undefined) {
         if (message.health_percent < level.health_low_percent) this.centre.raise(`${base}:worn`, { source, severity: "warning", code: "solar_battery_worn" });

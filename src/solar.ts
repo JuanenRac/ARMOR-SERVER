@@ -42,7 +42,15 @@ export type SolarUnit = {
 export type SolarModule = {
   n: number; present: boolean; voltage_v?: number; current_a?: number; temperature_c?: number; soc_percent?: number; state?: string;
   cells_v?: number[]; temperatures_c?: number[]; capacity_ah?: number; full_capacity_ah?: number; cycles?: number; health_percent?: number;
+  /** The counters of the life of the module its console prints (bat_ov_times, coc_times ...): the console's own names, lowercase; what they mean is not official. */
+  counters?: Record<string, number>;
 };
+
+/** The counters of protections and errors: when one goes up it is told (the others are only shown). The names are the ones the solar node sends. */
+export const SEVERE_COUNTERS: ReadonlySet<string> = new Set([
+  "lifealarm_times", "bat_ov_times", "bat_hv_times", "bat_uv_times", "input_ov_times", "pwr_ov_times", "pwr_hv_times", "pwr_uv_times", "coc_times", "coc2_times", "doc_times", "doc2_times",
+  "sc_times", "cot_times", "dot_times", "bmicerr_times", "system_error_times",
+]);
 export type SolarBattery = {
   kind: "battery"; node_id: string; device: string; timestamp_ms: number; modules: number; stack: SolarModule[];
   state?: "charging" | "discharging" | "idle"; voltage_v?: number; current_a?: number; temperature_min_c?: number; temperature_max_c?: number;
@@ -132,7 +140,7 @@ const BATTERY_OPTIONAL_RANGES: Record<string, readonly [number, number]> = {
 
 function parseModule(value: unknown, index: number): SolarModule {
   const module = record(value, `module ${index}`);
-  onlyKnown(module, ["n", "present", "voltage_v", "current_a", "temperature_c", "soc_percent", "state", "cells_v", "temperatures_c", "capacity_ah", "full_capacity_ah", "cycles", "health_percent"], `module ${index}`);
+  onlyKnown(module, ["n", "present", "voltage_v", "current_a", "temperature_c", "soc_percent", "state", "cells_v", "temperatures_c", "capacity_ah", "full_capacity_ah", "cycles", "health_percent", "counters"], `module ${index}`);
   if (!integer(module.n) || module.n < 1 || module.n > 16) throw new Error(`invalid module ${index}.n`);
   if (typeof module.present !== "boolean") throw new Error(`invalid module ${index}.present`);
   if ("voltage_v" in module && !inRange(module.voltage_v, 0, 1000)) throw new Error(`invalid module ${index}.voltage_v`);
@@ -145,6 +153,12 @@ function parseModule(value: unknown, index: number): SolarModule {
   for (const key of ["capacity_ah", "full_capacity_ah"]) if (key in module && !inRange(module[key], 0, 100_000)) throw new Error(`invalid module ${index}.${key}`);
   if ("cycles" in module && (!integer(module.cycles) || module.cycles < 0 || module.cycles > 1_000_000)) throw new Error(`invalid module ${index}.cycles`);
   if ("health_percent" in module && (!integer(module.health_percent) || module.health_percent < 0 || module.health_percent > 100)) throw new Error(`invalid module ${index}.health_percent`);
+  if ("counters" in module) {
+    const counters = module.counters;
+    if (typeof counters !== "object" || counters === null || Array.isArray(counters)) throw new Error(`invalid module ${index}.counters`);
+    const entries = Object.entries(counters);
+    if (entries.length > 48 || !entries.every(([name, value]) => /^[a-z][a-z0-9_]{0,31}$/.test(name) && integer(value) && value >= 0 && value <= 9_999_999_999)) throw new Error(`invalid module ${index}.counters`);
+  }
   return module as unknown as SolarModule;
 }
 
