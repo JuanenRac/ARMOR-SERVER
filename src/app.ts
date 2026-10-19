@@ -16,7 +16,7 @@ import type { ArmorConfig } from "./config.js";
 import { createContext, type AppContext, type ContextOverrides } from "./context.js";
 import { hasBearer } from "./http/auth.js";
 import { attachMqtt, stampOf } from "./mqtt.js";
-import { healthTopic, isNodeWill, parseNodeHealth } from "./node_health.js";
+import { healthTopic, isNodeBirth, isNodeWill, parseNodeHealth } from "./node_health.js";
 import { attachRoutes, type RouteTable } from "./mqtt_router.js";
 import { registerAlarmRoutes } from "./routes/alarms.js";
 import { registerCameraRoutes } from "./routes/cameras.js";
@@ -259,9 +259,9 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       { subscribe: ["armor/alarm/+/state"], named: (topic: string) => alarmTopic(topic), parse: parseAlarmMessage, fallback: "invalid alarm payload",
         matches: (message: ReturnType<typeof parseAlarmMessage>, named: string) => message.node_id === named, apply: message => context.alarmNodes.ingest(message) },
       // The health report of every family of node: armor/health/{node}. A report older than the one before is dropped, and a node without a clock is stamped on arrival. The same
-      // topic carries the broker's last will for the node (the node was lost without saying goodbye): see nodeWill in node_health.ts.
+      // topic carries the broker's last will for the node (the node was lost without saying goodbye) and the birth it says each time it connects, both retained: see isNodeWill and isNodeBirth in node_health.ts.
       { subscribe: ["armor/health/+"], named: healthTopic, parse: parseNodeHealth, fallback: "invalid node health payload",
-        intercept: (body: unknown, named: string) => { if (!isNodeWill(body, named)) return false; context.nodeLife.gone(named); return true; },
+        intercept: (body: unknown, named: string) => { if (isNodeWill(body, named)) { context.nodeLife.gone(named); return true; } if (isNodeBirth(body, named)) { context.nodeLife.report(named); return true; } return false; },
         matches: (message: ReturnType<typeof parseNodeHealth>, named: string) => message.node_id === named, apply: message => context.nodeHealth.ingest({ ...message, timestamp_ms: stampOf(message.timestamp_ms, Date.now()) }) },
     ];
     attachRoutes(mqtt, routes, context.ingestLog, rejected);

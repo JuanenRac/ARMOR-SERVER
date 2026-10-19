@@ -23,7 +23,10 @@ export const ABNORMAL_RESETS: readonly ResetReason[] = ["panic", "int_wdt", "tas
 
 export type NodeHealthMessage = {
   kind: "node_health"; node_id: string; timestamp_ms: number; family: HealthFamily; firmware: string; board?: string; uptime_s: number; reset_reason: ResetReason;
-  heap_free: number; heap_min: number; link: (typeof HEALTH_LINKS)[number]; link_up: boolean; rssi_dbm?: number; broker_reconnects: number; low_stack_tasks?: number; last_error?: string;
+  heap_free: number; heap_min: number;
+  /** The internal memory on its own (heap_free counts the external RAM too, so it never looks short on a board that has 8 MB of it); the three come together. */
+  heap_internal_free?: number; heap_internal_min?: number; heap_internal_largest?: number; psram_free?: number;
+  link: (typeof HEALTH_LINKS)[number]; link_up: boolean; rssi_dbm?: number; broker_reconnects: number; low_stack_tasks?: number; last_error?: string;
 };
 
 export const HEALTH_CODES = ["node_low_memory", "node_frequent_resets", "node_link_flapping", "node_weak_signal"] as const;
@@ -32,18 +35,19 @@ export type HealthWarning = { code: HealthCode; detail: Record<string, string | 
 
 /** The levels the server judges by (sent to the consoles with the report, so they can say what "low" means). */
 export const HEALTH_LEVELS = {
-  low_heap_b: 30_000, low_heap_clear_b: 40_000, restarts_per_day: 3, abnormal_window_min: 60, flap_reconnects: 3, flap_window_min: 15, weak_signal_dbm: -80, weak_signal_reports: 3, silent_after_s: 180,
+  low_heap_b: 30_000, low_heap_clear_b: 40_000, low_internal_b: 40_960, low_internal_clear_b: 49_152, low_block_b: 8_192, restarts_per_day: 3, abnormal_window_min: 60, flap_reconnects: 3, flap_window_min: 15, weak_signal_dbm: -80, weak_signal_reports: 3, silent_after_s: 180,
 } as const;
 
 const FIRMWARE = /^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$/;
 const oneOf = <T extends string>(list: readonly T[], value: unknown): value is T => typeof value === "string" && (list as readonly string[]).includes(value);
 const chars = (text: string): number => Array.from(text).length;
+const INTERNAL = ["heap_internal_free", "heap_internal_min", "heap_internal_largest"] as const;
 const REQUIRED = ["kind", "node_id", "timestamp_ms", "family", "firmware", "uptime_s", "reset_reason", "heap_free", "heap_min", "link", "link_up", "broker_reconnects"] as const;
 
 /** A report as the contract has it, with the rules that join fields: the least heap is never more than the heap free, a signal strength goes only with a Wi-Fi link that is up, no link is a link that is down. */
 export function parseNodeHealth(value: unknown): NodeHealthMessage {
   const body = record(value, "node health");
-  onlyKnown(body, [...REQUIRED, "board", "rssi_dbm", "low_stack_tasks", "last_error"], "node health");
+  onlyKnown(body, [...REQUIRED, "board", "rssi_dbm", "low_stack_tasks", "last_error", ...INTERNAL, "psram_free"], "node health");
   for (const key of REQUIRED) if (!(key in body)) throw new Error(`the node health is missing ${key}`);
   if (body.kind !== "node_health") throw new Error("invalid kind");
   const node = readNodeId(body), timestamp = readTimestamp(body);
@@ -52,12 +56,16 @@ export function parseNodeHealth(value: unknown): NodeHealthMessage {
   if ("board" in body && (typeof body.board !== "string" || chars(body.board) < 1 || chars(body.board) > 32)) throw new Error("invalid board");
   for (const key of ["uptime_s", "heap_free", "heap_min", "broker_reconnects"] as const) if (!integer(body[key]) || (body[key] as number) < 0) throw new Error(`invalid ${key}`);
   if (!oneOf(RESET_REASONS, body.reset_reason)) throw new Error("invalid reset_reason");
+  for (const key of [...INTERNAL, "psram_free"] as const) if (key in body && (!integer(body[key]) || (body[key] as number) < 0)) throw new Error(`invalid ${key}`);
   if (!oneOf(HEALTH_LINKS, body.link)) throw new Error("invalid link");
   if (typeof body.link_up !== "boolean") throw new Error("invalid link_up");
   if ("rssi_dbm" in body && (!integer(body.rssi_dbm) || body.rssi_dbm < -120 || body.rssi_dbm > 0)) throw new Error("invalid rssi_dbm");
   if ("low_stack_tasks" in body && (!integer(body.low_stack_tasks) || body.low_stack_tasks < 0 || body.low_stack_tasks > 64)) throw new Error("invalid low_stack_tasks");
   if ("last_error" in body && (typeof body.last_error !== "string" || chars(body.last_error) < 1 || chars(body.last_error) > 96)) throw new Error("invalid last_error");
   if ((body.heap_min as number) > (body.heap_free as number)) throw new Error("the least heap is never more than the heap free now");
+  const told = INTERNAL.filter(key => key in body).length;
+  if (told !== 0 && told !== INTERNAL.length) throw new Error("the internal memory is told whole: heap_internal_free, heap_internal_min and heap_internal_largest together");
+  if (told !== 0 && ((body.heap_internal_min as number) > (body.heap_internal_free as number) || (body.heap_internal_largest as number) > (body.heap_internal_free as number))) throw new Error("the least internal memory and its biggest block are never more than the internal memory free now");
   if (body.link === "none" && body.link_up !== false) throw new Error("no link means a link that is down");
   if ("rssi_dbm" in body && !(body.link === "wifi" && body.link_up === true)) throw new Error("a signal strength goes only with a Wi-Fi link that is up");
   return { ...(body as unknown as NodeHealthMessage), node_id: node, timestamp_ms: timestamp };
@@ -81,12 +89,23 @@ export function isNodeWill(body: unknown, named: string): boolean {
   return keys.length === 2 && record.online === false && record.node_id === named;
 }
 
+/**
+ * The other half of the will: each time a node connects it says {"node_id": "...", "online": true} on the same topic, and the broker keeps it (retained) until the will replaces it, so the last
+ * message on armor/health/{node_id} always tells whether the node is there, also to a server that starts later. Nothing else in the body, like the will; it is never a report.
+ */
+export function isNodeBirth(body: unknown, named: string): boolean {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return false;
+  const keys = Object.keys(body);
+  const record = body as Record<string, unknown>;
+  return keys.length === 2 && record.online === true && record.node_id === named;
+}
+
 export type RestartRecord = { at: string; reason: ResetReason; abnormal: boolean; uptime_before_s?: number; boot_at_ms: number };
 /** What a console is told of a restart (the moment the node booted is the server's own bookkeeping). */
 export type RestartPublic = Omit<RestartRecord, "boot_at_ms">;
 const publicRestart = ({ boot_at_ms: _boot, ...rest }: RestartRecord): RestartPublic => rest;
 /** One point of the history a console draws. */
-export type HealthSample = { at: number; heap_free: number; heap_min: number; rssi_dbm?: number; link_up: boolean; uptime_s: number; broker_reconnects: number };
+export type HealthSample = { at: number; heap_free: number; heap_min: number; heap_internal_free?: number; heap_internal_largest?: number; rssi_dbm?: number; link_up: boolean; uptime_s: number; broker_reconnects: number };
 
 export type NodeHealthView = {
   node_id: string; family: HealthFamily; firmware: string; board?: string; report: NodeHealthMessage; received_at: string;
@@ -145,7 +164,7 @@ export class NodeHealthStore {
     }
     entry.report = report;
     entry.receivedAtMs = now;
-    entry.samples.push({ at: now, heap_free: report.heap_free, heap_min: report.heap_min, ...(report.rssi_dbm !== undefined ? { rssi_dbm: report.rssi_dbm } : {}), link_up: report.link_up, uptime_s: report.uptime_s, broker_reconnects: report.broker_reconnects });
+    entry.samples.push({ at: now, heap_free: report.heap_free, heap_min: report.heap_min, ...(report.heap_internal_free !== undefined ? { heap_internal_free: report.heap_internal_free, heap_internal_largest: report.heap_internal_largest } : {}), ...(report.rssi_dbm !== undefined ? { rssi_dbm: report.rssi_dbm } : {}), link_up: report.link_up, uptime_s: report.uptime_s, broker_reconnects: report.broker_reconnects });
     if (entry.samples.length > MAX_SAMPLES) entry.samples.splice(0, entry.samples.length - MAX_SAMPLES);
     entry.warnings = this.#judge(entry, now);
     const view = this.#view(report.node_id, entry, now);
@@ -159,8 +178,13 @@ export class NodeHealthStore {
     const report = entry.report;
     const had = (code: HealthCode): boolean => entry.warnings.some(item => item.code === code);
     const lowHeap = report.heap_free < HEALTH_LEVELS.low_heap_b || (had("node_low_memory") && report.heap_free < HEALTH_LEVELS.low_heap_clear_b);
+    // A node that tells its internal memory is judged on that too: the total above adds the external RAM, so on a board with 8 MB of it the total never runs short while the internal memory does.
+    const lowInternal = report.heap_internal_free !== undefined && (report.heap_internal_free < HEALTH_LEVELS.low_internal_b || (had("node_low_memory") && report.heap_internal_free < HEALTH_LEVELS.low_internal_clear_b) || (report.heap_internal_largest ?? Infinity) < HEALTH_LEVELS.low_block_b);
     const lowStack = (report.low_stack_tasks ?? 0) > 0;
-    if (lowHeap || lowStack) out.push({ code: "node_low_memory", detail: { heap_free: report.heap_free, heap_min: report.heap_min, low_stack_tasks: report.low_stack_tasks ?? 0 } });
+    if (lowHeap || lowInternal || lowStack) {
+      out.push({ code: "node_low_memory", detail: { heap_free: report.heap_free, heap_min: report.heap_min, low_stack_tasks: report.low_stack_tasks ?? 0,
+        ...(report.heap_internal_free !== undefined ? { heap_internal_free: report.heap_internal_free, heap_internal_min: report.heap_internal_min ?? 0, heap_internal_largest: report.heap_internal_largest ?? 0 } : {}) } });
+    }
 
     const day = entry.restarts.filter(item => now - Date.parse(item.at) < DAY_MS);
     const crashed = entry.restarts.filter(item => item.abnormal && now - Date.parse(item.at) < HEALTH_LEVELS.abnormal_window_min * 60_000);

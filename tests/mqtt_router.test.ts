@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { routeMessage, topicsOf, type RouteTable } from "../src/mqtt_router.js";
-import { healthTopic, isNodeWill, parseNodeHealth } from "../src/node_health.js";
+import { healthTopic, isNodeBirth, isNodeWill, parseNodeHealth } from "../src/node_health.js";
 
 const buffer = (value: unknown) => Buffer.from(JSON.stringify(value));
 const logOf = () => { const ok: string[] = []; return { ok: (topic: string) => { ok.push(topic); }, rejected: () => undefined, seen: ok } as never as { ok: (topic: string) => void; rejected: () => void; seen: string[] }; };
@@ -43,6 +43,11 @@ test("the last will of a node: only {node_id, online:false} for the node of the 
   assert.equal(isNodeWill({ node_id: "radar-1", online: false }, "radar-1"), true);
   assert.equal(isNodeWill({ node_id: "radar-2", online: false }, "radar-1"), false, "a will that names another node");
   assert.equal(isNodeWill({ node_id: "radar-1", online: true }, "radar-1"), false);
+  assert.equal(isNodeBirth({ node_id: "radar-1", online: true }, "radar-1"), true);
+  assert.equal(isNodeBirth({ node_id: "radar-2", online: true }, "radar-1"), false, "a birth that names another node");
+  assert.equal(isNodeBirth({ node_id: "radar-1", online: false }, "radar-1"), false);
+  assert.equal(isNodeBirth({ node_id: "radar-1", online: true, uptime_s: 5 }, "radar-1"), false, "a health report is never a birth");
+  assert.equal(isNodeBirth(null, "radar-1") || isNodeBirth([], "radar-1"), false);
   assert.equal(isNodeWill({ node_id: "radar-1", online: false, uptime_s: 5 }, "radar-1"), false, "a health report is never a will");
   assert.equal(isNodeWill(null, "radar-1"), false);
   assert.equal(isNodeWill([], "radar-1"), false);

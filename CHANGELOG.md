@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.0.2] - The internal memory of the nodes and the birth of a node
+
+- **The internal memory of a node is judged on its own** when the node tells it (`heap_internal_free`, `heap_internal_min`, `heap_internal_largest`, `psram_free`): the memory warning uses 40 KB (cleared at 48 KB) and a biggest block of 8 KB, the history keeps the internal figures, and the details of the warning carry them. A report with only some of the three internal fields is refused.
+- **The birth of a node is understood:** `{"node_id":"<node>","online":true}` on `armor/health/<node>` (retained, said at each connection) marks the node as here and is never taken for a report, the other half of the last will.
+
 ## [0.8.0.1] - Orders to write to Pylontech batteries, off by default
 
 - **Orders to write to a Pylontech battery, off unless `ARMOR_BATTERY_WRITE=1`:** `GET /api/v1/solar/battery-ops/catalog` (the table of the typed operations, their risk and their ranges), `GET /api/v1/solar/battery-ops` and `/{id}` (what was ordered, how far it is and how it ended), `POST /api/v1/solar/battery-ops` (arm), `/{id}/execute`, `/{id}/cancel`, `/{id}/restore` (puts an output back as it was) and `POST /api/v1/solar/battery-ops/images` (keeps a firmware image in memory for an hour). All of them are for administrators; the ones that order or upload need a fresh proof of identity (the password or the second factor) also inside the house, and a session from outside the house is treated as for the rest of the administration.
