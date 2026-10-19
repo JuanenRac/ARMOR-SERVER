@@ -11,11 +11,13 @@ import fs from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { WebSocketServer } from "ws";
+import { createCoalescer } from "./ws_coalesce.js";
 import type { ArmorConfig } from "./config.js";
 import { createContext, type AppContext, type ContextOverrides } from "./context.js";
 import { hasBearer } from "./http/auth.js";
 import { attachMqtt, stampOf } from "./mqtt.js";
-import { healthTopic, parseNodeHealth } from "./node_health.js";
+import { healthTopic, isNodeWill, parseNodeHealth } from "./node_health.js";
+import { attachRoutes, type RouteTable } from "./mqtt_router.js";
 import { registerAlarmRoutes } from "./routes/alarms.js";
 import { registerCameraRoutes } from "./routes/cameras.js";
 import { registerDeviceRoutes } from "./routes/devices.js";
@@ -35,7 +37,6 @@ import { registerAlarmNodeRoutes } from "./routes/alarm.js";
 import { registerPushRoutes } from "./routes/push.js";
 import { parseSolarMessage, solarTopic } from "./solar.js";
 import { DiscoveryPublisher } from "./ha_discovery.js";
-import { forwardCompatible } from "./contracts.js";
 import { JsonFile } from "./history.js";
 import type { ElectricalHistoryFile } from "./electrical.js";
 import type { SolarHistoryFile } from "./solar.js";
@@ -61,7 +62,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   const clients = new WebSocketServer({ noServer: true, maxPayload: 1024 });
   /** A client that is too far behind (its network is slow, or it stopped reading) is dropped rather than made to wait in memory: the next state it would get is only newer than the last. */
   const MAX_BUFFERED_BYTES = 2 * 1024 * 1024;
-  const broadcast = (state: SystemState) => {
+  const sendState = (state: SystemState) => {
     const line = JSON.stringify({ type: "state", state });
     for (const client of clients.clients) {
       if (client.readyState !== client.OPEN) continue;
@@ -69,6 +70,10 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       client.send(line);
     }
   };
+  /** A burst of changes (several nodes reporting in the same moment) is one message with the newest state per window: the consoles only need the newest. */
+  const WS_WINDOW_MS = 150;
+  const stateFeed = createCoalescer<SystemState>(sendState, WS_WINDOW_MS);
+  const broadcast = (state: SystemState) => stateFeed.push(state);
   /** Who each open socket was admitted as. A session can end while the socket stays open (the user was removed, their role or password changed, the session expired). */
   const admitted = new WeakMap<object, { reader: ReturnType<typeof headerReader>; viaToken: boolean; alive: boolean }>();
   const context = createContext(config, { ...overrides, broadcast });
@@ -225,91 +230,34 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     mqtt.on("message", (topic, raw) => { try { context.devices.ingestMqtt(topic, raw); } catch { /* one bad device message never stops the rest */ } });
     // The gateway nodes that read solar inverters and batteries: armor/solar/{node}/{device}/state. The broker lets a node write only its own topics, so a body that
     // names another node or device is refused, as for the radar nodes.
-    mqtt.on("connect", () => mqtt.subscribe("armor/solar/+/+/state", { qos: 1 }));
-    // The nodes that measure the house's electrical network: armor/electrical/{node}/state, the same rule for the node named in the body.
-    mqtt.on("connect", () => mqtt.subscribe("armor/electrical/+/state", { qos: 1 }));
-    // The nodes that watch the local network: armor/network/{node}/state, the same rule for the node named in the body.
-    mqtt.on("connect", () => mqtt.subscribe("armor/network/+/state", { qos: 1 }));
-    mqtt.on("message", (topic, raw) => {
-      const named = networkTopic(topic);
-      if (!named) return;
-      try {
-        const { value: message, ignored } = forwardCompatible(() => parseNetworkMessage(JSON.parse(raw.toString("utf8"))));
-        if (message.node_id !== named) throw new Error("node_id does not match the topic");
-        context.networkNodes.ingest(message);
-        context.ingestLog.ok(topic, ignored);
-      } catch (error) { rejected(topic, raw, error, "invalid network payload"); }
-    });
-    // What a node answers to a command to its switch. A command is never retained and is sent at most once: an old one must never be delivered later, and a node that
-    // was away misses it (the node's own arm and token make a late one harmless anyway).
-    mqtt.on("connect", () => mqtt.subscribe("armor/electrical/+/result", { qos: 1 }));
     context.switchLink.publish = (topic, payload) => { if (!mqtt.connected) throw new Error("the MQTT broker is not connected"); mqtt.publish(topic, payload, { qos: 0, retain: false }); };
-    mqtt.on("message", (topic, raw) => {
-      const named = electricalTopic(topic, "result");
-      if (!named) return;
-      try {
-        const { value: result, ignored } = forwardCompatible(() => parseElectricalResult(JSON.parse(raw.toString("utf8"))));
-        if (result.node_id !== named) throw new Error("node_id does not match the topic");
-        context.electricalSwitching.handleResult(result, named);
-        context.ingestLog.ok(topic, ignored);
-      } catch (error) { rejected(topic, raw, error, "invalid electrical result"); }
-    });
-    // The alarm nodes: their state is armor/alarm/{node}/state and their answer to a command armor/alarm/{node}/result, the same rule for the node named in the body. A command is
-    // never retained and is sent at most once: an old one must never be delivered later.
-    mqtt.on("connect", () => mqtt.subscribe(["armor/alarm/+/state", "armor/alarm/+/result"], { qos: 1 }));
     context.alarmLink.publish = (topic, payload) => { if (!mqtt.connected) throw new Error("the MQTT broker is not connected"); mqtt.publish(topic, payload, { qos: 0, retain: false }); };
-    mqtt.on("message", (topic, raw) => {
-      const named = alarmTopic(topic, "result");
-      if (!named) return;
-      try {
-        const { value: result, ignored } = forwardCompatible(() => parseAlarmResult(JSON.parse(raw.toString("utf8"))));
-        if (result.node_id !== named) throw new Error("node_id does not match the topic");
-        context.alarmCommands.handleResult(result, named);
-        context.ingestLog.ok(topic, ignored);
-      } catch (error) { rejected(topic, raw, error, "invalid alarm result"); }
-    });
-    mqtt.on("message", (topic, raw) => {
-      const named = alarmTopic(topic);
-      if (!named) return;
-      try {
-        const { value: message, ignored } = forwardCompatible(() => parseAlarmMessage(JSON.parse(raw.toString("utf8"))));
-        if (message.node_id !== named) throw new Error("node_id does not match the topic");
-        context.alarmNodes.ingest(message);
-        context.ingestLog.ok(topic, ignored);
-      } catch (error) { rejected(topic, raw, error, "invalid alarm payload"); }
-    });
-    // The health report of every family of node: armor/health/{node}, the same rule for the node named in the body. A report older than the one before is dropped, and a node without a clock is stamped on arrival.
-    mqtt.on("connect", () => mqtt.subscribe("armor/health/+", { qos: 1 }));
-    mqtt.on("message", (topic, raw) => {
-      const named = healthTopic(topic);
-      if (!named) return;
-      try {
-        const { value: parsed, ignored } = forwardCompatible(() => parseNodeHealth(JSON.parse(raw.toString("utf8"))));
-        if (parsed.node_id !== named) throw new Error("node_id does not match the topic");
-        context.nodeHealth.ingest({ ...parsed, timestamp_ms: stampOf(parsed.timestamp_ms, Date.now()) });
-        context.ingestLog.ok(topic, ignored);
-      } catch (error) { rejected(topic, raw, error, "invalid node health payload"); }
-    });
-    mqtt.on("message", (topic, raw) => {
-      const named = electricalTopic(topic);
-      if (!named) return;
-      try {
-        const { value: message, ignored } = forwardCompatible(() => parseElectricalMessage(JSON.parse(raw.toString("utf8"))));
-        if (message.node_id !== named) throw new Error("node_id does not match the topic");
-        context.electricalNodes.ingest(message);
-        context.ingestLog.ok(topic, ignored);
-      } catch (error) { rejected(topic, raw, error, "invalid electrical payload"); }
-    });
-    mqtt.on("message", (topic, raw) => {
-      const named = solarTopic(topic);
-      if (!named) return;
-      try {
-        const { value: message, ignored } = forwardCompatible(() => parseSolarMessage(JSON.parse(raw.toString("utf8"))));
-        if (message.node_id !== named[0] || message.device !== named[1]) throw new Error("node_id and device do not match the topic");
-        context.solar.ingest(message);
-        context.ingestLog.ok(topic, ignored);
-      } catch (error) { rejected(topic, raw, error, "invalid solar payload"); }
-    });
+    // What the server listens to besides the radar nodes (mqtt.ts), in one table (mqtt_router.ts). The broker lets a node write only its own topics, so a body that names another node
+    // or device is refused. A command is never retained and is sent at most once: an old one must never be delivered later.
+    const routes: RouteTable = [
+      // The gateway nodes that read solar inverters and batteries: armor/solar/{node}/{device}/state.
+      { subscribe: ["armor/solar/+/+/state"], named: solarTopic, parse: parseSolarMessage, fallback: "invalid solar payload", mismatch: "node_id and device do not match the topic",
+        matches: (message: ReturnType<typeof parseSolarMessage>, named: [string, string]) => message.node_id === named[0] && message.device === named[1], apply: message => context.solar.ingest(message) },
+      // The nodes that measure the house's electrical network: armor/electrical/{node}/state, and what a node answers to a command to its switch.
+      { subscribe: ["armor/electrical/+/state"], named: (topic: string) => electricalTopic(topic), parse: parseElectricalMessage, fallback: "invalid electrical payload",
+        matches: (message: ReturnType<typeof parseElectricalMessage>, named: string) => message.node_id === named, apply: message => context.electricalNodes.ingest(message) },
+      { subscribe: ["armor/electrical/+/result"], named: (topic: string) => electricalTopic(topic, "result"), parse: parseElectricalResult, fallback: "invalid electrical result",
+        matches: (message: ReturnType<typeof parseElectricalResult>, named: string) => message.node_id === named, apply: (message, named) => context.electricalSwitching.handleResult(message, named) },
+      // The nodes that watch the local network: armor/network/{node}/state.
+      { subscribe: ["armor/network/+/state"], named: networkTopic, parse: parseNetworkMessage, fallback: "invalid network payload",
+        matches: (message: ReturnType<typeof parseNetworkMessage>, named: string) => message.node_id === named, apply: message => context.networkNodes.ingest(message) },
+      // The alarm nodes: their state is armor/alarm/{node}/state and their answer to a command armor/alarm/{node}/result.
+      { subscribe: ["armor/alarm/+/result"], named: (topic: string) => alarmTopic(topic, "result"), parse: parseAlarmResult, fallback: "invalid alarm result",
+        matches: (message: ReturnType<typeof parseAlarmResult>, named: string) => message.node_id === named, apply: (message, named) => context.alarmCommands.handleResult(message, named) },
+      { subscribe: ["armor/alarm/+/state"], named: (topic: string) => alarmTopic(topic), parse: parseAlarmMessage, fallback: "invalid alarm payload",
+        matches: (message: ReturnType<typeof parseAlarmMessage>, named: string) => message.node_id === named, apply: message => context.alarmNodes.ingest(message) },
+      // The health report of every family of node: armor/health/{node}. A report older than the one before is dropped, and a node without a clock is stamped on arrival. The same
+      // topic carries the broker's last will for the node (the node was lost without saying goodbye): see nodeWill in node_health.ts.
+      { subscribe: ["armor/health/+"], named: healthTopic, parse: parseNodeHealth, fallback: "invalid node health payload",
+        intercept: (body: unknown, named: string) => { if (!isNodeWill(body, named)) return false; context.nodeLife.gone(named); return true; },
+        matches: (message: ReturnType<typeof parseNodeHealth>, named: string) => message.node_id === named, apply: message => context.nodeHealth.ingest({ ...message, timestamp_ms: stampOf(message.timestamp_ms, Date.now()) }) },
+    ];
+    attachRoutes(mqtt, routes, context.ingestLog, rejected);
   }
   // The history of the readings outlives a restart: it is read back now and written once a minute and on the way out.
   const solarHistoryFile = new JsonFile<SolarHistoryFile>(path.join(config.dataDir, "solar-history.json"));
@@ -336,7 +284,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   const sweeper = setInterval(() => {
     try {
       context.escalator.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.reportSilentNodes(); context.networkNodes.sweep();
-      context.studioSessions.sweep(); context.connections.registry.tick(); context.nodeLife.flush();
+      context.studioSessions.sweep(); context.operatorSessions.sweep(); context.connections.registry.tick(); context.nodeLife.flush();
       sweepFailing = false;
     } catch (error) {
       if (!sweepFailing) console.warn("ARMOR_SWEEP=FAILED", error instanceof Error ? error.message : "unknown error");
@@ -357,6 +305,8 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       clearInterval(sweeper);
       clearInterval(watchSockets);
       clearInterval(historySaver);
+      stateFeed.close();
+      context.systemMonitor.stop();
       saveHistory();
       for (const timer of watchdogs) clearTimeout(timer);
       context.store.flush(); context.knownNodes.flush();

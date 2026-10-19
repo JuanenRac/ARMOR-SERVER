@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## [0.7.9] - Calmer live feed, one table of broker topics, a last will for lost nodes and a generated settings table
+
+- The live state sent to the consoles is now one message per short window with the newest state, so a burst of reports from many nodes no longer sends the whole state once per report.
+- Everything the server listens to on the broker (solar, electrical, network, alarm and health nodes) is one table of routes with the same rule for all: the node named in the body must be the node of the topic.
+- A node that is lost without a goodbye can leave a last will on its health topic (`{"node_id":"...","online":false}`); the server records the node as gone at once, and the will is never taken for a health report.
+- The sessions of the operator console are now ended by the periodic sweep as soon as their time is over, like the Studio ones, and not only when somebody signs in.
+- Closing the server now also stops the system monitor and the pending live-state message.
+- The reading of the environment is split into one function per area (alarm channels, agents, the server's own HTTPS, the broker), with the same checks and messages as before.
+- New `docs/ENVIRONMENT.md`: every setting with its limits, default and example, generated from the code and the example file and checked by a test.
+
 ## [0.7.8] - One limit of refused sign-ins for the whole server, and a complete settings example
 
 - The Studio sign-in has a third limit, for the whole server: forty refused tries a minute in all, whatever the place or the account, so that many accounts tried from many addresses at once cannot make the server hash passwords without end. Only refused tries count; correct sign-ins are never held back.

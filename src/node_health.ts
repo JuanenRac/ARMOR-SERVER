@@ -70,6 +70,17 @@ export function healthTopic(topic: string): string | undefined {
   return /^[a-z0-9][a-z0-9_-]{0,63}$/.test(parts[2]) ? parts[2] : undefined;
 }
 
+/**
+ * The last will of a node: the broker publishes it on armor/health/{node_id} when the node's connection is lost without a goodbye. It is {"node_id": "...", "online": false} and nothing
+ * else, so no health report can be mistaken for it. True when `body` is the will of the node the topic names (a will that names another node is not one).
+ */
+export function isNodeWill(body: unknown, named: string): boolean {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return false;
+  const keys = Object.keys(body);
+  const record = body as Record<string, unknown>;
+  return keys.length === 2 && record.online === false && record.node_id === named;
+}
+
 export type RestartRecord = { at: string; reason: ResetReason; abnormal: boolean; uptime_before_s?: number; boot_at_ms: number };
 /** What a console is told of a restart (the moment the node booted is the server's own bookkeeping). */
 export type RestartPublic = Omit<RestartRecord, "boot_at_ms">;

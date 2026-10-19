@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
   <img src="https://img.shields.io/badge/Tests-513%20passing-2ea44f.svg" alt="Tests">
-  <img src="https://img.shields.io/badge/Version-0.7.8-0f6cbd.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-0.7.9-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
@@ -36,7 +36,7 @@
 
 | | |
 |---|---|
-| Versión | `0.7.8` |
+| Versión | `0.7.9` |
 | Madurez | Establecido |
 | Tests | 513 (`npm test`) |
 | Tecnología | Node.js 22+ / TypeScript / Docker Compose |
