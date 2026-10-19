@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.0.3] - Control of the nodes from Studio and the phone
+
+- **Control of the nodes from Studio and the phone:** `POST /api/v1/nodes/{id}/control` (one node) and `POST /api/v1/nodes/control` (every node that reports) restart, pause, resume, put on standby, identify, read the diagnostics of and put in or out of maintenance, with `GET /api/v1/nodes/control/operations` and `/{id}` for what was ordered in the last weeks. For an administrator who proved themselves again a moment ago; the node's id (or the word RESTART, PAUSE or STANDBY for all nodes) is typed again for the three operations that leave the house less guarded. There is no operation that erases a node, sleeps it or sets a wake timer, and the server and the CM5 are never ordered.
+- **Arm, one-time token, execute for each node:** the order is checked against the shared contract before it is published, the token (30 seconds, bound to the operation) is kept in memory only and never appears in a response, the history, the audit trail, a log or the file of operations, an answer is used once, and the answers of a node that names another node or an order that was not sent are dropped.
+- **Rolling restart:** each node gets a place sorted by id inside its family, the families in a fixed order and the alarm panels last, thirty seconds apart; `now` acts on all together. A restart is followed to the end: acknowledged, offline, back with the time, or not back.
+- **A line per node:** pending, armed, sent, acknowledged, applied, offline, back, refused (with the node's own reason: busy updating, uploading, copying a slot or running a battery operation, rate limited, already in that state), no answer or not back; the operations are kept in `node_control.json` without any token and a restart of the server ends the orders that were on their way.
+- **Limits:** one order at a time per node, a restart at most once a minute per node, ten orders a minute altogether, and 503 when the broker is down (nothing is kept).
+- **History and audit:** each step is a `system` event of the category `node` (`control_requested`, `control_acknowledged`, `control_applied`, `control_refused`, `control_back`, `control_lost`) with the person, the node, the firmware and the operation, and the audit trail says who ordered what from where.
+- **Paused, standby and maintenance are visible:** `GET /api/v1/node-health` carries a `control` object per node, from the node's own report or from what the server remembers of the orders; the health report accepts the new optional fields; while a node is in maintenance or a restart that was ordered is under way the alarms and notifications about its silence are held back, and they come if the node is still silent when that ends.
+- **Tests:** the shared vectors of both messages, the closed list of operations, the rolling plan, every operation with a fake broker, every refusal, replays, tokens that never leak, the restart that comes back or not, persistence, maintenance and the routes (administrator, fresh proof, confirmation, unknown node, conflicts, limits).
+- **Documented:** the routes, the flow and the history in the integration notes and in the node firmware notes.
+
 ## [0.8.0.2] - The internal memory of the nodes and the birth of a node
 
 - **The internal memory of a node is judged on its own** when the node tells it (`heap_internal_free`, `heap_internal_min`, `heap_internal_largest`, `psram_free`): the memory warning uses 40 KB (cleared at 48 KB) and a biggest block of 8 KB, the history keeps the internal figures, and the details of the warning carry them. A report with only some of the three internal fields is refused.

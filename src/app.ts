@@ -31,6 +31,8 @@ import { registerNetworkRoutes } from "./routes/network.js";
 import { registerAlarmDesignRoutes } from "./routes/alarm_design.js";
 import { registerAlarmProfileRoutes } from "./routes/alarm_profiles.js";
 import { registerNodeHealthRoutes } from "./routes/node_health.js";
+import { registerNodeControlRoutes } from "./routes/node_control.js";
+import { controlTopic, parseControlResult, redactToken } from "./node_control.js";
 import { registerMaintenanceRoutes } from "./routes/maintenance.js";
 import { networkTopic, parseNetworkMessage } from "./network.js";
 import { electricalTopic, parseElectricalMessage, parseElectricalResult } from "./electrical.js";
@@ -116,7 +118,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     if (config.remotePolicy === "full" || context.studioSessions.originOf(request) !== "remote") return next();
     const reads = request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS";
     const own = /^\/api\/v1\/(studio\/(session|sessions|elevate|totp)|push\/(un)?register)/.test(request.path) || (request.method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/stream-ticket$/.test(request.path));
-    const admin = /^\/api\/v1\/(admin|users|installation|system\/ingest|preferences|solar\/battery-ops|nodes\/[^/]+\/panel)(\/|$)/.test(request.path);
+    const admin = /^\/api\/v1\/(admin|users|installation|system\/ingest|preferences|solar\/battery-ops|nodes\/control|nodes\/[^/]+\/(panel|control))(\/|$)/.test(request.path);
     if (reads && !(admin && config.remotePolicy === "view")) return next();
     if (own || (config.remotePolicy === "operate" && !admin)) return next();
     context.audit.record({ action: "remote.policy", outcome: "denied", actor: context.studioUser(request)?.username, target: `${request.method} ${request.path}`, detail: config.remotePolicy });
@@ -137,6 +139,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerAlarmDesignRoutes(app, context);
   registerAlarmProfileRoutes(app, context);
   registerNodeHealthRoutes(app, context);
+  registerNodeControlRoutes(app, context);
   registerMaintenanceRoutes(app, context);
   registerAlarmRoutes(app, context);
   registerSystemRoutes(app, context, version);
@@ -204,7 +207,9 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   /** A message of a node that was refused: said in the log and kept (with the start of what was sent) for Studio's System menu. */
   const rejected = (topic: string, raw: Buffer, error: unknown, fallback: string): void => {
     const why = error instanceof Error ? error.message : fallback;
-    context.ingestLog.rejected(topic, why, raw);
+    // The one-time token of a control order is never kept, not even in the sample of a message that was refused.
+    const text = redactToken(topic, raw);
+    context.ingestLog.rejected(topic, why, text);
     console.warn("ARMOR_MQTT=REJECTED", why);
   };
   if (mqtt) {
@@ -235,6 +240,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     // names another node or device is refused, as for the radar nodes.
     context.switchLink.publish = (topic, payload) => { if (!mqtt.connected) throw new Error("the MQTT broker is not connected"); mqtt.publish(topic, payload, { qos: 0, retain: false }); };
     context.alarmLink.publish = (topic, payload) => { if (!mqtt.connected) throw new Error("the MQTT broker is not connected"); mqtt.publish(topic, payload, { qos: 0, retain: false }); };
+    context.controlLink.publish = (topic, payload) => { if (!mqtt.connected) throw new Error("the MQTT broker is not connected"); mqtt.publish(topic, payload, { qos: 0, retain: false }); };
     context.batteryLink.publish = (topic, payload) => { if (!mqtt.connected) throw new Error("the MQTT broker is not connected"); mqtt.publish(topic, payload, { qos: 0, retain: false }); };
     // What the server listens to besides the radar nodes (mqtt.ts), in one table (mqtt_router.ts). The broker lets a node write only its own topics, so a body that names another node
     // or device is refused. A command is never retained and is sent at most once: an old one must never be delivered later.
@@ -250,6 +256,10 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       // What a gateway node answers to an order to write to a battery: armor/solar/{node}/maintenance/result.
       { subscribe: ["armor/solar/+/maintenance/result"], named: (topic: string) => batteryTopic(topic, "result"), parse: parseBatteryResult, fallback: "invalid battery result",
         matches: (message: ReturnType<typeof parseBatteryResult>, named: string) => message.node_id === named, apply: (message, named) => context.batteryWrite.handleResult(message, named) },
+      // What a node answers to an order of remote control (restart, pause, standby ...): armor/control/{node}/result. The orders themselves are published only by this server (the broker's
+      // access list allows no one else), and an answer of `all` is no answer.
+      { subscribe: ["armor/control/+/result"], named: (topic: string) => controlTopic(topic, "result"), parse: parseControlResult, fallback: "invalid control result",
+        matches: (message: ReturnType<typeof parseControlResult>, named: string) => message.node_id === named, apply: (message, named) => context.nodeControl.handleResult(message, named) },
       // The nodes that watch the local network: armor/network/{node}/state.
       { subscribe: ["armor/network/+/state"], named: networkTopic, parse: parseNetworkMessage, fallback: "invalid network payload",
         matches: (message: ReturnType<typeof parseNetworkMessage>, named: string) => message.node_id === named, apply: message => context.networkNodes.ingest(message) },
@@ -261,7 +271,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       // The health report of every family of node: armor/health/{node}. A report older than the one before is dropped, and a node without a clock is stamped on arrival. The same
       // topic carries the broker's last will for the node (the node was lost without saying goodbye) and the birth it says each time it connects, both retained: see isNodeWill and isNodeBirth in node_health.ts.
       { subscribe: ["armor/health/+"], named: healthTopic, parse: parseNodeHealth, fallback: "invalid node health payload",
-        intercept: (body: unknown, named: string) => { if (isNodeWill(body, named)) { context.nodeLife.gone(named); return true; } if (isNodeBirth(body, named)) { context.nodeLife.report(named); return true; } return false; },
+        intercept: (body: unknown, named: string) => { if (isNodeWill(body, named)) { context.nodeLife.gone(named); context.nodeControl.handleOffline(named); return true; } if (isNodeBirth(body, named)) { context.nodeLife.report(named); return true; } return false; },
         matches: (message: ReturnType<typeof parseNodeHealth>, named: string) => message.node_id === named, apply: message => context.nodeHealth.ingest({ ...message, timestamp_ms: stampOf(message.timestamp_ms, Date.now()) }) },
     ];
     attachRoutes(mqtt, routes, context.ingestLog, rejected);
@@ -290,7 +300,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   let sweepFailing = false;
   const sweeper = setInterval(() => {
     try {
-      context.escalator.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.batteryWrite.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.reportSilentNodes(); context.networkNodes.sweep();
+      context.escalator.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.batteryWrite.sweep(); context.nodeControl.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.reportSilentNodes(); context.networkNodes.sweep();
       context.studioSessions.sweep(); context.operatorSessions.sweep(); context.connections.registry.tick(); context.nodeLife.flush();
       sweepFailing = false;
     } catch (error) {
@@ -318,7 +328,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       for (const timer of watchdogs) clearTimeout(timer);
       context.store.flush(); context.knownNodes.flush();
       context.studioSessions.flush(); context.connections.registry.flush(); context.nodeLife.flush();
-      clearTimeout(resume); context.devices.flush(); context.alarms.flush(); context.automations.close();
+      clearTimeout(resume); context.devices.flush(); context.nodeControl.flush(); context.alarms.flush(); context.automations.close();
       await context.evidence.stopAll();   // a recording that is running is closed, not cut off
       context.notifier.close();
       context.ptz.close();

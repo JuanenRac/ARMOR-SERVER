@@ -43,6 +43,7 @@ import { BatteryWriteService } from "./battery_write.js";
 import { AlarmStore } from "./alarm.js";
 import { ArmProfileStore } from "./arm_profiles.js";
 import { NodeHealthStore } from "./node_health.js";
+import { NodeControlService } from "./node_control_service.js";
 import { AlarmCommands } from "./alarm_commands.js";
 import { DeviceNotes, NetworkStore } from "./network.js";
 import { NetworkCommands } from "./network_commands.js";
@@ -128,6 +129,10 @@ export type AppContext = {
   armProfiles: ArmProfileStore;
   /** The latest health report of every node and what is wrong with it (see node_health.ts). */
   nodeHealth: NodeHealthStore;
+  /** The orders given to the nodes from Studio and the phone (restart, pause, standby, identify, diagnostics, maintenance) and what each node did (see node_control_service.ts). */
+  nodeControl: NodeControlService;
+  /** Where its orders are published; set when the broker is connected (never retained, at most once). */
+  controlLink: { publish?: (topic: string, payload: string) => void };
   /** Where its commands are published; set when the broker is connected (never retained, at most once). */
   alarmLink: { publish?: (topic: string, payload: string) => void };
   /** The Zigbee sensors linked to the zones of the alarm panels, told to the panel while this server holds the radio. */
@@ -223,13 +228,15 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   if (config.homeAssistant) channels.push(homeAssistantChannel({ url: config.homeAssistant.url, webhookId: config.homeAssistant.webhookId }));
   const notifier = new AlertNotifier({ webhookUrl: config.alertWebhookUrl ?? undefined, webhookSecret: config.alertWebhookSecret || undefined, audit, channels, language: config.alertLanguage });
   const deviceLink: AppContext["deviceLink"] = {};
+  const controlHolder: { service?: NodeControlService } = {};
   // Everything that happens goes through one place: written to the history, announced, checked for alarms, offered to the automations.
   const record = (body: ArmorEventBody): void => {
     // A silent alarm (a duress disarm) is told to the places nobody at the panel can see and is NOT written in the history that every console reads.
     if (body.type === "alarm" && body.silent) { notifier.notify({ ...body, id: 0, at: new Date().toISOString() }, store.snapshot().mode); return; }
     const event = events.append(body);
     if (event.type === "node") { if (event.to === "online") nodeLife.report(event.node_id); else nodeLife.gone(event.node_id); }
-    notifier.notify(event, store.snapshot().mode);
+    // A node that is being restarted on purpose, or is in maintenance, is not news to wake anybody for (it stays in the history).
+    if (!(event.type === "node" && event.to !== "online" && controlHolder.service?.isHeld(event.node_id))) notifier.notify(event, store.snapshot().mode);
     alarmRules.handleEvent(event);
     if (event.type === "mode") automations.handleMode(event.mode);
   };
@@ -302,7 +309,27 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const armProfiles = new ArmProfileStore(path.join(config.dataDir, "arm-profiles.json"), overrides.now ? () => new Date(overrides.now!()) : undefined, warn);
   alarmRules.batteryProfileOf = id => { const registration = solarRegistry.list().find(item => `${item.node_id}/${item.device}` === id); return registration ? batteryProfile(registration.model) : undefined; };
   alarmRules.profileNotify = id => armProfiles.find(id)?.notify ?? (armProfiles.find(id) ? "urgent" : undefined);
-  const nodeHealth = new NodeHealthStore({ now: overrides.now, onReport: view => { alarmRules.handleNodeHealth(view); nodeLife.report(view.node_id, view.firmware); }, onForget: node => alarmRules.forgetNodeHealth(node) });
+  const nodeHealth = new NodeHealthStore({
+    now: overrides.now, onReport: view => { controlHolder.service?.handleReport(view.report); alarmRules.handleNodeHealth(view); nodeLife.report(view.node_id, view.firmware); }, onForget: node => alarmRules.forgetNodeHealth(node),
+    remembered: node => controlHolder.service?.memoryOf(node),
+  });
+  const controlLink: AppContext["controlLink"] = {};
+  // A node that is restarted on purpose or put in maintenance does not raise the alarms about its silence; when that ends and it is still silent they are raised after all.
+  const recheckSilence = (node: string): void => {
+    const view = nodeHealth.get(node);
+    if (!view?.stale) return;
+    if (view.family === "electrical") alarmRules.handleElectricalStale(node, true);
+    else if (view.family === "alarm") alarmRules.handleAlarmNodeStale(node, true, alarmNodes.list().find(item => item.node_id === node)?.state.phase);
+    else if (view.family === "solar") for (const item of solar.list()) { if (item.node_id === node) alarmRules.handleSolarStale(node, item.device, true); }
+    else if (store.snapshot().nodes[node] || store.wallPanels().some(panel => panel.id === node)) alarmRules.handleEvent({ type: "node", node_id: node, from: "online", to: "offline" });
+  };
+  const nodeControl = new NodeControlService({
+    publish: (topic, payload) => { if (!controlLink.publish) throw new Error("the MQTT broker is not connected"); controlLink.publish(topic, payload); },
+    audit, history: recordSystem, health: node => nodeHealth.get(node), nodes: () => nodeHealth.list(), now: overrides.now, file: path.join(config.dataDir, "node_control.json"),
+    onHold: (node, held) => { if (held) alarmRules.holdOffline(node); else recheckSilence(node); },
+  });
+  controlHolder.service = nodeControl;
+  alarmRules.held = node => nodeControl.isHeld(node);
   const captureOnDetect = new CaptureOnDetect({ file: path.join(config.dataDir, "capture-on-detect.json"), audit, now: overrides.now, tools: { snapshot: camera => evidence.snapshot(camera), startRecording: camera => evidence.startRecording(camera), stopRecording: id => evidence.stopRecording(id), isRecording: id => evidence.isRecording(id) } });
   const ignoreZones = new IgnoreZones(path.join(config.dataDir, "camera-ignore-zones.json"));
   const alarmZoneFeed = new AlarmZoneFeed(path.join(config.dataDir, "alarm-zone-links.json"), { publish: (topic, payload) => { if (!alarmLink.publish) throw new Error("the MQTT broker is not connected"); alarmLink.publish(topic, payload); }, devices: () => devices.list(), now: overrides.now, warn });
@@ -398,7 +425,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, nodeHealth, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, nodeHealth, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

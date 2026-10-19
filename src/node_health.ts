@@ -27,7 +27,12 @@ export type NodeHealthMessage = {
   /** The internal memory on its own (heap_free counts the external RAM too, so it never looks short on a board that has 8 MB of it); the three come together. */
   heap_internal_free?: number; heap_internal_min?: number; heap_internal_largest?: number; psram_free?: number;
   link: (typeof HEALTH_LINKS)[number]; link_up: boolean; rssi_dbm?: number; broker_reconnects: number; low_stack_tasks?: number; last_error?: string;
+  /** What remote control has done to the node (see node_control.ts): running, paused for a while or in standby, and the maintenance flag. Absent on a firmware that can not be controlled. */
+  control_state?: ControlState; control_since_ms?: number; control_by?: string; control_until_s?: number; maintenance?: boolean; maintenance_until_s?: number;
 };
+export const CONTROL_STATES = ["running", "paused", "standby"] as const;
+export type ControlState = (typeof CONTROL_STATES)[number];
+const CONTROL_PERSON = /^[A-Za-z0-9._@ -]{1,64}$/;
 
 export const HEALTH_CODES = ["node_low_memory", "node_frequent_resets", "node_link_flapping", "node_weak_signal"] as const;
 export type HealthCode = (typeof HEALTH_CODES)[number];
@@ -47,7 +52,7 @@ const REQUIRED = ["kind", "node_id", "timestamp_ms", "family", "firmware", "upti
 /** A report as the contract has it, with the rules that join fields: the least heap is never more than the heap free, a signal strength goes only with a Wi-Fi link that is up, no link is a link that is down. */
 export function parseNodeHealth(value: unknown): NodeHealthMessage {
   const body = record(value, "node health");
-  onlyKnown(body, [...REQUIRED, "board", "rssi_dbm", "low_stack_tasks", "last_error", ...INTERNAL, "psram_free"], "node health");
+  onlyKnown(body, [...REQUIRED, "board", "rssi_dbm", "low_stack_tasks", "last_error", ...INTERNAL, "psram_free", "control_state", "control_since_ms", "control_by", "control_until_s", "maintenance", "maintenance_until_s"], "node health");
   for (const key of REQUIRED) if (!(key in body)) throw new Error(`the node health is missing ${key}`);
   if (body.kind !== "node_health") throw new Error("invalid kind");
   const node = readNodeId(body), timestamp = readTimestamp(body);
@@ -68,6 +73,15 @@ export function parseNodeHealth(value: unknown): NodeHealthMessage {
   if (told !== 0 && ((body.heap_internal_min as number) > (body.heap_internal_free as number) || (body.heap_internal_largest as number) > (body.heap_internal_free as number))) throw new Error("the least internal memory and its biggest block are never more than the internal memory free now");
   if (body.link === "none" && body.link_up !== false) throw new Error("no link means a link that is down");
   if ("rssi_dbm" in body && !(body.link === "wifi" && body.link_up === true)) throw new Error("a signal strength goes only with a Wi-Fi link that is up");
+  if ("control_state" in body && !oneOf(CONTROL_STATES, body.control_state)) throw new Error("invalid control_state");
+  if ("control_since_ms" in body && (!integer(body.control_since_ms) || body.control_since_ms < 0)) throw new Error("invalid control_since_ms");
+  if ("control_by" in body && (typeof body.control_by !== "string" || !CONTROL_PERSON.test(body.control_by))) throw new Error("invalid control_by");
+  if ("control_until_s" in body && (!integer(body.control_until_s) || body.control_until_s < 0 || body.control_until_s > 86_400)) throw new Error("invalid control_until_s");
+  if ("maintenance" in body && typeof body.maintenance !== "boolean") throw new Error("invalid maintenance");
+  if ("maintenance_until_s" in body && (!integer(body.maintenance_until_s) || body.maintenance_until_s < 0 || body.maintenance_until_s > 86_400)) throw new Error("invalid maintenance_until_s");
+  if (("control_since_ms" in body || "control_by" in body) && body.control_state !== "paused" && body.control_state !== "standby") throw new Error("since and by go with a paused or standby node");
+  if ("control_until_s" in body && body.control_state !== "paused") throw new Error("the time left goes with a paused node: standby has no end");
+  if ("maintenance_until_s" in body && body.maintenance !== true) throw new Error("the maintenance time left goes with the maintenance flag on");
   return { ...(body as unknown as NodeHealthMessage), node_id: node, timestamp_ms: timestamp };
 }
 
@@ -115,7 +129,11 @@ export type NodeHealthView = {
   warnings: HealthWarning[];
   restarts_24h: number;
   last_restart?: RestartPublic;
+  /** What remote control has done to the node, in the words the consoles show ("paused", "standby since ... by ...", "maintenance"); absent while nothing is known. */
+  control?: ControlView;
 };
+/** The control state of a node as a console reads it. `source` says who knows: the node's own report, or what the server remembers of the orders it gave (an older firmware). */
+export type ControlView = { state: ControlState; maintenance: boolean; since_ms?: number; by?: string; until_s?: number; maintenance_until_s?: number; source: "node" | "server" };
 export type NodeHealthDetail = NodeHealthView & { samples: HealthSample[]; restarts: RestartPublic[] };
 export type NodeHealthTotals = { nodes: number; stale: number; with_warnings: number };
 
@@ -128,6 +146,8 @@ export type NodeHealthOptions = {
   /** Called after every report with the node's view (the alarm centre raises and clears its warnings from it). */
   onReport?: (view: NodeHealthView) => void;
   onForget?: (node: string) => void;
+  /** What the server remembers of the control orders it gave a node, for a firmware that does not report it (see NodeControlService.memoryOf). */
+  remembered?: (node: string) => Omit<ControlView, "source"> | undefined;
 };
 
 const DAY_MS = 24 * 3_600_000;
@@ -217,7 +237,22 @@ export class NodeHealthStore {
       received_at: new Date(entry.receivedAtMs).toISOString(), stale, status: stale ? "stale" : entry.warnings.length > 0 ? "warning" : "ok", warnings: entry.warnings,
       restarts_24h: entry.restarts.filter(item => now - Date.parse(item.at) < DAY_MS).length,
       ...(last ? { last_restart: publicRestart(last) } : {}),
+      ...this.#control(id, entry.report),
     };
+  }
+
+  #control(id: string, report: NodeHealthMessage): { control?: ControlView } {
+    if (report.control_state !== undefined || report.maintenance !== undefined) {
+      const kept = this.#options.remembered?.(id);
+      const state = report.control_state ?? kept?.state ?? "running";
+      return { control: {
+        state, maintenance: report.maintenance ?? kept?.maintenance ?? false, source: "node",
+        ...(report.control_since_ms !== undefined ? { since_ms: report.control_since_ms } : {}), ...(report.control_by !== undefined ? { by: report.control_by } : {}),
+        ...(report.control_until_s !== undefined ? { until_s: report.control_until_s } : {}), ...(report.maintenance_until_s !== undefined ? { maintenance_until_s: report.maintenance_until_s } : {}),
+      } };
+    }
+    const kept = this.#options.remembered?.(id);
+    return kept ? { control: { ...kept, source: "server" } } : {};
   }
 
   get(node: string): NodeHealthDetail | undefined {

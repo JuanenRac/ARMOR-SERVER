@@ -31,3 +31,7 @@ The login is given for the job, held only by it and never stored or written in t
 A node whose new firmware does not start goes back to the previous one by itself (the boot loader does it), and shows as not having come back.
 
 Routes: `POST /api/v1/admin/firmware/uploads` (raw `application/octet-stream`), `GET .../releases/{kind}`, `POST .../probe`, `POST .../jobs`, `GET .../jobs/{id}`.
+
+## Controlling a node without opening its panel
+
+Studio can restart, pause, put on standby, identify and read the diagnostics of a node, and put it in maintenance, through the server (see `docs/INTEGRATION.md` for the routes). A node that accepts this reads `armor/control/<node>/command` and `armor/control/all/command`, answers on `armor/control/<node>/result` and reports `control_state`, `control_since_ms`, `control_by`, `control_until_s`, `maintenance` and `maintenance_until_s` in its health report. Standby is the node's work switched off while it stays connected and keeps answering: it is not a power-off, it survives a restart and ends only with a resume. A pause ends by itself (60 to 3600 seconds). A node that installs a firmware, receives an upload, copies a slot or runs a battery operation refuses restart, pause and standby. The broker lets only the server publish orders (`scripts/mqtt_identity.sh node-control` adds the rules to a node installed before).

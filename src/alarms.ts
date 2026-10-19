@@ -286,6 +286,8 @@ export class AlarmRules {
    * only while armed), and the changes that would raise them have already happened. Set by the context, which knows the nodes, the cameras and the devices.
    */
   onArmed: (() => void) | undefined;
+  /** True while the silence of a node must not raise an alarm: it is in maintenance, or a restart that was ordered is under way (see node_control_service.ts). */
+  held: ((node: string) => boolean) | undefined;
 
   /** How loudly the profile a panel is armed with wants the server to tell people when it sounds ("urgent" is a critical alarm, "normal" a high one); undefined when the profile is not known. Set by the context. */
   profileNotify: ((profile: string) => "urgent" | "normal" | undefined) | undefined;
@@ -309,7 +311,7 @@ export class AlarmRules {
         break;
       case "node":
         if (event.to === "online") this.centre.clear(`node:${event.node_id}:down`);
-        else if (this.mode() === "armed") this.centre.raise(`node:${event.node_id}:down`, { source: { type: "node", id: event.node_id }, severity: "warning", code: "node_down" });
+        else if (this.mode() === "armed" && !this.held?.(event.node_id)) this.centre.raise(`node:${event.node_id}:down`, { source: { type: "node", id: event.node_id }, severity: "warning", code: "node_down" });
         break;
       case "camera":
         if (event.to === "online") this.centre.clear(`camera:${event.camera_id}:down`);
@@ -438,6 +440,7 @@ export class AlarmRules {
   /** A solar device went silent, or came back. */
   handleSolarStale(node: string, device: string, stale: boolean): void {
     const id = `${node}/${device}`;
+    if (stale && this.held?.(node)) return;
     if (stale) this.centre.raise(`solar:${id}:offline`, { source: { type: "solar", id }, severity: "warning", code: "solar_offline" });
     else this.centre.clear(`solar:${id}:offline`);
   }
@@ -515,6 +518,7 @@ export class AlarmRules {
 
   /** An alarm node went silent, or came back. Silence matters only while the panel was guarding, which the alarm raised before it fell silent says. */
   handleAlarmNodeStale(node: string, stale: boolean, phase?: string): void {
+    if (stale && this.held?.(node)) return;   // being restarted or in maintenance on purpose: its silence is not news
     if (stale && phase === "disarmed") return;   // a disarmed panel that goes quiet: it was not guarding, so there is nothing to wake anybody for (it is back-to-normal when it speaks again)
     if (stale) this.centre.raise(`alarm:${node}:offline`, { source: { type: "alarm", id: node }, severity: "warning", code: "alarm_offline" });
     else this.centre.clear(`alarm:${node}:offline`);
@@ -587,18 +591,30 @@ export class AlarmRules {
 
   /** An ARMOR-NETWORK node went silent, or came back. */
   handleNetworkStale(node: string, stale: boolean): void {
+    if (stale && this.held?.(node)) return;
     if (stale) this.centre.raise(`network:${node}:offline`, { source: { type: "network", id: node }, severity: "warning", code: "network_offline" });
     else this.centre.clear(`network:${node}:offline`);
   }
 
   /** An electrical node went silent, or came back. */
   handleElectricalStale(node: string, stale: boolean): void {
+    if (stale && this.held?.(node)) return;
     if (stale) this.centre.raise(`electrical:${node}:offline`, { source: { type: "electrical", id: node }, severity: "warning", code: "electrical_offline" });
     else this.centre.clear(`electrical:${node}:offline`);
   }
 
   /** A camera answered: whatever kept it from answering before is over (after a restart the watcher does not say that it came back). */
   cameraAnswered(id: string): void { this.centre.clear(`camera:${id}:down`); }
+
+  /**
+   * A node began a restart that was ordered, or went into maintenance: the alarms about its silence that are up end, and `held` keeps new ones from being raised while it lasts. They come
+   * back through the stale handlers above when the hold ends and the node is still silent (see the context).
+   */
+  holdOffline(node: string): void {
+    for (const kind of ["electrical", "alarm", "network"]) this.centre.clear(`${kind}:${node}:offline`);
+    this.centre.clear(`node:${node}:down`);
+    this.centre.clearMatching(alarm => alarm.source.type === "solar" && alarm.code === "solar_offline" && alarm.source.id.startsWith(`${node}/`));
+  }
 
   /** A field node was taken away on purpose: its silence is not news any more. */
   forgetNode(id: string): void { for (const kind of ["electrical", "alarm", "network"]) this.centre.clear(`${kind}:${id}:offline`); }
