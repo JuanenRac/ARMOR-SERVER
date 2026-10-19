@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
   <img src="https://img.shields.io/badge/Tests-561%20passing-2ea44f.svg" alt="Tests">
-  <img src="https://img.shields.io/badge/Version-0.8.0.2-0f6cbd.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-0.8.0.3-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
@@ -36,7 +36,7 @@
 
 | | |
 |---|---|
-| Version | `0.8.0.2` |
+| Version | `0.8.0.3` |
 | Reifegrad | Etabliert |
 | Tests | 561 (`npm test`) |
 | Technik | Node.js 22+ / TypeScript / Docker Compose |
@@ -63,7 +63,7 @@
 * **Zustand der Knoten und Scharfschaltmodi:** speichert den letzten Bericht und das Neustartprotokoll jedes Knotens und löst vier Warnungen aus (wenig Speicher, zu häufige Neustarts, ein Broker, der immer wieder abreißt, schwaches WLAN-Signal); verwaltet die Scharfschaltprofile (Abwesend, Zuhause, Nacht und eigene) und legt das gewählte in den Scharfschaltbefehl, nur für einen Knoten, der sie versteht. Ein lauter oder leiser Alarm folgt dem Profil; ein Scharfschalten ohne Profil ist der Befehl wie immer.
 * **Verlauf der Verbindungen und des Systems:** Neben Warnungen, Knoten, Kameras, Geräten und Alarmen zeichnet der Verlauf auf, welche Geräte und Apps sich verbinden (Studio-Sitzungen, die Android-App, die Panels der Knoten, der Sprachdienst: Anmeldungen, Ablehnungen, Abmeldungen, abgelaufene Sitzungen, Nutzung des zweiten Faktors, erste und letzte Sichtung) und die Ereignisse des Systems (Knoten, die mit ihrer Firmware auftauchen oder verschwinden, die Broker-Verbindung, geänderte Einstellungen und von wem, Dienste, Updates, Scharfschalten mit Profil). Filter nach Art, Kategorie, Client und Benutzer; Adresse und User-Agent sehen nur Administratoren, und nie wird ein Passwort, Token, Cookie oder PIN aufgezeichnet.
 * **Befehle zum Schreiben auf eine Pylontech-Batterie (aus, außer mit `ARMOR_BATTERY_WRITE=1`):** für Administratoren, die sich eben erneut ausgewiesen haben - vorbereiten, mit nochmals eingetippter Seriennummer der Batterie ausführen, abbrechen, einen Ausgang zurücksetzen, ein Firmware-Image eine Stunde lang aufbewahren - geprüft an der gemeinsamen Tabelle der Operationen und Bereiche, als `solar_battery_command` an den Gateway-Knoten gesendet; jede Operation wird festgehalten (wer, welche Batterie, was davor und danach gelesen wurde, der Unterschied und das Protokoll, nie das Service-Passwort) und im Verlauf unter *Batterien* gemeldet.
-* **Steuerung der Knoten:** `POST /api/v1/nodes/{id}/control` und `POST /api/v1/nodes/control` erteilen einen Befehl (Neustart, Pause, Fortsetzen, Standby, Identifizieren, Diagnose, Wartung ein oder aus) an einen Knoten oder an alle, die sich melden, nur für einen Administrator, der sich gerade erneut ausgewiesen hat, wobei der Name des Knotens (oder das Wort RESTART, PAUSE oder STANDBY für alle) dort erneut getippt wird, wo das Haus weniger bewacht wäre. Der Server bereitet den Befehl vor, führt ihn mit dem Einmal-Token aus, das der Knoten für diese Operation gibt, verfolgt jeden Knoten (gesendet, bestätigt, angewendet, zurück) in `GET /api/v1/nodes/control/operations`, startet bei einem gestaffelten Neustart die Alarmzentralen zuletzt neu, hält im Verlauf und im Audit-Protokoll fest, wer was befohlen hat, und zeigt Pause, Standby (Arbeit aus, bleibt verbunden) und Wartung im Knotenzustand. Es gibt kein Zurücksetzen auf Werkseinstellungen, kein Löschen und keinen Tiefschlaf. Getestet mit einem Schein-Broker; auf einem echten Knoten wurde es nicht ausprobiert. Ein Knoten, der absichtlich still wird, kann das ankündigen (eine gehaltene Nachricht); die Wartung des Bedieners und diese Ankündigung sind ein einziges Fenster, das die Offline-Meldungen zurückhält und vom Server begrenzt wird (10 Minuten standardmäßig für die des Knotens); kehrt der Knoten nie zurück, setzen die Meldungen wieder ein und der Verlauf vermerkt, dass die Wartung abgelaufen ist.
+* **Steuerung der Knoten:** `POST /api/v1/nodes/{id}/control` und `POST /api/v1/nodes/control` erteilen einen Befehl (Neustart, Pause, Fortsetzen, Standby, Identifizieren, Diagnose, Wartung ein oder aus) an einen Knoten oder an alle, die sich melden, nur für einen Administrator, der sich gerade erneut ausgewiesen hat, wobei der Name des Knotens (oder das Wort RESTART, PAUSE oder STANDBY für alle) dort erneut getippt wird, wo das Haus weniger bewacht wäre. Der Server bereitet den Befehl vor, führt ihn mit dem Einmal-Token aus, das der Knoten für diese Operation gibt, verfolgt jeden Knoten (gesendet, bestätigt, angewendet, zurück) in `GET /api/v1/nodes/control/operations`, startet bei einem gestaffelten Neustart die Alarmzentralen zuletzt neu, hält im Verlauf und im Audit-Protokoll fest, wer was befohlen hat, und zeigt Pause, Standby (Arbeit aus, bleibt verbunden) und Wartung im Knotenzustand. Es gibt kein Zurücksetzen auf Werkseinstellungen, kein Löschen und keinen Tiefschlaf. Getestet mit einem Schein-Broker; auf einem echten Knoten wurde es nicht ausprobiert.
 
 ## 🧩 Rolle in A.R.M.O.R.
 

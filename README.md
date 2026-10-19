@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
   <img src="https://img.shields.io/badge/Tests-561%20passing-2ea44f.svg" alt="Tests">
-  <img src="https://img.shields.io/badge/Version-0.8.0.2-0f6cbd.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-0.8.0.3-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
@@ -36,7 +36,7 @@
 
 | | |
 |---|---|
-| Version | `0.8.0.2` |
+| Version | `0.8.0.3` |
 | Maturity | Established |
 | Tests | 561 (`npm test`) |
 | Stack | Node.js 22+ / TypeScript / Docker Compose |
@@ -63,7 +63,7 @@
 * **Node health and arming modes:** keeps the latest report and the restart log of every node and raises four warnings (low memory, restarting too often, a broker that keeps dropping, a weak Wi-Fi signal); keeps the arming profiles (Away, Home, Night and your own) and puts the chosen one inside the arm command, only for a node that says it understands them. A loud or a quiet alarm follows the profile; an arm without one is the command it always was.
 * **History of connections and of the system:** besides the alerts, nodes, cameras, devices and alarms, the history records which devices and apps connect (Studio sessions, the Android app, the panels of the nodes, the voice service: sign-ins, refusals, sign-outs, expired sessions, use of the second factor, first and last seen) and the events of the system (nodes that appear or disappear with their firmware, the broker link, settings changed and by whom, services, updates, arming with its profile). It can be filtered by kind, category, client and user; the address and the user agent are shown to administrators only, and no password, token, cookie or PIN is ever recorded.
 * **Orders to write to a Pylontech battery (off unless `ARMOR_BATTERY_WRITE=1`):** for administrators who have just proved who they are again - arm, execute with the battery's serial number typed again, cancel, put an output back, keep a firmware image for an hour - checked against the shared table of operations and ranges, sent to the gateway node as `solar_battery_command`, with every operation kept (who, which battery, what was read before and after, the difference and the transcript, never the service password) and told to the history under *Batteries*.
-* **Control of the nodes:** `POST /api/v1/nodes/{id}/control` and `POST /api/v1/nodes/control` give one order (restart, pause, resume, standby, identify, diagnostics, maintenance on or off) to one node or to every node that reports, only for an administrator who proved themselves again a moment ago, with the node's name (or the word RESTART, PAUSE or STANDBY for all) typed again where the house would be left less guarded. The server arms the order, executes it with the one-time token the node gives for that operation, follows each node (sent, acknowledged, applied, back) in `GET /api/v1/nodes/control/operations`, restarts the alarm panels last in a rolling restart, records who ordered what in the history and the audit trail, and shows paused, standby (work off, still connected) and maintenance in the node health. There is no factory reset, no erase and no deep sleep. It is tested with a fake broker; it has not been tried on a real node. A node that is about to be quiet on purpose can announce it (a retained message); the operator's maintenance and that announcement are one window that holds back the offline alerts, bounded by the server (10 minutes by default for the node's own), and when the node never returns the alerts resume and the history says the maintenance expired.
+* **Control of the nodes:** `POST /api/v1/nodes/{id}/control` and `POST /api/v1/nodes/control` give one order (restart, pause, resume, standby, identify, diagnostics, maintenance on or off) to one node or to every node that reports, only for an administrator who proved themselves again a moment ago, with the node's name (or the word RESTART, PAUSE or STANDBY for all) typed again where the house would be left less guarded. The server arms the order, executes it with the one-time token the node gives for that operation, follows each node (sent, acknowledged, applied, back) in `GET /api/v1/nodes/control/operations`, restarts the alarm panels last in a rolling restart, records who ordered what in the history and the audit trail, and shows paused, standby (work off, still connected) and maintenance in the node health. There is no factory reset, no erase and no deep sleep. It is tested with a fake broker; it has not been tried on a real node.
 
 ## 🧩 Role in A.R.M.O.R.
 

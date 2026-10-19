@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
   <img src="https://img.shields.io/badge/Tests-561%20passing-2ea44f.svg" alt="Tests">
-  <img src="https://img.shields.io/badge/Version-0.8.0.2-0f6cbd.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-0.8.0.3-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
@@ -36,7 +36,7 @@
 
 | | |
 |---|---|
-| Versione | `0.8.0.2` |
+| Versione | `0.8.0.3` |
 | Maturità | Consolidato |
 | Test | 561 (`npm test`) |
 | Tecnologia | Node.js 22+ / TypeScript / Docker Compose |
@@ -63,7 +63,7 @@
 * **Salute dei nodi e modalità di inserimento:** conserva l'ultimo rapporto e il registro dei riavvii di ogni nodo e solleva quattro avvisi (poca memoria, riavvii troppo frequenti, un broker che cade di continuo, segnale Wi-Fi debole); conserva i profili di inserimento (Fuori casa, In casa, Notte e i tuoi) e mette quello scelto dentro il comando di inserimento, solo per un nodo che dice di capirli. Un allarme forte o discreto segue il profilo; un inserimento senza profilo è il comando di sempre.
 * **Cronologia delle connessioni e del sistema:** oltre ad avvisi, nodi, telecamere, dispositivi e allarmi, la cronologia registra quali dispositivi e app si collegano (sessioni di Studio, app Android, pannelli dei nodi, servizio vocale: accessi, rifiuti, uscite, sessioni scadute, uso del secondo fattore, prima e ultima volta visti) e gli eventi del sistema (nodi che appaiono o scompaiono con il loro firmware, il collegamento con il broker, impostazioni cambiate e da chi, servizi, aggiornamenti, inserimento con il suo profilo). Si filtra per tipo, categoria, client e utente; indirizzo e user agent li vedono solo gli amministratori, e non si registra mai una password, un token, un cookie o un PIN.
 * **Ordini di scrittura su una batteria Pylontech (disattivati salvo `ARMOR_BATTERY_WRITE=1`):** per amministratori che hanno appena dimostrato di nuovo chi sono - prepara, esegui con il numero di serie della batteria digitato di nuovo, annulla, rimetti un'uscita com'era, conserva un'immagine firmware per un'ora - verificati con la tabella condivisa di operazioni e intervalli, inviati al nodo gateway come `solar_battery_command`, con ogni operazione conservata (chi, quale batteria, cosa è stato letto prima e dopo, la differenza e la trascrizione, mai la password di servizio) e riportata nello storico sotto *Batterie*.
-* **Controllo dei nodi:** `POST /api/v1/nodes/{id}/control` e `POST /api/v1/nodes/control` danno un ordine (riavvio, pausa, ripresa, standby, identificazione, diagnostica, manutenzione attivata o disattivata) a un nodo o a tutti quelli che riferiscono, solo a un amministratore che si è appena dimostrato di nuovo, con il nome del nodo (o la parola RESTART, PAUSE o STANDBY per tutti) digitato di nuovo dove la casa resterebbe meno sorvegliata. Il server prepara l'ordine, lo esegue con il token monouso che il nodo dà per quell'operazione, segue ogni nodo (inviato, ricevuto, applicato, tornato) in `GET /api/v1/nodes/control/operations`, riavvia le centrali d'allarme per ultime in un riavvio scaglionato, registra chi ha ordinato cosa nello storico e nel registro di audit, e mostra nella salute del nodo se è in pausa, in standby (lavoro spento, resta connesso) o in manutenzione. Non esistono ripristino di fabbrica, cancellazione né sonno profondo. È provato con un broker finto; non è stato provato su un nodo reale. Un nodo che sta per tacere di proposito può annunciarlo (un messaggio trattenuto); la manutenzione dell'operatore e questo annuncio sono un'unica finestra che trattiene gli avvisi di disconnessione, limitata dal server (10 minuti per impostazione predefinita per quella del nodo); se il nodo non torna, gli avvisi riprendono e lo storico registra che la manutenzione è scaduta.
+* **Controllo dei nodi:** `POST /api/v1/nodes/{id}/control` e `POST /api/v1/nodes/control` danno un ordine (riavvio, pausa, ripresa, standby, identificazione, diagnostica, manutenzione attivata o disattivata) a un nodo o a tutti quelli che riferiscono, solo a un amministratore che si è appena dimostrato di nuovo, con il nome del nodo (o la parola RESTART, PAUSE o STANDBY per tutti) digitato di nuovo dove la casa resterebbe meno sorvegliata. Il server prepara l'ordine, lo esegue con il token monouso che il nodo dà per quell'operazione, segue ogni nodo (inviato, ricevuto, applicato, tornato) in `GET /api/v1/nodes/control/operations`, riavvia le centrali d'allarme per ultime in un riavvio scaglionato, registra chi ha ordinato cosa nello storico e nel registro di audit, e mostra nella salute del nodo se è in pausa, in standby (lavoro spento, resta connesso) o in manutenzione. Non esistono ripristino di fabbrica, cancellazione né sonno profondo. È provato con un broker finto; non è stato provato su un nodo reale.
 
 ## 🧩 Ruolo in A.R.M.O.R.
 
