@@ -12,7 +12,7 @@ import type { ArmorEvent, ArmorEventBody, ClientKind, ConnectionAction, SystemAc
 import type { HeaderSource } from "./http/auth.js";
 
 export const CLIENT_KINDS: readonly ClientKind[] = ["studio", "android", "node", "voice", "other"];
-export const SYSTEM_CATEGORIES: readonly SystemCategory[] = ["node", "broker", "settings", "service", "update", "alarm", "backup"];
+export const SYSTEM_CATEGORIES: readonly SystemCategory[] = ["node", "broker", "settings", "service", "update", "alarm", "backup", "batteries"];
 
 /** The name a client gives itself: `X-Armor-Client: android/0.6.6`. Only informative (anybody can write it), so it never gives a client more rights. */
 const CLIENT_HEADER = /^(studio|android|voice|node)\/([0-9A-Za-z._-]{1,24})$/;
@@ -335,6 +335,8 @@ export function systemFromAudit(entry: AuditLike): SystemInput | undefined {
   const detail = entry.detail ?? "";
   if (/duress/i.test(detail)) return undefined;
   const target = entry.target && SAFE_SUBJECT.test(entry.target) ? entry.target : undefined;
+  if (entry.action === "battery.execute" && outcome === "allowed") return { category: "batteries", action: "battery_requested", by, subject: target, outcome };
+  if (entry.action === "battery.result" && (outcome === "allowed" || outcome === "failed")) return { category: "batteries", action: "battery_operation", by, subject: target, outcome };
   if (entry.action === "control.arm" && outcome === "allowed") return { category: "alarm", action: "armed", by };
   if (entry.action === "control.disarm" && outcome === "allowed") return { category: "alarm", action: "disarmed", by };
   if (entry.action === "alarm.acknowledge" && outcome === "allowed") return { category: "alarm", action: "acknowledged", by, subject: target };

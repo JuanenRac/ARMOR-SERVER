@@ -33,7 +33,7 @@ export function registerHistoryRoutes(app: Express, context: AppContext): void {
     const type = typeof request.query.type === "string" ? request.query.type : undefined;
     if (type !== undefined && !TYPES.has(type as ArmorEvent["type"])) return response.status(400).json({ error: `type must be ${TYPE_NAMES}` });
     const category = typeof request.query.category === "string" ? request.query.category : undefined;
-    if (category !== undefined && !(SYSTEM_CATEGORIES as readonly string[]).includes(category)) return response.status(400).json({ error: "category must be node, broker, settings, service, update, alarm or backup" });
+    if (category !== undefined && !(SYSTEM_CATEGORIES as readonly string[]).includes(category)) return response.status(400).json({ error: "category must be node, broker, settings, service, update, alarm, backup or batteries" });
     const kind = typeof request.query.kind === "string" ? request.query.kind : undefined;
     if (kind !== undefined && !(CLIENT_KINDS as readonly string[]).includes(kind)) return response.status(400).json({ error: "kind must be studio, android, node, voice or other" });
     const client = typeof request.query.client === "string" ? request.query.client : undefined;

@@ -82,6 +82,8 @@ export type ArmorConfig = {
   alertLanguage: AlertLanguage;
   /** Whether this server may send a command to the switch of an electrical node. Off unless ARMOR_ELECTRICAL_SWITCHING=1; even then the node has to allow it too. */
   electricalSwitching: boolean;
+  /** Whether this server may send a gateway node an order to write to a Pylontech battery (clock, counters, limits, outputs, serial number, firmware). Off unless ARMOR_BATTERY_WRITE=1; even then the node and the broker have to allow it too. */
+  batteryWrite: boolean;
   /** Whether this server may arm and disarm the panel of an alarm node. Off unless ARMOR_ALARM_COMMANDS=1; even then the node and the broker have to allow it too. */
   alarmCommands: boolean;
   /** ARMOR_DISARM_PIN=required: disarming from Studio, the phone or the wall panel needs the PIN of the signed-in user, and a user without a PIN cannot disarm. Otherwise a PIN is asked only of users who have one. */
@@ -310,6 +312,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
   const { alertWebhookUrl, alertWebhookSecret, telegram, ntfy, fcmServiceAccount, homeAssistant, alertLanguage } = readChannels(env, warnings);
   const { admin, maintenance, voice, aiToken } = readAgents(env);
   const electricalSwitching = env.ARMOR_ELECTRICAL_SWITCHING === "1";
+  const batteryWrite = env.ARMOR_BATTERY_WRITE === "1";
   const alarmCommands = env.ARMOR_ALARM_COMMANDS === "1";
   const disarmPinRequired = env.ARMOR_DISARM_PIN?.trim() === "required";
   const controlDisarm = env.ARMOR_CONTROL_DISARM === "1";
@@ -333,6 +336,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(haPrefix)) throw new ConfigError("ARMOR_HA_DISCOVERY_PREFIX is one word of letters, digits, - and _");
   const haDiscovery = env.ARMOR_HA_DISCOVERY === "1" ? { prefix: haPrefix } : null;
   if (alarmCommands) warnings.push("ARMOR_ALARM_COMMANDS=1: this server may arm and disarm the panels of alarm nodes, and a disarm from here carries no PIN; keep the broker's access list and the nodes' own setting as strict as you want this to be.");
+  if (batteryWrite) warnings.push("ARMOR_BATTERY_WRITE=1: this server may order a gateway node to change what a Pylontech battery keeps (clock, counters, limits, outputs, serial number, firmware); some of it cannot be undone and can void the maker's warranty, and only an administrator who has just proved themselves again, with the battery's serial number typed, can do it");
   if (electricalSwitching) warnings.push("ARMOR_ELECTRICAL_SWITCHING=1: this server may send commands to the switches of electrical nodes; that is only for a bench, a lamp and a person present, until the installation has its own protections");
 
   const tls = readTls(env);
@@ -372,7 +376,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     escalateAfterMin: integer(env, "ARMOR_ESCALATE_AFTER_MIN", 0, 0, 1440),
     alertMinTargets: integer(env, "ARMOR_ALERT_MIN_TARGETS", 1, 1, 20),
     cameraCheckS: integer(env, "ARMOR_CAMERA_CHECK_S", 20, 0, 3600),
-    alertWebhookUrl, alertWebhookSecret, telegram, ntfy, fcmServiceAccount, homeAssistant, alertLanguage, electricalSwitching, alarmCommands, disarmPinRequired, controlDisarm, evidenceKey, trustProxy, haDiscovery, admin, maintenance, voice, aiToken,
+    alertWebhookUrl, alertWebhookSecret, telegram, ntfy, fcmServiceAccount, homeAssistant, alertLanguage, electricalSwitching, batteryWrite, alarmCommands, disarmPinRequired, controlDisarm, evidenceKey, trustProxy, haDiscovery, admin, maintenance, voice, aiToken,
     tls,
     warnings,
   };

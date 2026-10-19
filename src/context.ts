@@ -39,6 +39,7 @@ import { SiteStore } from "./site.js";
 import { SolarStore } from "./solar.js";
 import { ElectricalStore } from "./electrical.js";
 import { SwitchingService } from "./electrical_switching.js";
+import { BatteryWriteService } from "./battery_write.js";
 import { AlarmStore } from "./alarm.js";
 import { ArmProfileStore } from "./arm_profiles.js";
 import { NodeHealthStore } from "./node_health.js";
@@ -115,6 +116,10 @@ export type AppContext = {
   electricalSwitching: SwitchingService;
   /** Where its commands are published; set when the broker is connected (never retained, at most once). */
   switchLink: { publish?: (topic: string, payload: string) => void };
+  /** The one way an order to write to a Pylontech battery leaves this server: off unless the operator turned it on (see battery_write.ts). */
+  batteryWrite: BatteryWriteService;
+  /** Where its orders are published; set when the broker is connected (never retained, at most once). */
+  batteryLink: { publish?: (topic: string, payload: string) => void };
   /** What the ARMOR-ALARM nodes say about the house's alarm. */
   alarmNodes: AlarmStore;
   /** The one way a command reaches an alarm node's panel: off unless the operator turned it on (see alarm_commands.ts). */
@@ -308,6 +313,11 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const ingestLog = new IngestLog(overrides.now);
   const solarRegistry = new SolarRegistry(path.join(config.dataDir, "solar-devices.json"), overrides.now ? () => new Date(overrides.now!()) : undefined);
   const solar = new SolarStore({ now: overrides.now, onMessage: message => alarmRules.handleSolar(message), onStale: (node, device, stale) => alarmRules.handleSolarStale(node, device, stale) });
+  const batteryLink: AppContext["batteryLink"] = {};
+  const batteryWrite = new BatteryWriteService({
+    enabled: config.batteryWrite, solar, audit, now: overrides.now, file: path.join(config.dataDir, "battery_ops.json"),
+    publish: (topic, payload) => { if (!batteryLink.publish) throw new Error("the MQTT broker is not connected"); batteryLink.publish(topic, payload); },
+  });
   const persistence = new FileStatePersistence(path.join(config.dataDir, "state.json"), { warn });
   const store: ArmorStore = new ArmorStore(overrides.broadcast, {
     staleAfterMs: config.nodeStaleAfterS * 1000, now: overrides.now, persistence, rules: () => rules.get(), minTargets: config.alertMinTargets,
@@ -388,7 +398,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, alarmNodes, alarmCommands, armProfiles, nodeHealth, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, nodeHealth, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.0.1] - Orders to write to Pylontech batteries, off by default
+
+- **Orders to write to a Pylontech battery, off unless `ARMOR_BATTERY_WRITE=1`:** `GET /api/v1/solar/battery-ops/catalog` (the table of the typed operations, their risk and their ranges), `GET /api/v1/solar/battery-ops` and `/{id}` (what was ordered, how far it is and how it ended), `POST /api/v1/solar/battery-ops` (arm), `/{id}/execute`, `/{id}/cancel`, `/{id}/restore` (puts an output back as it was) and `POST /api/v1/solar/battery-ops/images` (keeps a firmware image in memory for an hour). All of them are for administrators; the ones that order or upload need a fresh proof of identity (the password or the second factor) also inside the house, and a session from outside the house is treated as for the rest of the administration.
+- **Two steps and a one-time token:** the server checks the node, the port, the operation and its values against the shared table (the maker's ranges, a group of limits whole and in order, a protection switched off only with the risk accepted, the expert console's block list), sends `arm`, keeps the token the node gives and never shows it (not in an answer, the list, the audit trail or the file the operations are kept in), and sends `execute` only for the person who armed it, within two minutes and with the battery's serial number typed again. One operation at a time per battery; an operation whose node goes quiet ends as lost.
+- **A firmware image:** read for its board name, version, size, CRC-32 and SHA-256, kept in memory only, and sent to the node in 256-byte pieces, each acknowledged, before the arm; a piece that is refused or not acknowledged ends the operation.
+- **Everything is kept:** who ordered what to which battery, what was read before and after, the difference, the node's transcript (already without the battery's service password) and how it ended, in `battery_ops.json` of the data directory (an operation that was on its way when the server stopped is called lost), and told to the history under the new *Batteries* category.
+- **Documented:** `ARMOR_BATTERY_WRITE` in the environment table and the example file, the two maintenance topics in the integration notes.
+
 ## [0.8.0.0] - The details of a battery module, its event log and two new alerts
 
 - **Module details:** a battery module may carry its model, the versions of its board and software, its cells, the current it allows each way, the speed of its console, the health of each cell and the newest entry of its event log; every field is checked on arrival against the shared contract.

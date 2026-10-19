@@ -35,6 +35,8 @@ The server also subscribes to `armor/solar/+/+/state` and `armor/electrical/+/st
 | `armor/alarm/<node>/command` | write | only with `ARMOR_ALARM_COMMANDS=1` (arm, disarm and silence the siren of a panel) |
 | `armor/alarm/<node>/zigbee` | write | the state of the Zigbee zones of a panel |
 | `armor/electrical/<node>/command` | write | only with `ARMOR_ELECTRICAL_SWITCHING=1` (a switch of a node) |
+| `armor/solar/<node>/maintenance/command` | write | only with `ARMOR_BATTERY_WRITE=1` (an order to write to a Pylontech battery of a gateway node) |
+| `armor/solar/+/maintenance/result` | read | the gateway nodes' answers to those orders |
 | the command topics of the devices registered | write | a plug, a light |
 | `homeassistant/#` | write | only with `ARMOR_HA_DISCOVERY=1` |
 

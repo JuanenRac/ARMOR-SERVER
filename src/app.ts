@@ -25,6 +25,8 @@ import { registerHistoryRoutes } from "./routes/history.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerSolarRoutes } from "./routes/solar.js";
 import { registerElectricalRoutes } from "./routes/electrical.js";
+import { registerBatteryOpsRoutes } from "./routes/battery_ops.js";
+import { batteryTopic, parseBatteryResult } from "./battery_ops.js";
 import { registerNetworkRoutes } from "./routes/network.js";
 import { registerAlarmDesignRoutes } from "./routes/alarm_design.js";
 import { registerAlarmProfileRoutes } from "./routes/alarm_profiles.js";
@@ -114,7 +116,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     if (config.remotePolicy === "full" || context.studioSessions.originOf(request) !== "remote") return next();
     const reads = request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS";
     const own = /^\/api\/v1\/(studio\/(session|sessions|elevate|totp)|push\/(un)?register)/.test(request.path) || (request.method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/stream-ticket$/.test(request.path));
-    const admin = /^\/api\/v1\/(admin|users|installation|system\/ingest|preferences|nodes\/[^/]+\/panel)(\/|$)/.test(request.path);
+    const admin = /^\/api\/v1\/(admin|users|installation|system\/ingest|preferences|solar\/battery-ops|nodes\/[^/]+\/panel)(\/|$)/.test(request.path);
     if (reads && !(admin && config.remotePolicy === "view")) return next();
     if (own || (config.remotePolicy === "operate" && !admin)) return next();
     context.audit.record({ action: "remote.policy", outcome: "denied", actor: context.studioUser(request)?.username, target: `${request.method} ${request.path}`, detail: config.remotePolicy });
@@ -128,6 +130,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerDeviceRoutes(app, context);
   registerSolarRoutes(app, context);
   registerElectricalRoutes(app, context);
+  registerBatteryOpsRoutes(app, context);
   registerAlarmNodeRoutes(app, context);
   registerPushRoutes(app, context);
   registerNetworkRoutes(app, context);
@@ -232,6 +235,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     // names another node or device is refused, as for the radar nodes.
     context.switchLink.publish = (topic, payload) => { if (!mqtt.connected) throw new Error("the MQTT broker is not connected"); mqtt.publish(topic, payload, { qos: 0, retain: false }); };
     context.alarmLink.publish = (topic, payload) => { if (!mqtt.connected) throw new Error("the MQTT broker is not connected"); mqtt.publish(topic, payload, { qos: 0, retain: false }); };
+    context.batteryLink.publish = (topic, payload) => { if (!mqtt.connected) throw new Error("the MQTT broker is not connected"); mqtt.publish(topic, payload, { qos: 0, retain: false }); };
     // What the server listens to besides the radar nodes (mqtt.ts), in one table (mqtt_router.ts). The broker lets a node write only its own topics, so a body that names another node
     // or device is refused. A command is never retained and is sent at most once: an old one must never be delivered later.
     const routes: RouteTable = [
@@ -243,6 +247,9 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
         matches: (message: ReturnType<typeof parseElectricalMessage>, named: string) => message.node_id === named, apply: message => context.electricalNodes.ingest(message) },
       { subscribe: ["armor/electrical/+/result"], named: (topic: string) => electricalTopic(topic, "result"), parse: parseElectricalResult, fallback: "invalid electrical result",
         matches: (message: ReturnType<typeof parseElectricalResult>, named: string) => message.node_id === named, apply: (message, named) => context.electricalSwitching.handleResult(message, named) },
+      // What a gateway node answers to an order to write to a battery: armor/solar/{node}/maintenance/result.
+      { subscribe: ["armor/solar/+/maintenance/result"], named: (topic: string) => batteryTopic(topic, "result"), parse: parseBatteryResult, fallback: "invalid battery result",
+        matches: (message: ReturnType<typeof parseBatteryResult>, named: string) => message.node_id === named, apply: (message, named) => context.batteryWrite.handleResult(message, named) },
       // The nodes that watch the local network: armor/network/{node}/state.
       { subscribe: ["armor/network/+/state"], named: networkTopic, parse: parseNetworkMessage, fallback: "invalid network payload",
         matches: (message: ReturnType<typeof parseNetworkMessage>, named: string) => message.node_id === named, apply: message => context.networkNodes.ingest(message) },
@@ -283,7 +290,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   let sweepFailing = false;
   const sweeper = setInterval(() => {
     try {
-      context.escalator.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.reportSilentNodes(); context.networkNodes.sweep();
+      context.escalator.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.batteryWrite.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.reportSilentNodes(); context.networkNodes.sweep();
       context.studioSessions.sweep(); context.operatorSessions.sweep(); context.connections.registry.tick(); context.nodeLife.flush();
       sweepFailing = false;
     } catch (error) {
