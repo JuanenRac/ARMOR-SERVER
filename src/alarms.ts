@@ -275,6 +275,9 @@ export class AlarmRules {
   /** Since when each battery has had its cells further apart than the level (the time of the first message of the stretch), for the alarm that wants the gap to persist. */
   readonly #spreadSince = new Map<string, number>();
 
+  /** The manuals' figures of the battery model declared for a device ("node/device"), when there are any; set by the context. */
+  batteryProfileOf: ((id: string) => { over_v?: number } | undefined) | undefined;
+
   /** The last value of each counter of each module of each battery, to tell when a protection counter goes up (the first time one is seen it is only remembered). */
   readonly #counterSeen = new Map<string, number>();
 
@@ -373,6 +376,12 @@ export class AlarmRules {
     } else if (message.modules > 0) {
       if (message.alarm === true) this.centre.raise(`${base}:battery_alarm`, { source, severity: "high", code: "solar_battery_alarm" });
       else this.centre.clear(`${base}:battery_alarm`);
+      // over the voltage at which the battery's own protection acts (its model's figure; a model with none is not judged)
+      const over = this.batteryProfileOf?.(id)?.over_v;
+      if (over !== undefined && message.voltage_v !== undefined) {
+        if (message.voltage_v > over) this.centre.raise(`${base}:overvoltage`, { source, severity: "high", code: "solar_battery_overvoltage", detail: { voltage_v: message.voltage_v, over_v: over } });
+        else if (message.voltage_v < over - 0.5) this.centre.clear(`${base}:overvoltage`);
+      }
       const soc = message.soc_percent;
       if (soc !== undefined && soc < level.soc_low) this.centre.raise(`${base}:battery`, { source, severity: "warning", code: "solar_battery_low" });
       else if (soc !== undefined && soc >= level.soc_ok) this.centre.clear(`${base}:battery`);

@@ -36,17 +36,37 @@ export const INVERTER_FAMILIES: Record<string, { label: string; dialect: Inverte
 export const INVERTER_MODELS = [...Object.keys(INVERTER_FAMILIES), "other"] as const;
 
 /** What a battery model is like: modules of how many cells and ampere-hours, and how many modules an example shows. (Only the example readings use the numbers.) */
-type BatteryShape = { modules: number; cells: number; ah: number; label: string };
+type BatteryShape = { modules: number; cells: number; ah: number; label: string; profile?: BatteryProfile };
+
+/**
+ * What the makers' manuals say about a battery model, for the alerts and for the warnings of Studio: the nominal voltage (a 24 V system is not a 48 V one: nothing may assume 48 V), the
+ * window in which it charges and discharges, the temperatures in which it may charge and discharge, the voltage over which its own protection acts, and how many modules a group may
+ * have. A figure that the manuals do not give is left out and nothing is judged by it. Taken from the manuals, not measured on a unit of ours.
+ */
+export type BatteryProfile = {
+  nominal_v: number;
+  charge_v?: readonly [number, number]; discharge_min_v?: number;
+  charge_temp_c?: readonly [number, number]; discharge_temp_c?: readonly [number, number];
+  /** The voltage over which the battery's own protection acts: a pack above it is worth an alert. */
+  over_v?: number;
+  max_group?: number;
+};
+const P48 = (extra: Partial<BatteryProfile> = {}): BatteryProfile => ({ nominal_v: 48, charge_v: [52.5, 53.5], discharge_min_v: 44.5, charge_temp_c: [0, 50], discharge_temp_c: [-10, 50], ...extra });
 export const BATTERY_FAMILIES: Record<string, BatteryShape> = {
-  "pylontech-us2000": { modules: 2, cells: 15, ah: 50, label: "Pylontech US2000 / US2000B" },
-  "pylontech-us2000c": { modules: 2, cells: 15, ah: 50, label: "Pylontech US2000C" },
-  "pylontech-us2000b-plus": { modules: 2, cells: 15, ah: 50, label: "Pylontech US2000B Plus" },
-  "pylontech-us2kbpl": { modules: 2, cells: 15, ah: 50, label: "Pylontech US2KBPL" },
-  "pylontech-us3000": { modules: 2, cells: 15, ah: 74, label: "Pylontech US3000" },
-  "pylontech-us3000c": { modules: 2, cells: 15, ah: 74, label: "Pylontech US3000C" },
-  "pylontech-us5000": { modules: 3, cells: 15, ah: 100, label: "Pylontech US5000" },
-  "pylontech-up2500": { modules: 2, cells: 16, ah: 50, label: "Pylontech UP2500" },
-  "pylontech-up5000": { modules: 2, cells: 16, ah: 100, label: "Pylontech UP5000" },
+  "pylontech-us2000": { modules: 2, cells: 15, ah: 50, label: "Pylontech US2000 / US2000B", profile: P48({ max_group: 8 }) },
+  "pylontech-us2000c": { modules: 2, cells: 15, ah: 50, label: "Pylontech US2000C", profile: P48({ max_group: 16 }) },
+  "pylontech-us2000b-plus": { modules: 2, cells: 15, ah: 50, label: "Pylontech US2000B Plus", profile: P48({ max_group: 8 }) },
+  "pylontech-us2kbpl": { modules: 2, cells: 15, ah: 50, label: "Pylontech US2KBPL", profile: P48({ max_group: 8 }) },
+  "pylontech-us3000": { modules: 2, cells: 15, ah: 74, label: "Pylontech US3000", profile: P48({ max_group: 8 }) },
+  "pylontech-us3000c": { modules: 2, cells: 15, ah: 74, label: "Pylontech US3000C", profile: P48({ max_group: 16 }) },
+  "pylontech-us5000": { modules: 3, cells: 15, ah: 100, label: "Pylontech US5000", profile: P48({ discharge_min_v: 43.5, max_group: 16 }) },
+  // A 24 V system: eight cells of about 111 Ah (2840 Wh at 25.6 V). Its discharge window and temperatures are not in the sources we have, so none is judged.
+  "pylontech-up2500": { modules: 2, cells: 8, ah: 111, label: "Pylontech UP2500", profile: { nominal_v: 25.6, charge_v: [28.2, 28.5], max_group: 20 } },
+  "pylontech-up5000": { modules: 2, cells: 15, ah: 100, label: "Pylontech UP5000", profile: P48({ max_group: 16 }) },
+  // 51.2 V, 16 cells of 100 Ah (5120 Wh). The manuals say nothing here about the console, so whether it answers `pwr` is not known (it needs a capture from a real unit).
+  "pylontech-uf5000": { modules: 2, cells: 16, ah: 100, label: "Pylontech UF5000", profile: { nominal_v: 51.2, charge_v: [56, 56.8], discharge_min_v: 45.6, over_v: 57 } },
+  "pylontech-fidus-fb-l-5-12-eu": { modules: 2, cells: 16, ah: 100, label: "Pylontech Fidus FB-L-5.12-EU", profile: { nominal_v: 51.2, charge_v: [56, 56.8], discharge_min_v: 45.6, over_v: 57.6, max_group: 20 } },
+  "pylontech-fidus-fb-l-5-12-eu-pro": { modules: 2, cells: 16, ah: 100, label: "Pylontech Fidus FB-L-5.12-EU Pro", profile: { nominal_v: 51.2, charge_v: [56, 56.8], discharge_min_v: 42.5, over_v: 57.6, max_group: 20 } },
   "pylontech-force-l1": { modules: 2, cells: 15, ah: 74, label: "Pylontech Force L1" },
   "pylontech-force-l2": { modules: 2, cells: 15, ah: 142, label: "Pylontech Force L2" },
   "pytes-e-box": { modules: 2, cells: 16, ah: 100, label: "Pytes E-Box 48100R" },
@@ -77,6 +97,9 @@ export function modelLabel(model: string): string {
   if (variant) return `ANT-BMS ${variant.cells}S · ${variant.amps} A`;
   return INVERTER_FAMILIES[model]?.label ?? BATTERY_FAMILIES[model]?.label ?? model;
 }
+/** The manuals' figures for a battery model, or undefined for a model that has none (an ANT-BMS, "other"). */
+export function batteryProfile(model: string): BatteryProfile | undefined { return Object.hasOwn(BATTERY_FAMILIES, model) ? BATTERY_FAMILIES[model]!.profile : undefined; }
+
 /** Whether a battery model may be declared: one of the list, or an ANT-BMS combination within the limits. */
 export function isBatteryModel(model: string): boolean { return Object.hasOwn(BATTERY_FAMILIES, model) || antVariant(model) !== undefined; }
 

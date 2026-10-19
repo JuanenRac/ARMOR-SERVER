@@ -47,7 +47,7 @@ import { DeviceNotes, NetworkStore } from "./network.js";
 import { NetworkCommands } from "./network_commands.js";
 import { DeviceCredentials } from "./device_credentials.js";
 import { SystemMonitor } from "./system_metrics.js";
-import { SolarRegistry } from "./solar_registry.js";
+import { SolarRegistry, batteryProfile } from "./solar_registry.js";
 import { AlertNotifier } from "./notify.js";
 import { homeAssistantChannel, ntfyChannel, telegramChannel, type NotifyChannel } from "./channels.js";
 import { FileStatePersistence } from "./persistence.js";
@@ -295,6 +295,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const alarmNodes = new AlarmStore({ now: overrides.now, onMessage: (message, previous) => { knownNodes.seen("alarm", message.node_id, message.phase); alarmRules.handleAlarmNode(message, previous); }, onStale: (node, stale, phase) => { alarmRules.handleAlarmNodeStale(node, stale, phase); if (stale) nodeLife.gone(node); else nodeLife.report(node); } });
   const alarmLink: AppContext["alarmLink"] = {};
   const armProfiles = new ArmProfileStore(path.join(config.dataDir, "arm-profiles.json"), overrides.now ? () => new Date(overrides.now!()) : undefined, warn);
+  alarmRules.batteryProfileOf = id => { const registration = solarRegistry.list().find(item => `${item.node_id}/${item.device}` === id); return registration ? batteryProfile(registration.model) : undefined; };
   alarmRules.profileNotify = id => armProfiles.find(id)?.notify ?? (armProfiles.find(id) ? "urgent" : undefined);
   const nodeHealth = new NodeHealthStore({ now: overrides.now, onReport: view => { alarmRules.handleNodeHealth(view); nodeLife.report(view.node_id, view.firmware); }, onForget: node => alarmRules.forgetNodeHealth(node) });
   const captureOnDetect = new CaptureOnDetect({ file: path.join(config.dataDir, "capture-on-detect.json"), audit, now: overrides.now, tools: { snapshot: camera => evidence.snapshot(camera), startRecording: camera => evidence.startRecording(camera), stopRecording: id => evidence.stopRecording(id), isRecording: id => evidence.isRecording(id) } });

@@ -11,7 +11,7 @@ import { forwardCompatible } from "../contracts.js";
 import { stampOf } from "../mqtt.js";
 import { ENERGY_ALARM_DEFAULTS, EnergySettingsInvalid } from "../energy_alarms.js";
 import { parseSolarMessage } from "../solar.js";
-import { ANT_CELL_COUNTS, ANT_CURRENTS, BATTERY_MODELS, CONNECTIONS, INVERTER_FAMILIES, INVERTER_MODELS, SolarRegistryError, exampleReading, modelLabel } from "../solar_registry.js";
+import { BATTERY_FAMILIES, ANT_CELL_COUNTS, ANT_CURRENTS, BATTERY_MODELS, CONNECTIONS, INVERTER_FAMILIES, INVERTER_MODELS, SolarRegistryError, exampleReading, modelLabel } from "../solar_registry.js";
 
 const NODE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const DEVICE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
@@ -42,6 +42,7 @@ export function registerSolarRoutes(app: Express, context: AppContext): void {
     const waiting = solarRegistry.list().filter(item => !reporting.has(`${item.node_id}/${item.device}`));
     return response.json({ devices, waiting, totals: solar.totals(), catalog: {
       inverter_models: INVERTER_MODELS, battery_models: BATTERY_MODELS, connections: CONNECTIONS,
+      battery_profiles: Object.fromEntries(Object.entries(BATTERY_FAMILIES).filter(([, family]) => family.profile).map(([model, family]) => [model, family.profile])),
       labels: Object.fromEntries([...INVERTER_MODELS, ...BATTERY_MODELS].filter(model => model !== "other").map(model => [model, modelLabel(model)])),   // "other" is worded by each client, in its language
       inverter_dialects: Object.fromEntries(Object.entries(INVERTER_FAMILIES).map(([model, family]) => [model, family.dialect])),
       ant_bms: { cell_counts: ANT_CELL_COUNTS, currents_a: ANT_CURRENTS },
