@@ -128,7 +128,7 @@ ARMOR-SERVER/
 
 ## 🛠️ Environnement de développement
 
-**Prérequis:** Node.js 22+, FFmpeg (live video and capture), an MQTT broker (Mosquitto)
+**Prérequis:** Node.js 22+, FFmpeg (vidéo en direct et capture), un broker MQTT (Mosquitto)
 
 ```powershell
 npm install
