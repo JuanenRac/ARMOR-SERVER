@@ -51,17 +51,17 @@ SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:\.\d+)?$")   # three components up to 0.7
 VERSION_HEADING = re.compile(r"(?im)^#{1,3}\s*\[?(\d+\.\d+\.\d+(?:\.\d+)?)(?:\]|\s|$)")
 
 # A version-shaped token sitting next to one of these "current version"
-# label words (any of the seven languages), or right after this project's
+# label words (any of the eight languages), or right after this project's
 # own name, must agree with the manifest - a README's own free prose is
 # never re-derived from the manifest automatically and can silently go
 # stale otherwise. Lines describing the odometer scheme itself (an arrow
 # between two versions, e.g. "0.0.9 -> 0.1.0") are exempt.
 VERSION_PROSE_LABELS = (
     "Real today", "Real hoy", "Réel aujourd'hui", "Reale oggi", "Heute real",
-    "目前真实的部分", "現時点で実在するもの",
-    "Version:", "Versión:", "Version :", "Versione:", "版本：", "バージョン：",
+    "目前真实的部分", "現時点で実在するもの", "Real hoje",
+    "Version:", "Versión:", "Version :", "Versione:", "版本：", "バージョン：", "Versão:",
     "Current version", "Versión actual", "Version actuelle",
-    "Versione attuale", "Aktuelle Version", "当前版本", "現在のバージョン",
+    "Versione attuale", "Aktuelle Version", "当前版本", "現在のバージョン", "Versão atual",
     "Status:", "Estado:", "État :", "Stato:", "状态：", "ステータス",
 )
 VERSION_PROSE_LABEL_PATTERN = re.compile(

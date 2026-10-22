@@ -78,6 +78,8 @@ and every end - delivered or given up - is in the audit trail (`alert.telegram`,
 
 Every setting the server reads is listed, with its limits and an example, in [ENVIRONMENT.md](ENVIRONMENT.md) (generated from the code).
 
+Every route the server registers is listed, with who may call it and the file that registers it, in [ROUTES.md](ROUTES.md) (generated from the code, and checked by a test).
+
 
 * A node may also leave a last will on `armor/health/<node>`: the broker publishes `{"node_id":"<node>","online":false}` (nothing else in the body) when the node's connection is lost without a goodbye. The server takes it as "this node went away" at once instead of waiting for the silence limit, and it never counts as a report. A body that names another node than the topic is refused like any other. The other half is the birth: each time a node connects it says `{"node_id":"<node>","online":true}` on the same topic (retained, like the will), which the server takes as "this node is here" and never as a report, so the last message of the topic is always the state of the node, also after the server restarts.
 * `POST /api/v1/node-health` (ingest token) and the topic `armor/health/<node>` carry the `node_health` report every node sends about once a minute. `GET /api/v1/node-health` lists the latest report of each node with its status (`ok`, `warning`, or `stale` after three minutes), its warnings, the restarts of the last day, the levels it judges by and the nodes it knows but that sent no report; `GET /api/v1/node-health/<id>` adds the history of its memory and signal (120 reports) and its restart log; `DELETE` (administrator) forgets a node. The latest reports and the restart logs are kept in `node-health.json` and survive a restart.

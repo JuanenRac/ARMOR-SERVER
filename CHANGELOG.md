@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+- New `docs/ROUTES.md`: every route the server registers, with who may call it and the file that registers it, generated from the code (`node tools/routes_table.mjs`) and checked by a test.
+- The sign-in alert in European Portuguese no longer uses the Brazilian form.
+
 ## [0.8.0.3] - Control of the nodes from Studio and the phone
 
 - **Control of the nodes from Studio and the phone:** `POST /api/v1/nodes/{id}/control` (one node) and `POST /api/v1/nodes/control` (every node that reports) restart, pause, resume, put on standby, identify, read the diagnostics of and put in or out of maintenance, with `GET /api/v1/nodes/control/operations` and `/{id}` for what was ordered in the last weeks. For an administrator who proved themselves again a moment ago; the node's id (or the word RESTART, PAUSE or STANDBY for all nodes) is typed again for the three operations that leave the house less guarded. There is no operation that erases a node, sleeps it or sets a wake timer, and the server and the CM5 are never ordered.
