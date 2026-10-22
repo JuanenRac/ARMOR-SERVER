@@ -21,12 +21,17 @@ const relay = (response: Response, reply: AdminReply, shape?: (body: Record<stri
 export function registerAdminRoutes(app: Express, context: AppContext): void {
   const { admin, audit, requireAdmin, studioUser, config } = context;
   const actor = (request: Request) => studioUser(request)?.username;
+  /** The second secret of the admin agent, when its owner locked the broker rules and the env files with one: the person gives it at the console with each such change, and it is only handed on. */
+  const sensitive = (request: Request): Record<string, string> | undefined => {
+    const given = request.headers["x-armor-admin-sensitive-token"];
+    return typeof given === "string" && given.length > 0 && given.length <= 200 ? { "X-Armor-Admin-Sensitive-Token": given } : undefined;
+  };
   const body = (request: Request): Record<string, unknown> => (typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {});
 
   /** Ask the agent; if it is not configured or not answering, say so in the one way the console understands. */
-  async function ask(response: Response, method: string, path: string, payload?: unknown): Promise<AdminReply | undefined> {
+  async function ask(response: Response, method: string, path: string, payload?: unknown, headers?: Record<string, string>): Promise<AdminReply | undefined> {
     if (!admin) { response.status(503).json({ error: "admin_unavailable", reason: "not_configured" }); return undefined; }
-    try { return await admin.request(method, path, payload); }
+    try { return await admin.request(method, path, payload, headers); }
     catch { response.status(503).json({ error: "admin_unavailable", reason: "not_answering" }); return undefined; }
   }
 
@@ -40,7 +45,14 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
 
   app.get("/api/v1/admin/status", requireAdmin, async (_request, response) => {
     if (!admin) return response.json({ available: false, reason: "not_configured", hint: "install the admin agent: ARMOR-DEVOPS scripts/install_cm5.sh --with-admin" });
-    try { const reply = await admin.request("GET", "/v1/services"); return response.json({ available: reply.status === 200, reason: reply.status === 200 ? "" : "refused" }); }
+    try {
+      const reply = await admin.request("GET", "/v1/services");
+      if (reply.status !== 200) return response.json({ available: false, reason: "refused" });
+      // Whether the agent locks the broker rules and the env files (open, second_token or read_only); an older agent does not say, and then it is unknown
+      const state = await admin.request("GET", "/v1/status").catch(() => undefined);
+      const locked = state && state.status === 200 && typeof state.body.sensitive_writes === "object" && state.body.sensitive_writes !== null ? state.body.sensitive_writes as Record<string, unknown> : undefined;
+      return response.json({ available: true, reason: "", sensitive_writes: locked && typeof locked.mode === "string" ? { mode: locked.mode, protected: locked.protected === true } : null });
+    }
     catch { return response.json({ available: false, reason: "not_answering" }); }
   });
 
@@ -80,7 +92,7 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
       if ("missing" in given) return response.status(422).json({ error: "masked_value_without_original", key: given.missing });
       content = given.content;
     }
-    const reply = await ask(response, "PUT", `/v1/files/${encodeURIComponent(id)}`, { content, restart: input.restart === true, expect_mtime: typeof input.expect_mtime === "number" ? input.expect_mtime : undefined });
+    const reply = await ask(response, "PUT", `/v1/files/${encodeURIComponent(id)}`, { content, restart: input.restart === true, expect_mtime: typeof input.expect_mtime === "number" ? input.expect_mtime : undefined }, sensitive(request));
     if (!reply) return;
     audit.record({ action: "admin.file", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: id, detail: input.restart === true ? "restart" : "saved" });
     relay(response, reply);
@@ -93,7 +105,7 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
 
   app.post("/api/v1/admin/mqtt/accounts", requireAdmin, async (request, response) => {
     const input = body(request);
-    const reply = await ask(response, "POST", "/v1/mqtt/accounts", { role: input.role, name: input.name });
+    const reply = await ask(response, "POST", "/v1/mqtt/accounts", { role: input.role, name: input.name }, sensitive(request));
     if (!reply) return;
     audit.record({ action: "admin.mqtt.add", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: String(reply.body.user ?? `${String(input.role)}-${String(input.name)}`) });
     response.setHeader("Cache-Control", "no-store");
@@ -102,7 +114,7 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
 
   app.delete("/api/v1/admin/mqtt/accounts/:user", requireAdmin, async (request, response) => {
     const user = String(request.params.user);
-    const reply = await ask(response, "DELETE", `/v1/mqtt/accounts/${encodeURIComponent(user)}`);
+    const reply = await ask(response, "DELETE", `/v1/mqtt/accounts/${encodeURIComponent(user)}`, undefined, sensitive(request));
     if (!reply) return;
     audit.record({ action: "admin.mqtt.remove", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: user });
     relay(response, reply);
@@ -133,11 +145,11 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
     const wanted = `${identity[1]}-${nodeId}`;
     const existing = Array.isArray(accounts.body.accounts) && (accounts.body.accounts as Array<{ user?: string }>).some(item => item.user === wanted);
     if (existing) {
-      const removed = await ask(response, "DELETE", `/v1/mqtt/accounts/${wanted}`);
+      const removed = await ask(response, "DELETE", `/v1/mqtt/accounts/${wanted}`, undefined, sensitive(request));
       if (!removed) return;
       if (removed.status >= 300) return relay(response, removed);
     }
-    const created = await ask(response, "POST", "/v1/mqtt/accounts", { role: identity[0], name: nodeId });
+    const created = await ask(response, "POST", "/v1/mqtt/accounts", { role: identity[0], name: nodeId }, sensitive(request));
     if (!created || created.status >= 300) {
       // The old account was removed first (the agent has no rotate): if the new one could not be made the node has no access until this is tried again. Said in the trail, so that it is not found out later.
       if (existing) audit.record({ action: "admin.node.provision", outcome: "failed", actor: actor(request), target: nodeId, detail: "the old account was removed and the new one could not be made: provision the node again" });

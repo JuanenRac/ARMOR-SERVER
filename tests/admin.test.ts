@@ -11,10 +11,10 @@ const json = { "Content-Type": "application/json" };
 const TOKEN = "a".repeat(32);
 const socketName = () => (process.platform === "win32" ? `\\\\.\\pipe\\armor-admin-test-${process.pid}-${Date.now()}` : path.join(fs.mkdtempSync(path.join(os.tmpdir(), "armor-sock-")), "agent.sock"));
 
-type Seen = { method: string; url: string; body: Record<string, unknown>; token: string };
+type Seen = { method: string; url: string; body: Record<string, unknown>; token: string; sensitive: string };
 
 /** A stand-in for the admin agent: the same paths and answers, recording what it was asked. */
-async function fakeAgent(): Promise<{ socket: string; seen: Seen[]; files: Record<string, string>; accounts: string[]; close: () => Promise<void> }> {
+async function fakeAgent(options: { status?: boolean } = {}): Promise<{ socket: string; seen: Seen[]; files: Record<string, string>; accounts: string[]; close: () => Promise<void> }> {
   const socket = socketName(), seen: Seen[] = [], accounts = ["field-node-north-1"];
   const files: Record<string, string> = { "server.env": "ARMOR_PORT=18080\nARMOR_STUDIO_PASSWORD=hunter2-hunter2\nARMOR_INGEST_TOKEN=\n", "mosquitto.conf": "listener 18883\n" };
   const server = http.createServer((request, response) => {
@@ -24,10 +24,11 @@ async function fakeAgent(): Promise<{ socket: string; seen: Seen[]; files: Recor
       const raw = Buffer.concat(chunks).toString("utf8");
       const body = raw ? JSON.parse(raw) as Record<string, unknown> : {};
       const token = String(request.headers["x-armor-admin-token"] ?? "");
-      seen.push({ method: request.method ?? "", url: request.url ?? "", body, token });
+      seen.push({ method: request.method ?? "", url: request.url ?? "", body, token, sensitive: String(request.headers["x-armor-admin-sensitive-token"] ?? "") });
       const send = (status: number, payload: unknown) => { response.writeHead(status, json); response.end(JSON.stringify(payload)); };
       if (token !== TOKEN) return send(401, { error: "unauthorized" });
       const url = request.url ?? "";
+      if (request.method === "GET" && url === "/v1/status" && options.status !== false) return send(200, { sensitive_writes: { mode: "second_token", protected: true, files: ["server.env"], warning: "" } });
       if (request.method === "GET" && url === "/v1/services") return send(200, { services: [{ id: "mosquitto", unit: "armor-mosquitto", active: "active" }] });
       if (request.method === "POST" && url.startsWith("/v1/services/")) return send(url.includes("sshd") ? 404 : 200, url.includes("sshd") ? { error: "unknown_service" } : { ok: true });
       if (request.method === "GET" && url === "/v1/files") return send(200, { files: Object.keys(files).map(id => ({ id })) });
@@ -187,4 +188,36 @@ test("an address that carries a login is shown without it and goes back whole wh
   assert.deepEqual(unmaskEnv(shown.replace("18080", "19090"), current), { content: current.replace("18080", "19090") }, "what was not touched is given back as it was");
   const edited = unmaskEnv(shown.replace("127.0.0.1:1883", "10.0.0.5:1883"), current);
   assert.ok("content" in edited && edited.content.includes("mqtt://armor:s3cret-pass@10.0.0.5:1883"), "editing around a hidden login keeps the login");
+});
+
+test("the console learns whether the admin agent locks the broker rules and the env files, and hands on the second secret it is given for one change", async () => {
+  const agent = await fakeAgent();
+  const running = await startServer({ ARMOR_ADMIN_SOCKET: agent.socket, ARMOR_ADMIN_TOKEN: TOKEN });
+  try {
+    const cookie = await studioCookie(running.base);
+    const status = (await call(running, cookie, "GET", "/api/v1/admin/status")).body;
+    assert.deepEqual([status.available, status.sensitive_writes], [true, { mode: "second_token", protected: true }]);
+    // the second secret is given with the change, handed to the agent for that request, and kept nowhere
+    const secret = "s".repeat(30);
+    const send = (method: string, route: string, payload: unknown, extra: Record<string, string> = {}) => fetch(`${running.base}${route}`, { method, headers: { ...json, cookie, ...extra }, body: JSON.stringify(payload) });
+    assert.equal((await send("PUT", "/api/v1/admin/files/server.env", { content: "ARMOR_PORT=18081\n" }, { "X-Armor-Admin-Sensitive-Token": secret })).status, 200);
+    assert.equal((await send("PUT", "/api/v1/admin/files/mosquitto.conf", { content: "listener 18883\n" })).status, 200);
+    assert.equal((await send("POST", "/api/v1/admin/mqtt/accounts", { role: "node", name: "north-2" }, { "X-Armor-Admin-Sensitive-Token": secret })).status, 200);
+    assert.equal((await fetch(`${running.base}/api/v1/admin/mqtt/accounts/field-node-north-2`, { method: "DELETE", headers: { ...json, cookie, "X-Armor-Admin-Sensitive-Token": secret } })).status, 200);
+    const put = agent.seen.filter(item => item.method === "PUT"), post = agent.seen.filter(item => item.method === "POST"), del = agent.seen.filter(item => item.method === "DELETE");
+    assert.deepEqual([put[0]?.sensitive, put[1]?.sensitive, post[0]?.sensitive, del[0]?.sensitive], [secret, "", secret, secret]);
+    assert.ok(agent.seen.every(item => item.method === "PUT" || item.method === "POST" || item.method === "DELETE" || item.sensitive === ""), "a read never carries it");
+    const audit = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8");
+    assert.ok(!audit.includes(secret), "the secret is not in the audit trail");
+  } finally { await running.stop(); await agent.close(); }
+});
+
+test("an older admin agent that does not report its protection leaves it unknown, not open", async () => {
+  const agent = await fakeAgent({ status: false });
+  const running = await startServer({ ARMOR_ADMIN_SOCKET: agent.socket, ARMOR_ADMIN_TOKEN: TOKEN });
+  try {
+    const cookie = await studioCookie(running.base);
+    const status = (await call(running, cookie, "GET", "/api/v1/admin/status")).body;
+    assert.deepEqual([status.available, status.sensitive_writes], [true, null]);
+  } finally { await running.stop(); await agent.close(); }
 });

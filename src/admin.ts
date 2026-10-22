@@ -8,18 +8,19 @@
 import http from "node:http";
 
 export type AdminReply = { status: number; body: Record<string, unknown> };
-export type AdminTransport = (method: string, path: string, body?: unknown) => Promise<AdminReply>;
+/** `headers` are extra headers for the one request (the second secret of the admin agent, when its owner locked the broker rules and the env files: it is given by the person at the console and never kept here). */
+export type AdminTransport = (method: string, path: string, body?: unknown, headers?: Record<string, string>) => Promise<AdminReply>;
 
 /** The agent as the server uses it: `available` is false when it is not configured or does not answer. */
 export type AdminAgent = { request: AdminTransport };
 
 /** Requests over the agent's Unix socket. A restart or an account change can take a few seconds, so the limit is generous. */
 export function unixTransport(socketPath: string, token: string, timeoutMs = 70_000, tokenHeader = "X-Armor-Admin-Token"): AdminTransport {
-  return (method, path, body) => new Promise<AdminReply>((resolve, reject) => {
+  return (method, path, body, headers) => new Promise<AdminReply>((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
     const request = http.request({
       socketPath, method, path, timeout: timeoutMs,
-      headers: { [tokenHeader]: token, "Content-Type": "application/json", ...(payload ? { "Content-Length": Buffer.byteLength(payload) } : {}) },
+      headers: { ...(headers ?? {}), [tokenHeader]: token, "Content-Type": "application/json", ...(payload ? { "Content-Length": Buffer.byteLength(payload) } : {}) },
     }, response => {
       const chunks: Buffer[] = [];
       response.on("data", chunk => chunks.push(chunk as Buffer));
