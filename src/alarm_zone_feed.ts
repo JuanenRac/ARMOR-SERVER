@@ -7,6 +7,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { createHmac, randomBytes } from "node:crypto";
 import { durableRename } from "./durable.js";
 import { isTriggered } from "./devices/catalog.js";
 import type { Device } from "./devices/registry.js";
@@ -45,11 +46,52 @@ export function zoneMessage(device: Device, link: ZoneLink): { zone: string; sta
   return { zone: link.zone_id, state, battery_low: typeof battery === "number" && battery <= LOW_BATTERY };
 }
 
+/**
+ * Signs the zone messages so that a panel can tell they came from this server: HMAC-SHA256 over `node|zone|state|battery_low|seq` with a key of the panel, derived from a secret of this
+ * server (`zone-feed.key`, 0600). `seq` is the time in milliseconds and only goes up, so a panel that remembers the last one refuses a message that is replayed. The key of a panel is given
+ * to the panel by an administrator (GET /api/v1/alarm/zone-feed/key/{node_id}); it never travels on the broker.
+ */
+export function zoneFeedSignature(keyHex: string, node: string, message: { zone: string; state: string; battery_low: boolean }, seq: number): string {
+  return createHmac("sha256", Buffer.from(keyHex, "hex")).update(`${node}|${message.zone}|${message.state}|${message.battery_low ? 1 : 0}|${seq}`).digest("hex");
+}
+
+export class ZoneFeedSigner {
+  #master: Buffer;
+  constructor(file: string) {
+    let master: Buffer | undefined;
+    try { const text = fs.readFileSync(file, "utf8").trim(); if (/^[0-9a-f]{64}$/.test(text)) master = Buffer.from(text, "hex"); } catch { /* the first time */ }
+    if (!master) {
+      master = randomBytes(32);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      const temporary = `${file}.tmp`;
+      fs.writeFileSync(temporary, master.toString("hex"), { mode: 0o600 });
+      durableRename(temporary, file);
+    }
+    this.#master = master;
+  }
+
+  /** The key of one panel, in hex. */
+  keyFor(node: string): string { return createHmac("sha256", this.#master).update(`armor-zone-feed|${node}`).digest("hex"); }
+
+  sign(node: string, message: { zone: string; state: string; battery_low: boolean }, seq: number): string {
+    return zoneFeedSignature(this.keyFor(node), node, message, seq);
+  }
+}
+
+/** What the server tells a panel about the policy it keeps (armor/alarm/{node}/policy): the panel applies the part it understands. */
+export type AlarmPolicy = { config_hash: boolean; zone_feed: boolean; zone_feed_signature: boolean };
+
 export class AlarmZoneFeed {
   #links: ZoneLink[] = [];
   #last = 0;
 
-  constructor(private readonly file: string, private readonly options: { publish: (topic: string, payload: string) => void; devices: () => Device[]; refreshMs?: number; now?: () => number; warn?: (message: string) => void }) {
+  constructor(private readonly file: string, private readonly options: { publish: (topic: string, payload: string) => void; devices: () => Device[]; refreshMs?: number; now?: () => number; warn?: (message: string) => void;
+    /** The setting server.zone_feed: when it is off nothing is sent about the zones (default on). */
+    enabled?: () => boolean;
+    /** Signs the messages when given (the setting server.zone_feed_signature is on). */
+    signer?: () => ZoneFeedSigner | undefined;
+    /** The panels to tell the policy to, and the policy (the settings that concern a panel). */
+    panels?: () => string[]; policy?: () => AlarmPolicy }) {
     try { this.#links = parseZoneLinks(JSON.parse(fs.readFileSync(file, "utf8"))); } catch { this.#links = []; }
   }
 
@@ -83,11 +125,27 @@ export class AlarmZoneFeed {
     if (now - this.#last < (this.options.refreshMs ?? 30_000)) return;
     this.#last = now;
     this.refresh();
+    this.publishPolicy();
+  }
+
+  /** The policy goes to every panel (and again with every refresh, so a panel that restarts learns it). Panels that do not know it ignore the message. */
+  publishPolicy(): void {
+    if (!this.options.policy || !this.options.panels) return;
+    const payload = JSON.stringify(this.options.policy());
+    for (const node of new Set([...this.options.panels(), ...this.#links.map(link => link.node_id)])) {
+      try { this.options.publish(`armor/alarm/${node}/policy`, payload); }
+      catch (error) { this.options.warn?.(`alarm policy: ${error instanceof Error ? error.message : String(error)}`); }
+    }
   }
 
   #send(device: Device, link: ZoneLink): void {
-    if (!device.online) return;
-    try { this.options.publish(`armor/alarm/${link.node_id}/zigbee`, JSON.stringify(zoneMessage(device, link))); }
+    if (!device.online || this.options.enabled?.() === false) return;
+    try {
+      const message = zoneMessage(device, link);
+      const signer = this.options.signer?.();
+      const seq = (this.options.now ?? Date.now)();
+      this.options.publish(`armor/alarm/${link.node_id}/zigbee`, JSON.stringify(signer ? { ...message, seq, sig: signer.sign(link.node_id, message, seq) } : message));
+    }
     catch (error) { this.options.warn?.(`zone feed: ${error instanceof Error ? error.message : String(error)}`); }
   }
 }

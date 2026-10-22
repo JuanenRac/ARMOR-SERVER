@@ -90,6 +90,8 @@ export type ArmorConfig = {
   alarmCommands: boolean;
   /** ARMOR_DISARM_PIN=required: disarming from Studio, the phone or the wall panel needs the PIN of the signed-in user, and a user without a PIN cannot disarm. Otherwise a PIN is asked only of users who have one. */
   disarmPinRequired: boolean;
+  /** What ARMOR_DISARM_PIN fixes when it is set (`required` = always, any other value = if_set); undefined when it is not set, and then the setting `alarm.disarm_pin` of Studio decides. */
+  disarmPinEnv: "always" | "if_set" | undefined;
   /**
    * ARMOR_CONTROL_DISARM=1: the control token may disarm (POST /api/v1/control/disarm) even while ARMOR_DISARM_PIN=required. That route carries no PIN and no person, so with the PIN
    * required it is shut unless the installation says it wants it (a script that must be able to disarm).
@@ -317,6 +319,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
   const batteryWrite = env.ARMOR_BATTERY_WRITE === "1";
   const alarmCommands = env.ARMOR_ALARM_COMMANDS === "1";
   const disarmPinRequired = env.ARMOR_DISARM_PIN?.trim() === "required";
+  const disarmPinEnv = disarmPinRequired ? "always" : env.ARMOR_DISARM_PIN?.trim() ? "if_set" : undefined;
   const controlDisarm = env.ARMOR_CONTROL_DISARM === "1";
   const evidenceKey = env.ARMOR_EVIDENCE_KEY?.trim() ? secret(env, "ARMOR_EVIDENCE_KEY") : null;
   const trustRaw = env.ARMOR_TRUST_PROXY?.trim() ?? "";
@@ -333,7 +336,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     if (secrets[first]![1] === secrets[second]![1]) throw new ConfigError(`${secrets[first]![0]} and ${secrets[second]![0]} must be different values`);
   }
   if (!env.ARMOR_OPERATOR_TOKEN?.trim() && !isLoopbackHost(host)) warnings.push("ARMOR_OPERATOR_TOKEN is not set: the operator token is the control token. Set a different one so that a service with operator rights cannot also arm and disarm.");
-  if (!disarmPinRequired) warnings.push("ARMOR_DISARM_PIN is not \"required\": anyone signed in as a user without a PIN can disarm the system; set a PIN for each user and ARMOR_DISARM_PIN=required.");
+  if (!disarmPinRequired) warnings.push("ARMOR_DISARM_PIN is not \"required\": unless the setting alarm.disarm_pin (Studio, Security) is \"always\", anyone signed in as a user without a PIN can disarm the system, and with \"never\" nobody is asked for a PIN; set a PIN for each user and choose \"always\" there, or ARMOR_DISARM_PIN=required, which wins over the setting.");
   const haPrefix = (env.ARMOR_HA_DISCOVERY_PREFIX ?? "homeassistant").trim();
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(haPrefix)) throw new ConfigError("ARMOR_HA_DISCOVERY_PREFIX is one word of letters, digits, - and _");
   const haDiscovery = env.ARMOR_HA_DISCOVERY === "1" ? { prefix: haPrefix } : null;
@@ -379,7 +382,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     escalateAfterMin: integer(env, "ARMOR_ESCALATE_AFTER_MIN", 0, 0, 1440),
     alertMinTargets: integer(env, "ARMOR_ALERT_MIN_TARGETS", 1, 1, 20),
     cameraCheckS: integer(env, "ARMOR_CAMERA_CHECK_S", 20, 0, 3600),
-    alertWebhookUrl, alertWebhookSecret, telegram, ntfy, fcmServiceAccount, homeAssistant, alertLanguage, electricalSwitching, batteryWrite, alarmCommands, disarmPinRequired, controlDisarm, evidenceKey, trustProxy, haDiscovery, admin, maintenance, voice, aiToken,
+    alertWebhookUrl, alertWebhookSecret, telegram, ntfy, fcmServiceAccount, homeAssistant, alertLanguage, electricalSwitching, batteryWrite, alarmCommands, disarmPinRequired, disarmPinEnv, controlDisarm, evidenceKey, trustProxy, haDiscovery, admin, maintenance, voice, aiToken,
     tls,
     warnings,
   };

@@ -33,7 +33,8 @@ The server also subscribes to `armor/solar/+/+/state` and `armor/electrical/+/st
 | `armor/device/#` and the state topics of the devices registered | read | devices |
 | `armor/server/alert` | write | every alarm that is not silent |
 | `armor/alarm/<node>/command` | write | only with `ARMOR_ALARM_COMMANDS=1` (arm, disarm and silence the siren of a panel) |
-| `armor/alarm/<node>/zigbee` | write | the state of the Zigbee zones of a panel |
+| `armor/alarm/<node>/zigbee` | write | the state of the Zigbee zones of a panel; with the setting `server.zone_feed` off nothing is written, and with `server.zone_feed_signature` on every message carries `seq` and `sig` (HMAC-SHA256 with the key of the panel, `GET /api/v1/alarm/zone-feed/key/{node}`) |
+| `armor/alarm/<node>/policy` | write | the security options that concern a panel (`config_hash`, `zone_feed`, `zone_feed_signature`), every 30 seconds and when an administrator changes one |
 | `armor/electrical/<node>/command` | write | only with `ARMOR_ELECTRICAL_SWITCHING=1` (a switch of a node) |
 | `armor/solar/<node>/maintenance/command` | write | only with `ARMOR_BATTERY_WRITE=1` (an order to write to a Pylontech battery of a gateway node) |
 | `armor/solar/+/maintenance/result` | read | the gateway nodes' answers to those orders |
@@ -44,6 +45,21 @@ The broker's access list must give the server's account exactly that and nothing
 (`armor/` except `armor/device/`, and `homeassistant/`) cannot be used as the state or command topic of a device: otherwise anyone who may create a device could make the
 server publish a command to a panel. A **silent** alarm (a disarm with the duress PIN) is never put on `armor/server/alert`; it goes only to the webhook, Telegram and ntfy.
 Commands to panels and switches are off unless the installation turns them on, and each one is checked and audited (see `docs/NODE_FIRMWARE.md` for what a node does with it).
+
+## Security options
+
+An administrator turns these on and off from Studio (Security) or with `PUT /api/v1/security/settings`; each default is the behaviour the server always had, and the audit trail says which changes lower the security. They are kept in `security-settings.json` and announced to every signed-in client in `capabilities.security` of `GET /api/v1/studio/session`.
+
+| Setting | Values (default first) | What it does |
+| --- | --- | --- |
+| `alarm.disarm_pin` | `if_set`, `never`, `always` | The PIN typed to disarm or to silence a siren: asked of a user who has one / not asked / asked of everybody (a user without a PIN cannot disarm). The duress PIN is never changed by it. `ARMOR_DISARM_PIN`, when set, wins over the setting (`required` is `always`) and Studio shows the option as fixed. |
+| `voice.silence_confirmation` | `off`, `pin`, `double_turn` | What the voice service asks before it silences the alarm. The server sends it with every turn of audio it passes on, as the header `X-Armor-Policy: {"silence_confirmation":"<value>"}`; a service that does not know it treats it as `off`. |
+| `alarm.config_hash` | on, off | The panel binds its saved armed state to its zones and PIN and does not restore it when either changed (published in the policy; the panel side is part of the next firmware batch). |
+| `server.zone_feed` | on, off | Whether the server tells the panels the state of their Zigbee zones. |
+| `server.zone_feed_signature` | on, off | Whether each zone message is signed (`seq`, `sig`) so a panel can tell it came from this server. The key of each panel is derived from a secret of the server (`zone-feed.key`) and handed to an administrator once, never over the broker. |
+| `media.rtsp_proxy` | on, off | Whether FFmpeg reads the cameras through the local tunnel (see `docs/CAMERA_MEDIA_GATEWAY.md`). |
+
+Panel side, pending: the firmware of the alarm panel does not yet read the policy, check the signature or store a hash of its configuration with its saved state; until it does, those three settings are published and signed but nothing on the panel acts on them.
 
 ## Headers of the API
 

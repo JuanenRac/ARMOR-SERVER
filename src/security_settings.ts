@@ -1,0 +1,125 @@
+/**
+ * The security options an administrator can turn on or off from Studio, kept in `security-settings.json` with the rest of the server's data. Each has a default that is the way the
+ * server always behaved (or the more careful way when the option is new and nothing depends on it), a closed list of values, and a rule about who may change it (an administrator,
+ * through `/api/v1/security/settings`). Lowering one is written in the audit trail.
+ *
+ *   alarm.disarm_pin             never | if_set | always   the PIN typed to disarm or silence a siren (the duress PIN is never changed by this)
+ *   voice.silence_confirmation   off | pin | double_turn   what the voice assistant asks before silencing the alarm (sent to the voice service with every turn)
+ *   alarm.config_hash            on | off                  the panel binds its saved armed state to its zones and PIN and does not restore it if they changed (panel side)
+ *   server.zone_feed             on | off                  the server tells the panels the state of their Zigbee zones
+ *   server.zone_feed_signature   on | off                  every zone message is signed, so a panel can tell it came from this server
+ *   media.rtsp_proxy             on | off                  FFmpeg reads the cameras through the local tunnel (off: the camera login goes in its command line, visible to every user of the machine)
+ *
+ * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
+ */
+import fs from "node:fs";
+import path from "node:path";
+import { durableRename } from "./durable.js";
+
+export const DISARM_PIN_VALUES = ["never", "if_set", "always"] as const;
+export const SILENCE_VALUES = ["off", "pin", "double_turn"] as const;
+export type DisarmPinMode = typeof DISARM_PIN_VALUES[number];
+export type SilenceConfirmation = typeof SILENCE_VALUES[number];
+
+export type SecuritySettingsValues = {
+  "alarm.disarm_pin": DisarmPinMode;
+  "voice.silence_confirmation": SilenceConfirmation;
+  "alarm.config_hash": boolean;
+  "server.zone_feed": boolean;
+  "server.zone_feed_signature": boolean;
+  "media.rtsp_proxy": boolean;
+};
+export type SecuritySettingKey = keyof SecuritySettingsValues;
+
+export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze({
+  "alarm.disarm_pin": "if_set",
+  "voice.silence_confirmation": "off",
+  "alarm.config_hash": true,
+  "server.zone_feed": true,
+  "server.zone_feed_signature": true,
+  "media.rtsp_proxy": true,
+});
+
+export class SecuritySettingsInvalid extends Error {
+  constructor(message: string, readonly key?: string) { super(message); }
+}
+
+const KEYS = Object.keys(SECURITY_DEFAULTS) as SecuritySettingKey[];
+const isKey = (value: string): value is SecuritySettingKey => (KEYS as string[]).includes(value);
+
+/** The value if it is a valid one for that setting; undefined otherwise. */
+function clean(key: SecuritySettingKey, value: unknown): SecuritySettingsValues[SecuritySettingKey] | undefined {
+  if (key === "alarm.disarm_pin") return (DISARM_PIN_VALUES as readonly unknown[]).includes(value) ? value as DisarmPinMode : undefined;
+  if (key === "voice.silence_confirmation") return (SILENCE_VALUES as readonly unknown[]).includes(value) ? value as SilenceConfirmation : undefined;
+  return typeof value === "boolean" ? value : undefined;
+}
+
+export class SecuritySettings {
+  #values: SecuritySettingsValues = { ...SECURITY_DEFAULTS };
+  readonly #file: string;
+  readonly #lockedByEnvironment: () => Partial<Record<SecuritySettingKey, unknown>>;
+  readonly #onChange: (changes: Partial<SecuritySettingsValues>) => void;
+
+  /** `environment` gives the values the environment fixes (they win over the stored ones); `onChange` is told after every change. */
+  constructor(file: string, options: { environment?: () => Partial<Record<SecuritySettingKey, unknown>>; onChange?: (changes: Partial<SecuritySettingsValues>) => void } = {}) {
+    this.#file = file;
+    this.#lockedByEnvironment = options.environment ?? (() => ({}));
+    this.#onChange = options.onChange ?? (() => undefined);
+    try {
+      const raw = JSON.parse(fs.readFileSync(file, "utf8")) as { settings?: Record<string, unknown> };
+      for (const [key, value] of Object.entries(raw?.settings ?? {})) {
+        if (!isKey(key)) continue;
+        const ok = clean(key, value);
+        if (ok !== undefined) (this.#values as Record<string, unknown>)[key] = ok;   // a value that is not valid keeps the default
+      }
+    } catch { /* no file, or one that cannot be read: the defaults */ }
+  }
+
+  /** What is in force: the stored values, except those the environment fixes. */
+  get effective(): SecuritySettingsValues {
+    const out = { ...this.#values } as Record<string, unknown>;
+    for (const [key, value] of Object.entries(this.#lockedByEnvironment())) if (isKey(key) && value !== undefined) out[key] = value;
+    return out as SecuritySettingsValues;
+  }
+
+  get stored(): SecuritySettingsValues { return { ...this.#values }; }
+
+  /** The settings the environment fixes: Studio shows them and cannot change them. */
+  get lockedKeys(): SecuritySettingKey[] { return Object.entries(this.#lockedByEnvironment()).filter(([, value]) => value !== undefined).map(([key]) => key as SecuritySettingKey); }
+
+  get<K extends SecuritySettingKey>(key: K): SecuritySettingsValues[K] { return this.effective[key]; }
+
+  /** Applies the given settings (a partial object); throws SecuritySettingsInvalid on an unknown name or a bad value, changing nothing. Returns the ones that changed. */
+  update(patch: unknown): Partial<SecuritySettingsValues> {
+    if (typeof patch !== "object" || patch === null || Array.isArray(patch)) throw new SecuritySettingsInvalid("the settings are an object");
+    const next = { ...this.#values } as Record<string, unknown>;
+    const changes: Record<string, unknown> = {};
+    const locked = new Set(this.lockedKeys as string[]);
+    for (const [key, value] of Object.entries(patch)) {
+      if (!isKey(key)) throw new SecuritySettingsInvalid(`unknown setting ${key.slice(0, 60)}`, key.slice(0, 60));
+      const ok = clean(key, value);
+      if (ok === undefined) throw new SecuritySettingsInvalid(`invalid value for ${key}`, key);
+      if (locked.has(key) && ok !== this.effective[key]) throw new SecuritySettingsInvalid(`${key} is fixed by the environment of the server`, key);
+      if (next[key] !== ok) { next[key] = ok; changes[key] = ok; }
+    }
+    if (!Object.keys(changes).length) return {};
+    this.#save(next as SecuritySettingsValues);
+    this.#values = next as SecuritySettingsValues;
+    this.#onChange(changes as Partial<SecuritySettingsValues>);
+    return changes as Partial<SecuritySettingsValues>;
+  }
+
+  #save(values: SecuritySettingsValues): void {
+    fs.mkdirSync(path.dirname(this.#file), { recursive: true });
+    const temporary = `${this.#file}.tmp`;
+    fs.writeFileSync(temporary, JSON.stringify({ schema: 1, settings: values }, null, 2), { encoding: "utf8", mode: 0o600 });
+    durableRename(temporary, this.#file);
+  }
+}
+
+/** True when the new value lowers security compared with the old one (the audit trail and Studio say so). */
+export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boolean {
+  if (key === "alarm.disarm_pin") return DISARM_PIN_VALUES.indexOf(to as DisarmPinMode) < DISARM_PIN_VALUES.indexOf(from as DisarmPinMode);
+  if (key === "voice.silence_confirmation") return SILENCE_VALUES.indexOf(to as SilenceConfirmation) < SILENCE_VALUES.indexOf(from as SilenceConfirmation);
+  return from === true && to === false;
+}

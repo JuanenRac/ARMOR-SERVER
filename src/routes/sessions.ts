@@ -13,6 +13,21 @@ import { hasBearer } from "../http/auth.js";
 type Challenge = { userId: string; username: string; role: string; origin: "local" | "remote"; ip: string; agent: string; until: number; tries: number };
 const CHALLENGE_MS = 120_000;
 
+/**
+ * What the signed-in person may do and what this server offers, so Studio and the phone show or hide things from one place instead of testing the role in many. `actions` follow the
+ * role (the routes still check it: this is only what the screens show); `features` are the parts of the server that exist in this version; `security` is what is in force of the options
+ * an administrator sets (see security_settings.ts). A server that does not send this field is an older one: the clients then allow everything the role allows, as they always did.
+ */
+export function capabilitiesOf(context: AppContext, role: string) {
+  const admin = role === "admin", operator = admin || role === "operator";
+  return {
+    version: 1,
+    actions: { arm: operator, disarm: operator, acknowledge: operator, operate: operator, camera_control: operator, administer: admin, manage_users: admin, security_settings: admin },
+    features: ["security_settings", "zone_feed_key", "rtsp_tunnel"],
+    security: { ...context.securitySettings.effective, locked: context.securitySettings.lockedKeys },
+  };
+}
+
 export function registerSessionRoutes(app: Express, context: AppContext): void {
   const { config, audit, connections, sightingOf, studioSessions, operatorSessions, requireOperator, users, studioUser, totp, originOfRequest, notifier, store } = context;
   /** The places a person has already signed in from outside the house (kept while the server runs): a new one is told to the places the alarms go to. */
@@ -46,7 +61,7 @@ export function registerSessionRoutes(app: Express, context: AppContext): void {
 
   app.get("/api/v1/studio/session", (request, response) => {
     const user = studioUser(request);
-    return response.json({ authenticated: Boolean(user), ...(user ? { user: { id: user.id, username: user.username, role: user.role } } : {}) });
+    return response.json({ authenticated: Boolean(user), ...(user ? { user: { id: user.id, username: user.username, role: user.role }, capabilities: capabilitiesOf(context, user.role) } : {}) });
   });
 
   app.post("/api/v1/studio/session", globalLimit, placeLimit, loginLimit, async (request, response) => {

@@ -40,7 +40,9 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
     try {
       const reply = await fetch(`${config.voice.url.replace(/\/$/, "")}/v1/turn`, {
         method: "POST", body: new Uint8Array(body), signal: AbortSignal.timeout(30_000),
-        headers: { "Content-Type": "audio/L16;rate=16000", "X-Armor-Voice-Token": config.voice.token, "X-Armor-Language": String(request.headers["x-armor-language"] ?? "en"), "X-Armor-Client": request.ip ?? "panel" },
+        headers: { "Content-Type": "audio/L16;rate=16000", "X-Armor-Voice-Token": config.voice.token, "X-Armor-Language": String(request.headers["x-armor-language"] ?? "en"), "X-Armor-Client": request.ip ?? "panel",
+          // The policy of this server for the voice service (JSON): what it asks before silencing the alarm (setting voice.silence_confirmation: off, pin or double_turn). A service that does not know it treats it as off.
+          "X-Armor-Policy": JSON.stringify({ silence_confirmation: context.securitySettings.get("voice.silence_confirmation") }) },
       });
       const text = await reply.text();
       audit.record({ action: "voice.turn", outcome: reply.ok ? "allowed" : "denied", detail: String(reply.status) });

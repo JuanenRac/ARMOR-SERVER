@@ -10,6 +10,7 @@ import { forwardCompatible, parseHealth, parseTelemetry } from "../contracts.js"
 import { stampOf } from "../mqtt.js";
 import { hasBearer } from "../http/auth.js";
 import { ingestCaller } from "../http/node_token.js";
+import { disarmPinMode } from "./disarm_gate.js";
 
 export function registerIngestRoutes(app: Express, context: AppContext, startedAt: number, version: string): void {
   const { config, store, audit, requireOperator, operatorAuthorized } = context;
@@ -54,7 +55,7 @@ export function registerIngestRoutes(app: Express, context: AppContext, startedA
     const mode = request.params.mode;
     if (mode !== "arm" && mode !== "disarm") return response.sendStatus(404);
     // This route knows no person and takes no PIN: with the PIN required for disarming it is closed to disarm unless the installation asked for it (ARMOR_CONTROL_DISARM=1).
-    if (mode === "disarm" && config.disarmPinRequired && !config.controlDisarm) {
+    if (mode === "disarm" && disarmPinMode(context) === "always" && !config.controlDisarm) {
       audit.record({ action: "control.disarm", outcome: "denied", detail: "the PIN is required" });
       return response.status(403).json({ error: "disarming with the control token is off while the PIN is required; disarm from Studio, the phone or the wall panel", code: "pin_required" });
     }

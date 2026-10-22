@@ -9,6 +9,7 @@ import type { RequestHandler } from "express";
 import { unixTransport, type AdminAgent } from "./admin.js";
 import { FirmwareService } from "./firmware.js";
 import { AiGateway } from "./ai.js";
+import { SecuritySettings } from "./security_settings.js";
 import { createAuditLog, type AuditLog } from "./audit.js";
 import { CameraVault } from "./cameras/vault.js";
 import { DiscoveryGate } from "./cameras/discovery.js";
@@ -30,7 +31,7 @@ import { AutomationEngine, type Action } from "./automations.js";
 import { DeviceRegistry, type DeviceChange } from "./devices/registry.js";
 import { sendCommand, type Command } from "./devices/commands.js";
 import { isTriggered } from "./devices/catalog.js";
-import { AlarmZoneFeed } from "./alarm_zone_feed.js";
+import { AlarmZoneFeed, ZoneFeedSigner } from "./alarm_zone_feed.js";
 import { CaptureOnDetect } from "./capture_on_detect.js";
 import { IgnoreZones } from "./ignore_zones.js";
 import { FcmDevices, fcmChannel, parseServiceAccount } from "./push_fcm.js";
@@ -144,6 +145,10 @@ export type AppContext = {
   controlLink: { publish?: (topic: string, payload: string) => void };
   /** Where its commands are published; set when the broker is connected (never retained, at most once). */
   alarmLink: { publish?: (topic: string, payload: string) => void };
+  /** Signs the zone messages and gives each panel its key. */
+  zoneFeedSigner: ZoneFeedSigner;
+  /** The security options an administrator turns on and off from Studio (see security_settings.ts). */
+  securitySettings: SecuritySettings;
   /** The Zigbee sensors linked to the zones of the alarm panels, told to the panel while this server holds the radio. */
   alarmZoneFeed: AlarmZoneFeed;
   /** The photos and the video taken by themselves when a camera sees something while the perimeter is armed. */
@@ -213,8 +218,14 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     legacySecret: config.cameraKeyIsFallback ? undefined : config.controlToken,
     warn,
   });
-  const evidence = new EvidenceLibrary({ root: path.join(config.dataDir, "media"), ffmpegPath: config.ffmpegPath, maxBytes: config.maxMediaBytes, retentionMs: config.mediaRetentionMs, warn });
-  const relays = new RelayManager({ ffmpegPath: config.ffmpegPath, maxRelays: config.maxMjpegRelays, fps: config.liveFps, width: config.liveWidth });
+  const securityChanged: { tell?: (changes: Record<string, unknown>) => void } = {};
+  const securitySettings = new SecuritySettings(path.join(config.dataDir, "security-settings.json"), {
+    environment: () => ({ "alarm.disarm_pin": config.disarmPinEnv }),
+    onChange: changes => securityChanged.tell?.(changes),
+  });
+  const rtspProxy = () => securitySettings.get("media.rtsp_proxy");
+  const evidence = new EvidenceLibrary({ root: path.join(config.dataDir, "media"), proxy: rtspProxy, ffmpegPath: config.ffmpegPath, maxBytes: config.maxMediaBytes, retentionMs: config.mediaRetentionMs, warn });
+  const relays = new RelayManager({ proxy: rtspProxy, ffmpegPath: config.ffmpegPath, maxRelays: config.maxMjpegRelays, fps: config.liveFps, width: config.liveWidth });
   const events = new EventLog({ file: path.join(config.dataDir, "events.log") });
   const clients = new ClientRegistry({ file: path.join(config.dataDir, "connections.json"), now: overrides.now });
   const connections = new ConnectionTracker(clients, body => events.append(body));
@@ -356,7 +367,12 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   alarmRules.held = node => nodeControl.isHeld(node);
   const captureOnDetect = new CaptureOnDetect({ file: path.join(config.dataDir, "capture-on-detect.json"), audit, now: overrides.now, tools: { snapshot: camera => evidence.snapshot(camera), startRecording: camera => evidence.startRecording(camera), stopRecording: id => evidence.stopRecording(id), isRecording: id => evidence.isRecording(id) } });
   const ignoreZones = new IgnoreZones(path.join(config.dataDir, "camera-ignore-zones.json"));
-  const alarmZoneFeed = new AlarmZoneFeed(path.join(config.dataDir, "alarm-zone-links.json"), { publish: (topic, payload) => { if (!alarmLink.publish) throw new Error("the MQTT broker is not connected"); alarmLink.publish(topic, payload); }, devices: () => devices.list(), now: overrides.now, warn });
+  const zoneFeedSigner = new ZoneFeedSigner(path.join(config.dataDir, "zone-feed.key"));
+  const alarmZoneFeed = new AlarmZoneFeed(path.join(config.dataDir, "alarm-zone-links.json"), { publish: (topic, payload) => { if (!alarmLink.publish) throw new Error("the MQTT broker is not connected"); alarmLink.publish(topic, payload); }, devices: () => devices.list(), now: overrides.now, warn,
+    enabled: () => securitySettings.get("server.zone_feed"), signer: () => (securitySettings.get("server.zone_feed_signature") ? zoneFeedSigner : undefined),
+    panels: () => alarmNodes.list().map(node => node.node_id),
+    policy: () => ({ config_hash: securitySettings.get("alarm.config_hash"), zone_feed: securitySettings.get("server.zone_feed"), zone_feed_signature: securitySettings.get("server.zone_feed_signature") }) });
+  securityChanged.tell = () => { try { alarmZoneFeed.publishPolicy(); alarmZoneFeed.refresh(); } catch { /* the broker is not connected: the next sweep tells it */ } };
   const alarmCommands = new AlarmCommands({
     enabled: config.alarmCommands, nodes: alarmNodes, audit, now: overrides.now,
     publish: (topic, payload) => { if (!alarmLink.publish) throw new Error("the MQTT broker is not connected"); alarmLink.publish(topic, payload); },
@@ -446,11 +462,11 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(401).json({ error: "the observation service token is required" });
   };
   return {
-    ai: overrides.ai ?? new AiGateway({ ffmpegPath: config.ffmpegPath ?? "" }), requireAi,
+    ai: overrides.ai ?? new AiGateway({ ffmpegPath: config.ffmpegPath ?? "", proxy: rtspProxy }), requireAi,
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, securitySettings, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

@@ -65,6 +65,7 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/alarm/profiles` | operator | `routes/alarm_profiles.ts` |
 | PUT | `/api/v1/alarm/profiles` | administrator | `routes/alarm_profiles.ts` |
 | POST | `/api/v1/alarm/state` | none here | `routes/alarm.ts` |
+| GET | `/api/v1/alarm/zone-feed/key/:node` | administrator, fresh proof of identity | `routes/security.ts` |
 | GET | `/api/v1/alarm/zone-links` | operator | `routes/alarm.ts` |
 | PUT | `/api/v1/alarm/zone-links` | administrator | `routes/alarm.ts` |
 | DELETE | `/api/v1/alarms` | operator | `routes/alarms.ts` |
@@ -181,6 +182,8 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/remote/check` | administrator | `routes/sessions.ts` |
 | GET | `/api/v1/rules` | operator | `routes/history.ts` |
 | PUT | `/api/v1/rules` | operator | `routes/history.ts` |
+| GET | `/api/v1/security/settings` | administrator | `routes/security.ts` |
+| PUT | `/api/v1/security/settings` | administrator, fresh proof of identity | `routes/security.ts` |
 | GET | `/api/v1/site` | operator | `routes/alarms.ts` |
 | PUT | `/api/v1/site` | operator | `routes/alarms.ts` |
 | DELETE | `/api/v1/site/versions` | operator | `routes/alarms.ts` |

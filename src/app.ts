@@ -49,6 +49,7 @@ import type { SolarHistoryFile } from "./solar.js";
 import { registerMediaRoutes } from "./routes/media.js";
 import { registerPreferencesRoutes } from "./routes/preferences.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
+import { registerSecurityRoutes } from "./routes/security.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerFirmwareRoutes } from "./routes/firmware.js";
 import { registerNodePanelRoutes } from "./node_panel_proxy.js";
@@ -129,6 +130,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
 
   registerIngestRoutes(app, context, Date.now(), version);
   registerSessionRoutes(app, context);
+  registerSecurityRoutes(app, context);
   registerUserRoutes(app, context);
   registerPreferencesRoutes(app, context);
   registerDeviceRoutes(app, context);
