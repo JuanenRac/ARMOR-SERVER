@@ -32,6 +32,8 @@ import { registerAlarmDesignRoutes } from "./routes/alarm_design.js";
 import { registerAlarmProfileRoutes } from "./routes/alarm_profiles.js";
 import { registerNodeHealthRoutes } from "./routes/node_health.js";
 import { registerNodeControlRoutes } from "./routes/node_control.js";
+import { registerDiagnosticsRoutes } from "./routes/diagnostics.js";
+import { parseRadarEvent, radarEventTopic } from "./radar_events.js";
 import { controlTopic, maintenanceTopic, parseControlResult, parseMaintenance, redactToken } from "./node_control.js";
 import { registerMaintenanceRoutes } from "./routes/maintenance.js";
 import { networkTopic, parseNetworkMessage } from "./network.js";
@@ -118,7 +120,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     if (config.remotePolicy === "full" || context.studioSessions.originOf(request) !== "remote") return next();
     const reads = request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS";
     const own = /^\/api\/v1\/(studio\/(session|sessions|elevate|totp)|push\/(un)?register)/.test(request.path) || (request.method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/stream-ticket$/.test(request.path));
-    const admin = /^\/api\/v1\/(admin|users|installation|system\/ingest|preferences|solar\/battery-ops|nodes\/control|nodes\/[^/]+\/(panel|control))(\/|$)/.test(request.path);
+    const admin = /^\/api\/v1\/(admin|users|installation|system\/ingest|preferences|solar\/battery-ops|diagnostics\/tokens|nodes\/control|nodes\/[^/]+\/(panel|control|diagnostics))(\/|$)/.test(request.path);
     if (reads && !(admin && config.remotePolicy === "view")) return next();
     if (own || (config.remotePolicy === "operate" && !admin)) return next();
     context.audit.record({ action: "remote.policy", outcome: "denied", actor: context.studioUser(request)?.username, target: `${request.method} ${request.path}`, detail: config.remotePolicy });
@@ -140,6 +142,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerAlarmProfileRoutes(app, context);
   registerNodeHealthRoutes(app, context);
   registerNodeControlRoutes(app, context);
+  registerDiagnosticsRoutes(app, context);
   registerMaintenanceRoutes(app, context);
   registerAlarmRoutes(app, context);
   registerSystemRoutes(app, context, version);
@@ -271,6 +274,10 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
         matches: (message: ReturnType<typeof parseAlarmResult>, named: string) => message.node_id === named, apply: (message, named) => context.alarmCommands.handleResult(message, named) },
       { subscribe: ["armor/alarm/+/state"], named: (topic: string) => alarmTopic(topic), parse: parseAlarmMessage, fallback: "invalid alarm payload",
         matches: (message: ReturnType<typeof parseAlarmMessage>, named: string) => message.node_id === named, apply: message => context.alarmNodes.ingest(message) },
+      // The events of the perimeter engine of a radar node (a zone taken or left, a line crossed, a covered sensor, a sensor whose own Bluetooth is open ...): armor/radar/{node}/events, QoS 1. A
+      // repeat of an event (the same start and sequence number) is kept once.
+      { subscribe: ["armor/radar/+/events"], named: radarEventTopic, parse: parseRadarEvent, fallback: "invalid radar event",
+        matches: (message: ReturnType<typeof parseRadarEvent>, named: string) => message.node_id === named, apply: (message: ReturnType<typeof parseRadarEvent>) => { context.radarEvents.ingest(message); } },
       // The health report of every family of node: armor/health/{node}. A report older than the one before is dropped, and a node without a clock is stamped on arrival. The same
       // topic carries the broker's last will for the node (the node was lost without saying goodbye) and the birth it says each time it connects, both retained: see isNodeWill and isNodeBirth in node_health.ts.
       { subscribe: ["armor/health/+"], named: healthTopic, parse: parseNodeHealth, fallback: "invalid node health payload",
@@ -303,7 +310,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   let sweepFailing = false;
   const sweeper = setInterval(() => {
     try {
-      context.escalator.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.batteryWrite.sweep(); context.nodeControl.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.reportSilentNodes(); context.networkNodes.sweep();
+      context.escalator.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.batteryWrite.sweep(); context.nodeControl.sweep(); context.diagnosticTokens.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.reportSilentNodes(); context.networkNodes.sweep();
       context.studioSessions.sweep(); context.operatorSessions.sweep(); context.connections.registry.tick(); context.nodeLife.flush();
       sweepFailing = false;
     } catch (error) {
@@ -331,7 +338,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       for (const timer of watchdogs) clearTimeout(timer);
       context.store.flush(); context.knownNodes.flush();
       context.studioSessions.flush(); context.connections.registry.flush(); context.nodeLife.flush();
-      clearTimeout(resume); context.devices.flush(); context.nodeControl.flush(); context.alarms.flush(); context.automations.close();
+      clearTimeout(resume); context.devices.flush(); context.nodeControl.flush(); context.diagnosticTokens.flush(); context.alarms.flush(); context.automations.close();
       await context.evidence.stopAll();   // a recording that is running is closed, not cut off
       context.notifier.close();
       context.ptz.close();

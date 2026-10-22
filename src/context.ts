@@ -57,6 +57,9 @@ import { RulesFile } from "./rules.js";
 import { ArmorStore, type SystemState } from "./store.js";
 import { PreferencesStore } from "./preferences.js";
 import { IngestLog } from "./ingest_log.js";
+import { DiagnosticTokens } from "./diagnostic_tokens.js";
+import { NodeDiagnosticsStore } from "./node_diagnostics.js";
+import { RadarEventStore, type RadarEvent } from "./radar_events.js";
 import { EnergyAlarmStore } from "./energy_alarms.js";
 import { ClientRegistry, ConnectionTracker, identify, NodeLife, systemBody, systemFromAudit, type Sighting, type SystemInput } from "./connections.js";
 import path from "node:path";
@@ -129,6 +132,12 @@ export type AppContext = {
   armProfiles: ArmProfileStore;
   /** The latest health report of every node and what is wrong with it (see node_health.ts). */
   nodeHealth: NodeHealthStore;
+  /** The read-only diagnostic tokens an administrator issues (see diagnostic_tokens.ts): only their hash is kept. */
+  diagnosticTokens: DiagnosticTokens;
+  /** The latest diagnostic package and log each node delivered when it was asked (see node_diagnostics.ts). */
+  nodeDiagnostics: NodeDiagnosticsStore;
+  /** The newest events of the perimeter engine of each radar node (see radar_events.ts). */
+  radarEvents: RadarEventStore;
   /** The orders given to the nodes from Studio and the phone (restart, pause, standby, identify, diagnostics, maintenance) and what each node did (see node_control_service.ts). */
   nodeControl: NodeControlService;
   /** Where its orders are published; set when the broker is connected (never retained, at most once). */
@@ -309,8 +318,22 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const armProfiles = new ArmProfileStore(path.join(config.dataDir, "arm-profiles.json"), overrides.now ? () => new Date(overrides.now!()) : undefined, warn);
   alarmRules.batteryProfileOf = id => { const registration = solarRegistry.list().find(item => `${item.node_id}/${item.device}` === id); return registration ? batteryProfile(registration.model) : undefined; };
   alarmRules.profileNotify = id => armProfiles.find(id)?.notify ?? (armProfiles.find(id) ? "urgent" : undefined);
+  const diagnosticTokens = new DiagnosticTokens({ file: path.join(config.dataDir, "diagnostic_tokens.json"), now: overrides.now, audit });
+  const nodeDiagnostics = new NodeDiagnosticsStore({ now: overrides.now });
+  // What the History says of an event of a radar node: the sensors' Bluetooth and the events that matter to the guard of the house by name; the zones taken and left only stay in the node's list.
+  const recordRadarEvent = (event: RadarEvent): void => {
+    if (event.event === "zone_occupied" || event.event === "zone_clear") return;
+    if (event.event === "sensor_bluetooth_open" || event.event === "sensor_bluetooth_closed") {
+      recordSystem({ category: "node", action: event.event, subject: `${event.node_id}:${event.sensor_id}`, ...(event.name ? { profile: event.name } : {}) });
+      return;
+    }
+    recordSystem({ category: "node", action: "radar_event", subject: event.node_id, profile: event.event });
+  };
+  const radarEvents = new RadarEventStore({ now: overrides.now, onNew: recordRadarEvent });
   const nodeHealth = new NodeHealthStore({
-    now: overrides.now, onReport: view => { controlHolder.service?.handleReport(view.report); alarmRules.handleNodeHealth(view); nodeLife.report(view.node_id, view.firmware); }, onForget: node => alarmRules.forgetNodeHealth(node),
+    now: overrides.now, onReport: view => { controlHolder.service?.handleReport(view.report); alarmRules.handleNodeHealth(view); nodeLife.report(view.node_id, view.firmware); },
+    onForget: node => { alarmRules.forgetNodeHealth(node); nodeDiagnostics.forget(node); diagnosticTokens.forgetNode(node); radarEvents.remove(node); },
+    onDirtyBoot: (node, _family, firmware, boot) => recordSystem({ category: "node", action: "dirty_boot", subject: node, profile: boot.cause, version: firmware }),
     remembered: node => controlHolder.service?.memoryOf(node),
   });
   const controlLink: AppContext["controlLink"] = {};
@@ -326,6 +349,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const nodeControl = new NodeControlService({
     publish: (topic, payload) => { if (!controlLink.publish) throw new Error("the MQTT broker is not connected"); controlLink.publish(topic, payload); },
     audit, history: recordSystem, health: node => nodeHealth.get(node), nodes: () => nodeHealth.list(), now: overrides.now, file: path.join(config.dataDir, "node_control.json"), maintenanceMaxS: config.nodeMaintenanceMaxS,
+    onPackage: (node, delivered, requestedBy) => nodeDiagnostics.keep(node, delivered, requestedBy),
     onHold: (node, held) => { if (held) alarmRules.holdOffline(node); else recheckSilence(node); },
   });
   controlHolder.service = nodeControl;
@@ -425,7 +449,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, nodeHealth, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

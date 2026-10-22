@@ -16,7 +16,9 @@ export type SystemCategory = "node" | "broker" | "settings" | "service" | "updat
 export type SystemAction = "appeared" | "returned" | "disappeared" | "firmware_changed" | "connected" | "disconnected" | "created" | "changed" | "removed" | "started" | "stopped" | "restarted" | "checked" | "installed" | "rolled_back"
   | "armed" | "disarmed" | "silenced" | "acknowledged" | "arm_requested" | "disarm_requested" | "silence_requested" | "backup_made" | "backup_restored" | "battery_requested" | "battery_operation"
   | "control_requested" | "control_acknowledged" | "control_refused" | "control_applied" | "control_back" | "control_lost"
-  | "maintenance_started" | "maintenance_ended" | "maintenance_expired";
+  | "maintenance_started" | "maintenance_ended" | "maintenance_expired"
+  | "dirty_boot" | "sensor_bluetooth_open" | "sensor_bluetooth_closed" | "radar_event"
+  | "diagnostic_token_issued" | "diagnostic_token_revoked" | "diagnostic_token_used" | "diagnostic_token_denied";
 export type ArmorEventBody =
   | { type: "alert"; node_id: string; from: AlertLevel; to: AlertLevel; targets: number }
   | { type: "node"; node_id: string; from: NodeStatus | null; to: NodeStatus }

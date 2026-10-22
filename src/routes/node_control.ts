@@ -62,7 +62,7 @@ export function registerNodeControlRoutes(app: Express, context: AppContext): vo
       const input = readControlRequest(request.body, "node", [id]);
       if (view.stale) throw new ControlError("node_unavailable", "the node has not reported lately", 409);
       if (NodeControlService.alreadyIn(input.operation, view)) throw new ControlError("already_in_state", "the node is in that state already", 409);
-      const started = nodeControl.start({ scope: "node", operation: input.operation, mode: "now", duration_s: input.duration_s, actor: actor(request), origin: origin(request), targets: [{ id, family: view.family }] });
+      const started = nodeControl.start({ scope: "node", operation: input.operation, mode: "now", duration_s: input.duration_s, detail: input.detail, actor: actor(request), origin: origin(request), targets: [{ id, family: view.family }] });
       return response.status(202).json(started);
     } catch (error) {
       if (error instanceof ControlError && error.code === "invalid_request") audit.record({ action: "node_control.request", outcome: "denied", actor: studioUser(request)?.username, target: id.slice(0, 64), detail: error.message.slice(0, 120) });

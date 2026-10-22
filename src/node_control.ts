@@ -6,11 +6,15 @@
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import { integer, onlyKnown, record } from "./contracts.js";
+import { parseDiagnosticPackage, type DiagnosticPackage } from "./node_diag_contract.js";
 
 export const CONTROL_OPERATIONS = ["restart", "pause", "resume", "standby", "identify", "diagnostics", "maintenance_on", "maintenance_off"] as const;
 export type ControlOperation = (typeof CONTROL_OPERATIONS)[number];
 export const CONTROL_ACTIONS = ["arm", "execute"] as const;
 export const CONTROL_MODES = ["now", "rolling"] as const;
+/** What a diagnostics order may ask for besides the plain snapshot: the diagnostic package (memory, tasks, why the node last started, versions, the allowed part of its settings, the core dump summary, the newest log) or the log alone. */
+export const DIAGNOSTIC_DETAILS = ["package", "log"] as const;
+export type DiagnosticDetail = (typeof DIAGNOSTIC_DETAILS)[number];
 export type ControlMode = (typeof CONTROL_MODES)[number];
 export const CONTROL_STAGES = ["armed", "restarting", "applied", "diagnostics", "rejected"] as const;
 export const CONTROL_REFUSALS = ["none", "not_armed", "invalid_token", "token_expired", "rate_limited", "already_restarting", "already_in_state", "busy_update", "busy_upload", "busy_slot_copy", "busy_battery", "unavailable"] as const;
@@ -55,13 +59,13 @@ export function personFor(name: string | undefined): string {
 
 export type ControlCommand = {
   kind: "node_control_command"; node_id: string; timestamp_ms: number; command_id: string; action: "arm" | "execute"; operation: ControlOperation; mode: ControlMode; requested_by: string;
-  delay_s?: number; slot?: number; duration_s?: number; token?: string;
+  delay_s?: number; slot?: number; duration_s?: number; token?: string; detail?: DiagnosticDetail;
 };
 
 /** An order as the contract has it, with the rules that join its fields (the same as the node's reader): nothing leaves this server that the contract would refuse. */
 export function parseControlCommand(value: unknown): ControlCommand {
   const body = record(value, "control command");
-  onlyKnown(body, ["kind", "node_id", "timestamp_ms", "command_id", "action", "operation", "mode", "requested_by", "delay_s", "slot", "duration_s", "token"], "control command");
+  onlyKnown(body, ["kind", "node_id", "timestamp_ms", "command_id", "action", "operation", "mode", "requested_by", "delay_s", "slot", "duration_s", "token", "detail"], "control command");
   if (body.kind !== "node_control_command") throw new Error("invalid kind");
   if (typeof body.node_id !== "string" || !NODE_ID.test(body.node_id)) throw new Error("invalid node_id");
   if (!integer(body.timestamp_ms) || body.timestamp_ms < 0) throw new Error("invalid timestamp_ms");
@@ -74,9 +78,11 @@ export function parseControlCommand(value: unknown): ControlCommand {
   if ("slot" in body && (!integer(body.slot) || body.slot < 0 || body.slot > MAX_SLOT)) throw new Error("invalid slot");
   if ("duration_s" in body && (!integer(body.duration_s) || body.duration_s < 1 || body.duration_s > 86_400)) throw new Error("invalid duration_s");
   if ("token" in body && (typeof body.token !== "string" || !TOKEN.test(body.token))) throw new Error("invalid token");
+  if ("detail" in body && (typeof body.detail !== "string" || !(DIAGNOSTIC_DETAILS as readonly string[]).includes(body.detail))) throw new Error("invalid detail");
   const execute = body.action === "execute";
   if (execute !== ("token" in body)) throw new Error("a token goes on an execute and on nothing else");
   if (execute && body.node_id === "all") throw new Error("an execute is for one node: its token is its own");
+  if ("detail" in body && !(execute && body.operation === "diagnostics")) throw new Error("a detail goes on the execute of diagnostics");
   if (body.mode === "rolling" && body.operation !== "restart") throw new Error("the rolling mode is only for a restart");
   if (("delay_s" in body || "slot" in body) && !(execute && body.operation === "restart")) throw new Error("a delay and a slot go on the execute of a restart");
   if ("slot" in body && body.mode !== "rolling") throw new Error("a slot goes with the rolling mode");
@@ -92,6 +98,8 @@ export function parseControlCommand(value: unknown): ControlCommand {
 
 export type ControlDiagnostics = {
   firmware: string; uptime_s: number; reset_reason: string; heap_free: number; heap_min: number; psram_free?: number; stack_min_free?: number; rssi?: number; mqtt_connected: boolean; state: NodeControlState; maintenance: boolean;
+  /** Only when the order asked for one: the diagnostic package, or the log alone. */
+  package?: DiagnosticPackage;
 };
 export type ControlResult = {
   kind: "node_control_result"; node_id: string; timestamp_ms: number; command_id: string; action: "arm" | "execute"; operation: ControlOperation; stage: (typeof CONTROL_STAGES)[number]; accepted: boolean; refusal: ControlRefusal;
@@ -109,7 +117,7 @@ const GROUPS: Record<string, { fields: string[]; required: string[] }> = {
 
 function parseDiagnostics(value: unknown): ControlDiagnostics {
   const body = record(value, "diagnostics");
-  onlyKnown(body, ["firmware", "uptime_s", "reset_reason", "heap_free", "heap_min", "psram_free", "stack_min_free", "rssi", "mqtt_connected", "state", "maintenance"], "diagnostics");
+  onlyKnown(body, ["firmware", "uptime_s", "reset_reason", "heap_free", "heap_min", "psram_free", "stack_min_free", "rssi", "mqtt_connected", "state", "maintenance", "package"], "diagnostics");
   if (typeof body.firmware !== "string" || !FIRMWARE.test(body.firmware)) throw new Error("invalid diagnostics firmware");
   for (const key of ["uptime_s", "heap_free", "heap_min", "psram_free", "stack_min_free"]) if (key in body && (!integer(body[key]) || (body[key] as number) < 0)) throw new Error(`invalid diagnostics ${key}`);
   for (const key of ["uptime_s", "heap_free", "heap_min"]) if (!(key in body)) throw new Error(`diagnostics needs ${key}`);
@@ -117,6 +125,7 @@ function parseDiagnostics(value: unknown): ControlDiagnostics {
   if ("rssi" in body && (!integer(body.rssi) || body.rssi < -120 || body.rssi > 0)) throw new Error("invalid diagnostics rssi");
   if (typeof body.mqtt_connected !== "boolean" || typeof body.maintenance !== "boolean") throw new Error("invalid diagnostics flag");
   if (!oneOf(CONTROL_STATES, body.state)) throw new Error("invalid diagnostics state");
+  if ("package" in body) parseDiagnosticPackage(body.package);
   return body as unknown as ControlDiagnostics;
 }
 
@@ -202,7 +211,7 @@ export function maintenanceTopic(topic: string): string | undefined {
 
 // ---- what a request asks ---------------------------------------------------------------------------------------------------------------------
 
-export type ControlRequest = { operation: ControlOperation; mode: ControlMode; duration_s?: number; confirm?: string };
+export type ControlRequest = { operation: ControlOperation; mode: ControlMode; duration_s?: number; confirm?: string; detail?: DiagnosticDetail };
 
 /**
  * Reads the body of a request: only the allowed names, a known operation, a duration only where the operation takes one and inside its range. `scope` decides what is asked of `mode`
@@ -211,7 +220,7 @@ export type ControlRequest = { operation: ControlOperation; mode: ControlMode; d
 export function readControlRequest(body: unknown, scope: "node" | "all", nodeNames: readonly string[] = []): ControlRequest {
   if (typeof body !== "object" || body === null || Array.isArray(body)) throw new ControlError("invalid_request", "the request must be an object");
   const given = body as Record<string, unknown>;
-  const allowed = scope === "all" ? ["operation", "mode", "confirm", "duration_s"] : ["operation", "confirm", "duration_s"];
+  const allowed = scope === "all" ? ["operation", "mode", "confirm", "duration_s"] : ["operation", "confirm", "duration_s", "detail"];
   for (const key of Object.keys(given)) if (!allowed.includes(key)) throw new ControlError("invalid_request", `${key} is not a field of this request`);
   const operation = given.operation;
   if (!oneOf(CONTROL_OPERATIONS, operation)) throw new ControlError("invalid_request", `operation must be one of ${CONTROL_OPERATIONS.join(", ")}`);
@@ -228,13 +237,19 @@ export function readControlRequest(body: unknown, scope: "node" | "all", nodeNam
     if (!integer(given.duration_s) || given.duration_s < span[0] || given.duration_s > span[1]) throw new ControlError("invalid_request", `the duration of ${operation} is ${span[0]} to ${span[1]} seconds`);
     duration = given.duration_s;
   }
+  let detail: DiagnosticDetail | undefined;
+  if (given.detail !== undefined) {
+    if (operation !== "diagnostics") throw new ControlError("invalid_request", "only diagnostics takes a detail");
+    if (!oneOf(DIAGNOSTIC_DETAILS, given.detail)) throw new ControlError("invalid_request", `detail must be one of ${DIAGNOSTIC_DETAILS.join(", ")}`);
+    detail = given.detail;
+  }
   let confirm: string | undefined;
   if (NEEDS_CONFIRM.includes(operation)) {
     const wanted = scope === "all" ? [CONFIRM_WORD[operation] as string] : nodeNames;
     if (typeof given.confirm !== "string" || !wanted.includes(given.confirm)) throw new ControlError("invalid_request", scope === "all" ? `type the word ${CONFIRM_WORD[operation]} to confirm` : "type the name of the node to confirm");
     confirm = given.confirm;
   }
-  return { operation, mode, ...(duration !== undefined ? { duration_s: duration } : {}), ...(confirm !== undefined ? { confirm } : {}) };
+  return { operation, mode, ...(duration !== undefined ? { duration_s: duration } : {}), ...(confirm !== undefined ? { confirm } : {}), ...(detail !== undefined ? { detail } : {}) };
 }
 
 // ---- the rolling schedule --------------------------------------------------------------------------------------------------------------------

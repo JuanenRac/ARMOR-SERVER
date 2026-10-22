@@ -103,6 +103,13 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/devices/:id/command` | operator | `routes/devices.ts` |
 | POST | `/api/v1/devices/:id/state` | operator | `routes/devices.ts` |
 | POST | `/api/v1/devices/state` | none here | `routes/devices.ts` |
+| GET | `/api/v1/diagnostics/nodes` | none here | `routes/diagnostics.ts` |
+| GET | `/api/v1/diagnostics/nodes/:id` | none here | `routes/diagnostics.ts` |
+| GET | `/api/v1/diagnostics/nodes/:id/log` | none here | `routes/diagnostics.ts` |
+| GET | `/api/v1/diagnostics/nodes/:id/package` | none here | `routes/diagnostics.ts` |
+| GET | `/api/v1/diagnostics/tokens` | administrator | `routes/diagnostics.ts` |
+| POST | `/api/v1/diagnostics/tokens` | administrator | `routes/diagnostics.ts` |
+| DELETE | `/api/v1/diagnostics/tokens/:id` | administrator | `routes/diagnostics.ts` |
 | GET | `/api/v1/electrical/design` | operator | `routes/alarms.ts` |
 | PUT | `/api/v1/electrical/design` | operator | `routes/alarms.ts` |
 | DELETE | `/api/v1/electrical/design/versions` | operator | `routes/alarms.ts` |
@@ -153,6 +160,9 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/node-health/:id` | operator | `routes/node_health.ts` |
 | DELETE | `/api/v1/nodes/:id` | operator | `routes/history.ts` |
 | POST | `/api/v1/nodes/:id/control` | administrator | `routes/node_control.ts` |
+| GET | `/api/v1/nodes/:id/diagnostics` | administrator | `routes/diagnostics.ts` |
+| GET | `/api/v1/nodes/:id/diagnostics/log` | administrator | `routes/diagnostics.ts` |
+| GET | `/api/v1/nodes/:id/diagnostics/package` | administrator | `routes/diagnostics.ts` |
 | POST | `/api/v1/nodes/control` | administrator | `routes/node_control.ts` |
 | GET | `/api/v1/nodes/control/operations` | administrator | `routes/node_control.ts` |
 | GET | `/api/v1/nodes/control/operations/:id` | administrator | `routes/node_control.ts` |
@@ -167,6 +177,7 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/push/register` | operator | `routes/push.ts` |
 | GET | `/api/v1/push/status` | administrator | `routes/push.ts` |
 | POST | `/api/v1/push/unregister` | operator | `routes/push.ts` |
+| GET | `/api/v1/radar/events` | operator | `routes/node_health.ts` |
 | GET | `/api/v1/remote/check` | administrator | `routes/sessions.ts` |
 | GET | `/api/v1/rules` | operator | `routes/history.ts` |
 | PUT | `/api/v1/rules` | operator | `routes/history.ts` |

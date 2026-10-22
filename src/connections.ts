@@ -349,6 +349,10 @@ export function systemFromAudit(entry: AuditLike): SystemInput | undefined {
     const verb = SERVICE_VERBS[detail];
     return verb ? { category: "service", action: verb, by, subject: target, outcome } : undefined;
   }
+  if (entry.action === "diagnostics.token_issue" && outcome === "allowed") return { category: "settings", action: "diagnostic_token_issued", by, subject: target, outcome };
+  if (entry.action === "diagnostics.token_revoke" && outcome === "allowed") return { category: "settings", action: "diagnostic_token_revoked", by, subject: target, outcome };
+  if (entry.action === "diagnostics.token_use" && outcome === "allowed") return { category: "settings", action: "diagnostic_token_used", subject: target, outcome };
+  if (entry.action === "diagnostics.token_denied") return { category: "settings", action: "diagnostic_token_denied", subject: target, outcome: "denied" };
   if (entry.action === "maintenance.update") return { category: "update", action: "installed", by, subject: target, outcome };
   if (entry.action === "maintenance.rollback") return { category: "update", action: "rolled_back", by, subject: target, outcome };
   if (entry.action === "maintenance.check") return { category: "update", action: "checked", by, outcome };

@@ -17,9 +17,10 @@ import type { AuditLog } from "./audit.js";
 import type { SystemInput } from "./connections.js";
 import { JsonFile } from "./history.js";
 import type { ControlWindow, NodeHealthDetail, NodeHealthMessage, NodeHealthView } from "./node_health.js";
+import type { DiagnosticPackage } from "./node_diag_contract.js";
 import {
   ControlError, DURATIONS, MAINTENANCE_REASONS, MAX_SLOT, NODE_ID, PERSON, ROLLING_GAP_S, parseControlCommand, personFor, rollingSchedule, type ControlCommand, type ControlMode, type ControlOperation, type ControlRefusal,
-  type ControlResult, type MaintenanceReason, type NodeControlState, type NodeMaintenance,
+  type ControlResult, type DiagnosticDetail, type MaintenanceReason, type NodeControlState, type NodeMaintenance,
 } from "./node_control.js";
 
 export type LineStage = "pending" | "armed" | "sent" | "acknowledged" | "applied" | "offline" | "back" | "refused" | "no_answer" | "not_back";
@@ -28,9 +29,11 @@ const ACTIVE: readonly LineStage[] = ["pending", "armed", "sent", "acknowledged"
 export type ControlLine = {
   node_id: string; family: string; stage: LineStage; state?: NodeControlState; maintenance?: boolean; refusal?: string; slot?: number; restart_in_s?: number; until_s?: number;
   firmware_before?: string; firmware_after?: string; acknowledged_at?: string; applied_at?: string; offline_at?: string; back_at?: string; back_after_s?: number; diagnostics?: Record<string, unknown>;
+  /** The node delivered a diagnostic package or its log with the answer: it is kept by the diagnostics store, not here. */
+  delivered?: DiagnosticDetail;
 };
 export type ControlOperationRecord = {
-  id: string; scope: "node" | "all"; operation: ControlOperation; mode: ControlMode; duration_s?: number; actor: string; origin?: string; created_at: string; updated_at: string;
+  id: string; scope: "node" | "all"; operation: ControlOperation; mode: ControlMode; duration_s?: number; detail?: DiagnosticDetail; actor: string; origin?: string; created_at: string; updated_at: string;
   state: "arming" | "running" | "done"; nodes: ControlLine[];
 };
 
@@ -56,7 +59,7 @@ export type RememberedControl = { state: NodeControlState; maintenance: boolean;
 export type MaintenanceWindow = { node_id: string; source: "node" | "operator" | "both"; reason: MaintenanceReason; active: true; expires_in_s: number; requested_by?: string };
 
 export type ControlTarget = { id: string; family: string };
-export type ControlInput = { scope: "node" | "all"; operation: ControlOperation; mode: ControlMode; duration_s?: number; actor: string; origin?: string; targets: ControlTarget[] };
+export type ControlInput = { scope: "node" | "all"; operation: ControlOperation; mode: ControlMode; duration_s?: number; detail?: DiagnosticDetail; actor: string; origin?: string; targets: ControlTarget[] };
 
 export type NodeControlOptions = {
   /** Publish to the broker; throws when it is not connected. */
@@ -71,6 +74,8 @@ export type NodeControlOptions = {
   file?: string;
   now?: () => number;
   random?: () => string;
+  /** Called with the diagnostic package (or the log) a node delivered, for the person who ordered it: the diagnostics store keeps the latest of each node. */
+  onPackage?: (node: string, delivered: DiagnosticPackage, requestedBy: string) => void;
   /** Called when the alerts about a node's silence must stop (a restart or a maintenance began) and when they may come back. */
   onHold?: (node: string, held: boolean) => void;
   armWaitMs?: number;
@@ -97,7 +102,7 @@ const WINDOW_TOTAL = 3;
 const iso = (ms: number): string => new Date(ms).toISOString();
 
 export class NodeControlService {
-  readonly #o: Required<Omit<NodeControlOptions, "file" | "onHold" | "maintenanceMaxS">> & Pick<NodeControlOptions, "file" | "onHold"> & { maintenanceMaxS: number };
+  readonly #o: Required<Omit<NodeControlOptions, "file" | "onHold" | "onPackage" | "maintenanceMaxS">> & Pick<NodeControlOptions, "file" | "onHold" | "onPackage"> & { maintenanceMaxS: number };
   readonly #records = new Map<string, ControlOperationRecord>();
   readonly #private = new Map<string, Map<string, Private>>();
   readonly #pending = new Map<string, Pending>();
@@ -246,7 +251,7 @@ export class NodeControlService {
   start(input: ControlInput): ControlOperationRecord {
     const now = this.#o.now();
     const denied = (code: string, message: string, status: number): never => {
-      this.#o.audit.record({ action: "node_control.request", outcome: "denied", actor: input.actor, target: input.scope === "all" ? "all" : input.targets[0]?.id, detail: `${input.operation}: ${code}` });
+      this.#o.audit.record({ action: "node_control.request", outcome: "denied", actor: input.actor, target: input.scope === "all" ? "all" : input.targets[0]?.id, detail: `${input.operation}${input.detail ? ` ${input.detail}` : ""}: ${code}` });
       throw new ControlError(code, message, status);
     };
     if (input.targets.length === 0) return denied("no_nodes", "no node has reported lately", 409);
@@ -260,7 +265,7 @@ export class NodeControlService {
       try { slots = rollingSchedule(input.targets.map(item => ({ id: item.id, family: item.family }))); } catch (error) { if (error instanceof ControlError) return denied(error.code, error.message, error.status); throw error; }
     }
     const record: ControlOperationRecord = {
-      id: this.#o.random(), scope: input.scope, operation: input.operation, mode: input.mode, ...(input.duration_s !== undefined ? { duration_s: input.duration_s } : {}), actor: input.actor,
+      id: this.#o.random(), scope: input.scope, operation: input.operation, mode: input.mode, ...(input.duration_s !== undefined ? { duration_s: input.duration_s } : {}), ...(input.detail !== undefined ? { detail: input.detail } : {}), actor: input.actor,
       ...(input.origin ? { origin: input.origin } : {}), created_at: iso(now), updated_at: iso(now), state: "arming",
       nodes: input.targets.map(target => ({ node_id: target.id, family: target.family, stage: "pending" as LineStage, ...(slots.has(target.id) ? { slot: slots.get(target.id) } : {}) })),
     };
@@ -281,7 +286,7 @@ export class NodeControlService {
       throw new ControlError("mqtt_unavailable", "the order could not be sent: the broker is not connected", 503);
     }
     this.#created.push(now);
-    this.#o.audit.record({ action: "node_control.request", outcome: "allowed", actor: input.actor, target: input.scope === "all" ? `all (${record.nodes.length} nodes)` : record.nodes[0].node_id, detail: `${input.operation} ${record.id} ${input.mode}${input.duration_s ? ` ${input.duration_s}s` : ""}${input.origin ? ` from ${input.origin}` : ""}` });
+    this.#o.audit.record({ action: "node_control.request", outcome: "allowed", actor: input.actor, target: input.scope === "all" ? `all (${record.nodes.length} nodes)` : record.nodes[0].node_id, detail: `${input.operation}${input.detail ? ` ${input.detail}` : ""} ${record.id} ${input.mode}${input.duration_s ? ` ${input.duration_s}s` : ""}${input.origin ? ` from ${input.origin}` : ""}` });
     this.#recompute(record);
     this.#syncHolds();
     this.#save(true);
@@ -310,6 +315,7 @@ export class NodeControlService {
     const extra: Partial<ControlCommand> = { token };
     if (record.operation === "restart" && record.mode === "rolling") extra.slot = Math.min(line.slot ?? 0, MAX_SLOT);
     if (record.duration_s !== undefined && DURATIONS[record.operation]) extra.duration_s = record.duration_s;
+    if (record.detail !== undefined && record.operation === "diagnostics") extra.detail = record.detail;
     const { id, message } = this.#command(record, line.node_id, "execute", extra);
     this.#o.publish(`armor/control/${line.node_id}/command`, JSON.stringify(message));
     const now = this.#o.now();
@@ -353,7 +359,14 @@ export class NodeControlService {
       this.#history("control_acknowledged", record, line, "allowed");
     } else if (result.stage === "diagnostics") {
       line.stage = "applied"; line.applied_at = iso(now);
-      if (result.diagnostics) { line.diagnostics = { ...result.diagnostics }; line.state = result.diagnostics.state; line.maintenance = result.diagnostics.maintenance; }
+      if (result.diagnostics) {
+        const { package: delivered, ...snapshot } = result.diagnostics;
+        line.diagnostics = { ...snapshot }; line.state = result.diagnostics.state; line.maintenance = result.diagnostics.maintenance;
+        if (delivered) {
+          line.delivered = delivered.detail;
+          try { this.#o.onPackage?.(topicNode, delivered, record.actor); } catch { /* what is done with the package never breaks the order */ }
+        }
+      }
       this.#history("control_applied", record, line, "allowed");
     } else {
       line.stage = "applied"; line.applied_at = iso(now);

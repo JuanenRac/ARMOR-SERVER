@@ -2,17 +2,21 @@
  * The health of the nodes, in the same words for every family (radar, solar, electrical, alarm, hmi): the strict parser of the report a node publishes to armor/health/{node_id}
  * (ARMOR-COMMON's node_health schema), and the store that keeps the latest report of each node, a short history of its memory and signal, and the log of its restarts.
  *
- * The node only tells; this file judges. From what it was told it derives four warnings, each of which the alarm centre raises and clears (see AlarmRules.handleNodeHealth):
+ * The node only tells; this file judges. From what it was told it derives seven warnings, each of which the alarm centre raises and clears (see AlarmRules.handleNodeHealth):
  *   - node_low_memory      the heap is nearly used up, or a task is short of stack;
  *   - node_frequent_resets the node restarted three times in a day, or crashed (a panic, a watchdog, a brown-out) in the last hour;
  *   - node_link_flapping   the node keeps losing the broker (three reconnections in a quarter of an hour);
- *   - node_weak_signal     the Wi-Fi signal has stayed at -80 dBm or worse.
+ *   - node_weak_signal     the Wi-Fi signal has stayed at -80 dBm or worse;
+ *   - node_sensor_bluetooth_open  a radar sensor's own Bluetooth is open while the node's rule is to keep it closed (anyone near the house could reach the sensor with a phone);
+ *   - node_radar_masked    the sensors of a radar node see nothing while its perimeter is armed (something covers them);
+ *   - node_wifi_jam        a radar node suspects the Wi-Fi is being jammed.
  * A report is information: it never moves anything. A node that falls silent is the business of the checks that already exist (the radar's heartbeat, the state of each family);
  * here it is only shown as "no report" after a few minutes.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import { integer, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
 import type { MaintenanceReason } from "./node_control.js";
+import { parseBootReport, parseConfigCheck, parseCoredumpFact, parseMemoryGate, parseRadarFacts, parseSensors, type BootReport, type ConfigCheck, type CoredumpFact, type MemoryGate, type RadarFacts, type SensorHealth } from "./node_diag_contract.js";
 
 export const HEALTH_FAMILIES = ["radar", "solar", "electrical", "alarm", "hmi"] as const;
 export type HealthFamily = (typeof HEALTH_FAMILIES)[number];
@@ -30,12 +34,22 @@ export type NodeHealthMessage = {
   link: (typeof HEALTH_LINKS)[number]; link_up: boolean; rssi_dbm?: number; broker_reconnects: number; low_stack_tasks?: number; last_error?: string;
   /** What remote control has done to the node (see node_control.ts): running, paused for a while or in standby, and the maintenance flag. Absent on a firmware that can not be controlled. */
   control_state?: ControlState; control_since_ms?: number; control_by?: string; control_until_s?: number; maintenance?: boolean; maintenance_until_s?: number;
+  /** Why the last run ended, said only after a dirty start and only for the first ten minutes of the run. */
+  boot?: BootReport;
+  /** The gate at the door of the node's panel: open or closed, how often it changed, the levels it works by. */
+  memory_gate?: MemoryGate;
+  /** Whether the node holds a core dump of its last crash (an administrator of the node's own panel can read it). */
+  coredump?: CoredumpFact;
+  config_check?: ConfigCheck;
+  /** Radar nodes: who each sensor is, its firmware and whether its own Bluetooth is open; and the facts of the perimeter engine. They come together. */
+  sensors?: SensorHealth[];
+  radar?: RadarFacts;
 };
 export const CONTROL_STATES = ["running", "paused", "standby"] as const;
 export type ControlState = (typeof CONTROL_STATES)[number];
 const CONTROL_PERSON = /^[A-Za-z0-9._@ -]{1,64}$/;
 
-export const HEALTH_CODES = ["node_low_memory", "node_frequent_resets", "node_link_flapping", "node_weak_signal"] as const;
+export const HEALTH_CODES = ["node_low_memory", "node_frequent_resets", "node_link_flapping", "node_weak_signal", "node_sensor_bluetooth_open", "node_radar_masked", "node_wifi_jam"] as const;
 export type HealthCode = (typeof HEALTH_CODES)[number];
 export type HealthWarning = { code: HealthCode; detail: Record<string, string | number | boolean> };
 
@@ -53,7 +67,7 @@ const REQUIRED = ["kind", "node_id", "timestamp_ms", "family", "firmware", "upti
 /** A report as the contract has it, with the rules that join fields: the least heap is never more than the heap free, a signal strength goes only with a Wi-Fi link that is up, no link is a link that is down. */
 export function parseNodeHealth(value: unknown): NodeHealthMessage {
   const body = record(value, "node health");
-  onlyKnown(body, [...REQUIRED, "board", "rssi_dbm", "low_stack_tasks", "last_error", ...INTERNAL, "psram_free", "control_state", "control_since_ms", "control_by", "control_until_s", "maintenance", "maintenance_until_s"], "node health");
+  onlyKnown(body, [...REQUIRED, "board", "rssi_dbm", "low_stack_tasks", "last_error", ...INTERNAL, "psram_free", "control_state", "control_since_ms", "control_by", "control_until_s", "maintenance", "maintenance_until_s", "boot", "memory_gate", "coredump", "config_check", "sensors", "radar"], "node health");
   for (const key of REQUIRED) if (!(key in body)) throw new Error(`the node health is missing ${key}`);
   if (body.kind !== "node_health") throw new Error("invalid kind");
   const node = readNodeId(body), timestamp = readTimestamp(body);
@@ -80,6 +94,14 @@ export function parseNodeHealth(value: unknown): NodeHealthMessage {
   if ("control_until_s" in body && (!integer(body.control_until_s) || body.control_until_s < 0 || body.control_until_s > 86_400)) throw new Error("invalid control_until_s");
   if ("maintenance" in body && typeof body.maintenance !== "boolean") throw new Error("invalid maintenance");
   if ("maintenance_until_s" in body && (!integer(body.maintenance_until_s) || body.maintenance_until_s < 0 || body.maintenance_until_s > 86_400)) throw new Error("invalid maintenance_until_s");
+  if ("boot" in body) parseBootReport(body.boot);
+  if ("memory_gate" in body) parseMemoryGate(body.memory_gate);
+  if ("coredump" in body) parseCoredumpFact(body.coredump);
+  if ("config_check" in body) parseConfigCheck(body.config_check);
+  if ("sensors" in body) parseSensors(body.sensors);
+  if ("radar" in body) parseRadarFacts(body.radar);
+  if (("sensors" in body) !== ("radar" in body)) throw new Error("the sensors and the facts of the perimeter engine come together");
+  if ("sensors" in body && body.family !== "radar") throw new Error("only a radar node has sensors");
   if (("control_since_ms" in body || "control_by" in body) && body.control_state !== "paused" && body.control_state !== "standby") throw new Error("since and by go with a paused or standby node");
   if ("control_until_s" in body && body.control_state !== "paused") throw new Error("the time left goes with a paused node: standby has no end");
   if ("maintenance_until_s" in body && body.maintenance !== true) throw new Error("the maintenance time left goes with the maintenance flag on");
@@ -115,7 +137,9 @@ export function isNodeBirth(body: unknown, named: string): boolean {
   return keys.length === 2 && record.online === true && record.node_id === named;
 }
 
-export type RestartRecord = { at: string; reason: ResetReason; abnormal: boolean; uptime_before_s?: number; boot_at_ms: number };
+export type RestartRecord = { at: string; reason: ResetReason; abnormal: boolean; uptime_before_s?: number; boot_at_ms: number;
+  /** What the node told about this start when it was a dirty one (a crash, a watchdog, a sag of the supply, an out-of-memory, a restart of its own guard). */
+  boot?: BootReport };
 /** What a console is told of a restart (the moment the node booted is the server's own bookkeeping). */
 export type RestartPublic = Omit<RestartRecord, "boot_at_ms">;
 const publicRestart = ({ boot_at_ms: _boot, ...rest }: RestartRecord): RestartPublic => rest;
@@ -149,6 +173,8 @@ export type NodeHealthOptions = {
   /** Called after every report with the node's view (the alarm centre raises and clears its warnings from it). */
   onReport?: (view: NodeHealthView) => void;
   onForget?: (node: string) => void;
+  /** Called once for each dirty start a node tells about: the History records it. */
+  onDirtyBoot?: (node: string, family: HealthFamily, firmware: string, boot: BootReport) => void;
   /** What the server remembers of the control orders it gave a node, for a firmware that does not report it (see NodeControlService.memoryOf). */
   remembered?: (node: string) => Omit<ControlView, "source"> | undefined;
 };
@@ -184,6 +210,22 @@ export class NodeHealthStore {
     if (restarted && !repeated) {
       entry.restarts.push({ at: new Date(now).toISOString(), reason: report.reset_reason, abnormal: ABNORMAL_RESETS.includes(report.reset_reason), boot_at_ms: bootAtMs, ...(previous ? { uptime_before_s: previous.uptime_s } : {}) });
       if (entry.restarts.length > MAX_RESTARTS) entry.restarts.splice(0, entry.restarts.length - MAX_RESTARTS);
+    }
+    // A dirty start is told once for each start, whether this server saw the restart happen or came after it (the report carries it for the first ten minutes of the run).
+    if (report.boot) {
+      let record = entry.restarts.find(item => Math.abs(item.boot_at_ms - bootAtMs) < 45_000);
+      if (!record) {
+        record = { at: new Date(now).toISOString(), reason: report.reset_reason, abnormal: true, boot_at_ms: bootAtMs, ...(report.boot.uptime_before_s !== undefined ? { uptime_before_s: report.boot.uptime_before_s } : {}) };
+        entry.restarts.push(record);
+        entry.restarts.sort((a, b) => a.boot_at_ms - b.boot_at_ms);
+        if (entry.restarts.length > MAX_RESTARTS) entry.restarts.splice(0, entry.restarts.length - MAX_RESTARTS);
+      }
+      if (!record.boot) {
+        record.boot = report.boot;
+        record.abnormal = true;
+        if (report.boot.uptime_before_s !== undefined) record.uptime_before_s = report.boot.uptime_before_s;
+        try { this.#options.onDirtyBoot?.(report.node_id, report.family, report.firmware, report.boot); } catch { /* the History never breaks a report */ }
+      }
     }
     entry.report = report;
     entry.receivedAtMs = now;
@@ -224,6 +266,13 @@ export class NodeHealthStore {
     }
     const linkDown = recent.slice(-6).filter(item => !item.link_up).length;
     if (reconnects >= HEALTH_LEVELS.flap_reconnects || linkDown >= 2) out.push({ code: "node_link_flapping", detail: { reconnects, minutes: HEALTH_LEVELS.flap_window_min, link_down_reports: linkDown } });
+
+    // A sensor whose own Bluetooth is open while the node's rule is to keep it closed (or that the node itself flags): anybody within reach of the house could talk to the sensor.
+    const open = (report.sensors ?? []).filter(sensor => sensor.bluetooth_alert === true || (sensor.bluetooth === "open" && report.radar?.sensor_bluetooth_off !== false));
+    if (open.length > 0) out.push({ code: "node_sensor_bluetooth_open", detail: { sensors: open.map(sensor => sensor.sensor_id).join(","), models: [...new Set(open.map(sensor => sensor.model))].join(",") } });
+
+    if (report.radar?.masked === true) out.push({ code: "node_radar_masked", detail: { events_buffered: report.radar.events_buffered } });
+    if (report.radar?.wifi_jam === true) out.push({ code: "node_wifi_jam", detail: { rssi_dbm: report.rssi_dbm ?? 0 } });
 
     const lastSignals = entry.samples.slice(-HEALTH_LEVELS.weak_signal_reports);
     if (lastSignals.length === HEALTH_LEVELS.weak_signal_reports && lastSignals.every(item => item.rssi_dbm !== undefined && item.rssi_dbm <= HEALTH_LEVELS.weak_signal_dbm)) {
@@ -293,7 +342,11 @@ export class NodeHealthStore {
         const report = parseNodeHealth(item.report);
         if (report.node_id !== id || typeof item.received_at_ms !== "number" || !Number.isFinite(item.received_at_ms)) continue;
         const restarts = (Array.isArray(item.restarts) ? item.restarts : []).filter((r): r is RestartRecord =>
-          typeof r === "object" && r !== null && typeof r.at === "string" && Number.isFinite(Date.parse(r.at)) && oneOf(RESET_REASONS, r.reason) && typeof r.abnormal === "boolean" && typeof r.boot_at_ms === "number").slice(-MAX_RESTARTS);
+          typeof r === "object" && r !== null && typeof r.at === "string" && Number.isFinite(Date.parse(r.at)) && oneOf(RESET_REASONS, r.reason) && typeof r.abnormal === "boolean" && typeof r.boot_at_ms === "number").slice(-MAX_RESTARTS)
+          .map(r => {
+            if (r.boot === undefined) return r;
+            try { return { ...r, boot: parseBootReport(r.boot) }; } catch { const { boot: _damaged, ...rest } = r; return rest; }   // a damaged detail loses only itself
+          });
         this.#entries.set(id, { report, receivedAtMs: item.received_at_ms, samples: [], restarts, warnings: [] });
       } catch { /* one damaged entry loses only its own node */ }
     }
