@@ -1,5 +1,5 @@
 /**
- * The field nodes that have ever spoken (an electrical node, an alarm panel, a network watcher) and when each last did, kept on disk. Their stores live in memory, so
+ * The field nodes that have ever spoken (an electrical node, an alarm panel, a network watcher, a solar gateway: its id here is `node/device`) and when each last did, kept on disk. Their stores live in memory, so
  * after a restart a node that is dead at that moment is simply not there: nothing was ever going to tell that it had gone quiet, and the check before arming saw nothing wrong.
  * This remembers them. A node that has not spoken since the server started, once the time it is allowed to be silent has gone by, is reported as silent (see AlarmRules and
  * the preflight); the first thing it says afterwards brings it back like any other node.
@@ -9,8 +9,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { durableRename } from "./durable.js";
 
-export type KnownKind = "electrical" | "alarm" | "network";
-const KINDS: readonly string[] = ["electrical", "alarm", "network"];
+export type KnownKind = "electrical" | "alarm" | "network" | "solar";
+const KINDS: readonly string[] = ["electrical", "alarm", "network", "solar"];
 export type KnownNode = {
   kind: KnownKind; id: string; last_seen_ms: number;
   /** For an alarm panel: what it was doing when it last spoke (a panel that was disarmed is not news when it goes quiet). */

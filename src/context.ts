@@ -363,7 +363,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   });
   const ingestLog = new IngestLog(overrides.now);
   const solarRegistry = new SolarRegistry(path.join(config.dataDir, "solar-devices.json"), overrides.now ? () => new Date(overrides.now!()) : undefined);
-  const solar = new SolarStore({ now: overrides.now, onMessage: message => alarmRules.handleSolar(message), onStale: (node, device, stale) => alarmRules.handleSolarStale(node, device, stale) });
+  const solar = new SolarStore({ now: overrides.now, onMessage: message => { knownNodes.seen("solar", `${message.node_id}/${message.device}`); alarmRules.handleSolar(message); }, onStale: (node, device, stale) => alarmRules.handleSolarStale(node, device, stale) });
   const batteryLink: AppContext["batteryLink"] = {};
   const batteryWrite = new BatteryWriteService({
     enabled: config.batteryWrite, solar, audit, now: overrides.now, file: path.join(config.dataDir, "battery_ops.json"),
@@ -381,6 +381,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     for (const node of knownNodes.silent(config.nodeStaleAfterS * 2000)) {
       if (node.kind === "electrical") alarmRules.handleElectricalStale(node.id, true);
       else if (node.kind === "alarm") alarmRules.handleAlarmNodeStale(node.id, true, node.phase);
+      else if (node.kind === "solar") { const [gateway, device] = node.id.split("/"); if (gateway && device) alarmRules.handleSolarStale(gateway, device, true); }
       else alarmRules.handleNetworkStale(node.id, true);
     }
   };

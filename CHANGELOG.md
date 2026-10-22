@@ -6,6 +6,7 @@ All notable changes to this project are documented here.
 
 - The repository has a security policy, a code of conduct, a contributing guide and a support file.
 - The banner follows the animated style of the ecosystem banners, with the name, the kind and the technologies of the project.
+- **A solar gateway is remembered across a restart:** like the electrical nodes, the alarm panels and the network watchers, the gateways (by gateway and device) are kept in `known-nodes.json`, so one that is dead when the server comes up raises `solar_offline` once its grace time has gone by instead of being invisible; decommissioning the node forgets its devices and ends their alarms.
 - New `docs/ROUTES.md`: every route the server registers, with who may call it and the file that registers it, generated from the code (`node tools/routes_table.mjs`) and checked by a test.
 - The sign-in alert in European Portuguese no longer uses the Brazilian form.
 

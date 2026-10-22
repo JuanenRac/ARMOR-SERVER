@@ -96,6 +96,8 @@ export function registerHistoryRoutes(app: Express, context: AppContext): void {
     // The id can be a radar node, an electrical node, an alarm panel or a network watcher: all of them are forgotten, with their silence.
     const memory = [store.removeNode(id), context.electricalNodes.remove(id), context.alarmNodes.remove(id), context.networkNodes.remove(id)];
     const remembered = (["electrical", "alarm", "network"] as const).map(kind => context.knownNodes.forget(kind, id));
+    // a solar gateway is remembered by gateway and device (`node/device`): taking the node away takes all its devices
+    for (const known of context.knownNodes.list()) if (known.kind === "solar" && known.id.startsWith(`${id}/`)) remembered.push(context.knownNodes.forget("solar", known.id));
     const removed = [...memory, ...remembered].some(Boolean);
     context.alarmRules.forgetNode(id);
     audit.record({ action: "node.remove", outcome: removed ? "allowed" : "failed", target: id });

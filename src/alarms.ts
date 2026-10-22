@@ -617,7 +617,11 @@ export class AlarmRules {
   }
 
   /** A field node was taken away on purpose: its silence is not news any more. */
-  forgetNode(id: string): void { for (const kind of ["electrical", "alarm", "network"]) this.centre.clear(`${kind}:${id}:offline`); }
+  forgetNode(id: string): void {
+    for (const kind of ["electrical", "alarm", "network"]) this.centre.clear(`${kind}:${id}:offline`);
+    // a solar gateway is kept by gateway and device (`node/device`): all of its devices go with it
+    this.centre.clearMatching(alarm => alarm.source.type === "solar" && alarm.source.id.startsWith(`${id}/`));
+  }
 
   /** A device that was removed can no longer be in trouble. */
   forgetDevice(id: string): void { this.centre.clearMatching(alarm => alarm.source.type === "device" && alarm.source.id === id); }

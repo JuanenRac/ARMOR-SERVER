@@ -216,17 +216,18 @@ test("the known nodes survive a restart, and the ones that stay silent are repor
   first.seen("alarm", "panel-1", "armed");
   first.seen("electrical", "board-1");
   first.seen("network", "net-1");
+  first.seen("solar", "gw-1/inv-1");   // a solar gateway is remembered by gateway and device
   first.flush();
   now += 60_000;
   const second = new KnownNodes({ file, now: () => now });
-  assert.equal(second.list().length, 3);
+  assert.equal(second.list().length, 4);
   assert.deepEqual(second.silent(30_000), [], "before the grace time nobody is called silent");
   now += 31_000;
   second.seen("electrical", "board-1");   // this one spoke after the restart
-  assert.deepEqual(second.silent(30_000).map(node => `${node.kind}/${node.id}`).sort(), ["alarm/panel-1", "network/net-1"]);
+  assert.deepEqual(second.silent(30_000).map(node => `${node.kind}/${node.id}`).sort(), ["alarm/panel-1", "network/net-1", "solar/gw-1/inv-1"]);
   assert.equal(second.silent(30_000).find(node => node.kind === "alarm")?.phase, "armed", "what the panel was doing is remembered");
   second.forget("alarm", "panel-1");
-  assert.deepEqual(second.silent(30_000).map(node => node.id), ["net-1"]);
+  assert.deepEqual(second.silent(30_000).map(node => node.id), ["net-1", "gw-1/inv-1"]);
   second.flush();
   assert.equal(new KnownNodes({ file, now: () => now }).list().some(node => node.id === "panel-1"), false, "forgotten for good");
 });
@@ -251,6 +252,23 @@ test("a panel that was there before a restart and has not spoken blocks the chec
     assert.deepEqual(after.issues.filter(issue => issue.id === "panel-9"), []);
     const stillOpen = await (await fetch(`${running.base}/api/v1/alarms`, { headers })).json() as { active: Array<{ code: string; cleared_at?: string }> };
     assert.ok(stillOpen.active.filter(alarm => alarm.code === "alarm_offline").every(alarm => alarm.cleared_at));
+  } finally { await running.stop(); }
+});
+
+test("a solar gateway that was there before a restart and has not spoken is an alarm, and decommissioning it ends it", async () => {
+  const dataDir = tempDir();
+  fs.writeFileSync(path.join(dataDir, "known-nodes.json"), JSON.stringify({ schema: 1, nodes: [{ kind: "solar", id: "gw-9/inv-9", last_seen_ms: 1 }] }));
+  const running = await startServer({ ARMOR_DATA_DIR: dataDir, ARMOR_NODE_STALE_AFTER_S: "5" });
+  try {
+    const headers = { Authorization: `Bearer ${SECRETS.ARMOR_OPERATOR_TOKEN}` };
+    const early = await (await fetch(`${running.base}/api/v1/alarms`, { headers })).json() as { active: Array<{ code: string }> };
+    assert.deepEqual(early.active.filter(alarm => alarm.code === "solar_offline"), [], "inside the grace time it may just be reconnecting");
+    await new Promise(resolve => setTimeout(resolve, 10_200));
+    const late = await (await fetch(`${running.base}/api/v1/alarms`, { headers })).json() as { active: Array<{ code: string; source: { id: string } }> };
+    assert.ok(late.active.some(alarm => alarm.code === "solar_offline" && alarm.source.id === "gw-9/inv-9"), "the silence of a gateway that was known is an alarm");
+    assert.equal((await fetch(`${running.base}/api/v1/nodes/gw-9`, { method: "DELETE", headers })).status, 204);
+    const after = await (await fetch(`${running.base}/api/v1/alarms`, { headers })).json() as { active: Array<{ code: string; cleared_at?: string }> };
+    assert.ok(after.active.filter(alarm => alarm.code === "solar_offline").every(alarm => alarm.cleared_at), "and taking the node away ends it");
   } finally { await running.stop(); }
 });
 
