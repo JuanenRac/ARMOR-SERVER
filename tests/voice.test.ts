@@ -12,7 +12,7 @@ const json = { "Content-Type": "application/json" };
 
 /** A stand-in for the voice gateway: the same protocol (token header, two turns for arm and disarm), nothing else. */
 async function fakeGateway() {
-  const seen: Array<{ text: string; language?: string; confirmation?: string }> = [];
+  const seen: Array<{ text: string; language?: string; confirmation?: string; policy?: unknown }> = [];
   const server = http.createServer((request, response) => {
     const chunks: Buffer[] = [];
     request.on("data", chunk => chunks.push(chunk as Buffer));
@@ -191,4 +191,20 @@ test("the wall panel's audio reaches the voice gateway through this server, with
     assert.equal((await send(TOKEN, 500_000)).status, 413);
     assert.deepEqual(seen.map(item => [item.bytes, item.language, item.token]), [[3200, "es", TOKEN], [3200, "es", TOKEN]]);
   } finally { await running.stop(); await new Promise<void>(resolve => gateway.close(() => resolve())); }
+});
+
+test("every order to the gateway carries the silence policy the server keeps, and follows the setting", async () => {
+  const gateway = await fakeGateway();
+  const running = await startServer({ ARMOR_VOICE_URL: gateway.url, ARMOR_VOICE_TOKEN: TOKEN });
+  try {
+    const cookie = await studioCookie(running.base);
+    await call(running, cookie, "POST", "/api/v1/voice/command", { text: "silence", language: "en" });
+    assert.deepEqual(gateway.seen.at(-1)?.policy, { silence_confirmation: "off" });
+    assert.equal((await call(running, cookie, "PUT", "/api/v1/security/settings", { "voice.silence_confirmation": "double_turn" })).status, 200);
+    await call(running, cookie, "POST", "/api/v1/voice/command", { text: "silence", language: "en" });
+    assert.deepEqual(gateway.seen.at(-1)?.policy, { silence_confirmation: "double_turn" });
+    // a caller cannot lower it by sending its own policy
+    await call(running, cookie, "POST", "/api/v1/voice/command", { text: "silence", language: "en", policy: { silence_confirmation: "off" } });
+    assert.deepEqual(gateway.seen.at(-1)?.policy, { silence_confirmation: "double_turn" });
+  } finally { await running.stop(); await gateway.close(); }
 });

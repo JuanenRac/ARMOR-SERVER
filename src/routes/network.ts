@@ -19,6 +19,15 @@ import { MAX_SITE_BYTES, SiteConflict, SiteInvalid } from "../site.js";
 const NODE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const DEVICE = /^[a-z0-9][a-z0-9:._-]{0,63}$/;
 
+/** Whether a request travelled over TLS (behind a proxy this server trusts, as that proxy says) or came straight from this machine: the only requests a stored device login may answer when
+ * the option network.login_secure_only is on. A request through a proxy on this machine does not count as local: it carries the address of the client it forwards. */
+export function arrivedSecurely(request: { secure?: boolean; headers: Record<string, unknown>; socket?: { remoteAddress?: string } }): boolean {
+  if (request.secure === true) return true;
+  const address = request.socket?.remoteAddress ?? "";
+  const here = address === "::1" || /^(::ffff:)?127\./.test(address);
+  return here && request.headers["x-forwarded-for"] === undefined && request.headers["forwarded"] === undefined;
+}
+
 /** An address two machines claim (an arp_conflict event of the last ten minutes about this device) is not the place to send a stored login to: the node looks without one. */
 export function addressContested(message: { timestamp_ms: number; events?: Array<{ kind: string; at_ms: number; device_id?: string }> }, deviceId: string): boolean {
   return (message.events ?? []).some(event => event.kind === "arp_conflict" && (event.device_id === undefined || event.device_id === deviceId) && message.timestamp_ms - event.at_ms <= 10 * 60 * 1000);
@@ -41,7 +50,9 @@ export function registerNetworkRoutes(app: Express, context: AppContext): void {
       // The answer carries the manual orders waiting for this node (handed out once); a node that does not look for them simply ignores the field.
       const commands = networkCommands.take(message.node_id).map(command => {
         if (!command.login || !command.device_id) return command;
-        const login = caller === "node" && !addressContested(message, command.device_id) ? deviceCredentials.get(command.device_id) : undefined;   // the shared token (a board provisioned the old way) never gets a login
+        // The shared token (a board provisioned the old way) never gets a login. With network.login_secure_only on, nor does a request that did not come over TLS or from this machine.
+        const mayHold = caller === "node" && !addressContested(message, command.device_id) && (!context.securitySettings.get("network.login_secure_only") || arrivedSecurely(request));
+        const login = mayHold ? deviceCredentials.get(command.device_id) : undefined;
         const { login: _asked, ...rest } = command;
         // The login is sealed with the token of this node alone: on plain HTTP it is not readable on the way and no other node can open it. Without one kept, the node looks without one.
         return login ? { ...rest, auth_sealed: sealFor(nodeTokenFor(config.ingestToken, message.node_id), JSON.stringify({ user: login.user, password: login.password })) } : rest;

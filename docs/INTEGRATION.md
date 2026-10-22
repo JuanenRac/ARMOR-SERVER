@@ -53,11 +53,12 @@ An administrator turns these on and off from Studio (Security) or with `PUT /api
 | Setting | Values (default first) | What it does |
 | --- | --- | --- |
 | `alarm.disarm_pin` | `if_set`, `never`, `always` | The PIN typed to disarm or to silence a siren: asked of a user who has one / not asked / asked of everybody (a user without a PIN cannot disarm). The duress PIN is never changed by it. `ARMOR_DISARM_PIN`, when set, wins over the setting (`required` is `always`) and Studio shows the option as fixed. |
-| `voice.silence_confirmation` | `off`, `pin`, `double_turn` | What the voice service asks before it silences the alarm. The server sends it with every turn of audio it passes on, as the header `X-Armor-Policy: {"silence_confirmation":"<value>"}`; a service that does not know it treats it as `off`. |
+| `voice.silence_confirmation` | `off`, `pin`, `double_turn` | What the voice service asks before it silences the alarm. The server sends it with every turn of audio it passes on, as the header `X-Armor-Policy: {"silence_confirmation":"<value>"}`, and with every written command, as `policy` in the JSON body of `/v1/command`; a service that does not know it treats it as `off`. |
 | `alarm.config_hash` | on, off | The panel binds its saved armed state to its zones and PIN and does not restore it when either changed (published in the policy; the panel side is part of the next firmware batch). |
 | `server.zone_feed` | on, off | Whether the server tells the panels the state of their Zigbee zones. |
 | `server.zone_feed_signature` | on, off | Whether each zone message is signed (`seq`, `sig`) so a panel can tell it came from this server. The key of each panel is derived from a secret of the server (`zone-feed.key`) and handed to an administrator once, never over the broker. |
 | `media.rtsp_proxy` | on, off | Whether FFmpeg reads the cameras through the local tunnel (see `docs/CAMERA_MEDIA_GATEWAY.md`). |
+| `network.login_secure_only` | on, off (default off) | On: the login kept for a device of the network is handed to a network node (sealed with that node's own token) only when its request came over TLS or straight from this machine; a request forwarded by a proxy as plain HTTP, or from the network, gets the order without the login and the node looks without one. Off: any request of the node, as before. |
 
 Panel side, pending: the firmware of the alarm panel does not yet read the policy, check the signature or store a hash of its configuration with its saved state; until it does, those three settings are published and signed but nothing on the panel acts on them.
 

@@ -25,8 +25,8 @@ export class VoiceError extends Error {
   constructor(readonly status: number, readonly code: string) { super(code); }
 }
 
-/** Asks the gateway about one phrase. Its refusals keep their meaning (a phrase that is not a command is an answer, not an error). */
-export async function askVoice(gateway: VoiceGateway, request: { text: string; language?: string; confirmation?: string; subject?: string }): Promise<VoiceAnswer> {
+/** Asks the gateway about one phrase; `policy` is the silence rule the gateway applies (it falls back to the strictest value if it does not understand it). Its refusals keep their meaning (a phrase that is not a command is an answer, not an error). */
+export async function askVoice(gateway: VoiceGateway, request: { text: string; language?: string; confirmation?: string; subject?: string; policy?: { silence_confirmation: string } }): Promise<VoiceAnswer> {
   let reply: Response;
   try {
     reply = await fetch(`${gateway.url.replace(/\/$/, "")}/v1/command`, {

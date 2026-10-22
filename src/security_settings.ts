@@ -9,6 +9,7 @@
  *   server.zone_feed             on | off                  the server tells the panels the state of their Zigbee zones
  *   server.zone_feed_signature   on | off                  every zone message is signed, so a panel can tell it came from this server
  *   media.rtsp_proxy             on | off                  FFmpeg reads the cameras through the local tunnel (off: the camera login goes in its command line, visible to every user of the machine)
+ *   network.login_secure_only    on | off                  a stored device login is handed to a network node only when its request came over TLS or from this machine (off, the default: any request of the node)
  *
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
@@ -28,6 +29,7 @@ export type SecuritySettingsValues = {
   "server.zone_feed": boolean;
   "server.zone_feed_signature": boolean;
   "media.rtsp_proxy": boolean;
+  "network.login_secure_only": boolean;
 };
 export type SecuritySettingKey = keyof SecuritySettingsValues;
 
@@ -38,6 +40,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "server.zone_feed": true,
   "server.zone_feed_signature": true,
   "media.rtsp_proxy": true,
+  "network.login_secure_only": false,
 });
 
 export class SecuritySettingsInvalid extends Error {

@@ -66,7 +66,7 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
     try {
       // The confirmation token the gateway issues is bound to the person who asked: another session cannot use it.
       const subject = (studioUser(request)?.id ?? "operator").slice(0, 64);
-      const answer = await askVoice(config.voice, { text, language, subject, ...(confirmation ? { confirmation } : {}) });
+      const answer = await askVoice(config.voice, { text, language, subject, policy: { silence_confirmation: context.securitySettings.get("voice.silence_confirmation") }, ...(confirmation ? { confirmation } : {}) });
       let speech = answer.speech ?? "";
       let result: Record<string, unknown> | undefined;
       let executed = false;
