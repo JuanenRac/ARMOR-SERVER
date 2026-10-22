@@ -6,7 +6,8 @@
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import { execFile } from "node:child_process";
-import { rtspUrl, type CameraConnection } from "./cameras/model.js";
+import type { CameraConnection } from "./cameras/model.js";
+import { openRtspTunnel } from "./cameras/rtsp_tunnel.js";
 
 export const FRAME_WIDTH = 64;
 export const FRAME_HEIGHT = 36;
@@ -26,8 +27,10 @@ const runProgram: RunProgram = (program, args, timeoutMs) => new Promise((resolv
 export class AiGateway {
   readonly #ffmpegPath: string;
   readonly #run: RunProgram;
+  readonly #proxy: () => boolean;
 
-  constructor(options: { ffmpegPath: string; run?: RunProgram }) {
+  constructor(options: { ffmpegPath: string; run?: RunProgram; proxy?: () => boolean }) {
+    this.#proxy = options.proxy ?? (() => true);
     this.#ffmpegPath = options.ffmpegPath;
     this.#run = options.run ?? runProgram;
   }
@@ -35,18 +38,20 @@ export class AiGateway {
   /** One grey frame (FRAME_WIDTH x FRAME_HEIGHT bytes) of a camera. */
   async frame(camera: CameraConnection): Promise<Buffer> {
     if (!this.#ffmpegPath) throw new AiError(503, "ffmpeg_not_configured");
-    const source = rtspUrl(camera, true);
-    if (!source) throw new AiError(422, "camera_has_no_stream");
+    const tunnel = await openRtspTunnel(camera, { preview: true, direct: !this.#proxy() }).catch(() => null);
+    if (!tunnel) throw new AiError(422, "camera_has_no_stream");
     try {
       const raw = await this.#run(this.#ffmpegPath, [
-        "-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp", "-i", source,
+        "-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp", "-i", tunnel.url,
         "-frames:v", "1", "-vf", `scale=${FRAME_WIDTH}:${FRAME_HEIGHT},format=gray`, "-f", "rawvideo", "pipe:1",
       ], 12_000);
       if (raw.length !== FRAME_BYTES) throw new AiError(502, "bad_frame");
       return raw;
     } catch (error) {
       if (error instanceof AiError) throw error;
-      throw new AiError(502, "camera_not_answering");   // what ffmpeg said can name the camera's address and password: it is not passed on
+      throw new AiError(502, "camera_not_answering");   // what ffmpeg said can name the camera's address: it is not passed on
+    } finally {
+      tunnel.close();
     }
   }
 }

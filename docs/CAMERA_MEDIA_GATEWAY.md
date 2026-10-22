@@ -37,6 +37,25 @@ to the main one. Without FFmpeg the server answers `503`
 instead of pretending video exists, and `409` when the RTSP path or a complete
 credential pair is missing. The RTSP source is built in memory and never logged.
 
+### FFmpeg never receives the camera login
+
+FFmpeg reads a camera's user name and password only from the address it is given, and the
+arguments of a process can be read by every user of the machine (`ps`, `/proc/<pid>/cmdline`).
+So the server opens a **local RTSP tunnel** for each FFmpeg it starts (the live picture, a
+snapshot, a recording, the frame of the observation service): a port on `127.0.0.1` chosen by
+the system, whose address carries a random word that the first request must repeat
+(`rtsp://127.0.0.1:<port>/<word>`, with no login). The tunnel forwards what FFmpeg says to the
+camera, adds the Basic or Digest login to each request, answers the camera's `401` itself and
+passes the media through untouched. It carries RTSP over TCP (every FFmpeg call here uses
+`-rtsp_transport tcp`), admits at most two connections, stops listening as soon as they are
+open and closes with the FFmpeg process (or after twenty seconds if FFmpeg never came). A
+wrong password reaches FFmpeg as the camera's own `401`.
+
+FFmpeg offers no option that takes the login from a file or from the environment, so the
+tunnel is what keeps it out of the arguments. The setting
+`media.rtsp_proxy` (Studio, Security) can turn the tunnel off; the login then goes in the
+command line again, as it did before, and Studio says so.
+
 ## Stream-path discovery
 
 After a complete connection is saved, the operator can test a short list of

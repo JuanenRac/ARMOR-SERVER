@@ -7,9 +7,10 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import type { ServerResponse } from "node:http";
 import { mediaError } from "../cameras/errors.js";
-import { rtspUrl, type CameraConnection } from "../cameras/model.js";
+import type { CameraConnection } from "../cameras/model.js";
+import { openRtspTunnel } from "../cameras/rtsp_tunnel.js";
 
-type Relay = { process: ChildProcess; subscribers: Set<ServerResponse>; stopTimer?: ReturnType<typeof setTimeout>; splitter: FrameSplitter; frames: number; preview: boolean };
+type Relay = { kill: () => void; subscribers: Set<ServerResponse>; stopTimer?: ReturnType<typeof setTimeout>; splitter: FrameSplitter; frames: number; preview: boolean };
 
 const BOUNDARY = Buffer.from("--armorframe");
 const MAX_PENDING_BYTES = 8 * 1024 * 1024;
@@ -58,7 +59,7 @@ export function deliver(frame: Buffer, viewers: Iterable<Pick<ServerResponse, "w
   return skipped;
 }
 
-export type RelayOptions = { ffmpegPath: string; maxRelays: number; idleStopMs?: number; fps?: number; width?: number };
+export type RelayOptions = { ffmpegPath: string; spawn?: typeof spawn; /** The setting media.rtsp_proxy, read each time a stream starts (default on). */ proxy?: () => boolean; maxRelays: number; idleStopMs?: number; fps?: number; width?: number };
 
 export class RelayManager {
   readonly #relays = new Map<string, Relay>();
@@ -89,7 +90,7 @@ export class RelayManager {
   }
 
   /** Stop a camera's relay now (its connection was removed or changed). */
-  stop(cameraId: string): void { this.#relays.get(cameraId)?.process.kill("SIGTERM"); }
+  stop(cameraId: string): void { this.#relays.get(cameraId)?.kill(); }
 
   #relayFor(camera: CameraConnection): Relay {
     const existing = this.#relays.get(camera.id);
@@ -99,35 +100,41 @@ export class RelayManager {
     }
     if (this.#relays.size >= this.#options.maxRelays) throw mediaError("the local live-video relay capacity is currently exhausted");
     const preview = Boolean(camera.previewPath) && !this.#previewFailed.has(camera.id);
-    const source = rtspUrl(camera, preview);
-    if (!source) throw mediaError("camera RTSP path and complete credentials are required");
+    if (!camera.secrets?.username || !camera.secrets.password || !(preview ? camera.previewPath : camera.rtspPath)) throw mediaError("camera RTSP path and complete credentials are required");
     if (!this.#options.ffmpegPath) throw mediaError("FFmpeg is not configured");
     const fps = Math.max(1, Math.min(30, Math.round(this.#options.fps ?? 12))), width = Math.max(160, Math.min(1920, Math.round(this.#options.width ?? 960)));
-    const child = spawn(this.#options.ffmpegPath, [
-      "-hide_banner", "-loglevel", "error", "-fflags", "nobuffer+discardcorrupt", "-flags", "low_delay", "-probesize", "262144", "-analyzeduration", "500000",
-      "-rtsp_transport", "tcp", "-i", source,
-      // Never enlarge a picture (min), and drop to the wanted rate before scaling: the scaler then works on fewer pictures.
-      "-an", "-sn", "-dn", "-vf", `fps=${fps},scale='min(${width},iw)':-2`, "-q:v", "6", "-f", "mpjpeg", "-boundary_tag", "armorframe", "pipe:1",
-    ], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
-    const relay: Relay = { process: child, subscribers: new Set(), splitter: new FrameSplitter(), frames: 0, preview };
+    let child: ChildProcess | undefined;
+    let cancelled = false;
+    const relay: Relay = { kill: () => { cancelled = true; child?.kill("SIGTERM"); }, subscribers: new Set(), splitter: new FrameSplitter(), frames: 0, preview };
     this.#relays.set(camera.id, relay);
-    child.stdout?.on("data", (chunk: Buffer) => {
-      for (const frame of relay.splitter.push(chunk)) {
-        relay.frames += 1;
-        deliver(frame, relay.subscribers);
-      }
-    });
-    // Nobody reads what ffmpeg says on stderr, and a pipe nobody empties fills up (about 64 KB) and blocks ffmpeg: the live picture froze for everybody. It is read and dropped.
-    child.stderr?.on("data", () => undefined);
     const close = () => this.#close(camera.id, relay);
-    child.once("error", close);
-    child.once("close", close);
+    // FFmpeg is given a loopback address without the camera's login: the tunnel adds it, so it never shows in the list of processes.
+    openRtspTunnel(camera, { preview, direct: this.#options.proxy?.() === false }).then(tunnel => {
+      if (!tunnel) { close(); return; }
+      if (cancelled) { tunnel.close(); close(); return; }
+      child = (this.#options.spawn ?? spawn)(this.#options.ffmpegPath, [
+        "-hide_banner", "-loglevel", "error", "-fflags", "nobuffer+discardcorrupt", "-flags", "low_delay", "-probesize", "262144", "-analyzeduration", "500000",
+        "-rtsp_transport", "tcp", "-i", tunnel.url,
+        // Never enlarge a picture (min), and drop to the wanted rate before scaling: the scaler then works on fewer pictures.
+        "-an", "-sn", "-dn", "-vf", `fps=${fps},scale='min(${width},iw)':-2`, "-q:v", "6", "-f", "mpjpeg", "-boundary_tag", "armorframe", "pipe:1",
+      ], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+      child.stdout?.on("data", (chunk: Buffer) => {
+        for (const frame of relay.splitter.push(chunk)) {
+          relay.frames += 1;
+          deliver(frame, relay.subscribers);
+        }
+      });
+      // Nobody reads what ffmpeg says on stderr, and a pipe nobody empties fills up (about 64 KB) and blocks ffmpeg: the live picture froze for everybody. It is read and dropped.
+      child.stderr?.on("data", () => undefined);
+      child.once("error", () => { tunnel.close(); close(); });
+      child.once("close", () => { tunnel.close(); close(); });
+    }, close);
     return relay;
   }
 
   #stopWhenUnused(cameraId: string, relay: Relay): void {
     if (relay.subscribers.size || relay.stopTimer) return;
-    relay.stopTimer = setTimeout(() => { if (!relay.subscribers.size) relay.process.kill("SIGTERM"); }, this.#options.idleStopMs ?? 120_000);
+    relay.stopTimer = setTimeout(() => { if (!relay.subscribers.size) relay.kill(); }, this.#options.idleStopMs ?? 120_000);
   }
 
   #close(cameraId: string, relay: Relay): void {

@@ -11,6 +11,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { CAMERA_ID, rtspUrl, type CameraConnection } from "../cameras/model.js";
+import { openRtspTunnel } from "../cameras/rtsp_tunnel.js";
 import { mediaError } from "../cameras/errors.js";
 
 export type MediaKind = "snapshots" | "recordings";
@@ -18,7 +19,7 @@ export type PublicMediaKind = "snapshot" | "recording";
 export type MediaItem = { id: string; cameraId: string; kind: PublicMediaKind; file: string; createdAt: string; bytes: number; protected: boolean };
 
 export type EvidenceOptions = {
-  root: string; ffmpegPath: string; maxBytes: number; retentionMs: number;
+  root: string; ffmpegPath: string; spawn?: typeof spawn; /** The setting media.rtsp_proxy, read each time a stream starts (default on). */ proxy?: () => boolean; maxBytes: number; retentionMs: number;
   /** Extra text for a failed recording's server log; never sent to a client. */
   warn?: (message: string) => void;
   /** The longest a recording is allowed to run (default one hour): one that nobody stops must not grow until the disk is full. */
@@ -180,7 +181,7 @@ export class EvidenceLibrary {
   #runFfmpeg(args: string[], timeoutMs: number): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!this.#options.ffmpegPath) { reject(mediaError("FFmpeg is not configured")); return; }
-      const child = spawn(this.#options.ffmpegPath, args, { stdio: "ignore", windowsHide: true });
+      const child = (this.#options.spawn ?? spawn)(this.#options.ffmpegPath, args, { stdio: "ignore", windowsHide: true });
       const timeout = setTimeout(() => child.kill("SIGTERM"), timeoutMs);
       child.once("error", () => { clearTimeout(timeout); reject(mediaError("configured FFmpeg executable could not start")); });
       child.once("close", code => { clearTimeout(timeout); code === 0 ? resolve() : reject(mediaError("FFmpeg could not complete the camera operation")); });
@@ -192,31 +193,39 @@ export class EvidenceLibrary {
   }
 
   async snapshot(camera: CameraConnection): Promise<MediaItem> {
-    const source = rtspUrl(camera);
-    if (!source) throw mediaError("camera RTSP path and complete credentials are required");
+    const tunnel = await this.#tunnel(camera);
     await this.prune();
     const folder = this.directory(camera.id, "snapshots");
     fs.mkdirSync(folder, { recursive: true });
     const file = EvidenceLibrary.fileName("snapshot", "jpg");
     const destination = path.join(folder, file);
     try {
-      await this.#runFfmpeg(["-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp", "-i", source, "-frames:v", "1", "-q:v", "3", "-y", destination], 20_000);
+      await this.#runFfmpeg(["-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp", "-i", tunnel.url, "-frames:v", "1", "-q:v", "3", "-y", destination], 20_000);
       const item = this.item(camera.id, "snapshots", file);
       if (!item) throw mediaError("snapshot file was not produced");
       return item;
     } catch (error) {
       fs.rmSync(destination, { force: true });
       throw error;
+    } finally {
+      tunnel.close();
     }
+  }
+
+  /** A loopback door to the camera's stream: FFmpeg is given its address, never the camera's login (see cameras/rtsp_tunnel.ts). */
+  async #tunnel(camera: CameraConnection) {
+    const tunnel = await openRtspTunnel(camera, { direct: this.#options.proxy?.() === false }).catch(() => null);
+    if (!tunnel) throw mediaError("camera RTSP path and complete credentials are required");
+    return tunnel;
   }
 
   async startRecording(camera: CameraConnection): Promise<{ cameraId: string; startedAt: string }> {
     const existing = this.#active.get(camera.id);
     if (existing) return { cameraId: existing.cameraId, startedAt: existing.startedAt };
-    const source = rtspUrl(camera);
-    if (!source) throw mediaError("camera RTSP path and complete credentials are required");
+    if (!rtspUrl(camera)) throw mediaError("camera RTSP path and complete credentials are required");
     if (!this.#options.ffmpegPath) throw mediaError("FFmpeg is not configured");
-    await this.prune();
+    const tunnel = await this.#tunnel(camera);
+    try { await this.prune(); } catch (error) { tunnel.close(); throw error; }
     const folder = this.directory(camera.id, "recordings");
     fs.mkdirSync(folder, { recursive: true });
     const file = EvidenceLibrary.fileName("recording", "mp4");
@@ -224,7 +233,7 @@ export class EvidenceLibrary {
     const temporaryPath = `${completedPath}.part.mp4`;
     // Copy the camera's encoded video instead of re-encoding it: a low-power
     // gateway stays responsive and the file simply starts at the next keyframe.
-    const child = spawn(this.#options.ffmpegPath, ["-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp", "-i", source, "-an", "-c:v", "copy", "-t", String(this.#options.maxRecordingS ?? 3600), "-movflags", "+frag_keyframe+empty_moov+default_base_moof", "-y", temporaryPath], { stdio: ["pipe", "ignore", "pipe"], windowsHide: true });
+    const child = (this.#options.spawn ?? spawn)(this.#options.ffmpegPath, ["-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp", "-i", tunnel.url, "-an", "-c:v", "copy", "-t", String(this.#options.maxRecordingS ?? 3600), "-movflags", "+frag_keyframe+empty_moov+default_base_moof", "-y", temporaryPath], { stdio: ["pipe", "ignore", "pipe"], windowsHide: true });
     let errorOutput = "";
     child.stderr?.on("data", chunk => { if (errorOutput.length < 1200) errorOutput += chunk.toString("utf8"); });
     let resolveSettled!: (item: MediaItem) => void;
@@ -234,11 +243,13 @@ export class EvidenceLibrary {
     const active: ActiveRecording = { process: child, cameraId: camera.id, temporaryPath, completedPath, startedAt: new Date().toISOString(), stopRequested: false, settled };
     this.#active.set(camera.id, active);
     child.once("error", () => {
+      tunnel.close();
       this.#active.delete(camera.id);
       fs.rmSync(temporaryPath, { force: true });
       rejectSettled(mediaError("configured FFmpeg executable could not start"));
     });
     child.once("close", code => {
+      tunnel.close();
       this.#active.delete(camera.id);
       try {
         // Some Windows FFmpeg builds exit non-zero after a deliberate stop even
