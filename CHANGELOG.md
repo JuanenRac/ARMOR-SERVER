@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- The repository has a security policy, a code of conduct, a contributing guide and a support file.
 - The banner follows the animated style of the ecosystem banners, with the name, the kind and the technologies of the project.
 - New `docs/ROUTES.md`: every route the server registers, with who may call it and the file that registers it, generated from the code (`node tools/routes_table.mjs`) and checked by a test.
 - The sign-in alert in European Portuguese no longer uses the Brazilian form.
