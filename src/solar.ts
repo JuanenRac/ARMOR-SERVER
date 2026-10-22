@@ -91,7 +91,7 @@ const deviceName = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 const warningName = /^[a-z][a-z0-9_]{0,39}$/;
 const INVERTER_KEYS = ["kind", "node_id", "device", "timestamp_ms", "mode", "grid_v", "grid_hz", "out_v", "out_hz", "out_va", "out_w", "load_percent", "battery_v", "battery_a", "battery_percent",
   "pv_v", "pv_a", "pv_w", "heatsink_c", "ac_charging", "pv_charging", "load_on", "warnings"] as const;
-const INVERTER_OPTIONAL_KEYS = ["warnings_known", "bus_v", "pv2_v", "pv2_a", "pv2_w", "total_out_w", "total_out_va", "total_load_percent", "total_charging_a", "units", "serial", "firmware", "pv_energy_total_wh", "ratings"] as const;
+const INVERTER_OPTIONAL_KEYS = ["warnings_known", "bus_v", "pv2_v", "pv2_a", "pv2_w", "total_out_w", "total_out_va", "total_load_percent", "total_charging_a", "units", "serial", "firmware", "pv_energy_total_wh", "ratings", "clamped"] as const;
 const RATINGS_RANGES: Record<string, readonly [number, number]> = {
   grid_rating_v: [0, 600], out_rating_v: [0, 600], out_rating_hz: [0, 100], out_rating_va: [0, 1_000_000], out_rating_w: [0, 1_000_000], battery_rating_v: [0, 600], battery_recharge_v: [0, 600],
   battery_under_v: [0, 600], battery_bulk_v: [0, 600], battery_float_v: [0, 600], max_charge_a: [0, 2000], max_ac_charge_a: [0, 2000],
@@ -147,6 +147,7 @@ export function parseSolarInverter(value: unknown): SolarInverter {
   if ("units" in body && (!Array.isArray(body.units) || body.units.length > 10)) throw new Error("invalid units");
   const units = Array.isArray(body.units) ? body.units.map(parseUnit) : undefined;
   if ("warnings_known" in body && typeof body.warnings_known !== "boolean") throw new Error("invalid warnings_known");
+  if ("clamped" in body && (!Array.isArray(body.clamped) || body.clamped.length > 16 || !body.clamped.every(name => typeof name === "string" && name.length <= 32))) throw new Error("invalid clamped");
   if ("serial" in body && !(typeof body.serial === "string" && serialText.test(body.serial))) throw new Error("invalid serial");
   if ("firmware" in body && !(typeof body.firmware === "string" && firmwareText.test(body.firmware))) throw new Error("invalid firmware");
   if ("pv_energy_total_wh" in body && !inRange(body.pv_energy_total_wh, 0, 1e12)) throw new Error("invalid pv_energy_total_wh");

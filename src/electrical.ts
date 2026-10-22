@@ -27,7 +27,7 @@ const RANGES: Record<string, readonly [number, number]> = {
   voltage_v: [0, 1000], current_a: [-1000, 1000], power_w: [-1_000_000, 1_000_000], energy_kwh: [0, 10_000_000], frequency_hz: [0, 100], power_factor: [-1, 1],
 };
 const inRange = (value: unknown, low: number, high: number): value is number => finite(value) && value >= low && value <= high;
-const CHANNEL_KEYS = ["id", "domain", "label", "voltage_v", "current_a", "power_w", "energy_kwh", "power_estimated", "frequency_hz", "power_factor", "state", "alarm", "alarm_code"] as const;
+const CHANNEL_KEYS = ["id", "domain", "label", "voltage_v", "current_a", "power_w", "energy_kwh", "power_estimated", "frequency_hz", "power_factor", "state", "alarm", "alarm_code", "reading_age_ms", "errors"] as const;
 
 function parseChannel(value: unknown, index: number): ElectricalChannel {
   const channel = record(value, `channel ${index}`);
@@ -40,6 +40,7 @@ function parseChannel(value: unknown, index: number): ElectricalChannel {
   if ("power_estimated" in channel && typeof channel.power_estimated !== "boolean") throw new Error(`invalid channel ${index}.power_estimated`);
   if ("alarm" in channel && typeof channel.alarm !== "boolean") throw new Error(`invalid channel ${index}.alarm`);
   if ("alarm_code" in channel && (typeof channel.alarm_code !== "string" || !alarmCode.test(channel.alarm_code))) throw new Error(`invalid channel ${index}.alarm_code`);
+  for (const key of ["reading_age_ms", "errors"]) if (key in channel && !(Number.isInteger(channel[key]) && (channel[key] as number) >= 0)) throw new Error(`invalid channel ${index}.${key}`);
   return channel as unknown as ElectricalChannel;
 }
 
