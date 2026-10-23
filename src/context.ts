@@ -245,7 +245,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   if (config.telegram) channels.push(telegramChannel({ token: config.telegram.token, chatIds: config.telegram.chatIds, api: process.env.ARMOR_TELEGRAM_API || undefined }));
   if (config.ntfy) channels.push(ntfyChannel({ url: config.ntfy.url, token: config.ntfy.token || undefined }));
   const fcmDevices = new FcmDevices(path.join(config.dataDir, "fcm-devices.json"));
-  if (config.fcmServiceAccount) channels.push(fcmChannel({ account: parseServiceAccount(fs.readFileSync(config.fcmServiceAccount, "utf8")), devices: fcmDevices }));
+  if (config.fcmServiceAccount) channels.push(fcmChannel({ account: parseServiceAccount(fs.readFileSync(config.fcmServiceAccount, "utf8")), devices: fcmDevices, dataOnly: config.fcmDataOnly }));
   if (config.homeAssistant) channels.push(homeAssistantChannel({ url: config.homeAssistant.url, webhookId: config.homeAssistant.webhookId }));
   const notifier = new AlertNotifier({ webhookUrl: config.alertWebhookUrl ?? undefined, webhookSecret: config.alertWebhookSecret || undefined, audit, channels, language: config.alertLanguage });
   const deviceLink: AppContext["deviceLink"] = {};

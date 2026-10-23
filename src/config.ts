@@ -60,6 +60,8 @@ export type ArmorConfig = {
   /** The lighter live picture for a slow link: pictures a second and width (ARMOR_LIVE_LOW_FPS 1 to 30, default 4; ARMOR_LIVE_LOW_WIDTH 160 to 1920, default 480). */
   liveLowFps: number;
   liveLowWidth: number;
+  /** Push as data only (ARMOR_FCM_DATA_ONLY=1): the phone writes the notice in its own language, once per event; off by default because an app from before it shows nothing for such a message. */
+  fcmDataOnly: boolean;
   maxMediaBytes: number;
   mediaRetentionMs: number;
   discoveryCidr: string | null;
@@ -385,6 +387,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     liveWidth: integer(env, "ARMOR_LIVE_WIDTH", 960, 160, 1920),
     liveLowFps: integer(env, "ARMOR_LIVE_LOW_FPS", 4, 1, 30),
     liveLowWidth: integer(env, "ARMOR_LIVE_LOW_WIDTH", 480, 160, 1920),
+    fcmDataOnly: env.ARMOR_FCM_DATA_ONLY === "1",
     maxMediaBytes: integer(env, "ARMOR_MEDIA_MAX_BYTES", 20 * 1024 ** 3, 64 * 1024 ** 2, Number.MAX_SAFE_INTEGER),
     mediaRetentionMs: integer(env, "ARMOR_MEDIA_RETENTION_DAYS", 30, 0, 3650) * 86_400_000,
     discoveryCidr: cidr,

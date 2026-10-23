@@ -12,6 +12,7 @@ import path from "node:path";
 import { alertTitle, type AlertLanguage } from "./alert_text.js";
 import { durableRename } from "./durable.js";
 import type { NotifyChannel } from "./channels.js";
+import { pushDataOf } from "./notify.js";
 
 export class FcmInvalid extends Error {}
 
@@ -121,7 +122,8 @@ export class FcmDevices {
   }
 }
 
-export type FcmOptions = { account: FcmServiceAccount; devices: FcmDevices; fetchImpl?: typeof fetch; now?: () => number };
+/** `dataOnly` sends the event as data and nothing else (the app writes the notice in its own language, once per event id); off, the message also carries the notice, as always, and the data tell the app which event it is. */
+export type FcmOptions = { account: FcmServiceAccount; devices: FcmDevices; fetchImpl?: typeof fetch; now?: () => number; dataOnly?: boolean };
 
 const base64url = (data: Buffer | string): string => Buffer.from(data).toString("base64url");
 
@@ -168,14 +170,17 @@ export function fcmChannel(options: FcmOptions): NotifyChannel {
       try {
         const bearer = await accessToken();
         const channelId = fcmChannelFor(message);
+        const event = pushDataOf(message);   // what the phone needs to tell the event itself; nothing when the message is not the line of an event (the test message)
         let failed = 0, retry = false;
         const send = async (token: string): Promise<void> => {
           // Each phone has its own time limit: one that does not answer must not cut the others short, or make the retry send the message again to the ones that already have it.
           try {
             const reply = await doFetch(`https://fcm.googleapis.com/v1/projects/${options.account.project_id}/messages:send`, {
               method: "POST", redirect: "error", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), headers: { "Content-Type": "application/json", Authorization: `Bearer ${bearer}` },
-              body: JSON.stringify({ message: { token, notification: { title: alertTitle(language), body: text }, data: { event: String(message.event), severity: String(message.severity ?? "") },
-                android: { priority: "HIGH", notification: { channel_id: channelId } } } }),
+              body: JSON.stringify({ message: options.dataOnly && event
+                ? { token, data: { event: String(message.event), ...event }, android: { priority: "HIGH" } }
+                : { token, notification: { title: alertTitle(language), body: text }, data: { event: String(message.event), severity: String(message.severity ?? ""), ...(event ?? {}) },
+                  android: { priority: "HIGH", notification: { channel_id: channelId } } } }),
             });
             if (reply.ok) { got.add(token); return; }
             const reason = (await reply.text().catch(() => "")).slice(0, 500);

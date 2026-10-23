@@ -26,6 +26,7 @@ Every setting is an environment variable (a `.env` file next to the server is re
 | `ARMOR_ELEVATION_MS` | integer 30000 to 3600000, default 5 * 60000 |  |  |
 | `ARMOR_ESCALATE_AFTER_MIN` | integer 0 to 1440, default 0 | `0` | How many targets at once make an alert high while armed (1 by default), and how long an unacknowledged critical alarm waits before it is told again (minutes; 0 = never). |
 | `ARMOR_EVIDENCE_KEY` |  | `replace-with-long-random-evidence-key` | A key of its own for the proofs of custody of the evidence (otherwise the camera key signs them). |
+| `ARMOR_FCM_DATA_ONLY` |  | `1` | Send the push as data only: the phone writes the notice in its own language, once per event. Leave it off while a phone still runs an app from before this (it shows nothing for such a message). |
 | `ARMOR_FCM_SERVICE_ACCOUNT` |  | `/etc/armor/firebase-service-account.json` | Where alarms are told besides the apps: a webhook (signed with the secret), Telegram, ntfy, Home Assistant and Firebase push. |
 | `ARMOR_FFMPEG_PATH` |  | `C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe` | Optional absolute path to FFmpeg for the server-local RTSP-to-MJPEG relay. Keep this unset until the media gateway is intentionally installed. |
 | `ARMOR_HA_DISCOVERY` |  | `1` | The other services: the voice gateway, the observation service, the administration and maintenance agents of ARMOR-DEVOPS, Home Assistant discovery. |

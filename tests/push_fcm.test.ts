@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { FcmDevices, FcmFull, FcmInvalid, MAX_PER_USER, fcmChannel, fcmChannelFor, parseServiceAccount, signedAssertion, type FcmServiceAccount } from "../src/push_fcm.js";
+import { alertMessageFor, pushDataOf } from "../src/notify.js";
 import { startServer, studioCookie } from "./helpers.js";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -187,4 +188,34 @@ test("push is off by default: a phone cannot register, and the status says so", 
     assert.equal((await fetch(`${running.base}/api/v1/push/unregister`, { method: "POST", headers: admin, body: JSON.stringify({ token: TOKEN_A }) })).status, 200);
     assert.equal((await fetch(`${running.base}/api/v1/push/unregister`, { method: "POST", body: JSON.stringify({ token: TOKEN_A }), headers: { "Content-Type": "application/json" } })).status, 401);
   } finally { await running.stop(); }
+});
+
+test("the push carries the id of the event and what the phone needs to tell it, and as data only when asked", async () => {
+  const event = { id: 4711, at: "2026-01-01T10:00:00.000Z", type: "alarm", alarm_id: "alm-00001", state: "raised", severity: "critical", source: "smoke-1", source_type: "device", code: "smoke" } as const;
+  const message = alertMessageFor(event as never, "armed")!;
+  assert.deepEqual(pushDataOf(message), { event_id: "4711", type: "alarm", at: "2026-01-01T10:00:00.000Z", armed: "true", source: "smoke-1", source_type: "device", to: "raised", severity: "critical", code: "smoke" });
+  assert.equal(JSON.stringify(message).includes("event_id"), false, "the webhook and the broker carry the message as they always did");
+  const bodies: Array<{ message: Record<string, unknown> }> = [];
+  const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url) === account.token_uri) return new Response(JSON.stringify({ access_token: "ya29.token", expires_in: 3600 }), { status: 200 });
+    bodies.push(JSON.parse(String(init?.body)));
+    return new Response("{}", { status: 200 });
+  }) as unknown as typeof fetch;
+  for (const dataOnly of [false, true]) {
+    const devices = new FcmDevices(devicesFile());
+    devices.add(TOKEN_A);
+    await fcmChannel({ account, devices, fetchImpl, now: () => 5_000_000, dataOnly }).deliver(message, "Smoke", "en", AbortSignal.timeout(5000));
+  }
+  const [withNotice, dataOnly] = bodies.map(item => item.message as { notification?: unknown; data: Record<string, string>; android: Record<string, unknown> });
+  assert.ok(withNotice.notification, "off, the notice is there as always");
+  assert.equal(withNotice.data.event_id, "4711");
+  assert.equal(dataOnly.notification, undefined, "on, there is data and nothing to show");
+  assert.deepEqual([dataOnly.data.event_id, dataOnly.data.type, dataOnly.data.source, dataOnly.data.code, dataOnly.data.armed], ["4711", "alarm", "smoke-1", "smoke", "true"]);
+  assert.equal(dataOnly.android.priority, "HIGH");
+  // the test message of the console is not an event: it keeps the notice, whatever the option says
+  bodies.length = 0;
+  const devices = new FcmDevices(devicesFile());
+  devices.add(TOKEN_A);
+  await fcmChannel({ account, devices, fetchImpl, now: () => 5_000_000, dataOnly: true }).deliver({ event: "alert.test", severity: undefined } as never, "Test", "en", AbortSignal.timeout(5000));
+  assert.ok((bodies[0]!.message as { notification?: unknown }).notification);
 });

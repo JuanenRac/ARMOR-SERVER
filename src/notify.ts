@@ -38,7 +38,31 @@ export type AlertMessage = {
  * (a dead sensor is how a perimeter is defeated), and a camera that stops
  * answering while armed.
  */
+/** What a phone needs to tell an event in its own language: the data of a push message (see pushDataOf). Kept apart from the message, which is what the webhook and the broker carry. */
+const pushData = new WeakMap<AlertMessage, Record<string, string>>();
+export const pushDataOf = (message: AlertMessage): Record<string, string> | undefined => pushData.get(message);
+
+function pushDataFor(event: ArmorEvent, mode: SecurityMode): Record<string, string> {
+  const data: Record<string, string> = { event_id: String(event.id), type: event.type, at: event.at, armed: String(mode === "armed") };
+  const put = (key: string, value: unknown) => { if (value !== undefined && value !== null && value !== "") data[key] = String(value); };
+  switch (event.type) {
+    case "alert": put("node_id", event.node_id); put("from", event.from); put("to", event.to); put("targets", event.targets); break;
+    case "node": put("node_id", event.node_id); put("from", event.from); put("to", event.to); break;
+    case "camera": put("camera_id", event.camera_id); put("from", event.from); put("to", event.to); break;
+    case "device": put("device_id", event.device_id); put("field", event.field); put("to", event.to); break;
+    case "alarm": put("source", event.source); put("source_type", event.source_type); put("to", event.state); put("severity", event.severity); put("code", event.code); break;
+    default: break;
+  }
+  return data;
+}
+
 export function alertMessageFor(event: ArmorEvent, mode: SecurityMode): AlertMessage | null {
+  const message = alertMessageForEvent(event, mode);
+  if (message) pushData.set(message, pushDataFor(event, mode));
+  return message;
+}
+
+function alertMessageForEvent(event: ArmorEvent, mode: SecurityMode): AlertMessage | null {
   const base = { service: "armor-server" as const, at: event.at, mode };
   if (event.type === "alert") {
     if (event.to === "high") return { ...base, event: "alert.raised", node_id: event.node_id, targets: event.targets };
