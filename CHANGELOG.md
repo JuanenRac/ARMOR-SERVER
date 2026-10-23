@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+- **Security option for the phone app's lock:** `client.device_lock` (`user` by default, `sensitive`, `always`) tells the phone app to ask for the fingerprint, the face or the phone's PIN also before arming, disarming and unlocking, or also to open the app. It is announced in `capabilities.security`, lowering it is written in the audit trail and raising it is not a loss; a phone with no lock is never shut out.
+
 ## [0.8.0.4] - Solar gateways remembered, the route list and the diagnostics of the nodes
 
 - The repository has a security policy, a code of conduct, a contributing guide and a support file.

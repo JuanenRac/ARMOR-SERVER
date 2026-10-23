@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { AlarmZoneFeed, ZoneFeedSigner, zoneFeedSignature } from "../src/alarm_zone_feed.js";
 import type { Device } from "../src/devices/registry.js";
-import { SECURITY_DEFAULTS, SecuritySettings, SecuritySettingsInvalid } from "../src/security_settings.js";
+import { lowers, SECURITY_DEFAULTS, SecuritySettings, SecuritySettingsInvalid } from "../src/security_settings.js";
 import { startServer, studioCookie, tempDir, type Running } from "./helpers.js";
 
 const json = { "Content-Type": "application/json" };
@@ -222,5 +222,30 @@ test("a panel's zone-feed key is given to an administrator only, and the setting
     assert.equal((await call(running, cookie, "PUT", "/api/v1/security/settings", { "alarm.config_hash": false, "server.zone_feed_signature": false })).status, 200);
     const policy = published.find(([topic]) => topic === "armor/alarm/alarm-1/policy");
     assert.deepEqual(JSON.parse(policy![1]), { config_hash: false, zone_feed: true, zone_feed_signature: false });
+  } finally { await running.stop(); }
+});
+
+test("the lock of the phone app is a closed list that starts as the person's own choice, and raising it is not a loss", () => {
+  const settings = new SecuritySettings(path.join(tempDir(), "security-settings.json"));
+  assert.equal(SECURITY_DEFAULTS["client.device_lock"], "user");
+  assert.throws(() => settings.update({ "client.device_lock": "sometimes" }), SecuritySettingsInvalid);
+  assert.throws(() => settings.update({ "client.device_lock": true }), SecuritySettingsInvalid);
+  assert.deepEqual(settings.update({ "client.device_lock": "always" }), { "client.device_lock": "always" });
+  assert.equal(lowers("client.device_lock", "user", "always"), false);
+  assert.equal(lowers("client.device_lock", "always", "sensitive"), true);
+  assert.equal(lowers("client.device_lock", "sensitive", "user"), true);
+});
+
+test("the session announces the lock of the phone app to every signed-in person", async () => {
+  const running = await startServer();
+  try {
+    const cookie = await studioCookie(running.base);
+    assert.equal((await call(running, cookie, "GET", "/api/v1/studio/session")).body.capabilities.security["client.device_lock"], "user");
+    assert.equal((await call(running, cookie, "PUT", "/api/v1/security/settings", { "client.device_lock": "sensitive" })).status, 200);
+    assert.equal((await call(running, cookie, "GET", "/api/v1/studio/session")).body.capabilities.security["client.device_lock"], "sensitive");
+    const audit = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8");
+    assert.doesNotMatch(audit, /client\.device_lock.*lowers the security/);
+    await call(running, cookie, "PUT", "/api/v1/security/settings", { "client.device_lock": "user" });
+    assert.match(fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8"), /client\.device_lock.*sensitive -> user \(lowers the security\)/);
   } finally { await running.stop(); }
 });

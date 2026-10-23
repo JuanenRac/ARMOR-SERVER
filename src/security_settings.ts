@@ -11,7 +11,8 @@
  *   media.rtsp_proxy             on | off                  FFmpeg reads the cameras through the local tunnel (off: the camera login goes in its command line, visible to every user of the machine)
  *   voice.multipart_turn         on | off                  the wall panel may send a spoken turn as multipart/form-data with the audio as raw bytes (off: only the older raw request is taken, a multipart one is answered 415)
  *   panel.live_events            on | off                  the wall panel may listen to the live channel (a WebSocket that carries the same small summary it can ask for; off: it asks every few seconds)
- *   network.login_secure_only    on | off                  a stored device login is handed to a network node only when its request came over TLS or from this machine (off, the default: any request of the node)
+ *   client.device_lock           user | sensitive | always   what the phone app asks of the person with the lock of the phone itself (fingerprint, face or the phone's PIN): user = the phone's own switches decide, sensitive = also before arming, disarming and unlocking, always = also to open the app (it can only raise what a person chose, never lower it, and a phone with no lock at all is never shut out)
+ *   network.login_secure_only    on | off                 a stored device login is handed to a network node only when its request came over TLS or from this machine (off, the default: any request of the node)
  *
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
@@ -21,6 +22,8 @@ import { durableRename } from "./durable.js";
 
 export const DISARM_PIN_VALUES = ["never", "if_set", "always"] as const;
 export const SILENCE_VALUES = ["off", "pin", "double_turn"] as const;
+export const DEVICE_LOCK_VALUES = ["user", "sensitive", "always"] as const;
+export type DeviceLockPolicy = typeof DEVICE_LOCK_VALUES[number];
 export type DisarmPinMode = typeof DISARM_PIN_VALUES[number];
 export type SilenceConfirmation = typeof SILENCE_VALUES[number];
 
@@ -34,6 +37,7 @@ export type SecuritySettingsValues = {
   "network.login_secure_only": boolean;
   "voice.multipart_turn": boolean;
   "panel.live_events": boolean;
+  "client.device_lock": DeviceLockPolicy;
 };
 export type SecuritySettingKey = keyof SecuritySettingsValues;
 
@@ -47,6 +51,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "network.login_secure_only": false,
   "voice.multipart_turn": true,
   "panel.live_events": true,
+  "client.device_lock": "user",
 });
 
 export class SecuritySettingsInvalid extends Error {
@@ -60,6 +65,7 @@ const isKey = (value: string): value is SecuritySettingKey => (KEYS as string[])
 function clean(key: SecuritySettingKey, value: unknown): SecuritySettingsValues[SecuritySettingKey] | undefined {
   if (key === "alarm.disarm_pin") return (DISARM_PIN_VALUES as readonly unknown[]).includes(value) ? value as DisarmPinMode : undefined;
   if (key === "voice.silence_confirmation") return (SILENCE_VALUES as readonly unknown[]).includes(value) ? value as SilenceConfirmation : undefined;
+  if (key === "client.device_lock") return (DEVICE_LOCK_VALUES as readonly unknown[]).includes(value) ? value as DeviceLockPolicy : undefined;
   return typeof value === "boolean" ? value : undefined;
 }
 
@@ -131,5 +137,6 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "voice.multipart_turn" || key === "panel.live_events") return false;   // a way in that is turned off is not a loss of protection; turning it on is the default way
   if (key === "alarm.disarm_pin") return DISARM_PIN_VALUES.indexOf(to as DisarmPinMode) < DISARM_PIN_VALUES.indexOf(from as DisarmPinMode);
   if (key === "voice.silence_confirmation") return SILENCE_VALUES.indexOf(to as SilenceConfirmation) < SILENCE_VALUES.indexOf(from as SilenceConfirmation);
+  if (key === "client.device_lock") return DEVICE_LOCK_VALUES.indexOf(to as DeviceLockPolicy) < DEVICE_LOCK_VALUES.indexOf(from as DeviceLockPolicy);
   return from === true && to === false;
 }
