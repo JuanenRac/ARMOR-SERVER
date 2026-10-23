@@ -9,7 +9,7 @@ import { SolarEventLog, type EventsFile, type LoggedEvent } from "./solar_events
 import { finite, integer, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
 import { CoarseTier, type Sample } from "./history.js";
 import { dayOf } from "./day.js";
-import { sweepStale } from "./staleness.js";
+import { refresh, sweepStale } from "./staleness.js";
 
 export type SolarMode = "power_on" | "standby" | "line" | "battery" | "fault" | "power_saving" | "shutdown" | "unknown";
 export const SOLAR_MODES: readonly SolarMode[] = ["power_on", "standby", "line", "battery", "fault", "power_saving", "shutdown", "unknown"];
@@ -320,8 +320,7 @@ export class SolarStore {
     if (entry.example && options.example !== true) { entry.samples = []; entry.coarse = new CoarseTier(); entry.lastSampleMs = 0; }   // the first real reading replaces the example, history included
     entry.example = options.example === true;
     entry.reading = message;
-    entry.receivedAtMs = now;
-    entry.stale = false;
+    refresh(entry, now);
     if (modeChanged || now - entry.lastSampleMs >= this.#options.sampleEveryMs) {
       const sample = sampleOf(message, now);
       entry.samples.push(sample);

@@ -1,0 +1,96 @@
+# =============================================================================
+# A.R.M.O.R. - the workflow that tries Studio and the server together: the nginx of the image, a real server and a real browser
+# Copyright (C) 2026 JuanenRac (Electro Hobby 3D)
+# GPL-3.0-or-later - see LICENSE
+# =============================================================================
+# CANONICAL TEMPLATE. Vendored as .github/workflows/e2e.yml into ARMOR-STUDIO and ARMOR-SERVER (the two repositories whose change can break the other) by
+# ARMOR-DOCS/tools/sync_ci_tools.py. Edit here, then re-run that script - do not hand-edit a vendored copy.
+#
+# It is a workflow of its own, apart from the baseline one, so that it can be turned off without touching the rest:
+#   * set the repository variable ARMOR_E2E to "off" (Settings > Secrets and variables > Actions > Variables) and every run is skipped, or
+#   * disable the workflow in the Actions tab (gh workflow disable e2e.yml).
+# The repository that runs it is checked out; the other one is cloned next to it. ARMOR-STUDIO/e2e/ci_stack.py does the work: it starts the server, renders the nginx template of the
+# image around the built page and runs the Playwright tests of ARMOR-STUDIO/e2e/tests.
+name: Studio and server e2e (nginx, server and browser)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  STUDIO_DIR: ${{ github.event.repository.name == 'ARMOR-STUDIO' && '.' || '../ARMOR-STUDIO' }}
+  SERVER_DIR: ${{ github.event.repository.name == 'ARMOR-SERVER' && '.' || '../ARMOR-SERVER' }}
+
+jobs:
+  e2e:
+    name: nginx of the image + ARMOR-SERVER + Playwright
+    if: ${{ vars.ARMOR_E2E != 'off' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Fetch the other repository it runs with
+        run: |
+          if [ "${{ github.event.repository.name }}" = "ARMOR-STUDIO" ]; then
+            git clone --depth 1 https://github.com/JuanenRac/ARMOR-SERVER.git ../ARMOR-SERVER
+          else
+            git clone --depth 1 https://github.com/JuanenRac/ARMOR-STUDIO.git ../ARMOR-STUDIO
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Build Studio
+        working-directory: ${{ env.STUDIO_DIR }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build the server
+        working-directory: ${{ env.SERVER_DIR }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install nginx (the script runs its own copy, the service is not used)
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes nginx
+          sudo systemctl stop nginx || true
+
+      - name: Install the browser and the test dependencies
+        working-directory: ${{ env.STUDIO_DIR }}/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run the tests
+        run: python ${{ env.STUDIO_DIR }}/e2e/ci_stack.py
+        env:
+          ARMOR_SERVER_DIR: ${{ github.workspace }}/${{ env.SERVER_DIR }}
+          NGINX_BIN: /usr/sbin/nginx
+          NGINX_MIME_TYPES: /etc/nginx/mime.types
+          ARMOR_E2E_CHANNEL: chromium
+
+      - name: Keep the traces of a failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results
+          path: ${{ env.STUDIO_DIR }}/e2e/test-results
+          retention-days: 7
+          if-no-files-found: ignore

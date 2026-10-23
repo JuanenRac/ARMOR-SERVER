@@ -5,6 +5,14 @@
  */
 export type Stalable = { stale: boolean; receivedAtMs: number };
 
+/** A message arrived for `entry`: it is fresh again. Returns whether it had been stale, so the store tells that the node is back. The one place that rule lives, for every store. */
+export function refresh(entry: Stalable, now: number): boolean {
+  const wasStale = entry.stale;
+  entry.receivedAtMs = now;
+  entry.stale = false;
+  return wasStale;
+}
+
 /** Marks as stale, and tells once, every entry quiet for longer than `afterMs`; `skip` leaves out the entries that are not real nodes (the examples of the solar page). */
 export function sweepStale<T extends Stalable>(entries: Iterable<T>, now: number, afterMs: number, tell: (entry: T) => void, skip: (entry: T) => boolean = () => false): void {
   for (const entry of entries) {

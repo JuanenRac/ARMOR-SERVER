@@ -7,7 +7,7 @@
  */
 import { CoarseTier } from "./history.js";
 import { finite, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
-import { sweepStale } from "./staleness.js";
+import { refresh, sweepStale } from "./staleness.js";
 
 export type ElectricalChannel = {
   id: string; domain: "ac" | "dc"; label?: string; voltage_v?: number; current_a?: number; power_w?: number; energy_kwh?: number; power_estimated?: boolean; frequency_hz?: number; power_factor?: number;
@@ -196,10 +196,8 @@ export class ElectricalStore {
       }
       this.#entries.set(message.node_id, entry);
     }
-    const wasStale = entry.stale;
     entry.reading = message;
-    entry.receivedAtMs = now;
-    entry.stale = false;
+    const wasStale = refresh(entry, now);
     for (const channel of message.channels) {
       if (now - (entry.lastSampleMs.get(channel.id) ?? 0) < this.#options.sampleEveryMs) continue;
       const samples = entry.samples.get(channel.id) ?? [];

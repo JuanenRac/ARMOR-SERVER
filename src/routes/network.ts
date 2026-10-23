@@ -11,7 +11,7 @@ import { hasBearer } from "../http/auth.js";
 import { ingestCaller, nodeTokenFor } from "../http/node_token.js";
 import { sealFor } from "../http/credential_seal.js";
 import { forwardCompatible } from "../contracts.js";
-import { NoteInvalid, parseNetworkMessage } from "../network.js";
+import { NoteInvalid, outdatedContract, parseNetworkMessage } from "../network.js";
 import { CommandInvalid } from "../network_commands.js";
 import { CredentialsInvalid } from "../device_credentials.js";
 import { MAX_SITE_BYTES, SiteConflict, SiteInvalid } from "../site.js";
@@ -70,7 +70,7 @@ export function registerNetworkRoutes(app: Express, context: AppContext): void {
     const notes = networkNotes.all();
     const showHidden = request.query.hidden === "1";
     const nodes = networkNodes.list().map(view => ({
-      node_id: view.node_id, received_at: view.received_at, stale: view.stale, interface: view.state.interface, internet: view.state.internet, ...(view.state.scan ? { scan: view.state.scan } : {}),
+      node_id: view.node_id, received_at: view.received_at, stale: view.stale, contract: view.state.contract ?? 1, outdated: outdatedContract(view.state.contract), interface: view.state.interface, internet: view.state.internet, ...(view.state.scan ? { scan: view.state.scan } : {}),
       ...(view.state.public ? { public: view.state.public } : {}),
       devices: view.state.devices.filter(device => showHidden || !notes[device.id]?.hidden).map(device => ({ ...device, ...(notes[device.id] ? { note: notes[device.id] } : {}), ...(deviceCredentials.summary(device.id) ? { login: deviceCredentials.summary(device.id) } : {}) })),
       hidden: view.state.devices.filter(device => notes[device.id]?.hidden).length,

@@ -11,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { finite, integer, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
 import { durableRename } from "./durable.js";
-import { sweepStale } from "./staleness.js";
+import { refresh, sweepStale } from "./staleness.js";
 
 export const DEVICE_KINDS = ["router", "computer", "phone", "tv", "printer", "camera", "iot", "server", "nas", "network", "unknown"] as const;
 export type DeviceKind = (typeof DEVICE_KINDS)[number];
@@ -40,8 +40,14 @@ export const COMMAND_TYPES = ["scan_now", "ping", "traceroute", "wake", "ports",
 export type CommandType = (typeof COMMAND_TYPES)[number];
 /** What a node did with a manual order the server handed it. */
 export type NetworkResult = { id: string; type: CommandType; ok: boolean; finished_ms: number; device_id?: string; output?: string; ports?: NetworkPort[]; latency_ms?: number };
+/** The version of the network contract this server speaks. A node that says a lower number (or none, which is the first version) is older than the server and is shown as outdated. */
+export const NETWORK_CONTRACT = 1;
+/** Whether a node that says it speaks `said` (or says nothing: the first version) is older than `current`. */
+export const outdatedContract = (said: number | undefined, current: number = NETWORK_CONTRACT): boolean => (said ?? 1) < current;
 export type NetworkMessage = {
   kind: "network"; node_id: string; timestamp_ms: number;
+  /** The version of the contract the node speaks; a node that does not say it speaks the first one. */
+  contract?: number;
   interface: { name: string; ip: string; cidr: string; gateway?: string; rx_bps?: number; tx_bps?: number };
   internet: NetworkInternet; devices: NetworkDevice[]; events?: NetworkEvent[]; scan?: { last_ms: number; hosts: number; duration_ms?: number }; public?: NetworkPublic; results?: NetworkResult[];
 };
@@ -204,10 +210,11 @@ function parseResult(raw: unknown, index: number): NetworkResult {
 
 export function parseNetworkMessage(value: unknown): NetworkMessage {
   const body = record(value, "network message");
-  onlyKnown(body, ["kind", "node_id", "timestamp_ms", "interface", "internet", "devices", "events", "scan", "public", "results"], "network message");
+  onlyKnown(body, ["kind", "node_id", "contract", "timestamp_ms", "interface", "internet", "devices", "events", "scan", "public", "results"], "network message");
   for (const key of ["kind", "node_id", "timestamp_ms", "interface", "internet", "devices"]) if (!(key in body)) throw new Error(`the network message is missing ${key}`);
   if (body.kind !== "network") throw new Error("invalid kind");
   const node = readNodeId(body), timestamp = readTimestamp(body);
+  if ("contract" in body && !whole(body.contract, 1)) throw new Error("invalid contract");
   const iface = parseInterface(body.interface), internet = parseInternet(body.internet);
   if (!Array.isArray(body.devices) || body.devices.length > MAX_DEVICES) throw new Error("invalid devices");
   const devices = body.devices.map(parseDevice);
@@ -233,7 +240,7 @@ export function parseNetworkMessage(value: unknown): NetworkMessage {
     results = body.results.map(parseResult);
     if (new Set(results.map(result => result.id)).size !== results.length) throw new Error("a result id must appear once");
   }
-  return { kind: "network", node_id: node, timestamp_ms: timestamp, interface: iface, internet, devices, ...(events ? { events } : {}), ...(scan ? { scan } : {}), ...(publicInfo ? { public: publicInfo } : {}), ...(results ? { results } : {}) };
+  return { kind: "network", node_id: node, ...("contract" in body ? { contract: body.contract as number } : {}), timestamp_ms: timestamp, interface: iface, internet, devices, ...(events ? { events } : {}), ...(scan ? { scan } : {}), ...(publicInfo ? { public: publicInfo } : {}), ...(results ? { results } : {}) };
 }
 
 /** armor/network/{node_id}/state as node_id, or undefined when the topic is not one. */
@@ -361,8 +368,8 @@ export class NetworkStore {
       entry = { state: message, receivedAtMs: now, stale: false, samples: [], lastSampleMs: 0 };
       this.#entries.set(message.node_id, entry);
     }
-    const wasStale = entry.stale;
-    entry.state = message; entry.receivedAtMs = now; entry.stale = false;
+    entry.state = message;
+    const wasStale = refresh(entry, now);
     if (now - entry.lastSampleMs >= this.#options.sampleEveryMs) {
       const sample: NetworkSample = { t: now, state: message.internet.state };
       if (message.internet.latency_ms !== undefined) sample.latency_ms = message.internet.latency_ms;

@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { DeviceNotes, NetworkStore, NoteInvalid, networkTopic, parseNetworkMessage, type NetworkEvent, type NetworkMessage } from "../src/network.js";
+import { DeviceNotes, NetworkStore, NoteInvalid, networkTopic, outdatedContract, parseNetworkMessage, type NetworkEvent, type NetworkMessage } from "../src/network.js";
 import { SECRETS, startServer, studioCookie, tempDir } from "./helpers.js";
 
 const directory = path.resolve(import.meta.dirname, "..", "..", "ARMOR-COMMON", "conformance");
@@ -52,6 +52,16 @@ test("the rules that join two fields", () => {
   assert.doesNotThrow(() => parseNetworkMessage(message({ devices: [{ id: "ip-192-168-0-9", ip: "192.168.0.9", online: true, first_seen_ms: 1, last_seen_ms: 1 }] })));
   assert.throws(() => parseNetworkMessage({ ...message(), command: "scan" }), /command/);
   assert.throws(() => parseNetworkMessage({ ...message(), interface: { name: "eth0", ip: "192.168.0.10", cidr: "192.168.0.0/24", password: "x" } }), /password/);
+});
+
+test("a node says which version of the contract it speaks and the server tells an older one from a current one", () => {
+  assert.equal(parseNetworkMessage(message({ contract: 1 })).contract, 1);
+  assert.equal(parseNetworkMessage(message()).contract, undefined, "a node that does not say it speaks the first version");
+  for (const bad of [0, -1, 1.5, "1", null]) assert.throws(() => parseNetworkMessage({ ...message(), contract: bad }), /contract/, String(bad));
+  assert.equal(outdatedContract(undefined, 1), false);
+  assert.equal(outdatedContract(1, 1), false);
+  assert.equal(outdatedContract(undefined, 2), true, "no number means the first version, older than the second");
+  assert.equal(outdatedContract(2, 2), false);
 });
 
 test("the store tells each event once, keeps the outages and the history, and knows a node that went quiet", () => {
@@ -172,11 +182,12 @@ test("the routes take a node's state with the ingest token and give it to an ope
     assert.equal((await fetch(`${running.base}/api/v1/network`)).status, 401);
     const cookie = await studioCookie(running.base);
     const read = async () => (await (await fetch(`${running.base}/api/v1/network`, { headers: { cookie } })).json()) as {
-      nodes: Array<{ node_id: string; stale: boolean; devices: Array<{ id: string; note?: { name?: string; trusted?: boolean } }> }>;
+      nodes: Array<{ node_id: string; stale: boolean; contract: number; outdated: boolean; devices: Array<{ id: string; note?: { name?: string; trusted?: boolean } }> }>;
       totals: { devices: number; unknown: number; internet: string }; events: Array<{ kind: string; node_id: string }>; outages: unknown[];
     };
     let seen = await read();
     assert.deepEqual([seen.nodes.length, seen.nodes[0].devices.length, seen.totals.devices, seen.totals.unknown, seen.totals.internet], [1, 2, 2, 2, "up"]);
+    assert.deepEqual([seen.nodes[0].contract, seen.nodes[0].outdated], [1, false]);
     assert.deepEqual(seen.events.map(item => [item.kind, item.node_id]), [["new_device", "network-1"]]);
     // an administrator names a device and marks it as known
     const put = (id: string, body: unknown, headers: Record<string, string> = { cookie }) => fetch(`${running.base}/api/v1/network/devices/${encodeURIComponent(id)}`, { method: "PUT", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
