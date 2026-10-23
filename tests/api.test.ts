@@ -115,6 +115,10 @@ test("a live stream needs an operator or a ticket issued for that camera", async
   assert.equal((await call("/api/v1/cameras/cam-gate/stream-ticket", { method: "POST" })).status, 401);
   const grant = await (await post("/api/v1/cameras/cam-gate/stream-ticket", {}, { cookie })).json() as { path: string };
   assert.match(grant.path, /^\/api\/v1\/cameras\/cam-gate\/mjpeg\?ticket=/);
+  // The picture a person gets can be the lighter one (for a slow link); a quality that does not exist is refused and the ticket says which was granted.
+  assert.equal(((await (await post("/api/v1/cameras/cam-gate/stream-ticket", {}, { cookie })).json()) as { quality: string }).quality, "normal", "from this machine the default is the normal picture");
+  assert.equal(((await (await post("/api/v1/cameras/cam-gate/stream-ticket", { quality: "low" }, { cookie })).json()) as { quality: string }).quality, "low");
+  assert.equal((await post("/api/v1/cameras/cam-gate/stream-ticket", { quality: "ultra" }, { cookie })).status, 422);
   // Authorised by ticket; the relay itself is unavailable because FFmpeg is not configured.
   const withTicket = await call(grant.path);
   assert.equal(withTicket.status, 503);

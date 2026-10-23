@@ -33,9 +33,11 @@ Every setting is an environment variable (a `.env` file next to the server is re
 | `ARMOR_HOMEASSISTANT_URL` |  | `http://192.168.0.20:8123` | Where alarms are told besides the apps: a webhook (signed with the secret), Telegram, ntfy, Home Assistant and Firebase push. |
 | `ARMOR_HOMEASSISTANT_WEBHOOK_ID` |  | `replace-with-the-webhook-id` | Where alarms are told besides the apps: a webhook (signed with the secret), Telegram, ntfy, Home Assistant and Firebase push. |
 | `ARMOR_HOST` |  | `127.0.0.1` | Generate distinct random values; never commit the populated .env file. Address to listen on. Loopback by default; set 0.0.0.0 (or a LAN address) only on purpose. |
-| `ARMOR_INGEST_STRICT` |  | `1` | TLS of the server's own (it then speaks only HTTPS): |
+| `ARMOR_INGEST_STRICT` |  | `1` | The lighter live picture, for a phone on mobile data or any slow link: pictures a second (1 to 30) and width (160 to 1920). |
 | `ARMOR_INGEST_TOKEN` |  | `replace-with-long-random-ingest-token` | Generate distinct random values; never commit the populated .env file. Address to listen on. Loopback by default; set 0.0.0.0 (or a LAN address) only on purpose. |
 | `ARMOR_LIVE_FPS` | integer 1 to 30, default 12 | `12` | TLS of the server's own (it then speaks only HTTPS): |
+| `ARMOR_LIVE_LOW_FPS` | integer 1 to 30, default 4 | `4` | The lighter live picture, for a phone on mobile data or any slow link: pictures a second (1 to 30) and width (160 to 1920). |
+| `ARMOR_LIVE_LOW_WIDTH` | integer 160 to 1920, default 480 | `480` | The lighter live picture, for a phone on mobile data or any slow link: pictures a second (1 to 30) and width (160 to 1920). |
 | `ARMOR_LIVE_WIDTH` | integer 160 to 1920, default 960 | `960` | TLS of the server's own (it then speaks only HTTPS): |
 | `ARMOR_LOGIN_ALERTS` |  | `1` | 0 turns off the notice sent to the alarm channels when someone signs in from outside the house from a place not seen before. |
 | `ARMOR_MAINT_SOCKET` |  | `/run/armor/maint.sock` | The other services: the voice gateway, the observation service, the administration and maintenance agents of ARMOR-DEVOPS, Home Assistant discovery. |

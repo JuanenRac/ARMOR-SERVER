@@ -8,7 +8,7 @@ import { digestAuthorization, parseDigestChallenge } from "../src/cameras/digest
 import type { CameraConnection } from "../src/cameras/model.js";
 import { openRtspTunnel, RtspFramer } from "../src/cameras/rtsp_tunnel.js";
 import { EvidenceLibrary } from "../src/media/evidence.js";
-import { RelayManager } from "../src/media/relay.js";
+import { RelayManager, StreamTickets } from "../src/media/relay.js";
 import { tempDir } from "./helpers.js";
 
 const USER = "installer", PASSWORD = "s3cret-pw!";
@@ -177,4 +177,24 @@ test("with media.rtsp_proxy off FFmpeg is given the camera address as before", a
   const gateway = new AiGateway({ ffmpegPath: "ffmpeg", proxy: () => false, run: async (_program, args) => { seen.push(args); return Buffer.alloc(64 * 36); } });
   await gateway.frame(camera);
   assert.match(seen[0]!.join(" "), new RegExp(`rtsp://${USER}:${encodeURIComponent(PASSWORD)}@127\\.0\\.0\\.1:1/live/sub`));
+});
+
+test("the lighter live picture is its own relay with fewer and narrower pictures, and the ticket remembers which one was asked for", async () => {
+  const camera = cameraAt(1);
+  const calls: string[][] = [];
+  const relays = new RelayManager({ ffmpegPath: "ffmpeg", maxRelays: 2, spawn: fakeSpawn(calls), fps: 12, width: 960, lowFps: 4, lowWidth: 480 });
+  const viewer = { write: () => true, end: () => undefined, writableEnded: false, writableNeedDrain: false };
+  const normal = relays.attach(camera, viewer as never, "normal");
+  const low = relays.attach(camera, viewer as never, "low");
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.equal(calls.length, 2, "one relay for each quality, not one shared");
+  const filters = calls.map(args => args[args.indexOf("-vf") + 1]).sort();
+  assert.deepEqual(filters, ["fps=12,scale='min(960,iw)':-2", "fps=4,scale='min(480,iw)':-2"]);
+  normal(); low(); relays.stop(camera.id);
+  const tickets = new StreamTickets();
+  const light = tickets.issue("cam-1", "low"), plain = tickets.issue("cam-1");
+  assert.equal(tickets.qualityOf(light.ticket, "cam-1"), "low");
+  assert.equal(tickets.qualityOf(plain.ticket, "cam-1"), "normal");
+  assert.equal(tickets.qualityOf(light.ticket, "cam-2"), undefined, "a ticket of another camera says nothing");
+  assert.equal(tickets.qualityOf("forged", "cam-1"), undefined);
 });

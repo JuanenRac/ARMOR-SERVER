@@ -13,6 +13,7 @@ import { discoveryPrefixes, scanNetworks } from "../cameras/discovery.js";
 import { clientMessage } from "../cameras/errors.js";
 import { parseCameraInput, type CameraConnection } from "../cameras/model.js";
 import { discoverRtspPaths } from "../cameras/rtsp.js";
+import { isLiveQuality, type LiveQuality } from "../media/relay.js";
 
 /** The paths that cameras of the common families give to their lighter second stream (Hi3510 12, Hikvision 102, Dahua subtype 1). */
 const SUB_STREAM = /^\/(12|13|stream2)$|Channels\/(2|102|202)$|subtype=1/;
@@ -23,7 +24,7 @@ const param = (request: Request, name: string): string => {
 };
 
 export function registerCameraRoutes(app: Express, context: AppContext): void {
-  const { config, vault, evidence, relays, tickets, discovery, audit, requireOperator, operatorAuthorized } = context;
+  const { config, vault, evidence, relays, tickets, discovery, audit, requireOperator, operatorAuthorized, studioSessions, originOfRequest } = context;
   /** Who did it, for the audit trail: the Studio user of the session (a token has no name of its own). */
   const who = (request: Request): string | undefined => context.studioUser(request)?.username;
   // A held PTZ button repeats its command every second, so movement has a budget of its own.
@@ -143,12 +144,16 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
   });
 
   // A ticket lets an <img> tag load a stream without any header. Only an operator can obtain one.
+  // The body may say `quality`: `normal`, `low` (fewer and narrower pictures, for a slow link) or `auto` (the default: low for a person who came from outside the house, normal otherwise).
   app.post("/api/v1/cameras/:id/stream-ticket", requireOperator, (request, response) => {
     const camera = withCamera(request, response);
     if (!camera) return;
-    relays.warm(camera);
-    const grant = tickets.issue(camera.id);
-    return response.status(201).json({ path: `/api/v1/cameras/${encodeURIComponent(camera.id)}/mjpeg?ticket=${encodeURIComponent(grant.ticket)}`, expiresAt: grant.expiresAt });
+    const asked = (request.body as { quality?: unknown } | undefined)?.quality;
+    if (asked !== undefined && asked !== "auto" && !isLiveQuality(asked)) return response.status(422).json({ error: "invalid_quality" });
+    const quality: LiveQuality = isLiveQuality(asked) ? asked : (studioSessions.originOf(request) ?? originOfRequest(request)) === "remote" ? "low" : "normal";
+    relays.warm(camera, quality);
+    const grant = tickets.issue(camera.id, quality);
+    return response.status(201).json({ path: `/api/v1/cameras/${encodeURIComponent(camera.id)}/mjpeg?ticket=${encodeURIComponent(grant.ticket)}`, expiresAt: grant.expiresAt, quality });
   });
 
   app.get("/api/v1/cameras/:id/mjpeg", (request, response) => {
@@ -160,7 +165,8 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
     }
     try {
       response.status(200).set({ "Cache-Control": "no-store", Connection: "keep-alive", "Content-Type": "multipart/x-mixed-replace; boundary=armorframe" });
-      const detach = relays.attach(camera, response);
+      const quality = tickets.qualityOf(request.query.ticket, camera.id) ?? (request.query.quality === "low" ? "low" : "normal");   // an operator who skips the ticket asks for the lighter picture with ?quality=low
+      const detach = relays.attach(camera, response, quality);
       request.once("close", detach);
       return undefined;
     } catch (error) {

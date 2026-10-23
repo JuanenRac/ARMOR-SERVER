@@ -10,6 +10,10 @@ import { mediaError } from "../cameras/errors.js";
 import type { CameraConnection } from "../cameras/model.js";
 import { openRtspTunnel } from "../cameras/rtsp_tunnel.js";
 
+/** The quality of a live picture: `low` is for a slow link (a phone on mobile data), with fewer pictures a second and narrower ones (ARMOR_LIVE_LOW_FPS and ARMOR_LIVE_LOW_WIDTH). */
+export type LiveQuality = "normal" | "low";
+export const isLiveQuality = (value: unknown): value is LiveQuality => value === "normal" || value === "low";
+
 type Relay = { kill: () => void; subscribers: Set<ServerResponse>; stopTimer?: ReturnType<typeof setTimeout>; splitter: FrameSplitter; frames: number; preview: boolean };
 
 const BOUNDARY = Buffer.from("--armorframe");
@@ -59,7 +63,9 @@ export function deliver(frame: Buffer, viewers: Iterable<Pick<ServerResponse, "w
   return skipped;
 }
 
-export type RelayOptions = { ffmpegPath: string; spawn?: typeof spawn; /** The setting media.rtsp_proxy, read each time a stream starts (default on). */ proxy?: () => boolean; maxRelays: number; idleStopMs?: number; fps?: number; width?: number };
+export type RelayOptions = { ffmpegPath: string; spawn?: typeof spawn; /** The setting media.rtsp_proxy, read each time a stream starts (default on). */ proxy?: () => boolean; maxRelays: number; idleStopMs?: number; fps?: number; /** The lighter profile: pictures a second and width, 4 and 480 when not given. */ lowFps?: number; lowWidth?: number; width?: number };
+
+const keyOf = (cameraId: string, quality: LiveQuality): string => (quality === "low" ? `${cameraId}|low` : cameraId);
 
 export class RelayManager {
   readonly #relays = new Map<string, Relay>();
@@ -72,8 +78,8 @@ export class RelayManager {
   get capacity(): number { return this.#options.maxRelays; }
 
   /** Attach a viewer to the camera's relay, starting it when this is the first viewer. */
-  attach(camera: CameraConnection, viewer: ServerResponse): () => void {
-    const relay = this.#relayFor(camera);
+  attach(camera: CameraConnection, viewer: ServerResponse, quality: LiveQuality = "normal"): () => void {
+    const relay = this.#relayFor(camera, quality);
     // The picture the camera showed last goes out at once; the live ones follow it.
     const last = relay.splitter.latest;
     if (last && !viewer.writableEnded) viewer.write(last);
@@ -85,15 +91,16 @@ export class RelayManager {
   }
 
   /** Start a camera's relay ahead of its first viewer (one asked for a stream address, so a viewer is about to come): the picture is there when it connects. */
-  warm(camera: CameraConnection): void {
-    try { this.#stopWhenUnused(camera.id, this.#relayFor(camera)); } catch { /* no capacity, no FFmpeg or no complete address: the viewer will be told when it connects */ }
+  warm(camera: CameraConnection, quality: LiveQuality = "normal"): void {
+    try { this.#stopWhenUnused(camera.id, this.#relayFor(camera, quality)); } catch { /* no capacity, no FFmpeg or no complete address: the viewer will be told when it connects */ }
   }
 
   /** Stop a camera's relay now (its connection was removed or changed). */
-  stop(cameraId: string): void { this.#relays.get(cameraId)?.kill(); }
+  stop(cameraId: string): void { for (const quality of ["normal", "low"] as const) this.#relays.get(keyOf(cameraId, quality))?.kill(); }
 
-  #relayFor(camera: CameraConnection): Relay {
-    const existing = this.#relays.get(camera.id);
+  #relayFor(camera: CameraConnection, quality: LiveQuality): Relay {
+    const key = keyOf(camera.id, quality);
+    const existing = this.#relays.get(key);
     if (existing) {
       if (existing.stopTimer) { clearTimeout(existing.stopTimer); existing.stopTimer = undefined; }
       return existing;
@@ -102,12 +109,13 @@ export class RelayManager {
     const preview = Boolean(camera.previewPath) && !this.#previewFailed.has(camera.id);
     if (!camera.secrets?.username || !camera.secrets.password || !(preview ? camera.previewPath : camera.rtspPath)) throw mediaError("camera RTSP path and complete credentials are required");
     if (!this.#options.ffmpegPath) throw mediaError("FFmpeg is not configured");
-    const fps = Math.max(1, Math.min(30, Math.round(this.#options.fps ?? 12))), width = Math.max(160, Math.min(1920, Math.round(this.#options.width ?? 960)));
+    const low = quality === "low";
+    const fps = Math.max(1, Math.min(30, Math.round(low ? (this.#options.lowFps ?? 4) : (this.#options.fps ?? 12)))), width = Math.max(160, Math.min(1920, Math.round(low ? (this.#options.lowWidth ?? 480) : (this.#options.width ?? 960))));
     let child: ChildProcess | undefined;
     let cancelled = false;
     const relay: Relay = { kill: () => { cancelled = true; child?.kill("SIGTERM"); }, subscribers: new Set(), splitter: new FrameSplitter(), frames: 0, preview };
-    this.#relays.set(camera.id, relay);
-    const close = () => this.#close(camera.id, relay);
+    this.#relays.set(key, relay);
+    const close = () => this.#close(key, camera.id, relay);
     // FFmpeg is given a loopback address without the camera's login: the tunnel adds it, so it never shows in the list of processes.
     openRtspTunnel(camera, { preview, direct: this.#options.proxy?.() === false }).then(tunnel => {
       if (!tunnel) { close(); return; }
@@ -137,11 +145,11 @@ export class RelayManager {
     relay.stopTimer = setTimeout(() => { if (!relay.subscribers.size) relay.kill(); }, this.#options.idleStopMs ?? 120_000);
   }
 
-  #close(cameraId: string, relay: Relay): void {
-    if (this.#relays.get(cameraId) !== relay) return;
+  #close(key: string, cameraId: string, relay: Relay): void {
+    if (this.#relays.get(key) !== relay) return;
     if (relay.preview && relay.frames === 0) this.#previewFailed.add(cameraId);   // the viewers that reconnect get the main stream
     if (relay.stopTimer) clearTimeout(relay.stopTimer);
-    this.#relays.delete(cameraId);
+    this.#relays.delete(key);
     for (const client of relay.subscribers) if (!client.writableEnded) client.end();
     relay.subscribers.clear();
   }
@@ -149,21 +157,25 @@ export class RelayManager {
 
 /** Short-lived, camera-bound grants that let an <img> tag load a stream without any header. */
 export class StreamTickets {
-  readonly #tickets = new Map<string, { cameraId: string; expiresAt: number }>();
+  readonly #tickets = new Map<string, { cameraId: string; expiresAt: number; quality: LiveQuality }>();
   readonly #lifetimeMs: number;
   readonly #capacity: number;
   readonly #now: () => number;
   constructor(lifetimeMs = 5 * 60_000, capacity = 256, now: () => number = Date.now) { this.#lifetimeMs = lifetimeMs; this.#capacity = capacity; this.#now = now; }
 
-  issue(cameraId: string): { ticket: string; expiresAt: string } {
+  /** A ticket carries the quality the picture will have: it is decided when the ticket is asked for, by the one who asks. */
+  issue(cameraId: string, quality: LiveQuality = "normal"): { ticket: string; expiresAt: string } {
     const now = this.#now();
     for (const [ticket, grant] of this.#tickets) if (grant.expiresAt <= now) this.#tickets.delete(ticket);
     while (this.#tickets.size >= this.#capacity) this.#tickets.delete(this.#tickets.keys().next().value!);
     const ticket = randomBytes(24).toString("base64url");
     const expiresAt = now + this.#lifetimeMs;
-    this.#tickets.set(ticket, { cameraId, expiresAt });
+    this.#tickets.set(ticket, { cameraId, expiresAt, quality });
     return { ticket, expiresAt: new Date(expiresAt).toISOString() };
   }
+
+  /** The quality a ticket was issued with, when it is valid for this camera. */
+  qualityOf(ticket: unknown, cameraId: string): LiveQuality | undefined { return this.valid(ticket, cameraId) ? this.#tickets.get(ticket as string)!.quality : undefined; }
 
   /** True only for an unexpired ticket that was issued for this very camera. */
   valid(ticket: unknown, cameraId: string): boolean {

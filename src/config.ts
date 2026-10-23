@@ -57,6 +57,9 @@ export type ArmorConfig = {
   /** Pictures a second and widest picture of the live video the console shows (see media/relay.ts). */
   liveFps: number;
   liveWidth: number;
+  /** The lighter live picture for a slow link: pictures a second and width (ARMOR_LIVE_LOW_FPS 1 to 30, default 4; ARMOR_LIVE_LOW_WIDTH 160 to 1920, default 480). */
+  liveLowFps: number;
+  liveLowWidth: number;
   maxMediaBytes: number;
   mediaRetentionMs: number;
   discoveryCidr: string | null;
@@ -380,6 +383,8 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     maxMjpegRelays: integer(env, "ARMOR_MAX_MJPEG_RELAYS", 8, 1, 64),
     liveFps: integer(env, "ARMOR_LIVE_FPS", 12, 1, 30),
     liveWidth: integer(env, "ARMOR_LIVE_WIDTH", 960, 160, 1920),
+    liveLowFps: integer(env, "ARMOR_LIVE_LOW_FPS", 4, 1, 30),
+    liveLowWidth: integer(env, "ARMOR_LIVE_LOW_WIDTH", 480, 160, 1920),
     maxMediaBytes: integer(env, "ARMOR_MEDIA_MAX_BYTES", 20 * 1024 ** 3, 64 * 1024 ** 2, Number.MAX_SAFE_INTEGER),
     mediaRetentionMs: integer(env, "ARMOR_MEDIA_RETENTION_DAYS", 30, 0, 3650) * 86_400_000,
     discoveryCidr: cidr,
