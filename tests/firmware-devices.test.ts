@@ -1,5 +1,5 @@
-// The states that an ARMOR-RADAR node publishes for the devices of the server, exactly as its firmware writes them, through the server's device layer.
-// tests/fixtures/firmware_device_states.txt is the output of ARMOR-RADAR's tests/emit_samples (the lines that start with "device_state"); regenerate it
+// The states that an ARMOR-NODE-RADAR node publishes for the devices of the server, exactly as its firmware writes them, through the server's device layer.
+// tests/fixtures/firmware_device_states.txt is the output of ARMOR-NODE-RADAR's tests/emit_samples (the lines that start with "device_state"); regenerate it
 // there whenever the firmware's serialiser changes.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

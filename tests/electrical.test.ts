@@ -1,4 +1,4 @@
-// The readings of the ARMOR-ELECTRICAL nodes: the parser against the shared vectors, the store, and the routes.
+// The readings of the ARMOR-NODE-ELECTRICAL nodes: the parser against the shared vectors, the store, and the routes.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";

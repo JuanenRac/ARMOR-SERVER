@@ -54,14 +54,35 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
 
   // ---- alarms ----
   app.get("/api/v1/alarms", requireOperator, (request, response) => response.json({ active: alarms.active(sees(request)), recent: alarms.recent(50, sees(request)) }));
+  /**
+   * The wall panel's account proves nobody is standing there (anyone can tap): what it acknowledges stays unverified and a critical alarm keeps being escalated. When the person at
+   * the panel types the PIN of the panel's account (the body carries `pin`) it counts as verified: the PIN is checked under the same lockout as a disarm, a wrong one is refused
+   * and nothing is acknowledged, and the duress PIN acknowledges without verifying (it must look like any other).
+   */
+  const verifiedAck = (request: express.Request, response: express.Response): boolean | undefined => {
+    const user = studioUser(request);
+    if (user?.role !== "panel") return true;
+    const pin = (request.body as { pin?: unknown } | undefined)?.pin;
+    if (pin === undefined) return false;
+    const result = context.users.verifyPin(user.id, pin);
+    if (result === "ok") return true;
+    if (result === "duress" || result === "none") return false;
+    audit.record({ action: "alarm.acknowledge", outcome: "denied", actor: actor(request), detail: result === "locked" ? "pin locked" : "wrong pin" });
+    if (result === "locked") response.status(429).json({ error: "too many wrong PINs; try again later", code: "pin_locked", retry_after_s: context.users.pinLockedFor(user.id) });
+    else response.status(403).json({ error: "the PIN is not right", code: "wrong_pin" });
+    return undefined;
+  };
   app.post("/api/v1/alarms/acknowledge", requireOperator, (request, response) => {
-    // The wall panel's account proves nobody is standing there (anyone can tap): what it acknowledges stays unverified and a critical alarm keeps being escalated.
-    const count = alarms.acknowledgeAll(actor(request), { verified: studioUser(request)?.role !== "panel" });
+    const verified = verifiedAck(request, response);
+    if (verified === undefined) return undefined;
+    const count = alarms.acknowledgeAll(actor(request), { verified });
     audit.record({ action: "alarm.acknowledge", outcome: "allowed", actor: actor(request), detail: `all (${count})` });
     return response.json({ acknowledged: count });
   });
   app.post("/api/v1/alarms/:id/acknowledge", requireOperator, (request, response) => {
-    const alarm = alarms.acknowledge(String(request.params.id), actor(request), { ...sees(request), verified: studioUser(request)?.role !== "panel" });
+    const verified = verifiedAck(request, response);
+    if (verified === undefined) return undefined;
+    const alarm = alarms.acknowledge(String(request.params.id), actor(request), { ...sees(request), verified });
     if (!alarm) return response.status(404).json({ error: "no such alarm", code: "not_found" });
     audit.record({ action: "alarm.acknowledge", outcome: "allowed", actor: actor(request), target: alarm.id });
     return response.json(alarm);

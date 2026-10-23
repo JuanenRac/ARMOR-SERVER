@@ -99,7 +99,7 @@ def project_python(project: Path) -> str:
     return str(python)
 
 
-NODE_REPOSITORIES = ("ARMOR-ALARM", "ARMOR-ELECTRICAL", "ARMOR-HMI", "ARMOR-RADAR", "ARMOR-SOLAR")
+NODE_REPOSITORIES = ("ARMOR-NODE-ALARM", "ARMOR-NODE-ELECTRICAL", "ARMOR-NODE-HMI", "ARMOR-NODE-RADAR", "ARMOR-NODE-SOLAR")
 
 
 def siblings_required() -> bool:
@@ -186,15 +186,15 @@ def test_project(project: Path, manifest: dict[str, object]) -> None:
         command(project, [NPM, "run", "typecheck"])
         command(project, [NPM, "test"])
         command(project, [NPM, "run", "build"])
-    elif name == "ARMOR-RADAR":
+    elif name == "ARMOR-NODE-RADAR":
         test_radar(project)
-    elif name == "ARMOR-SOLAR":
+    elif name == "ARMOR-NODE-SOLAR":
         test_solar(project)
-    elif name == "ARMOR-ELECTRICAL":
+    elif name == "ARMOR-NODE-ELECTRICAL":
         test_electrical(project)
-    elif name == "ARMOR-ALARM":
+    elif name == "ARMOR-NODE-ALARM":
         test_alarm(project)
-    elif name == "ARMOR-HMI":
+    elif name == "ARMOR-NODE-HMI":
         test_hmi(project)
     elif name == "ARMOR-ANDROID-CONTROL":
         gradle = "gradlew.bat" if os.name == "nt" and (project / "gradlew.bat").is_file() else ("./gradlew" if (project / "gradlew").is_file() else check_tool("gradle", "Gradle or the project wrapper is required; open the project in Android Studio once to generate/restore it"))
@@ -234,7 +234,7 @@ def test_radar(project: Path) -> None:
     The host tests need CMake and a C++17 compiler (Linux, macOS, WSL or MSYS2). The firmware image itself
     needs ESP-IDF; without it the run says so instead of pretending the image was built.
     """
-    cmake = check_tool("cmake", "CMake and a C++17 compiler are required to test ARMOR-RADAR's core (use Linux, WSL or MSYS2)")
+    cmake = check_tool("cmake", "CMake and a C++17 compiler are required to test ARMOR-NODE-RADAR's core (use Linux, WSL or MSYS2)")
     build = project / "build" / "host"
     command(project, [cmake, "-S", "tests", "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug"])
     command(project, [cmake, "--build", str(build)])
@@ -251,8 +251,8 @@ def test_radar(project: Path) -> None:
 
 
 def test_solar(project: Path) -> None:
-    """Build and run ARMOR-SOLAR's protocol library and node tests, then check the messages its serialiser and its ports print. Needs CMake and a C++17 compiler."""
-    cmake = check_tool("cmake", "CMake and a C++17 compiler are required to test ARMOR-SOLAR (use Linux, WSL or MSYS2)")
+    """Build and run ARMOR-NODE-SOLAR's protocol library and node tests, then check the messages its serialiser and its ports print. Needs CMake and a C++17 compiler."""
+    cmake = check_tool("cmake", "CMake and a C++17 compiler are required to test ARMOR-NODE-SOLAR (use Linux, WSL or MSYS2)")
     build = project / "build" / "host"
     command(project, [cmake, "-S", "tests", "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug"])
     command(project, [cmake, "--build", str(build)])
@@ -266,8 +266,8 @@ def test_solar(project: Path) -> None:
 
 
 def test_electrical(project: Path) -> None:
-    """Build and run ARMOR-ELECTRICAL's meter and switching tests, then check the messages its serialiser prints. Needs CMake and a C++17 compiler."""
-    cmake = check_tool("cmake", "CMake and a C++17 compiler are required to test ARMOR-ELECTRICAL (use Linux, WSL or MSYS2)")
+    """Build and run ARMOR-NODE-ELECTRICAL's meter and switching tests, then check the messages its serialiser prints. Needs CMake and a C++17 compiler."""
+    cmake = check_tool("cmake", "CMake and a C++17 compiler are required to test ARMOR-NODE-ELECTRICAL (use Linux, WSL or MSYS2)")
     build = project / "build" / "host"
     command(project, [cmake, "-S", "tests", "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug"])
     command(project, [cmake, "--build", str(build)])
@@ -280,8 +280,8 @@ def test_electrical(project: Path) -> None:
 
 
 def test_alarm(project: Path) -> None:
-    """Build and run ARMOR-ALARM's host tests (the panel's rules, the node's settings, messages and runner, the update), then check the messages its serialiser prints. Needs CMake and a C++17 compiler."""
-    cmake = check_tool("cmake", "CMake and a C++17 compiler are required to test ARMOR-ALARM (use Linux, WSL or MSYS2)")
+    """Build and run ARMOR-NODE-ALARM's host tests (the panel's rules, the node's settings, messages and runner, the update), then check the messages its serialiser prints. Needs CMake and a C++17 compiler."""
+    cmake = check_tool("cmake", "CMake and a C++17 compiler are required to test ARMOR-NODE-ALARM (use Linux, WSL or MSYS2)")
     build = project / "build" / "host"
     command(project, [cmake, "-S", "tests", "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug"])
     command(project, [cmake, "--build", str(build)])
@@ -294,8 +294,8 @@ def test_alarm(project: Path) -> None:
 
 
 def test_hmi(project: Path) -> None:
-    """Build and run ARMOR-HMI's host tests (the panel's settings, what it knows of the server, the voice conversation, the board's pins and the screen's words). Needs CMake and a C++17 compiler."""
-    cmake = check_tool("cmake", "CMake and a C++17 compiler are required to test ARMOR-HMI (use Linux, WSL or MSYS2)")
+    """Build and run ARMOR-NODE-HMI's host tests (the panel's settings, what it knows of the server, the voice conversation, the board's pins and the screen's words). Needs CMake and a C++17 compiler."""
+    cmake = check_tool("cmake", "CMake and a C++17 compiler are required to test ARMOR-NODE-HMI (use Linux, WSL or MSYS2)")
     build = project / "build" / "host"
     command(project, [cmake, "-S", "tests", "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug"])
     command(project, [cmake, "--build", str(build)])
@@ -427,7 +427,7 @@ def run_project(project: Path, manifest: dict[str, object]) -> None:
         command(project, [NPM, "run", "dev"], environment)
     elif name == "ARMOR-DEVOPS":
         command(project, ["docker", "compose", "up", "--build"])
-    elif name in {"ARMOR-RADAR", "ARMOR-SOLAR", "ARMOR-ELECTRICAL", "ARMOR-ALARM", "ARMOR-HMI", "ARMOR-ANDROID-CONTROL", "ARMOR-HARDWARE", "ARMOR-DOCS", "ARMOR-UPDATER"}:
+    elif name in {"ARMOR-NODE-RADAR", "ARMOR-NODE-SOLAR", "ARMOR-NODE-ELECTRICAL", "ARMOR-NODE-ALARM", "ARMOR-NODE-HMI", "ARMOR-ANDROID-CONTROL", "ARMOR-HARDWARE", "ARMOR-DOCS", "ARMOR-UPDATER"}:
         print(f"{name} has no safe generic runtime command. Use build-test to validate it, then follow its project documentation for hardware or IDE deployment.")
     else:
         raise RuntimeError(f"no run rule registered for {name}")

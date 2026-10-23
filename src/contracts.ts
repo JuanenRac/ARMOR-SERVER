@@ -6,7 +6,7 @@
  */
 export type RadarTrack = { sensor_id: number; track_id: number; x_mm: number; y_mm: number; speed_mm_s: number };
 export type Telemetry = { node_id: string; timestamp_ms: number; lux: number; targets: RadarTrack[] };
-export type Health = { node_id: string; timestamp_ms: number; online: boolean; /** A wall panel (ARMOR-HMI) says "panel": the server keeps it apart from the radars. */ kind?: "radar" | "panel" };
+export type Health = { node_id: string; timestamp_ms: number; online: boolean; /** A wall panel (ARMOR-NODE-HMI) says "panel": the server keeps it apart from the radars. */ kind?: "radar" | "panel" };
 /** What a node says about itself so that a console can offer its web panel (see ARMOR-COMMON's info schema). */
 export type Info = { node_id: string; timestamp_ms: number; name: string; firmware: string; ip: string; port: number };
 

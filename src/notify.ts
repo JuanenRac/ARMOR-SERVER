@@ -57,7 +57,7 @@ export function alertMessageFor(event: ArmorEvent, mode: SecurityMode): AlertMes
   if (event.type === "alarm" && event.state === "raised" && event.source_type === "solar") return { ...base, event: "alarm.raised", alarm_id: event.alarm_id, severity: event.severity, code: event.code, solar_id: event.source };
   // An electrical node: a meter's alarm, the mains out of range, the grid lost or a node that went silent.
   if (event.type === "alarm" && event.state === "raised" && event.source_type === "electrical") return { ...base, event: "alarm.raised", alarm_id: event.alarm_id, severity: event.severity, code: event.code, electrical_id: event.source };
-  // The panel of an ARMOR-ALARM node (sounding, tamper, locked out, gone quiet) and the local network (a new device, an open port, the internet down): the most serious
+  // The panel of an ARMOR-NODE-ALARM node (sounding, tamper, locked out, gone quiet) and the local network (a new device, an open port, the internet down): the most serious
   // events of the system must reach the same places as any other alarm, whether the server is armed or not (the panel decides on its own whether it is armed).
   if (event.type === "alarm" && event.state === "raised" && event.source_type === "alarm") return { ...base, event: "alarm.raised", alarm_id: event.alarm_id, severity: event.severity, code: event.code, alarm_node_id: event.source, ...(event.silent ? { silent: true as const } : {}) };
   if (event.type === "alarm" && event.state === "raised" && event.source_type === "network") return { ...base, event: "alarm.raised", alarm_id: event.alarm_id, severity: event.severity, code: event.code, network_id: event.source };

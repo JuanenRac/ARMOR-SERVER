@@ -1,5 +1,5 @@
 /**
- * The state of the ARMOR-ALARM nodes' panels, and the only route that sends anything towards one: POST /api/v1/alarm/command (arm, disarm or silence), for an administrator, refused
+ * The state of the ARMOR-NODE-ALARM nodes' panels, and the only route that sends anything towards one: POST /api/v1/alarm/command (arm, disarm or silence), for an administrator, refused
  * unless ARMOR_ALARM_COMMANDS=1 (see ../alarm_commands.ts). A disarm or a silence needs the PIN of the signed-in user, checked by this server; the node, the broker and this server must all have said yes.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */

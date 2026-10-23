@@ -15,11 +15,11 @@ export const NODE_KINDS: readonly NodeKind[] = ["radar", "solar", "electrical", 
  * board, `armor_<kind>-<board>.bin`; one from before that naming has only `armor_<kind>.bin`, the image of the kind's default board (see DEFAULT_BOARDS).
  */
 export const RELEASE_SOURCES: Record<NodeKind, { repo: string; asset: string }> = {
-  radar: { repo: "JuanenRac/ARMOR-RADAR", asset: "armor_radar.bin" },
-  solar: { repo: "JuanenRac/ARMOR-SOLAR", asset: "armor_solar.bin" },
-  electrical: { repo: "JuanenRac/ARMOR-ELECTRICAL", asset: "armor_electrical.bin" },
-  alarm: { repo: "JuanenRac/ARMOR-ALARM", asset: "armor_alarm.bin" },
-  hmi: { repo: "JuanenRac/ARMOR-HMI", asset: "armor_hmi.bin" },
+  radar: { repo: "JuanenRac/ARMOR-NODE-RADAR", asset: "armor_radar.bin" },
+  solar: { repo: "JuanenRac/ARMOR-NODE-SOLAR", asset: "armor_solar.bin" },
+  electrical: { repo: "JuanenRac/ARMOR-NODE-ELECTRICAL", asset: "armor_electrical.bin" },
+  alarm: { repo: "JuanenRac/ARMOR-NODE-ALARM", asset: "armor_alarm.bin" },
+  hmi: { repo: "JuanenRac/ARMOR-NODE-HMI", asset: "armor_hmi.bin" },
 };
 /** The board whose image carries the plain name in a release that predates the board in the name. */
 export const DEFAULT_BOARDS: Record<NodeKind, string> = { radar: "s3-eth", solar: "s3-eth", electrical: "s3-eth", alarm: "s3-eth", hmi: "lcd7box" };

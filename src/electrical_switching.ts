@@ -1,7 +1,7 @@
 /**
  * The way a command reaches the switch of an electrical node: the one place in the server that can send anything towards mains equipment, and it is OFF unless the
  * operator turned it on (ARMOR_ELECTRICAL_SWITCHING=1). It is the server's layer of the protection and never the only one: the node has its own rules (dead time,
- * confirmation by the auxiliary contacts, latched faults, a one-time token) and the installation has its mechanical interlock and its breakers. See ARMOR-ELECTRICAL's
+ * confirmation by the auxiliary contacts, latched faults, a one-time token) and the installation has its mechanical interlock and its breakers. See ARMOR-NODE-ELECTRICAL's
  * docs/SWITCHING.md and docs/SAFETY.md.
  *
  * What it enforces before a command is published, each refusal audited:

@@ -55,3 +55,35 @@ test("a wall panel's account serves the panel and nothing else, and the summary 
     assert.equal((await fetch(`${running.base}/api/v1/users`, { method: "POST", headers: admin, body: JSON.stringify({ username: "boss", password: "boss-password-1234", role: "root" }) })).status, 400);
   } finally { await running.stop(); }
 });
+
+test("a wall panel that types its PIN acknowledges for real, a wrong one acknowledges nothing, and a tap without one stays unverified", async () => {
+  const running = await startServer();
+  try {
+    const admin = { "Content-Type": "application/json", cookie: await studioCookie(running.base) };
+    const made = await fetch(`${running.base}/api/v1/users`, { method: "POST", headers: admin, body: JSON.stringify({ username: "wall-panel", password: "wall-panel-password-1", role: "panel" }) });
+    const id = ((await made.json()) as { id: string }).id;
+    assert.equal((await fetch(`${running.base}/api/v1/users/${id}/pin`, { method: "PUT", headers: admin, body: JSON.stringify({ pin: "2468", duress_pin: "1357" }) })).status, 200);
+    const login = await fetch(`${running.base}/api/v1/studio/session`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: "wall-panel", password: "wall-panel-password-1" }) });
+    const headers = { "Content-Type": "application/json", cookie: (login.headers.getSetCookie()[0] ?? "").split(";")[0] };
+    const raise = (key: string) => running.app.context.alarms.raise(key, { source: { type: "device", id: key }, severity: "critical", code: "smoke" })!;
+    const state = (alarmId: string) => running.app.context.alarms.active().find(item => item.id === alarmId)!;
+    const ack = (body: unknown) => fetch(`${running.base}/api/v1/alarms/acknowledge`, { method: "POST", headers, body: JSON.stringify(body) });
+
+    const first = raise("a");
+    assert.equal((await ack({ pin: "0000" })).status, 403, "a wrong PIN");
+    assert.equal(state(first.id).acknowledged_at, undefined, "and nothing is acknowledged");
+    assert.equal((await ack({ pin: "2468" })).status, 200);
+    assert.ok(state(first.id).acknowledged_at && !state(first.id).acknowledged_unverified, "the right PIN counts as a person standing there");
+
+    const second = raise("b");
+    assert.equal((await ack({})).status, 200);
+    assert.equal(state(second.id).acknowledged_unverified, true, "a tap without a PIN is the unverified one it always was");
+
+    const third = raise("c");
+    assert.equal((await ack({ pin: "1357" })).status, 200);
+    assert.equal(state(third.id).acknowledged_unverified, true, "the duress PIN looks the same and verifies nothing");
+
+    for (let attempt = 0; attempt < 8; attempt += 1) await ack({ pin: "9999" });
+    assert.equal((await ack({ pin: "9999" })).status, 429, "too many wrong ones lock the PIN");
+  } finally { await running.stop(); }
+});

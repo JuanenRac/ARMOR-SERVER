@@ -1,5 +1,5 @@
 /**
- * What the ARMOR-ALARM nodes say about the house's alarm (armor/alarm/{node_id}/state): the strict parser of the message, and the store that keeps the latest state of
+ * What the ARMOR-NODE-ALARM nodes say about the house's alarm (armor/alarm/{node_id}/state): the strict parser of the message, and the store that keeps the latest state of
  * every node. The parsers implement ARMOR-COMMON's alarm schemas exactly (tests/alarm.test.ts runs the shared vectors), and so do the parsers of a command to the panel and
  * of the node's answer. Nothing in this file sends anything: the command path is alarm_commands.ts, and it is off unless the operator turned it on.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.

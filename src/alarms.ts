@@ -479,7 +479,7 @@ export class AlarmRules {
   }
 
   /**
-   * The state of an ARMOR-ALARM node's panel. A sounding alarm is CRITICAL and lasts as long as the node says it is in the alarm phase (it latches until a correct disarm; a siren silenced with the PIN, or one that timed out, changes nothing here: the alarm stays open and unacknowledged, because nobody has looked at its cause); a
+   * The state of an ARMOR-NODE-ALARM node's panel. A sounding alarm is CRITICAL and lasts as long as the node says it is in the alarm phase (it latches until a correct disarm; a siren silenced with the PIN, or one that timed out, changes nothing here: the alarm stays open and unacknowledged, because nobody has looked at its cause); a
    * zone in tamper is a high alarm that ends with the tamper; a panel locked out after wrong PINs is a warning. These come from the node's own panel and do not depend on the
    * security mode of this server: the node decides whether it is armed. A node that goes quiet while it was armed or counting down is a warning.
    */

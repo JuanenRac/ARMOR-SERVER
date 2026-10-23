@@ -1,5 +1,5 @@
 /**
- * What the ARMOR-ELECTRICAL nodes measure on the house's electrical network (armor/electrical/{node_id}/state): the strict parser of the message, and the
+ * What the ARMOR-NODE-ELECTRICAL nodes measure on the house's electrical network (armor/electrical/{node_id}/state): the strict parser of the message, and the
  * store that keeps the latest reading of every node, a short history of a few numbers per channel, and the few sums Studio shows.
  * The parser implements ARMOR-COMMON's electrical schema exactly (tests/electrical.test.ts runs the shared vectors), and so do the parsers of a command to a
  * switch and of the node's answer. Nothing in this file sends anything: the command path is electrical_switching.ts, and it is off unless the operator turned it on.

@@ -2,7 +2,7 @@
  * The Zigbee sensors of an alarm panel's zones, told to the panel. While this server holds the Zigbee radio (Zigbee2MQTT), the panel node does not hear the sensors, so its Zigbee zones
  * would stay at their last state and arming the panel would protect nothing. An administrator links a device of the registry to a zone of a node; every time that device changes, and
  * every `refreshMs` meanwhile (so that a panel that restarts or a lost message heals), the server publishes the zone's state on armor/alarm/{node}/zigbee. The panel takes it only while it
- * does not hold the radio itself (ARMOR-ALARM, docs/FAILOVER.md). It is information towards the panel and never a command: it cannot arm, disarm or sound anything by itself.
+ * does not hold the radio itself (ARMOR-NODE-ALARM, docs/FAILOVER.md). It is information towards the panel and never a command: it cannot arm, disarm or sound anything by itself.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import fs from "node:fs";

@@ -1,5 +1,5 @@
 /**
- * The readings of the ARMOR-ELECTRICAL nodes: the messages the nodes send over HTTP (over MQTT they arrive in app.ts), and what Studio reads. The only route that
+ * The readings of the ARMOR-NODE-ELECTRICAL nodes: the messages the nodes send over HTTP (over MQTT they arrive in app.ts), and what Studio reads. The only route that
  * sends anything towards a node is POST /api/v1/electrical/switch: for an administrator, refused unless ARMOR_ELECTRICAL_SWITCHING=1 (see ../electrical_switching.ts).
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */

@@ -57,7 +57,7 @@ export class ArmorStore {
   #updatedAt = new Date(0).toISOString();
   readonly #nodes = new Map<string, StoredNode>();
   readonly #panels = new Map<string, PanelInfo>();
-  /** The wall panels (ARMOR-HMI) that said they are alive: they are not radars, so they are not nodes, do not count and cannot be a node that went down. */
+  /** The wall panels (ARMOR-NODE-HMI) that said they are alive: they are not radars, so they are not nodes, do not count and cannot be a node that went down. */
   readonly #wallPanels = new Map<string, { online: boolean; timestamp_ms: number }>();
   readonly #minTargets: number;
   /** The nodes that have sent telemetry since this server started: for them, silence is judged by the telemetry, not by the heartbeat. */

@@ -274,7 +274,7 @@ test("the kinds of node and the names of their images", () => {
   assert.deepEqual(imageNames("radar", "s3-eth").image, ["armor_radar-s3-eth.bin", "armor_radar.bin"]);
   assert.deepEqual(imageNames("hmi", "lcd7box").image, ["armor_hmi-lcd7box.bin", "armor_hmi.bin"]);
   assert.deepEqual(imageNames("alarm").image, ["armor_alarm.bin"]);
-  assert.ok((NODE_KINDS as readonly string[]).includes("alarm") && RELEASE_SOURCES.alarm.repo === "JuanenRac/ARMOR-ALARM");
+  assert.ok((NODE_KINDS as readonly string[]).includes("alarm") && RELEASE_SOURCES.alarm.repo === "JuanenRac/ARMOR-NODE-ALARM");
 });
 
 test("an image that says it is built for another kind, or a node of another kind, is refused before anything is sent", async () => {

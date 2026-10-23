@@ -101,7 +101,7 @@ export type AppContext = {
   automations: AutomationEngine;
   site: SiteStore;
   electrical: SiteStore;
-  /** What the ARMOR-ELECTRICAL nodes measure on the house's network. */
+  /** What the ARMOR-NODE-ELECTRICAL nodes measure on the house's network. */
   electricalNodes: ElectricalStore;
   /** The energy of every electrical channel, day by day (a meter that wraps or is reset does not break the sum). */
   electricalEnergy: ElectricalEnergy;
@@ -125,7 +125,7 @@ export type AppContext = {
   batteryWrite: BatteryWriteService;
   /** Where its orders are published; set when the broker is connected (never retained, at most once). */
   batteryLink: { publish?: (topic: string, payload: string) => void };
-  /** What the ARMOR-ALARM nodes say about the house's alarm. */
+  /** What the ARMOR-NODE-ALARM nodes say about the house's alarm. */
   alarmNodes: AlarmStore;
   /** The one way a command reaches an alarm node's panel: off unless the operator turned it on (see alarm_commands.ts). */
   alarmCommands: AlarmCommands;

@@ -54,7 +54,7 @@ jobs:
       - name: Fetch the node repositories, to compare the firmware they share
         if: ${{ github.event.repository.name == 'ARMOR-COMMON' }}
         run: |
-          for repository in ARMOR-ALARM ARMOR-ELECTRICAL ARMOR-HMI ARMOR-RADAR ARMOR-SOLAR; do
+          for repository in ARMOR-NODE-ALARM ARMOR-NODE-ELECTRICAL ARMOR-NODE-HMI ARMOR-NODE-RADAR ARMOR-NODE-SOLAR; do
             git clone --depth 1 "https://github.com/JuanenRac/${repository}.git" "../${repository}"
           done
 

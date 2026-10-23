@@ -1,5 +1,5 @@
 /**
- * What the wall panel (ARMOR-HMI) is shown, and the live channel it can listen to instead of asking for it every few seconds.
+ * What the wall panel (ARMOR-NODE-HMI) is shown, and the live channel it can listen to instead of asking for it every few seconds.
  *
  * The summary is the small document of `GET /api/v1/panel/summary`: the mode, how many nodes are there, the alarms that need a person and the energy. The channel is a WebSocket,
  * `/api/v1/panel/events`, which sends exactly that document (`{ "type": "summary", "summary": {...} }`) when a socket opens and again whenever something in it changed, and nothing else:

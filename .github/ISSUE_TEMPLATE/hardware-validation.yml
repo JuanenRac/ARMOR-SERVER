@@ -12,7 +12,7 @@ body:
     id: repository
     attributes:
       label: Affected repository
-      placeholder: ARMOR-RADAR
+      placeholder: ARMOR-NODE-RADAR
     validations:
       required: true
   - type: dropdown

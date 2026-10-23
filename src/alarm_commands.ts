@@ -1,7 +1,7 @@
 /**
  * The way a command reaches the panel of an alarm node: the server may arm, disarm and silence it, and it is OFF unless the operator turned it on (ARMOR_ALARM_COMMANDS=1). It is the
  * server's layer of the protection and never the only one: the node has its own setting (`server.commands`), the broker has its access list (`mqtt_identity.sh alarm-commands`)
- * and a disarm or a silence from here carries no PIN at all, which is why all three must agree. See ARMOR-ALARM's docs/ALARM_MESSAGES.md and docs/SAFETY.md.
+ * and a disarm or a silence from here carries no PIN at all, which is why all three must agree. See ARMOR-NODE-ALARM's docs/ALARM_MESSAGES.md and docs/SAFETY.md.
  *
  * What it enforces before a command is published, each refusal audited:
  *   - the commands are turned on in this server; the caller is an administrator (routes/alarm.ts);
