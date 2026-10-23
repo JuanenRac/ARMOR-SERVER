@@ -28,6 +28,10 @@ the number of relays is capped by `ARMOR_MAX_MJPEG_RELAYS`. A viewer that has no
 taken the last picture it was sent is skipped for the next one, so a slow link never
 falls behind the camera.
 
+A person who came from outside the house (or who asks for `quality: low` when getting the stream ticket) gets a lighter picture through a relay of its own: `ARMOR_LIVE_LOW_FPS`
+pictures a second (4 by default) and never wider than `ARMOR_LIVE_LOW_WIDTH` (480 by default), so a phone on mobile data is not sent what the house network can carry. The
+relay of the normal picture is not touched by it, and each relay counts against `ARMOR_MAX_MJPEG_RELAYS`.
+
 The decoding is what costs: a camera's main stream can be several times the size of
 its second one. A camera can therefore carry a `previewPath`, the lighter stream
 (often `12`, or `Streaming/Channels/102`), which only the live picture uses -
