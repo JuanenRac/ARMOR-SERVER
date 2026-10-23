@@ -3,6 +3,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import test from "node:test";
+import { alarmCodeWords } from "../src/alarm_codes.js";
 import { ALERT_LANGUAGES, alertText } from "../src/alert_text.js";
 import { telegramChannel, validTelegramChat, validTelegramToken, validWebhookId } from "../src/channels.js";
 import { readConfig } from "../src/config.js";
@@ -57,7 +58,7 @@ test("every alarm is told in every language, with its numbers and nothing left t
       assert.ok(text.includes(base.at), `${language} ${message.event}`);
     }
     assert.ok(alertText(messages[0], language).includes("nodo-radar-1") && alertText(messages[0], language).includes("3"), language);
-    assert.ok(alertText(messages[5], language).includes("smoke") && alertText(messages[5], language).includes("humo-cocina"), language);
+    assert.ok(alertText(messages[5], language).includes(alarmCodeWords("smoke", language)) && alertText(messages[5], language).includes("humo-cocina"), language);
   }
   assert.match(alertText(messages[0], "es"), /ALERTA en el nodo nodo-radar-1: 3 personas/);
   assert.match(alertText(messages[0], "en"), /ALERT on node nodo-radar-1: 3 people/);
@@ -169,7 +170,7 @@ test("the panel of an alarm node and the network reach the places that tell a pe
   }
   assert.equal(alertMessageFor({ id: 4, at, type: "alarm", alarm_id: "alm-00001", state: "cleared", severity: "critical", source: "alarm-1", source_type: "alarm", code: "alarm_sounding" }, "armed"), null);
   const text = alertText({ service: "armor-server", event: "alarm.raised", at, mode: "disarmed", severity: "critical", code: "alarm_sounding", alarm_node_id: "alarm-1" }, "en");
-  assert.match(text, /CRITICAL alarm: alarm_sounding \(alarm-1\)/);
+  assert.match(text, /CRITICAL alarm: The alarm is sounding \(alarm-1\)/);
 });
 
 test("a Telegram chat that refuses the alarm does not stop the others, and a retry goes only to those that did not get it", async () => {

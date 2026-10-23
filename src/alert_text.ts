@@ -4,6 +4,7 @@
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import type { AlertMessage } from "./notify.js";
+import { alarmCodeWords } from "./alarm_codes.js";
 
 export const ALERT_LANGUAGES = ["en", "es", "de", "fr", "it", "ja", "zh", "pt"] as const;
 export type AlertLanguage = (typeof ALERT_LANGUAGES)[number];
@@ -48,6 +49,7 @@ export function alertText(message: AlertMessage, language: AlertLanguage): strin
   const words = WORDS[language];
   const where = message.device_id ?? message.solar_id ?? message.electrical_id ?? message.alarm_node_id ?? message.network_id ?? message.camera_id ?? message.node_id ?? "";
   const how = message.severity === "critical" ? words.critical : message.severity === "high" ? words.high : words.warning;
+  const what = message.code ? alarmCodeWords(message.code, language) : "?";
   const text = (() => {
     switch (message.event) {
       case "alert.raised": return fill(words.raised, message.node_id ?? "?", message.targets ?? 0);
@@ -55,8 +57,8 @@ export function alertText(message: AlertMessage, language: AlertLanguage): strin
       case "node.offline": return fill(words.offline, message.node_id ?? "?");
       case "node.stale": return fill(words.stale, message.node_id ?? "?");
       case "camera.offline": return fill(words.camera, message.camera_id ?? "?");
-      case "alarm.raised": return message.code === "duress_disarm" ? words.duress : fill(words.alarm, how, message.code ?? "?", where || "?");
-      case "alarm.escalated": return `${fill(words.escalated, how, message.code ?? "?", message.minutes ?? 0)} ${fill(words.alarm, how, message.code ?? "?", where || "?")}`;
+      case "alarm.raised": return message.code === "duress_disarm" ? words.duress : fill(words.alarm, how, what, where || "?");
+      case "alarm.escalated": return `${fill(words.escalated, how, what, message.minutes ?? 0)} ${fill(words.alarm, how, what, where || "?")}`;
       case "automation.notify": return fill(words.automation, message.automation ?? "?");
       case "login.remote": return fill(words.login, message.login_user ?? "?", message.login_from ?? "?");
       case "alert.test": return words.test;
