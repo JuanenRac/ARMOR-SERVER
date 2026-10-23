@@ -12,6 +12,7 @@
  *   voice.multipart_turn         on | off                  the wall panel may send a spoken turn as multipart/form-data with the audio as raw bytes (off: only the older raw request is taken, a multipart one is answered 415)
  *   panel.live_events            on | off                  the wall panel may listen to the live channel (a WebSocket that carries the same small summary it can ask for; off: it asks every few seconds)
  *   client.device_lock           user | sensitive | always   what the phone app asks of the person with the lock of the phone itself (fingerprint, face or the phone's PIN): user = the phone's own switches decide, sensitive = also before arming, disarming and unlocking, always = also to open the app (it can only raise what a person chose, never lower it, and a phone with no lock at all is never shut out)
+ *   nodes.nvs_encryption         off | secrets            the alarm nodes keep only the secrets they store (passwords, token, keys) encrypted in their flash (told in the policy message; off, the default, tells nothing)
  *   voice.turn_max_bytes         3200 to 1920000          the most audio one spoken turn of the wall panel may carry (the environment's ARMOR_VOICE_TURN_MAX_BYTES is where it starts)
  *   voice.reply_audio_max_bytes  3200 to 1000000          the most spoken answer handed on to the panel in the binary form (ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES is where it starts)
  *   network.login_secure_only    on | off                 a stored device login is handed to a network node only when its request came over TLS or from this machine (off, the default: any request of the node)
@@ -25,6 +26,8 @@ import { durableRename } from "./durable.js";
 export const DISARM_PIN_VALUES = ["never", "if_set", "always"] as const;
 export const SILENCE_VALUES = ["off", "pin", "double_turn"] as const;
 export const DEVICE_LOCK_VALUES = ["user", "sensitive", "always"] as const;
+export const NVS_ENCRYPTION_VALUES = ["off", "secrets"] as const;
+export type NvsEncryption = typeof NVS_ENCRYPTION_VALUES[number];
 /** The ceilings of the two sizes of a spoken turn: no value above them is taken, whatever the environment or Studio say. */
 export const VOICE_TURN_BYTES = { min: 3_200, max: 1_920_000, default: 480_000 } as const;
 export const VOICE_REPLY_AUDIO_BYTES = { min: 3_200, max: 1_000_000, default: 200_000 } as const;
@@ -43,6 +46,7 @@ export type SecuritySettingsValues = {
   "voice.multipart_turn": boolean;
   "panel.live_events": boolean;
   "client.device_lock": DeviceLockPolicy;
+  "nodes.nvs_encryption": NvsEncryption;
   "voice.turn_max_bytes": number;
   "voice.reply_audio_max_bytes": number;
 };
@@ -59,6 +63,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "voice.multipart_turn": true,
   "panel.live_events": true,
   "client.device_lock": "user",
+  "nodes.nvs_encryption": "off",
   "voice.turn_max_bytes": VOICE_TURN_BYTES.default,
   "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES.default,
 });
@@ -77,6 +82,7 @@ const isKey = (value: string): value is SecuritySettingKey => (KEYS as string[])
 function clean(key: SecuritySettingKey, value: unknown): SecuritySettingsValues[SecuritySettingKey] | undefined {
   if (key === "alarm.disarm_pin") return (DISARM_PIN_VALUES as readonly unknown[]).includes(value) ? value as DisarmPinMode : undefined;
   if (key === "voice.silence_confirmation") return (SILENCE_VALUES as readonly unknown[]).includes(value) ? value as SilenceConfirmation : undefined;
+  if (key === "nodes.nvs_encryption") return (NVS_ENCRYPTION_VALUES as readonly unknown[]).includes(value) ? value as NvsEncryption : undefined;
   if (key === "client.device_lock") return (DEVICE_LOCK_VALUES as readonly unknown[]).includes(value) ? value as DeviceLockPolicy : undefined;
   const range = NUMBER_RANGES[key];
   if (range) return typeof value === "number" && Number.isInteger(value) && value >= range.min && value <= range.max ? value : undefined;
@@ -158,6 +164,7 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "voice.turn_max_bytes" || key === "voice.reply_audio_max_bytes") return typeof from === "number" && typeof to === "number" && to > from;   // a larger turn costs the server more memory and time
   if (key === "alarm.disarm_pin") return DISARM_PIN_VALUES.indexOf(to as DisarmPinMode) < DISARM_PIN_VALUES.indexOf(from as DisarmPinMode);
   if (key === "voice.silence_confirmation") return SILENCE_VALUES.indexOf(to as SilenceConfirmation) < SILENCE_VALUES.indexOf(from as SilenceConfirmation);
+  if (key === "nodes.nvs_encryption") return from === "secrets" && to === "off";
   if (key === "client.device_lock") return DEVICE_LOCK_VALUES.indexOf(to as DeviceLockPolicy) < DEVICE_LOCK_VALUES.indexOf(from as DeviceLockPolicy);
   return from === true && to === false;
 }

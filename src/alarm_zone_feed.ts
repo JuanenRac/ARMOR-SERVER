@@ -81,7 +81,9 @@ export class ZoneFeedSigner {
 /** What the server tells a panel about the policy it keeps (armor/alarm/{node}/policy): the panel applies the part it understands. */
 export type AlarmPolicy = { config_hash: boolean; zone_feed: boolean; zone_feed_signature: boolean;
   /** What the panel asks for to disarm or silence the siren (the setting alarm.disarm_pin). Left out while it is `if_set`, so a panel from before the option reads the same message as ever. */
-  disarm_pin?: "never" | "always" };
+  disarm_pin?: "never" | "always";
+  /** Asks the panel to keep the secrets it stores encrypted in its flash (the setting nodes.nvs_encryption). Left out while it is off. */
+  nvs_encryption?: "secrets" };
 
 export class AlarmZoneFeed {
   #links: ZoneLink[] = [];

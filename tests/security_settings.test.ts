@@ -267,3 +267,27 @@ test("the session announces the lock of the phone app to every signed-in person"
     assert.match(fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8"), /client\.device_lock.*sensitive -> user \(lowers the security\)/);
   } finally { await running.stop(); }
 });
+
+test("keeping the stored secrets of the nodes encrypted is a choice of two values, off by default, told to the panels in the policy only while it is on", async () => {
+  const settings = new SecuritySettings(path.join(tempDir(), "security-settings.json"));
+  assert.equal(SECURITY_DEFAULTS["nodes.nvs_encryption"], "off");
+  assert.throws(() => settings.update({ "nodes.nvs_encryption": "all" }), SecuritySettingsInvalid);
+  assert.throws(() => settings.update({ "nodes.nvs_encryption": true }), SecuritySettingsInvalid);
+  assert.equal(lowers("nodes.nvs_encryption", "off", "secrets"), false);
+  assert.equal(lowers("nodes.nvs_encryption", "secrets", "off"), true);
+  const running = await startServer();
+  try {
+    const cookie = await studioCookie(running.base);
+    const published: Array<[string, string]> = [];
+    running.app.context.alarmLink.publish = (topic, payload) => { published.push([topic, payload]); };
+    await call(running, cookie, "PUT", "/api/v1/alarm/zone-links", { links: [{ device_id: "door-1", node_id: "alarm-1", zone_id: "z1" }] });
+    const last = () => JSON.parse(published.filter(([topic]) => topic === "armor/alarm/alarm-1/policy").at(-1)![1]);
+    published.length = 0;
+    assert.equal((await call(running, cookie, "PUT", "/api/v1/security/settings", { "nodes.nvs_encryption": "secrets" })).status, 200);
+    assert.equal(last().nvs_encryption, "secrets");
+    assert.equal((await call(running, cookie, "GET", "/api/v1/studio/session")).body.capabilities.security["nodes.nvs_encryption"], "secrets");
+    assert.equal((await call(running, cookie, "PUT", "/api/v1/security/settings", { "nodes.nvs_encryption": "off" })).status, 200);
+    assert.equal("nvs_encryption" in last(), false, "while it is off the message is the one panels have always read");
+    assert.match(fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8"), /nodes\.nvs_encryption.*secrets -> off \(lowers the security\)/);
+  } finally { await running.stop(); }
+});

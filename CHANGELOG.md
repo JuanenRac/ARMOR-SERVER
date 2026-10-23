@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **Security option for the encryption of the secrets a node stores:** `nodes.nvs_encryption` (`off` by default, `secrets`) is told to the alarm panels in the policy message and announced in the capabilities of the session; turning it back off is written in the audit trail as a loss of protection. The nodes apply it when their firmware does.
 - **The messages that leave the server say what happened:** an alarm sent to chat, push or Home Assistant is told with the sentence of its code in the language of the installation (the table of ARMOR-COMMON, in the eight languages) instead of the internal code (`network_new_device`); a code nobody has described is still sent as it is.
 - **Security option for the phone app's lock:** `client.device_lock` (`user` by default, `sensitive`, `always`) tells the phone app to ask for the fingerprint, the face or the phone's PIN also before arming, disarming and unlocking, or also to open the app. It is announced in `capabilities.security`, lowering it is written in the audit trail and raising it is not a loss; a phone with no lock is never shut out.
 

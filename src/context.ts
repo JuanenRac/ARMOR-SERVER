@@ -374,7 +374,8 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     panels: () => alarmNodes.list().map(node => node.node_id),
     policy: () => ({ config_hash: securitySettings.get("alarm.config_hash"), zone_feed: securitySettings.get("server.zone_feed"), zone_feed_signature: securitySettings.get("server.zone_feed_signature"),
       // the environment wins over the setting, as it does for the people who disarm; "if_set" is not sent so that a panel from before the option keeps reading the message it knows
-      ...(((): { disarm_pin?: "never" | "always" } => { const mode = config.disarmPinEnv ?? securitySettings.get("alarm.disarm_pin"); return mode === "if_set" ? {} : { disarm_pin: mode }; })()) }) });
+      ...(((): { disarm_pin?: "never" | "always" } => { const mode = config.disarmPinEnv ?? securitySettings.get("alarm.disarm_pin"); return mode === "if_set" ? {} : { disarm_pin: mode }; })()),
+      ...(securitySettings.get("nodes.nvs_encryption") === "secrets" ? { nvs_encryption: "secrets" as const } : {}) }) });
   securityChanged.tell = () => { try { alarmZoneFeed.publishPolicy(); alarmZoneFeed.refresh(); } catch { /* the broker is not connected: the next sweep tells it */ } };
   const alarmCommands = new AlarmCommands({
     enabled: config.alarmCommands, nodes: alarmNodes, audit, now: overrides.now,
