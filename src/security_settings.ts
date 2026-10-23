@@ -9,6 +9,7 @@
  *   server.zone_feed             on | off                  the server tells the panels the state of their Zigbee zones
  *   server.zone_feed_signature   on | off                  every zone message is signed, so a panel can tell it came from this server
  *   media.rtsp_proxy             on | off                  FFmpeg reads the cameras through the local tunnel (off: the camera login goes in its command line, visible to every user of the machine)
+ *   voice.multipart_turn         on | off                  the wall panel may send a spoken turn as multipart/form-data with the audio as raw bytes (off: only the older raw request is taken, a multipart one is answered 415)
  *   network.login_secure_only    on | off                  a stored device login is handed to a network node only when its request came over TLS or from this machine (off, the default: any request of the node)
  *
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
@@ -30,6 +31,7 @@ export type SecuritySettingsValues = {
   "server.zone_feed_signature": boolean;
   "media.rtsp_proxy": boolean;
   "network.login_secure_only": boolean;
+  "voice.multipart_turn": boolean;
 };
 export type SecuritySettingKey = keyof SecuritySettingsValues;
 
@@ -41,6 +43,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "server.zone_feed_signature": true,
   "media.rtsp_proxy": true,
   "network.login_secure_only": false,
+  "voice.multipart_turn": true,
 });
 
 export class SecuritySettingsInvalid extends Error {
@@ -122,6 +125,7 @@ export class SecuritySettings {
 
 /** True when the new value lowers security compared with the old one (the audit trail and Studio say so). */
 export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boolean {
+  if (key === "voice.multipart_turn") return false;   // an input that is turned off is not a loss of protection; turning it on is the default way
   if (key === "alarm.disarm_pin") return DISARM_PIN_VALUES.indexOf(to as DisarmPinMode) < DISARM_PIN_VALUES.indexOf(from as DisarmPinMode);
   if (key === "voice.silence_confirmation") return SILENCE_VALUES.indexOf(to as SilenceConfirmation) < SILENCE_VALUES.indexOf(from as SilenceConfirmation);
   return from === true && to === false;

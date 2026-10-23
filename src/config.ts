@@ -32,6 +32,10 @@ export type ArmorConfig = {
   resetStudioPassword: boolean;
   studioSessionTtlMs: number;
   operatorSessionTtlMs: number;
+  /** ARMOR_VOICE_TURN_MAX_BYTES: the most audio one spoken turn of the wall panel may carry (raw or in the binary form); 480000 bytes is 15 seconds of 16 kHz 16-bit mono. */
+  voiceTurnMaxBytes: number;
+  /** ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES: the most spoken answer handed on to the panel in the binary form; a longer one is left out and the text still goes. */
+  voiceReplyAudioMaxBytes: number;
   /** Where a request comes from (see origin.ts): the house and its VPN are local, the rest is remote. */
   localNetworks: ReturnType<typeof parseRanges>;
   vpnNetworks: ReturnType<typeof parseRanges>;
@@ -358,6 +362,8 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     studioUsername, studioPassword, passwordMinLength: isLoopbackHost(effectiveHost) ? 8 : 12, resetStudioPassword: env.ARMOR_STUDIO_RESET_PASSWORD === "1",
     studioSessionTtlMs: integer(env, "ARMOR_STUDIO_SESSION_TTL_MS", 7 * 86_400_000, 60_000, 30 * 86_400_000),
     operatorSessionTtlMs: integer(env, "ARMOR_OPERATOR_SESSION_TTL_MS", 28_800_000, 60_000, 7 * 86_400_000),
+    voiceTurnMaxBytes: integer(env, "ARMOR_VOICE_TURN_MAX_BYTES", 480_000, 3_200, 1_920_000),
+    voiceReplyAudioMaxBytes: integer(env, "ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES", 200_000, 3_200, 1_000_000),
     localNetworks: ranges(env, "ARMOR_LOCAL_NETWORKS", DEFAULT_LOCAL_NETWORKS), vpnNetworks: ranges(env, "ARMOR_VPN_NETWORKS", ""),
     totpPolicy: oneOf(env, "ARMOR_TOTP_REQUIRED", ["off", "remote", "always"] as const, "off"),
     remoteSessionTtlMs: integer(env, "ARMOR_REMOTE_SESSION_TTL_MS", 12 * 3_600_000, 60_000, 30 * 86_400_000),

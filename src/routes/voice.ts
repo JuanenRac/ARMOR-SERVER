@@ -10,9 +10,8 @@ import type { AppContext } from "../context.js";
 import { checkDisarm } from "./disarm_gate.js";
 import { askVoice, isVoiceLanguage, spokenResult, VoiceError, type VoiceLanguage } from "../voice.js";
 import { ANSWERED_HERE, carryOut } from "../voice_actions.js";
+import { FRAMING_OVERHEAD, isMultipartForm, MAX_META_BYTES, parseVoiceTurnRequest, shapeReply, VoiceTurnError, type ReplyAudio } from "../voice_turn.js";
 import crypto from "node:crypto";
-
-const MAX_TURN_AUDIO_BYTES = 480_000;
 
 const MAX_TEXT = 200;
 
@@ -28,30 +27,68 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
    * The wall panel speaks to the voice gateway through this server: the gateway listens on this machine only, and the panel is another device. The panel sends its audio here with the
    * voice token it was given (the same one the gateway asks for); the server passes it on, with the address of the panel so each panel has its own pending question, and gives back
    * the answer as it is. Both paths name the same thing: the second lets the panel's own setting be this server's address plus `/api/v1/voice` (it adds `/v1/turn` itself).
+   *
+   * Two forms of request, told apart by the Content-Type: the audio as the whole body (`audio/L16;rate=16000`, as always) or `multipart/form-data` with the audio as raw bytes and an optional
+   * `meta` part (ARMOR-COMMON, "Voice turn"; allowed by the option voice.multipart_turn). The gateway is spoken to the same way in both. To the multipart one the answer may come as
+   * `multipart/mixed` with the spoken reply as a part (`reply_audio` `binary`), as JSON without audio (`none`) or as the gateway's own JSON (`base64`, the default). The sizes are settings
+   * of the server (ARMOR_VOICE_TURN_MAX_BYTES, ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES).
    */
   const turnLimit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
-  const turn = async (request: Request, response: import("express").Response) => {
+  const maxAudio = config.voiceTurnMaxBytes;
+  const authorize = (request: Request, response: import("express").Response, next: import("express").NextFunction) => {
     if (!config.voice) return response.status(503).json({ error: "voice_unavailable" });
     const given = Buffer.from(String(request.headers["x-armor-voice-token"] ?? "")), wanted = Buffer.from(config.voice.token);
     if (given.length !== wanted.length || !crypto.timingSafeEqual(given, wanted)) { audit.record({ action: "voice.turn", outcome: "denied" }); return response.status(401).json({ error: "unauthorized" }); }
+    if (isMultipartForm(String(request.headers["content-type"] ?? "")) && !context.securitySettings.get("voice.multipart_turn")) return response.status(415).json({ error: "multipart_turn_disabled" });
+    return next();
+  };
+  const raw = (limit: number) => express.raw({ type: () => true, limit });
+  const rawLegacy = raw(maxAudio), rawMultipart = raw(maxAudio + MAX_META_BYTES + FRAMING_OVERHEAD);
+  const readBody = (request: Request, response: import("express").Response, next: import("express").NextFunction) => {
+    const parser = isMultipartForm(String(request.headers["content-type"] ?? "")) ? rawMultipart : rawLegacy;
+    parser(request, response, (error?: unknown) => {
+      if (!error) return next();
+      const status = (error as { status?: number }).status;
+      if (status === 413) return response.status(413).json({ error: "audio_too_large" });
+      return response.status(400).json({ error: "bad_multipart" });
+    });
+  };
+  const turn = async (request: Request, response: import("express").Response) => {
+    const config_voice = config.voice!;   // authorize() has answered 503 when there is none
     try { context.connections.seen({ ...context.sightingOf(request), kind: "voice" }); } catch { /* the history never stops a turn */ }
     const body = Buffer.isBuffer(request.body) ? request.body : Buffer.alloc(0);
-    if (body.length === 0) return response.status(411).json({ error: "bad audio length" });
+    const contentType = String(request.headers["content-type"] ?? "");
+    const multipart = isMultipartForm(contentType);
+    let audio = body, language = String(request.headers["x-armor-language"] ?? "en"), replyAudio: ReplyAudio = "base64";
+    if (multipart) {
+      try {
+        const parsed = parseVoiceTurnRequest(contentType, body, maxAudio);
+        audio = parsed.audio;
+        if (parsed.meta) { language = parsed.meta.language; replyAudio = parsed.meta.reply_audio ?? "base64"; }
+      } catch (error) {
+        if (error instanceof VoiceTurnError) { audit.record({ action: "voice.turn", outcome: "denied", detail: error.code }); return response.status(error.status).json({ error: error.code }); }
+        throw error;
+      }
+    } else if (body.length === 0) return response.status(411).json({ error: "bad audio length" });
     try {
-      const reply = await fetch(`${config.voice.url.replace(/\/$/, "")}/v1/turn`, {
-        method: "POST", body: new Uint8Array(body), signal: AbortSignal.timeout(30_000),
-        headers: { "Content-Type": "audio/L16;rate=16000", "X-Armor-Voice-Token": config.voice.token, "X-Armor-Language": String(request.headers["x-armor-language"] ?? "en"), "X-Armor-Client": request.ip ?? "panel",
+      const reply = await fetch(`${config_voice.url.replace(/\/$/, "")}/v1/turn`, {
+        method: "POST", body: new Uint8Array(audio), signal: AbortSignal.timeout(30_000),
+        headers: { "Content-Type": "audio/L16;rate=16000", "X-Armor-Voice-Token": config_voice.token, "X-Armor-Language": language, "X-Armor-Client": request.ip ?? "panel",
           // The policy of this server for the voice service (JSON): what it asks before silencing the alarm (setting voice.silence_confirmation: off, pin or double_turn). A service that does not know it treats it as off.
           "X-Armor-Policy": JSON.stringify({ silence_confirmation: context.securitySettings.get("voice.silence_confirmation") }) },
       });
       const text = await reply.text();
-      audit.record({ action: "voice.turn", outcome: reply.ok ? "allowed" : "denied", detail: String(reply.status) });
+      audit.record({ action: "voice.turn", outcome: reply.ok ? "allowed" : "denied", detail: `${reply.status}${multipart ? " multipart" : ""}` });
+      if (multipart && reply.ok && replyAudio !== "base64") {
+        const shaped = shapeReply(text, replyAudio, config.voiceReplyAudioMaxBytes);
+        if (!shaped) return response.status(502).json({ error: "voice_bad_reply" });
+        return response.status(200).type(shaped.contentType).send(shaped.body);
+      }
       return response.status(reply.status).type("application/json").send(text.slice(0, 400_000));
     } catch { return response.status(503).json({ error: "voice_not_answering" }); }
   };
-  const turnBody = express.raw({ type: () => true, limit: MAX_TURN_AUDIO_BYTES });
-  app.post("/api/v1/voice/turn", turnLimit, turnBody, turn);
-  app.post("/api/v1/voice/v1/turn", turnLimit, turnBody, turn);
+  app.post("/api/v1/voice/turn", turnLimit, authorize, readBody, turn);
+  app.post("/api/v1/voice/v1/turn", turnLimit, authorize, readBody, turn);
 
   app.post("/api/v1/voice/command", requireOperator, limit, async (request, response) => {
     const input = (typeof request.body === "object" && request.body !== null ? request.body : {}) as Record<string, unknown>;
