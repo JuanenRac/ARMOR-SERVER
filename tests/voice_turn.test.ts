@@ -5,7 +5,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import test from "node:test";
-import { SECURITY_DEFAULTS } from "../src/security_settings.js";
+import { lowers, SECURITY_DEFAULTS } from "../src/security_settings.js";
 import {
   boundaryOf, buildVoiceTurnReply, buildVoiceTurnRequest, isMultipartForm, parseVoiceTurnReply, parseVoiceTurnRequest, shapeReply, VoiceTurnError, type VoiceTurnMeta,
 } from "../src/voice_turn.js";
@@ -218,5 +218,33 @@ test("the option voice.multipart_turn is on by default and, off, a multipart tur
     assert.equal((await post(running.base, PCM, "audio/L16;rate=16000")).status, 200);
     running.app.context.securitySettings.update({ "voice.multipart_turn": true });
     assert.equal((await post(running.base, good.body, good.contentType)).status, 200);
+  } finally { await running.stop(); await fake.close(); }
+});
+
+test("the two sizes can be changed in the settings, are held to the ceilings and start from the environment", async () => {
+  const fake = await gateway();
+  const running = await startServer({ ARMOR_VOICE_URL: fake.url, ARMOR_VOICE_TOKEN: TOKEN, ARMOR_VOICE_TURN_MAX_BYTES: "6400" });
+  try {
+    const settings = running.app.context.securitySettings;
+    assert.equal(settings.get("voice.turn_max_bytes"), 6400, "the environment is where it starts");
+    assert.equal(settings.get("voice.reply_audio_max_bytes"), 200_000);
+    assert.equal(SECURITY_DEFAULTS["voice.turn_max_bytes"], 480_000);
+    for (const bad of [3199, 1_920_001, 6400.5, "6400", null, true]) assert.throws(() => settings.update({ "voice.turn_max_bytes": bad }), /invalid value/);
+    for (const bad of [3199, 1_000_001, "x"]) assert.throws(() => settings.update({ "voice.reply_audio_max_bytes": bad }), /invalid value/);
+    assert.equal(settings.get("voice.turn_max_bytes"), 6400, "a refused value changes nothing");
+    const over = buildVoiceTurnRequest(Buffer.alloc(6402), META);
+    assert.equal((await post(running.base, over.body, over.contentType)).status, 413);
+    settings.update({ "voice.turn_max_bytes": 9600 });                                   // counts for the next turn, with no restart
+    assert.equal((await post(running.base, over.body, over.contentType)).status, 200);
+    settings.update({ "voice.turn_max_bytes": 3200 });
+    const small = buildVoiceTurnRequest(Buffer.alloc(3202), META);
+    assert.equal((await post(running.base, small.body, small.contentType)).status, 413);
+    assert.equal((await post(running.base, Buffer.alloc(3202), "audio/L16;rate=16000")).status, 413);
+    assert.equal(lowers("voice.turn_max_bytes", 3200, 9600), true);
+    assert.equal(lowers("voice.turn_max_bytes", 9600, 3200), false);
+    // only what was set is stored: the other size still follows the environment
+    const stored = JSON.parse(fs.readFileSync(path.join(running.config.dataDir, "security-settings.json"), "utf8")).settings;
+    assert.equal(stored["voice.turn_max_bytes"], 3200);
+    assert.equal("voice.reply_audio_max_bytes" in stored, false);
   } finally { await running.stop(); await fake.close(); }
 });

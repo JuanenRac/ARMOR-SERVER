@@ -206,6 +206,24 @@ test("the zone feed can be turned off and can be signed so a panel knows it came
   assert.deepEqual(sent[0]![1], { config_hash: true, zone_feed: false, zone_feed_signature: false });
 });
 
+test("the PIN rule for disarming reaches the alarm panels in the policy, and is left out while it is the default", async () => {
+  const running = await startServer();
+  try {
+    const cookie = await studioCookie(running.base);
+    const published: Array<[string, string]> = [];
+    running.app.context.alarmLink.publish = (topic, payload) => { published.push([topic, payload]); };
+    await call(running, cookie, "PUT", "/api/v1/alarm/zone-links", { links: [{ device_id: "door-1", node_id: "alarm-1", zone_id: "z1" }] });
+    const last = () => JSON.parse(published.filter(([topic]) => topic === "armor/alarm/alarm-1/policy").at(-1)![1]);
+    published.length = 0;
+    assert.equal((await call(running, cookie, "PUT", "/api/v1/security/settings", { "alarm.disarm_pin": "never" })).status, 200);
+    assert.equal(last().disarm_pin, "never");
+    assert.equal((await call(running, cookie, "PUT", "/api/v1/security/settings", { "alarm.disarm_pin": "always" })).status, 200);
+    assert.equal(last().disarm_pin, "always");
+    assert.equal((await call(running, cookie, "PUT", "/api/v1/security/settings", { "alarm.disarm_pin": "if_set" })).status, 200);
+    assert.equal("disarm_pin" in last(), false, "while it is if_set the message is the one panels have always read");
+  } finally { await running.stop(); }
+});
+
 test("a panel's zone-feed key is given to an administrator only, and the settings reach the broker as the policy", async () => {
   const running = await startServer();
   try {

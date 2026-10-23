@@ -31,10 +31,10 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
    * Two forms of request, told apart by the Content-Type: the audio as the whole body (`audio/L16;rate=16000`, as always) or `multipart/form-data` with the audio as raw bytes and an optional
    * `meta` part (ARMOR-COMMON, "Voice turn"; allowed by the option voice.multipart_turn). The gateway is spoken to the same way in both. To the multipart one the answer may come as
    * `multipart/mixed` with the spoken reply as a part (`reply_audio` `binary`), as JSON without audio (`none`) or as the gateway's own JSON (`base64`, the default). The sizes are settings
-   * of the server (ARMOR_VOICE_TURN_MAX_BYTES, ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES).
+   * of the server (voice.turn_max_bytes and voice.reply_audio_max_bytes, set in Studio; ARMOR_VOICE_TURN_MAX_BYTES and ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES are where they start).
    */
   const turnLimit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
-  const maxAudio = config.voiceTurnMaxBytes;
+  const maxAudio = () => context.securitySettings.get("voice.turn_max_bytes");   // read for every turn: a change in Studio counts at once
   const authorize = (request: Request, response: import("express").Response, next: import("express").NextFunction) => {
     if (!config.voice) return response.status(503).json({ error: "voice_unavailable" });
     const given = Buffer.from(String(request.headers["x-armor-voice-token"] ?? "")), wanted = Buffer.from(config.voice.token);
@@ -42,10 +42,11 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
     if (isMultipartForm(String(request.headers["content-type"] ?? "")) && !context.securitySettings.get("voice.multipart_turn")) return response.status(415).json({ error: "multipart_turn_disabled" });
     return next();
   };
-  const raw = (limit: number) => express.raw({ type: () => true, limit });
-  const rawLegacy = raw(maxAudio), rawMultipart = raw(maxAudio + MAX_META_BYTES + FRAMING_OVERHEAD);
+  const parsers = new Map<number, ReturnType<typeof express.raw>>();
+  const raw = (limit: number) => { let parser = parsers.get(limit); if (!parser) { parser = express.raw({ type: () => true, limit }); parsers.set(limit, parser); } return parser; };
   const readBody = (request: Request, response: import("express").Response, next: import("express").NextFunction) => {
-    const parser = isMultipartForm(String(request.headers["content-type"] ?? "")) ? rawMultipart : rawLegacy;
+    const limit = maxAudio();
+    const parser = raw(isMultipartForm(String(request.headers["content-type"] ?? "")) ? limit + MAX_META_BYTES + FRAMING_OVERHEAD : limit);
     parser(request, response, (error?: unknown) => {
       if (!error) return next();
       const status = (error as { status?: number }).status;
@@ -62,7 +63,7 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
     let audio = body, language = String(request.headers["x-armor-language"] ?? "en"), replyAudio: ReplyAudio = "base64";
     if (multipart) {
       try {
-        const parsed = parseVoiceTurnRequest(contentType, body, maxAudio);
+        const parsed = parseVoiceTurnRequest(contentType, body, maxAudio());
         audio = parsed.audio;
         if (parsed.meta) { language = parsed.meta.language; replyAudio = parsed.meta.reply_audio ?? "base64"; }
       } catch (error) {
@@ -80,7 +81,7 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
       const text = await reply.text();
       audit.record({ action: "voice.turn", outcome: reply.ok ? "allowed" : "denied", detail: `${reply.status}${multipart ? " multipart" : ""}` });
       if (multipart && reply.ok && replyAudio !== "base64") {
-        const shaped = shapeReply(text, replyAudio, config.voiceReplyAudioMaxBytes);
+        const shaped = shapeReply(text, replyAudio, context.securitySettings.get("voice.reply_audio_max_bytes"));
         if (!shaped) return response.status(502).json({ error: "voice_bad_reply" });
         return response.status(200).type(shaped.contentType).send(shaped.body);
       }

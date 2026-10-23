@@ -221,6 +221,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const securityChanged: { tell?: (changes: Record<string, unknown>) => void } = {};
   const securitySettings = new SecuritySettings(path.join(config.dataDir, "security-settings.json"), {
     environment: () => ({ "alarm.disarm_pin": config.disarmPinEnv }),
+    initial: { "voice.turn_max_bytes": config.voiceTurnMaxBytes, "voice.reply_audio_max_bytes": config.voiceReplyAudioMaxBytes },
     onChange: changes => securityChanged.tell?.(changes),
   });
   const rtspProxy = () => securitySettings.get("media.rtsp_proxy");
@@ -371,7 +372,9 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const alarmZoneFeed = new AlarmZoneFeed(path.join(config.dataDir, "alarm-zone-links.json"), { publish: (topic, payload) => { if (!alarmLink.publish) throw new Error("the MQTT broker is not connected"); alarmLink.publish(topic, payload); }, devices: () => devices.list(), now: overrides.now, warn,
     enabled: () => securitySettings.get("server.zone_feed"), signer: () => (securitySettings.get("server.zone_feed_signature") ? zoneFeedSigner : undefined),
     panels: () => alarmNodes.list().map(node => node.node_id),
-    policy: () => ({ config_hash: securitySettings.get("alarm.config_hash"), zone_feed: securitySettings.get("server.zone_feed"), zone_feed_signature: securitySettings.get("server.zone_feed_signature") }) });
+    policy: () => ({ config_hash: securitySettings.get("alarm.config_hash"), zone_feed: securitySettings.get("server.zone_feed"), zone_feed_signature: securitySettings.get("server.zone_feed_signature"),
+      // the environment wins over the setting, as it does for the people who disarm; "if_set" is not sent so that a panel from before the option keeps reading the message it knows
+      ...(((): { disarm_pin?: "never" | "always" } => { const mode = config.disarmPinEnv ?? securitySettings.get("alarm.disarm_pin"); return mode === "if_set" ? {} : { disarm_pin: mode }; })()) }) });
   securityChanged.tell = () => { try { alarmZoneFeed.publishPolicy(); alarmZoneFeed.refresh(); } catch { /* the broker is not connected: the next sweep tells it */ } };
   const alarmCommands = new AlarmCommands({
     enabled: config.alarmCommands, nodes: alarmNodes, audit, now: overrides.now,
