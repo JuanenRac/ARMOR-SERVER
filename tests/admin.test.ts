@@ -14,7 +14,7 @@ const socketName = () => (process.platform === "win32" ? `\\\\.\\pipe\\armor-adm
 type Seen = { method: string; url: string; body: Record<string, unknown>; token: string; sensitive: string };
 
 /** A stand-in for the admin agent: the same paths and answers, recording what it was asked. */
-async function fakeAgent(options: { status?: boolean } = {}): Promise<{ socket: string; seen: Seen[]; files: Record<string, string>; accounts: string[]; close: () => Promise<void> }> {
+async function fakeAgent(options: { status?: boolean; rotation?: boolean } = {}): Promise<{ socket: string; seen: Seen[]; files: Record<string, string>; accounts: string[]; close: () => Promise<void> }> {
   const socket = socketName(), seen: Seen[] = [], accounts = ["field-node-north-1"];
   const files: Record<string, string> = { "server.env": "ARMOR_PORT=18080\nARMOR_STUDIO_PASSWORD=hunter2-hunter2\nARMOR_INGEST_TOKEN=\n", "mosquitto.conf": "listener 18883\n" };
   const server = http.createServer((request, response) => {
@@ -37,6 +37,7 @@ async function fakeAgent(options: { status?: boolean } = {}): Promise<{ socket: 
       if (request.method === "GET" && url === "/v1/mqtt/accounts") return send(200, { accounts: accounts.map(user => ({ user, role: "field-node", manageable: true, topics: [] })) });
       if (request.method === "POST" && url === "/v1/mqtt/accounts") {
         const user = `${body.role === "node" ? "field-node" : String(body.role)}-${String(body.name)}`;
+        if (accounts.includes(user) && body.rotate === true && options.rotation) return send(200, { ok: true, user, password: `new-${user}` });
         if (accounts.includes(user)) return send(409, { error: "identity_failed" });
         accounts.push(user); return send(200, { ok: true, user, password: `pw-${user}` });
       }
@@ -177,6 +178,21 @@ test("adopting a node makes its account, writes the broker into the node's panel
     assert.doesNotMatch(audit, /node-admin-pass|pw-field-node/, "neither the node's login nor the new password is written in the audit trail");
     assert.ok(SECRETS.ARMOR_STUDIO_USERNAME);
   } finally { delete process.env.ARMOR_ADMIN_NODE_PORT; await running.stop(); await agent.close(); await new Promise<void>(resolve => panel.close(() => resolve())); }
+});
+
+test("a node adopted again gets a new password in one step when the agent can rotate, and is never left without an account", async () => {
+  const agent = await fakeAgent({ rotation: true });
+  const running = await startServer({ ARMOR_ADMIN_SOCKET: agent.socket, ARMOR_ADMIN_TOKEN: TOKEN });
+  try {
+    const cookie = await studioCookie(running.base);
+    const again = await call(running, cookie, "POST", "/api/v1/admin/nodes/provision", { node_id: "north-1", address: "192.168.0.50", broker_host: "192.168.0.180" });
+    assert.deepEqual([again.status, again.body.broker.username, again.body.broker.password], [200, "field-node-north-1", "new-field-node-north-1"]);
+    assert.equal(agent.seen.some(item => item.method === "DELETE"), false, "the account was not removed on the way");
+    assert.ok(agent.accounts.includes("field-node-north-1"));
+    const audit = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8");
+    assert.match(audit, /account renewed/);
+    assert.doesNotMatch(audit, /new-field-node/);
+  } finally { await running.stop(); await agent.close(); }
 });
 
 test("an address that carries a login is shown without it and goes back whole when it was not touched", () => {

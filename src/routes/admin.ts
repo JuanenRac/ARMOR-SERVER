@@ -144,15 +144,20 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
     if (!identity) return response.status(422).json({ error: "invalid_kind" });
     const wanted = `${identity[1]}-${nodeId}`;
     const existing = Array.isArray(accounts.body.accounts) && (accounts.body.accounts as Array<{ user?: string }>).some(item => item.user === wanted);
-    if (existing) {
+    // An account that exists gets a new password in one step (`rotate`): the old one keeps working until the new one is written, so a failure leaves the node as it was. An agent from before
+    // the rotation answers 409 (it only knows how to make an account that does not exist) and then the old way is used: remove, then make.
+    let created = await ask(response, "POST", "/v1/mqtt/accounts", { role: identity[0], name: nodeId, ...(existing ? { rotate: true } : {}) }, sensitive(request));
+    let removedFirst = false;
+    if (existing && created && created.status === 409) {
       const removed = await ask(response, "DELETE", `/v1/mqtt/accounts/${wanted}`, undefined, sensitive(request));
       if (!removed) return;
       if (removed.status >= 300) return relay(response, removed);
+      removedFirst = true;
+      created = await ask(response, "POST", "/v1/mqtt/accounts", { role: identity[0], name: nodeId }, sensitive(request));
     }
-    const created = await ask(response, "POST", "/v1/mqtt/accounts", { role: identity[0], name: nodeId }, sensitive(request));
     if (!created || created.status >= 300) {
-      // The old account was removed first (the agent has no rotate): if the new one could not be made the node has no access until this is tried again. Said in the trail, so that it is not found out later.
-      if (existing) audit.record({ action: "admin.node.provision", outcome: "failed", actor: actor(request), target: nodeId, detail: "the old account was removed and the new one could not be made: provision the node again" });
+      // Only the old way can leave the node without access (the account was removed and the new one could not be made); said in the trail, so that it is not found out later.
+      if (removedFirst) audit.record({ action: "admin.node.provision", outcome: "failed", actor: actor(request), target: nodeId, detail: "the old account was removed and the new one could not be made: provision the node again" });
       if (!created) return;
       return relay(response, created);
     }
