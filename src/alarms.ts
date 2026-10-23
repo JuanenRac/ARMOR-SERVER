@@ -258,6 +258,8 @@ const armedOnlyCodes = new Set(["intrusion", "door_open", "window_open", "motion
 const DEVICE_CODE: Record<string, string> = { smoke: "smoke", co: "co", gas: "gas", water_leak: "water_leak", panic_button: "panic", door: "door_open", window: "window_open", motion: "motion", glass_break: "glass_break", vibration: "vibration" };
 /** How long a slow or lossy line has to stay so before it is worth an alarm. */
 export const NETWORK_DEGRADED_DWELL_MS = 3 * 60_000;
+/** How long the name of the house may point elsewhere than its public address before it is an alarm, when nothing says otherwise (see ARMOR_NETWORK_DNS_DWELL_MIN). */
+export const NETWORK_DNS_DWELL_MS = 30 * 60_000;
 const LOW_BATTERY = 15, BATTERY_OK = 20;
 /** The mains voltage an AC channel of an electrical node may have (about 230 V less 15 % and plus 10 %), with the margin at which a raised alarm ends; below GRID_LOST the channel has no supply at all. */
 const MAINS_LOW = 195, MAINS_LOW_OK = 200, MAINS_HIGH = 253, MAINS_HIGH_OK = 250, GRID_LOST = 50, GRID_BACK = 100;
@@ -274,6 +276,11 @@ export class AlarmRules {
 
   /** Since when each battery has had its cells further apart than the level (the time of the first message of the stretch), for the alarm that wants the gap to persist. */
   readonly #spreadSince = new Map<string, number>();
+
+  /** Since when each network node has seen the name of the house point elsewhere than its public address (the time of the first message of the stretch). */
+  readonly #dnsSince = new Map<string, number>();
+  /** Milliseconds of that stretch after which it is an alarm; set by the context from ARMOR_NETWORK_DNS_DWELL_MIN. */
+  dnsDwellMs = NETWORK_DNS_DWELL_MS;
 
   /** The manuals' figures of the battery model declared for a device ("node/device"), when there are any; set by the context. */
   batteryProfileOf: ((id: string) => { over_v?: number } | undefined) | undefined;
@@ -560,6 +567,15 @@ export class AlarmRules {
       if (message.timestamp_ms - since >= NETWORK_DEGRADED_DWELL_MS) this.centre.raise(`${base}:degraded`, { source, severity: "warning", code: "network_degraded", detail: facts() });
       else this.centre.update(`${base}:degraded`, facts());
     } else this.centre.clear(`${base}:degraded`);
+    // The address of a house changes now and then and the dynamic DNS follows within minutes: the alarm is for the name that does not follow, and it ends when it does.
+    const dns = message.public?.dns;
+    if (dns && !dns.matches) {
+      const since = this.#dnsSince.get(message.node_id) ?? message.timestamp_ms;
+      this.#dnsSince.set(message.node_id, since);
+      const facts = { node: message.node_id, name: dns.name, public_ip: message.public!.ip, resolves_to: dns.addresses.join(", ") };
+      if (message.timestamp_ms - since >= this.dnsDwellMs) this.centre.raise(`${base}:dns`, { source, severity: "warning", code: "network_dns_stale", detail: facts });
+      else this.centre.update(`${base}:dns`, facts);
+    } else { this.#dnsSince.delete(message.node_id); this.centre.clear(`${base}:dns`); }
   }
 
   /**

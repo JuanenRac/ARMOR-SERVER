@@ -47,6 +47,7 @@ Every setting is an environment variable (a `.env` file next to the server is re
 | `ARMOR_MQTT_PASSWORD` |  | `replace-with-broker-password` | Optional MQTT ingress. Leave unset for HTTP-only development. |
 | `ARMOR_MQTT_URL` |  | `mqtt://127.0.0.1:1883` | Optional MQTT ingress. Leave unset for HTTP-only development. |
 | `ARMOR_MQTT_USERNAME` |  | `armor-server` | Optional MQTT ingress. Leave unset for HTTP-only development. |
+| `ARMOR_NETWORK_DNS_DWELL_MIN` | integer 1 to 1440, default 30 | `30` | Minutes the name the house is reached by from outside (`--dns-name` of ARMOR-NETWORK) may point to another address than the public one before the alarm `network_dns_stale` is raised. |
 | `ARMOR_NODE_MAINTENANCE_MAX_S` | integer 60 to 3600, default 600 | `600` | The most seconds a node's own announcement of planned maintenance (a restart, an update, a pause) may hold back its offline alerts; after that the node counts as offline again (60 to 3600). |
 | `ARMOR_NODE_STALE_AFTER_S` | integer 5 to 3600, default 30 | `30` | Seconds without a message after which a field node is reported stale and offline. |
 | `ARMOR_NTFY_TOKEN` |  | `replace-with-the-ntfy-token-if-the-topic-needs-one` | Where alarms are told besides the apps: a webhook (signed with the secret), Telegram, ntfy, Home Assistant and Firebase push. |

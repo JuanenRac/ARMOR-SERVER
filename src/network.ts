@@ -32,7 +32,9 @@ export type NetworkInternet = {
   last_outage?: { started_ms: number; ended_ms: number; duration_s: number }; outages_24h?: number; downtime_24h_s?: number;
 };
 /** What the internet sees of the connection, asked of a public service by the node now and then. */
-export type NetworkPublic = { ip: string; hostname?: string; city?: string; region?: string; country?: string; org?: string; timezone?: string; checked_ms: number; changed_ms?: number };
+export type NetworkPublic = { ip: string; hostname?: string; city?: string; region?: string; country?: string; org?: string; timezone?: string; checked_ms: number; changed_ms?: number;
+  /** The name the house is reached by from outside, what it resolves to and whether it is this address (when the node was told the name). */
+  dns?: { name: string; addresses: string[]; matches: boolean } };
 export const COMMAND_TYPES = ["scan_now", "ping", "traceroute", "wake", "ports", "http", "inspect"] as const;
 export type CommandType = (typeof COMMAND_TYPES)[number];
 /** What a node did with a manual order the server handed it. */
@@ -168,11 +170,16 @@ function parseEvent(raw: unknown, index: number): NetworkEvent {
 
 function parsePublic(value: unknown): NetworkPublic {
   const item = record(value, "public");
-  onlyKnown(item, ["ip", "hostname", "city", "region", "country", "org", "timezone", "checked_ms", "changed_ms"], "public");
+  onlyKnown(item, ["ip", "hostname", "city", "region", "country", "org", "timezone", "checked_ms", "changed_ms", "dns"], "public");
   for (const key of ["ip", "checked_ms"]) if (!(key in item)) throw new Error(`the public block is missing ${key}`);
   if (!text(item.ip, 1, 45)) throw new Error("invalid public.ip");
   for (const [key, max] of [["hostname", 128], ["city", 64], ["region", 64], ["country", 64], ["org", 128], ["timezone", 64]] as const) if (key in item && !text(item[key], 1, max)) throw new Error(`invalid public.${key}`);
   if (!whole(item.checked_ms, 0) || ("changed_ms" in item && !whole(item.changed_ms, 0))) throw new Error("invalid time of public");
+  if ("dns" in item) {
+    const dns = record(item.dns, "public.dns");
+    onlyKnown(dns, ["name", "addresses", "matches"], "public.dns");
+    if (!text(dns.name, 1, 253) || typeof dns.matches !== "boolean" || !Array.isArray(dns.addresses) || dns.addresses.length > 8 || !dns.addresses.every(address => text(address, 1, 45))) throw new Error("invalid public.dns");
+  }
   return item as unknown as NetworkPublic;
 }
 

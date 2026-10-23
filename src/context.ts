@@ -264,6 +264,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const alarms = new AlarmCentre({ file: path.join(config.dataDir, "alarms.json"), onEvent: record, onRaised: alarm => automations.handleAlarm(alarm), warn });
   const energyAlarms = new EnergyAlarmStore(path.join(config.dataDir, "energy-alarms.json"));
   const alarmRules = new AlarmRules(alarms, () => store.snapshot().mode, () => energyAlarms.get());
+  alarmRules.dnsDwellMs = config.networkDnsDwellMin * 60_000;
   const devices: DeviceRegistry = new DeviceRegistry({
     file: path.join(config.dataDir, "devices.json"), warn, onTopics: () => deviceLink.resubscribe?.(),
     onChange: (change: DeviceChange) => {

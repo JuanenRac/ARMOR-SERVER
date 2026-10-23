@@ -232,3 +232,38 @@ test("a node that restarts and counts its events from e1 again is not taken for 
   store.ingest(message({ events: [event({ id: "e1", kind: "port_opened", at_ms: NOW - 1000 })] }));      // after a restart: e1 is another event
   assert.deepEqual(told, ["e1:new_device", "e1:port_opened"]);
 });
+
+test("the name the house is reached by that stops following the public address is an alarm once it has gone on long enough, and ends when the name follows again", async () => {
+  const { AlarmCentre, AlarmRules } = await import("../src/alarms.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "armor-network-dns-"));
+  const centre = new AlarmCentre({ file: path.join(dir, "alarms.json") });
+  const rules = new AlarmRules(centre, () => "disarmed");
+  rules.dnsDwellMs = 10 * 60_000;
+  const codes = () => centre.active().filter(alarm => !alarm.cleared_at).map(alarm => `${alarm.code}:${alarm.severity}`).sort();
+  const withName = (at: number, matches: boolean) => message({ timestamp_ms: NOW + at, public: { ip: "203.0.113.9", checked_ms: NOW + at, dns: { name: "home.example.net", addresses: matches ? ["203.0.113.9"] : ["198.51.100.4"], matches } } });
+  rules.handleNetwork(withName(0, true));
+  assert.deepEqual(codes(), []);
+  rules.handleNetwork(withName(60_000, false));
+  rules.handleNetwork(withName(5 * 60_000, false));
+  assert.deepEqual(codes(), [], "the dynamic DNS needs a few minutes to follow");
+  rules.handleNetwork(withName(11 * 60_000, false));
+  assert.deepEqual(codes(), ["network_dns_stale:warning"]);
+  const detail = centre.active().find(alarm => alarm.code === "network_dns_stale")!.detail!;
+  assert.deepEqual([detail.name, detail.public_ip, detail.resolves_to], ["home.example.net", "203.0.113.9", "198.51.100.4"]);
+  rules.handleNetwork(withName(12 * 60_000, true));
+  assert.deepEqual(codes(), []);
+  // a mismatch that ended starts its stretch over
+  rules.handleNetwork(withName(13 * 60_000, false));
+  rules.handleNetwork(withName(20 * 60_000, false));
+  assert.deepEqual(codes(), []);
+  // a node that was not told any name says nothing about it
+  rules.handleNetwork(message({ timestamp_ms: NOW + 40 * 60_000, public: { ip: "203.0.113.9", checked_ms: NOW } }));
+  assert.deepEqual(codes(), []);
+});
+
+test("the DNS block of the public part is read strictly", () => {
+  const good = { ip: "203.0.113.9", checked_ms: 1, dns: { name: "home.example.net", addresses: ["203.0.113.9"], matches: true } };
+  assert.equal(parseNetworkMessage(message({ public: good })).public?.dns?.matches, true);
+  for (const dns of [{ name: "home.example.net", addresses: [] } as unknown, { name: "", addresses: [], matches: true }, { name: "x", addresses: ["1.1.1.1"], matches: "yes" }, { name: "x", addresses: Array(9).fill("1.1.1.1"), matches: true }, { name: "x", addresses: [], matches: true, ttl: 5 }])
+    assert.throws(() => parseNetworkMessage(message({ public: { ...good, dns: dns as never } })), Error);
+});
