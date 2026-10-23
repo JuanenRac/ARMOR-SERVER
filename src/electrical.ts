@@ -7,6 +7,7 @@
  */
 import { CoarseTier } from "./history.js";
 import { finite, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
+import { sweepStale } from "./staleness.js";
 
 export type ElectricalChannel = {
   id: string; domain: "ac" | "dc"; label?: string; voltage_v?: number; current_a?: number; power_w?: number; energy_kwh?: number; power_estimated?: boolean; frequency_hz?: number; power_factor?: number;
@@ -220,13 +221,7 @@ export class ElectricalStore {
 
   /** Mark the nodes that went quiet (and tell), called now and then. */
   sweep(): void {
-    const now = this.#options.now();
-    for (const entry of this.#entries.values()) {
-      if (!entry.stale && now - entry.receivedAtMs > this.#options.staleAfterMs) {
-        entry.stale = true;
-        this.#options.onStale?.(entry.reading.node_id, true);
-      }
-    }
+    sweepStale(this.#entries.values(), this.#options.now(), this.#options.staleAfterMs, entry => this.#options.onStale?.(entry.reading.node_id, true));
   }
 
   list(): ElectricalNodeView[] {

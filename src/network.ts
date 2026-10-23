@@ -11,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { finite, integer, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
 import { durableRename } from "./durable.js";
+import { sweepStale } from "./staleness.js";
 
 export const DEVICE_KINDS = ["router", "computer", "phone", "tv", "printer", "camera", "iot", "server", "nas", "network", "unknown"] as const;
 export type DeviceKind = (typeof DEVICE_KINDS)[number];
@@ -411,13 +412,7 @@ export class NetworkStore {
 
   /** Mark the nodes that went quiet (and tell), called now and then. */
   sweep(): void {
-    const now = this.#options.now();
-    for (const entry of this.#entries.values()) {
-      if (!entry.stale && now - entry.receivedAtMs > this.#options.staleAfterMs) {
-        entry.stale = true;
-        this.#options.onStale?.(entry.state.node_id, true);
-      }
-    }
+    sweepStale(this.#entries.values(), this.#options.now(), this.#options.staleAfterMs, entry => this.#options.onStale?.(entry.state.node_id, true));
   }
 
   list(): NetworkNodeView[] {

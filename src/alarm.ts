@@ -6,6 +6,7 @@
  */
 import { onlyKnown, readNodeId, readTimestamp, record, integer } from "./contracts.js";
 import { parseArmProfile, type ArmProfile } from "./arm_profiles.js";
+import { sweepStale } from "./staleness.js";
 
 export const PHASES = ["disarmed", "exit_delay", "armed", "entry_delay", "alarm"] as const;
 export type Phase = (typeof PHASES)[number];
@@ -180,13 +181,7 @@ export class AlarmStore {
 
   /** Mark the nodes that went quiet (and tell), called now and then. */
   sweep(): void {
-    const now = this.#options.now();
-    for (const entry of this.#entries.values()) {
-      if (!entry.stale && now - entry.receivedAtMs > this.#options.staleAfterMs) {
-        entry.stale = true;
-        this.#options.onStale?.(entry.state.node_id, true, entry.state.phase);
-      }
-    }
+    sweepStale(this.#entries.values(), this.#options.now(), this.#options.staleAfterMs, entry => this.#options.onStale?.(entry.state.node_id, true, entry.state.phase));
   }
 
   list(): AlarmNodeView[] {

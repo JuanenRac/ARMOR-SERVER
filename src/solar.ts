@@ -9,6 +9,7 @@ import { SolarEventLog, type EventsFile, type LoggedEvent } from "./solar_events
 import { finite, integer, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
 import { CoarseTier, type Sample } from "./history.js";
 import { dayOf } from "./day.js";
+import { sweepStale } from "./staleness.js";
 
 export type SolarMode = "power_on" | "standby" | "line" | "battery" | "fault" | "power_saving" | "shutdown" | "unknown";
 export const SOLAR_MODES: readonly SolarMode[] = ["power_on", "standby", "line", "battery", "fault", "power_saving", "shutdown", "unknown"];
@@ -340,13 +341,7 @@ export class SolarStore {
 
   /** Mark the devices that went quiet (and tell), or came back. Called now and then. */
   sweep(): void {
-    const now = this.#options.now();
-    for (const entry of this.#entries.values()) {
-      if (!entry.stale && !entry.example && now - entry.receivedAtMs > this.#options.staleAfterMs) {
-        entry.stale = true;
-        this.#options.onStale?.(entry.reading.node_id, entry.reading.device, true);
-      }
-    }
+    sweepStale(this.#entries.values(), this.#options.now(), this.#options.staleAfterMs, entry => this.#options.onStale?.(entry.reading.node_id, entry.reading.device, true), entry => entry.example);
   }
 
   list(): SolarDeviceView[] {
