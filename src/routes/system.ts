@@ -55,7 +55,7 @@ export function registerSystemRoutes(app: Express, context: AppContext, version:
   // How the machine is doing, as a task manager shows it: the latest sample and the last few minutes of it.
   app.get("/api/v1/system/metrics", requireOperator, (_request, response) => response.json({ ...systemMonitor.current, history: systemMonitor.history }));
 
-  // The check before arming: what would leave the perimeter blind or noisy. Read only; the console, the phone and the wall panel ask it before they arm.
+  // The check before arming: what would leave the perimeter blind or noisy. Read only; the console and the phone ask it before they arm (a wall panel has no access to it: its account may only read the summary, change the mode and acknowledge alarms).
   app.get("/api/v1/preflight", requireOperator, (_request, response) => response.json(buildPreflight({
     nodes: Object.values(store.snapshot().nodes).map(node => ({ node_id: node.node_id, online: node.online })),
     // A panel that was there before the last restart and has not spoken since is as silent as one that went quiet: it is listed here too (it is not in memory to be asked).
