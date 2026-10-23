@@ -38,7 +38,7 @@
 |---|---|
 | 版本 | `0.8.0.4` |
 | 成熟度 | 成熟 |
-| 测试 | 649 (`npm test`) |
+| 测试 | 666 (`npm test`) |
 | 技术栈 | Node.js 22+ / TypeScript / Docker Compose |
 | 真实硬件 | CM5 测试台的日常使用：真实的 MQTT 代理、真实的 IP 摄像头、ESP32-S3 板上的真实雷达节点，以及与之配合的 Studio、Android 应用和语音、观察服务 |
 
@@ -64,7 +64,7 @@
 * **连接与系统历史：** 除警报、节点、摄像头、设备和报警外，历史还记录哪些设备和应用连接了服务器（Studio 会话、Android 应用、节点面板、语音服务：登录、被拒、退出、会话过期、第二重验证的使用、首次与最近出现），以及系统事件（带固件版本出现或消失的节点、代理连接、被更改的设置及操作人、服务、更新、含方案的布防）。可按类型、类别、客户端和用户筛选；地址和用户代理只显示给管理员，密码、令牌、Cookie 和 PIN 绝不会被记录。
 * **写入 Pylontech 电池的指令（除非设置 `ARMOR_BATTERY_WRITE=1`，否则关闭）：** 仅限刚刚再次证明身份的管理员——准备、再次输入电池序列号后执行、取消、把输出恢复原状、保存固件镜像一小时——依据共享的操作与范围表检查，以 `solar_battery_command` 发给网关节点；每次操作都会保存（谁、哪块电池、操作前后读到的内容、差异和记录，绝不含服务密码），并在历史的“电池”类别中记录。
 * **节点控制：** `POST /api/v1/nodes/{id}/control` 和 `POST /api/v1/nodes/control` 向一个节点或所有在上报的节点下达一条命令（重启、暂停、恢复、待机、识别、诊断、开启或关闭维护），仅限刚刚再次验证过身份的管理员；在会让家中防护减弱的地方，还要再次输入节点名称（对所有节点则输入单词 RESTART、PAUSE 或 STANDBY）。服务器先准备命令，再用节点为该操作给出的一次性令牌执行，在 `GET /api/v1/nodes/control/operations` 中跟踪每个节点（已发送、已确认、已应用、已恢复），滚动重启时把报警主机放在最后，在历史和审计记录中记下谁下达了什么命令，并在节点健康中显示暂停、待机（停止工作，保持连接）和维护。没有恢复出厂设置、擦除或深度睡眠。已用模拟代理测试；尚未在真实节点上试过。
-* **实时状态与路由表：** 每当有变化，服务器就通过 `/api/v1/events` 的 WebSocket 把完整状态推送给 Studio（一连串变化合并为一条消息，落后的客户端会被断开），并且它注册的每条路由及可调用者都列在由代码生成的表中。
+* **实时状态与路由表：** 每当有变化，服务器就通过 `/api/v1/events` 的 WebSocket 把完整状态推送给 Studio（一连串变化合并为一条消息，落后的客户端会被断开），并且它注册的每条路由及可调用者都列在由代码生成的表中。壁挂面板有自己更小的通道 `/api/v1/panel/events`（与 `GET /api/v1/panel/summary` 相同的几百字节摘要，在变化时以及每五秒发送，面向面板、操作员和管理员账户；管理员可用 `panel.live_events` 将其关闭）。
 
 ## 🧩 在 A.R.M.O.R. 中的角色
 
@@ -119,7 +119,7 @@ ARMOR-SERVER/
 │   ├── devices/    catalog, registry, commands, mapping (the device model and its MQTT bridge)
 │   ├── cameras/    model, vault, digest, ptz, rtsp, discovery, health, errors
 │   └── media/      relay, evidence
-├── tests/          649 tests: unit + full HTTP integration
+├── tests/          666 tests: unit + full HTTP integration
 ├── docs/           state machine, camera gateway, integration, node firmware
 ├── tools/          project tooling and the CI checks
 ├── data/           runtime state (ignored by Git)
@@ -133,7 +133,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 649 tests: unit + full HTTP integration (every route must be in the OpenAPI file)
+npm test            # 666 tests: unit + full HTTP integration (every route must be in the OpenAPI file)
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```

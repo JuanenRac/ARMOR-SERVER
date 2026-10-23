@@ -53,6 +53,7 @@ import { registerSecurityRoutes } from "./routes/security.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerFirmwareRoutes } from "./routes/firmware.js";
 import { registerNodePanelRoutes } from "./node_panel_proxy.js";
+import { buildPanelSummary, createPanelFeed, PANEL_HEARTBEAT_MS } from "./panel_feed.js";
 import { registerVoiceRoutes } from "./routes/voice.js";
 import { registerAiRoutes } from "./routes/ai.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
@@ -67,6 +68,9 @@ const headerReader = (request: IncomingMessage) => ({ header: (name: string) => 
 export function createArmorApp(config: ArmorConfig, version: string, overrides: ContextOverrides = {}): ArmorApp {
   // The server never reads what a client sends over the socket, so it accepts almost nothing of it (the default is 100 MiB, buffered).
   const clients = new WebSocketServer({ noServer: true, maxPayload: 1024 });
+  // The live channel of the wall panel (panel_feed.ts): the same small summary the panel can ask for, sent when it changes. A different socket set from the one above, which carries the whole state.
+  const panelClients = new WebSocketServer({ noServer: true, maxPayload: 128 });
+  const panelFeed = createPanelFeed(() => buildPanelSummary(context), () => panelClients.clients);
   /** A client that is too far behind (its network is slow, or it stopped reading) is dropped rather than made to wait in memory: the next state it would get is only newer than the last. */
   const MAX_BUFFERED_BYTES = 2 * 1024 * 1024;
   const sendState = (state: SystemState) => {
@@ -76,6 +80,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       if (client.bufferedAmount > MAX_BUFFERED_BYTES) { client.terminate(); continue; }
       client.send(line);
     }
+    panelFeed.push();   // the same moment, at most once per window: the panel hears of a change when the consoles do
   };
   /** A burst of changes (several nodes reporting in the same moment) is one message with the newest state per window: the consoles only need the newest. */
   const WS_WINDOW_MS = 150;
@@ -83,6 +88,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   const broadcast = (state: SystemState) => stateFeed.push(state);
   /** Who each open socket was admitted as. A session can end while the socket stays open (the user was removed, their role or password changed, the session expired). */
   const admitted = new WeakMap<object, { reader: ReturnType<typeof headerReader>; viaToken: boolean; alive: boolean }>();
+  const panelAdmitted = new WeakMap<object, { reader: ReturnType<typeof headerReader>; alive: boolean }>();
   const context = createContext(config, { ...overrides, broadcast });
   const app = express();
   app.disable("x-powered-by");
@@ -175,6 +181,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   const server: Server = config.tls
     ? (createHttpsServer({ cert: fs.readFileSync(config.tls.certPath), key: fs.readFileSync(config.tls.keyPath) }, app) as unknown as Server)
     : createServer(app);
+  const panelMayListen = (reader: ReturnType<typeof headerReader>): boolean => context.operatorAuthorized(reader) || context.studioUser(reader)?.role === "panel";
   // A browser cannot set headers on a WebSocket: an operator session cookie is enough as well as the control token.
   server.on("upgrade", (request, socket, head) => {
     const reader = headerReader(request);
@@ -183,6 +190,18 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     const path = (request.url ?? "").split("?")[0];
     const origin = request.headers.origin;
     const originOk = !origin || (() => { try { return new URL(origin).host === request.headers.host; } catch { return false; } })() || config.studioOrigins.includes(origin);
+    if (path === "/api/v1/panel/events") {
+      // The wall panel's own channel: the account of a panel, an operator or an administrator (never a viewer), and only while the administrator has it on (`panel.live_events`).
+      if (!originOk || !context.securitySettings.get("panel.live_events") || !panelMayListen(reader)) return socket.destroy();
+      return panelClients.handleUpgrade(request, socket, head, client => {
+        panelAdmitted.set(client, { reader, alive: true });
+        client.on("pong", () => { const entry = panelAdmitted.get(client); if (entry) entry.alive = true; });
+        client.on("message", () => client.close(1003, "this socket only listens"));
+        client.on("error", () => client.terminate());
+        panelClients.emit("connection", client, request);
+        panelFeed.hello(client);
+      });
+    }
     const allowed = path === "/api/v1/events" && (hasBearer(reader, config.controlToken) || (originOk && context.operatorAuthorized(reader)));
     if (!allowed) return socket.destroy();
     const viaToken = hasBearer(reader, config.controlToken);
@@ -205,8 +224,27 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       entry.alive = false;
       try { client.ping(); } catch { client.terminate(); }
     }
+    for (const client of panelClients.clients) {
+      const entry = panelAdmitted.get(client);
+      if (!entry) continue;
+      if (!entry.alive) { client.terminate(); continue; }
+      if (!panelMayListen(entry.reader)) { client.close(4401, "the session ended"); continue; }
+      entry.alive = false;
+      try { client.ping(); } catch { client.terminate(); }
+    }
   }, 30_000);
   watchSockets.unref();
+  // Once a second: an alarm or the energy can change without the state of the nodes changing, so the summary is looked at, and sent when it differs; every few seconds it is sent anyway, so
+  // the panel can tell a quiet channel from a dead one. When the administrator turns the channel off, the panels that are on it are told (4403) and go back to asking.
+  let lastBeat = 0;
+  const panelTimer = setInterval(() => {
+    if (panelClients.clients.size === 0) return;
+    if (!context.securitySettings.get("panel.live_events")) { for (const client of panelClients.clients) client.close(4403, "the live channel is off"); return; }
+    const now = Date.now(), beat = now - lastBeat >= PANEL_HEARTBEAT_MS;
+    if (beat) lastBeat = now;
+    try { panelFeed.push(beat); } catch { /* one failed look at the summary never stops the next */ }
+  }, 1_000);
+  panelTimer.unref();
 
   const mqtt = config.mqtt ? attachMqtt(context.store, config.mqtt.url, config.mqtt.username, config.mqtt.password, context.ingestLog, config.mqtt.ca?.pem) : null;
   /** A message of a node that was refused: said in the log and kept (with the start of what was sent) for Studio's System menu. */
@@ -333,6 +371,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     close: async () => {
       clearInterval(sweeper);
       clearInterval(watchSockets);
+      clearInterval(panelTimer);
       clearInterval(historySaver);
       stateFeed.close();
       context.systemMonitor.stop();
@@ -347,6 +386,8 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       mqtt?.end(true);
       for (const client of clients.clients) client.terminate();
       clients.close();
+      for (const client of panelClients.clients) client.terminate();
+      panelClients.close();
       await new Promise<void>(resolve => server.close(() => resolve()));
     },
   };

@@ -28,7 +28,7 @@
 
 ---
 
-**Honesty check - what runs today:** Every route, session, encryption and evidence rule below is real and covered by tests (`npm test`: 649 tests, including a full HTTP integration suite against an isolated server and a check that every route is documented in the OpenAPI file). It runs in daily use on the CM5 test bench with a real MQTT broker, the firmware of a real radar node on an ESP32-S3 board, real IP cameras (live video, snapshots, recordings, PTZ on the Hi3510 units), the Studio console, the Android app and the voice and observation services. What is **not** proven yet: ONVIF against a real ONVIF camera, any Jetson hardware, the solar, electrical, alarm-panel and touch-panel routes against real nodes (they are tested with generated messages: only the radar board exists) and push through Firebase against a real Firebase project.
+**Honesty check - what runs today:** Every route, session, encryption and evidence rule below is real and covered by tests (`npm test`: 666 tests, including a full HTTP integration suite against an isolated server and a check that every route is documented in the OpenAPI file). It runs in daily use on the CM5 test bench with a real MQTT broker, the firmware of a real radar node on an ESP32-S3 board, real IP cameras (live video, snapshots, recordings, PTZ on the Hi3510 units), the Studio console, the Android app and the voice and observation services. What is **not** proven yet: ONVIF against a real ONVIF camera, any Jetson hardware, the solar, electrical, alarm-panel and touch-panel routes against real nodes (they are tested with generated messages: only the radar board exists) and push through Firebase against a real Firebase project.
 
 ---
 
@@ -38,7 +38,7 @@
 |---|---|
 | Version | `0.8.0.4` |
 | Maturity | Established |
-| Tests | 649 (`npm test`) |
+| Tests | 666 (`npm test`) |
 | Stack | Node.js 22+ / TypeScript / Docker Compose |
 | On real hardware | The CM5 test bench, in daily use: a real MQTT broker, real IP cameras, a real radar node on an ESP32-S3 board, Studio, the Android app and the voice and observation services against it |
 
@@ -64,7 +64,7 @@
 * **History of connections and of the system:** besides the alerts, nodes, cameras, devices and alarms, the history records which devices and apps connect (Studio sessions, the Android app, the panels of the nodes, the voice service: sign-ins, refusals, sign-outs, expired sessions, use of the second factor, first and last seen) and the events of the system (nodes that appear or disappear with their firmware, the broker link, settings changed and by whom, services, updates, arming with its profile). It can be filtered by kind, category, client and user; the address and the user agent are shown to administrators only, and no password, token, cookie or PIN is ever recorded.
 * **Orders to write to a Pylontech battery (off unless `ARMOR_BATTERY_WRITE=1`):** for administrators who have just proved who they are again - arm, execute with the battery's serial number typed again, cancel, put an output back, keep a firmware image for an hour - checked against the shared table of operations and ranges, sent to the gateway node as `solar_battery_command`, with every operation kept (who, which battery, what was read before and after, the difference and the transcript, never the service password) and told to the history under *Batteries*.
 * **Control of the nodes:** `POST /api/v1/nodes/{id}/control` and `POST /api/v1/nodes/control` give one order (restart, pause, resume, standby, identify, diagnostics, maintenance on or off) to one node or to every node that reports, only for an administrator who proved themselves again a moment ago, with the node's name (or the word RESTART, PAUSE or STANDBY for all) typed again where the house would be left less guarded. The server arms the order, executes it with the one-time token the node gives for that operation, follows each node (sent, acknowledged, applied, back) in `GET /api/v1/nodes/control/operations`, restarts the alarm panels last in a rolling restart, records who ordered what in the history and the audit trail, and shows paused, standby (work off, still connected) and maintenance in the node health. There is no factory reset, no erase and no deep sleep. It is tested with a fake broker; it has not been tried on a real node.
-* **Live state and a route table:** the server pushes the whole state to Studio down a WebSocket at `/api/v1/events` whenever something changes (a burst of changes is one message, and a client that falls behind is dropped), and every route it registers, with who may call it, is listed in a table generated from the code.
+* **Live state and a route table:** the server pushes the whole state to Studio down a WebSocket at `/api/v1/events` whenever something changes (a burst of changes is one message, and a client that falls behind is dropped), and every route it registers, with who may call it, is listed in a table generated from the code. The wall panel has its own, smaller channel at `/api/v1/panel/events` (the same few hundred bytes of summary as `GET /api/v1/panel/summary`, sent when it changes and every five seconds, for the panel, operator and administrator accounts; an administrator turns it off with `panel.live_events`).
 
 ## 🧩 Role in A.R.M.O.R.
 
@@ -119,7 +119,7 @@ ARMOR-SERVER/
 │   ├── devices/    catalog, registry, commands, mapping (the device model and its MQTT bridge)
 │   ├── cameras/    model, vault, digest, ptz, rtsp, discovery, health, errors
 │   └── media/      relay, evidence
-├── tests/          649 tests: unit + full HTTP integration
+├── tests/          666 tests: unit + full HTTP integration
 ├── docs/           state machine, camera gateway, integration, node firmware
 ├── tools/          project tooling and the CI checks
 ├── data/           runtime state (ignored by Git)
@@ -133,7 +133,7 @@ ARMOR-SERVER/
 ```powershell
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # 649 tests: unit + full HTTP integration (every route must be in the OpenAPI file)
+npm test            # 666 tests: unit + full HTTP integration (every route must be in the OpenAPI file)
 npm run build       # dist/server.mjs
 .\run.bat           # development server with hot reload
 ```

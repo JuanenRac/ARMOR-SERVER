@@ -59,7 +59,18 @@ An administrator turns these on and off from Studio (Security) or with `PUT /api
 | `server.zone_feed_signature` | on, off | Whether each zone message is signed (`seq`, `sig`) so a panel can tell it came from this server. The key of each panel is derived from a secret of the server (`zone-feed.key`) and handed to an administrator once, never over the broker. |
 | `media.rtsp_proxy` | on, off | Whether FFmpeg reads the cameras through the local tunnel (see `docs/CAMERA_MEDIA_GATEWAY.md`). |
 | `network.login_secure_only` | on, off (default off) | On: the login kept for a device of the network is handed to a network node (sealed with that node's own token) only when its request came over TLS or straight from this machine; a request forwarded by a proxy as plain HTTP, or from the network, gets the order without the login and the node looks without one. Off: any request of the node, as before. |
+| `panel.live_events` | on, off (default on) | Whether the wall panel may listen to its live channel, the WebSocket `/api/v1/panel/events` (see *The panel's live channel* below). Off, the panels on it are closed with the code 4403, a new one is refused at the upgrade, and the panel goes back to asking `GET /api/v1/panel/summary`. |
 | `voice.multipart_turn` | on, off | Whether the wall panel may send a spoken turn as `multipart/form-data` with the audio as raw bytes (see *Spoken turns* below). Off, a multipart turn is answered `415 multipart_turn_disabled` and the older raw request is the only way in. |
+
+## The panel's live channel
+
+`/api/v1/panel/events` is a WebSocket for the wall panel (ARMOR-HMI), so it does not have to ask `GET /api/v1/panel/summary` every few seconds. It is admitted with the session cookie of a panel, operator or administrator account (never a viewer), from the server's own origin or one of the Studio origins, and only while `panel.live_events` is on. The server sends one text frame when the socket opens, one whenever the summary changes (looked at once a second, and at once when the state of the nodes changes) and the same summary again every `heartbeat_ms` (5000), so a quiet channel can be told from a dead one:
+
+```
+{"type":"summary","heartbeat_ms":5000,"summary":{ ...the document of GET /api/v1/panel/summary... }}
+```
+
+It carries nothing the panel cannot ask for and takes nothing: whatever the client sends closes the socket (1003), a client that falls 64 KB behind is dropped, and a session that ends closes it with 4401. The whole state of the installation stays on `/api/v1/events`, which a panel account may not open. Arming, disarming and acknowledging go through the same routes as before.
 
 ## Spoken turns
 
