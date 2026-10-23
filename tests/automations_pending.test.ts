@@ -28,3 +28,19 @@ test("a switch-back that was pending when the server stopped is done after the r
   second.close();
   assert.deepEqual((JSON.parse(fs.readFileSync(file, "utf8")) as { pending: unknown[] }).pending, [], "and it is no longer pending");
 });
+
+test("a second trigger of an automation that switches back after a while moves the switch-back to later, so the first one cannot undo the new run", async () => {
+  const file = path.join(tempDir(), "automations.json");
+  const ran: string[] = [];
+  const engine = new AutomationEngine({ file, mode: () => "disarmed" as const, run: async (action: { type: string; device_id?: string; command?: string }) => { if (action.type === "device") ran.push(`${action.device_id}=${action.command}`); return { ok: true }; } } as unknown as ConstructorParameters<typeof AutomationEngine>[0]);
+  engine.create({ name: "light for a second", enabled: true, trigger: { type: "mode", mode: "armed" }, when_mode: "any", actions: [{ type: "device", device_id: "light-1", command: "on", for_s: 1 }] });
+  engine.handleMode("armed");
+  await new Promise(resolve => setTimeout(resolve, 600));
+  engine.handleMode("disarmed");
+  engine.handleMode("armed");                          // triggered again before the first switch-back was due
+  await new Promise(resolve => setTimeout(resolve, 700));
+  assert.equal(ran.filter(item => item === "light-1=off").length, 0, "the first switch-back (due about now) did not happen");
+  await new Promise(resolve => setTimeout(resolve, 1400));
+  assert.equal(ran.filter(item => item === "light-1=off").length, 1, "the new one did, once");
+  engine.close();
+});
