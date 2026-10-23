@@ -38,6 +38,7 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/admin/remote` | administrator | `routes/maintenance.ts` |
 | POST | `/api/v1/admin/remote/ddns/${action}` | administrator, fresh proof of identity | `routes/maintenance.ts` |
 | POST | `/api/v1/admin/remote/ddns/setup` | administrator, fresh proof of identity | `routes/maintenance.ts` |
+| GET | `/api/v1/admin/remote/tls` | administrator | `routes/maintenance.ts` |
 | POST | `/api/v1/admin/remote/wireguard/peers` | administrator, fresh proof of identity | `routes/maintenance.ts` |
 | DELETE | `/api/v1/admin/remote/wireguard/peers/:name` | administrator, fresh proof of identity | `routes/maintenance.ts` |
 | GET | `/api/v1/admin/remote/wireguard/peers/:name` | administrator, fresh proof of identity | `routes/maintenance.ts` |

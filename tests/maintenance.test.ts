@@ -36,6 +36,7 @@ async function fakeAgent(consoleEnabled = true): Promise<{ socket: string; seen:
       if (request.method === "POST" && url === "/v1/console/run") return consoleEnabled ? send(202, { id: "c1", state: "running", output: "", offset: 0 }) : send(403, { error: "console_disabled" });
       if (request.method === "GET" && url.startsWith("/v1/console/jobs/")) return send(200, { id: "c1", state: "done", code: 0, output: "hi\n", offset: 3, cwd: "/tmp" });
       if (request.method === "POST" && url.includes("/cancel")) return send(200, { ok: true });
+      if (request.method === "GET" && url === "/v1/tls/ca") return send(200, { present: true, pin: "fRsI9SH78MeN93Xk+x0jam6g1I38j9Bv3yYxAwFoKZs=", subject: "CN=ARMOR Test Local Authority", not_after: "Sep 29 19:27:30 2126 GMT" });
       if (request.method === "GET" && url === "/v1/remote") return send(200, { wireguard: { configured: false, peers: [] }, ddns: { configured: false } });
       if (request.method === "POST" && url.startsWith("/v1/remote/")) return send(url.endsWith("/peers") ? 201 : 200, url.endsWith("/peers") ? { name: body.name, config: "[Interface]\nPrivateKey = SECRETKEY", qr_svg: null } : { ok: true });
       if (request.method === "GET" && url.startsWith("/v1/remote/wireguard/peers/")) return send(200, { name: "phone", config: "[Interface]\nPrivateKey = SECRETKEY", qr_svg: null });
@@ -178,5 +179,22 @@ test("the VPN and the dynamic DNS name are asked for through the agent, with a n
     const audit = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8");
     for (const action of ["remote.vpn.setup", "remote.vpn.peer.add", "remote.vpn.peer.show", "remote.vpn.peer.remove", "remote.ddns.setup", "remote.ddns.update", "remote.ddns.remove"]) assert.match(audit, new RegExp(action.replace(/\./g, "\\.")), action);
     assert.doesNotMatch(audit, /SECRETKEY|tok-ABCDEFGH-1234/);
+  } finally { await running.stop(); await agent.close(); }
+});
+
+test("an administrator is given the pin of the installation's authority and the text that pairs a phone with it, for the host asked and no other", async () => {
+  const agent = await fakeAgent();
+  const running = await startServer({ ARMOR_MAINT_SOCKET: agent.socket, ARMOR_MAINT_TOKEN: TOKEN });
+  try {
+    const cookie = await studioCookie(running.base);
+    const pin = "fRsI9SH78MeN93Xk+x0jam6g1I38j9Bv3yYxAwFoKZs=";
+    const named = await call(running, cookie, "GET", "/api/v1/admin/remote/tls?host=Casa.DuckDNS.org");
+    assert.deepEqual([named.status, named.body.present, named.body.pin, named.body.text], [200, true, pin, `armor-pin:casa.duckdns.org:${pin}`]);
+    assert.match(String(named.body.subject), /ARMOR Test Local Authority/);
+    const bare = await call(running, cookie, "GET", "/api/v1/admin/remote/tls");
+    assert.equal(bare.body.text, `armor-pin:${pin}`, "without a host the text is the pin alone, which the app takes for the host it is connected to");
+    const bad = await call(running, cookie, "GET", "/api/v1/admin/remote/tls?host=a%3Ab%20c");
+    assert.equal(bad.body.text, `armor-pin:${pin}`, "a host that is not a host name is not put in the text");
+    assert.equal((await fetch(`${running.base}/api/v1/admin/remote/tls`)).status, 401);
   } finally { await running.stop(); await agent.close(); }
 });

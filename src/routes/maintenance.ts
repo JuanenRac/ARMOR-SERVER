@@ -186,6 +186,26 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
     relay(response, reply);
   });
 
+  /**
+   * The key of the installation's own authority (the one that signs its HTTPS) as a phone pins it, and the text that pairs a phone with it: `armor-pin:<host>:<pin>` (Studio shows it and the app
+   * takes it pasted). It is public information - a hash of the public key - but it is the thing a phone will trust, so only an administrator is given it, and the host is the one asked for.
+   */
+  app.get("/api/v1/admin/remote/tls", requireAdmin, async (request, response) => {
+    const reply = await ask(response, "GET", "/v1/tls/ca");
+    if (!reply) return;
+    response.setHeader("Cache-Control", "no-store");
+    if (reply.status !== 200) return relay(response, reply);
+    const found = reply.body as { present?: unknown; pin?: unknown; subject?: unknown; not_after?: unknown; error?: unknown };
+    const pin = typeof found.pin === "string" && /^[A-Za-z0-9+/]{43}=$/.test(found.pin) ? found.pin : undefined;
+    const asked = typeof request.query.host === "string" ? request.query.host.trim().toLowerCase() : "";
+    const host = /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$/.test(asked) ? asked : undefined;
+    return response.json({
+      present: found.present === true, ...(pin ? { pin, text: host ? `armor-pin:${host}:${pin}` : `armor-pin:${pin}` } : {}),
+      ...(typeof found.subject === "string" ? { subject: found.subject.slice(0, 200) } : {}), ...(typeof found.not_after === "string" ? { not_after: found.not_after.slice(0, 40) } : {}),
+      ...(typeof found.error === "string" ? { error: found.error.slice(0, 60) } : {}),
+    });
+  });
+
   app.post("/api/v1/admin/remote/wireguard/setup", requireAdmin, context.requireElevated, async (request, response) => {
     const input = body(request);
     const payload: Record<string, unknown> = pick(input, [["endpoint", 260], ["lan", 20], ["subnet", 20], ["route_lan", 15]]);
