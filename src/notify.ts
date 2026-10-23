@@ -91,7 +91,9 @@ const urgent = (message: AlertMessage): boolean => message.severity === "critica
  * One place the alarms go (the webhook, Telegram, ntfy, ...) with its own queue and its own worker: a place that is down - each message of it takes minutes of retries - delays
  * only itself, never the news for the other places, and an urgent message goes in front of the ones that are not.
  */
-type Lane = { id: string; action: string; queue: AlertMessage[]; running: boolean; attempt: (message: AlertMessage) => Promise<{ ok: boolean; detail: string; final?: boolean }> };
+/** What one place has come to since the server started: the messages it took, the ones that never arrived after the retries, the ones dropped from a full queue, and the last of each. */
+export type ChannelMetrics = { delivered: number; failed: number; dropped: number; queued: number; last_delivered_at?: string; last_failure_at?: string; last_failure?: string };
+type Lane = { id: string; action: string; queue: AlertMessage[]; running: boolean; counts: Omit<ChannelMetrics, "queued">; attempt: (message: AlertMessage) => Promise<{ ok: boolean; detail: string; final?: boolean }> };
 
 export class AlertNotifier {
   readonly #options: NotifierOptions;
@@ -117,8 +119,13 @@ export class AlertNotifier {
   get #language(): AlertLanguage { return this.#options.language ?? "es"; }
 
   /** Which places the alarms are sent to (nothing secret). */
-  status(): { webhook: boolean; mqtt: boolean; telegram: boolean; homeassistant: boolean; ntfy: boolean; language: AlertLanguage } {
-    return { webhook: Boolean(this.#options.webhookUrl), mqtt: Boolean(this.#publish), telegram: this.#channels.some(channel => channel.id === "telegram"), homeassistant: this.#channels.some(channel => channel.id === "homeassistant"), ntfy: this.#channels.some(channel => channel.id === "ntfy"), language: this.#language };
+  status(): { webhook: boolean; mqtt: boolean; telegram: boolean; homeassistant: boolean; ntfy: boolean; language: AlertLanguage; metrics: Record<string, ChannelMetrics> } {
+    return { webhook: Boolean(this.#options.webhookUrl), mqtt: Boolean(this.#publish), telegram: this.#channels.some(channel => channel.id === "telegram"), homeassistant: this.#channels.some(channel => channel.id === "homeassistant"), ntfy: this.#channels.some(channel => channel.id === "ntfy"), language: this.#language, metrics: this.metrics() };
+  }
+
+  /** The counters of every place that has been sent something, for the administration (nothing secret: no message, no address). */
+  metrics(): Record<string, ChannelMetrics> {
+    return Object.fromEntries([...this.#lanes.values()].map(lane => [lane.id, { ...lane.counts, queued: lane.queue.length }]));
   }
 
   /** Sends one test message to every place (or to the one asked for), once and at once, and says what each came to. */
@@ -158,7 +165,7 @@ export class AlertNotifier {
 
   #lane(id: string, action: string, attempt: Lane["attempt"]): Lane {
     let lane = this.#lanes.get(id);
-    if (!lane) { lane = { id, action, queue: [], running: false, attempt }; this.#lanes.set(id, lane); }
+    if (!lane) { lane = { id, action, queue: [], running: false, counts: { delivered: 0, failed: 0, dropped: 0 }, attempt }; this.#lanes.set(id, lane); }
     else lane.attempt = attempt;
     return lane;
   }
@@ -166,6 +173,7 @@ export class AlertNotifier {
   #enqueue(lane: Lane, message: AlertMessage): void {
     if (lane.queue.length >= MAX_QUEUE) {
       lane.queue.shift();
+      lane.counts.dropped += 1;
       this.#options.audit.record({ action: lane.action, outcome: "failed", detail: "queue full, oldest message dropped" });
     }
     if (urgent(message)) {
@@ -191,7 +199,7 @@ export class AlertNotifier {
     if (lane.running) return;
     lane.running = true;
     try {
-      for (let message = lane.queue.shift(); message && !this.#closed; message = lane.queue.shift()) await this.#withRetries(lane.action, message, () => lane.attempt(message as AlertMessage));
+      for (let message = lane.queue.shift(); message && !this.#closed; message = lane.queue.shift()) await this.#withRetries(lane.counts, lane.action, message, () => lane.attempt(message as AlertMessage));
     } finally { lane.running = false; }
   }
 
@@ -209,16 +217,17 @@ export class AlertNotifier {
   }
 
   /** Tries until it is delivered, a client error says it never will be, or the retries are spent; every end is in the audit trail. */
-  async #withRetries(action: string, message: AlertMessage, attemptOnce: () => Promise<{ ok: boolean; detail: string; final?: boolean }>): Promise<void> {
+  async #withRetries(counts: Lane["counts"], action: string, message: AlertMessage, attemptOnce: () => Promise<{ ok: boolean; detail: string; final?: boolean }>): Promise<void> {
     let detail = "no attempt";
     for (let attempt = 0; attempt <= this.#delays.length; attempt += 1) {
       if (this.#closed) return;
       const result = await attemptOnce();
-      if (result.ok) { this.#options.audit.record({ action, outcome: "allowed", target: message.event }); return; }
+      if (result.ok) { counts.delivered += 1; counts.last_delivered_at = new Date().toISOString(); this.#options.audit.record({ action, outcome: "allowed", target: message.event }); return; }
       detail = result.detail;
       if (result.final) break;
       if (attempt < this.#delays.length) await new Promise<void>(resolve => { const timer = setTimeout(() => { this.#timers.delete(timer); resolve(); }, this.#delays[attempt]); timer.unref(); this.#timers.add(timer); });
     }
+    counts.failed += 1; counts.last_failure_at = new Date().toISOString(); counts.last_failure = detail.slice(0, 80);
     this.#options.audit.record({ action, outcome: "failed", target: message.event, detail });
   }
 }

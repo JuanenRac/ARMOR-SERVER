@@ -95,7 +95,7 @@ Every answer under `/api/` carries `Cache-Control: no-store`, `Content-Security-
 
 Besides MQTT and the signed webhook, an alarm can be sent to a Telegram chat and to Home Assistant. They are set up in the settings file of the server (Studio >
 Configuration > Settings files > `armor.env`, then restart the server) and tried from Studio > Configuration > Notifications, which sends a test message and says what
-each place answered. The sentences are told in `ARMOR_ALERT_LANGUAGE` (`en`, `es`, `de`, `fr`, `it`, `ja`, `zh` or `pt`; `es` when it is not set).
+each place answered. The sentences are told in `ARMOR_ALERT_LANGUAGE` (`en`, `es`, `de`, `fr`, `it`, `ja`, `zh` or `pt`; `es` when it is not set). `GET /api/v1/admin/notifications` also gives `metrics`: for each place that has been sent something, the messages delivered, failed (after the retries), dropped from a full queue and waiting, and when and why the last one failed (no message and no address is in it).
 
 **Telegram.** 1. In Telegram, talk to `@BotFather`, send `/newbot` and keep the token it gives (`123456789:AA...`). 2. Open a chat with your new bot (or add it to a group) and
 send it any message. 3. Open `https://api.telegram.org/bot<TOKEN>/getUpdates` in a browser and read `"chat":{"id":...}` (a group's id is negative). 4. Put in `armor.env`:

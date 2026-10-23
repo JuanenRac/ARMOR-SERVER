@@ -224,6 +224,26 @@ test("a client error is not retried and a dead receiver never throws", async () 
   notifier.close();
 });
 
+test("every place the alarms go counts what it took, what never arrived and what was dropped, without keeping any message", async () => {
+  const target = await receiver([503, 200, 400]);
+  const notifier = new AlertNotifier({ webhookUrl: target.url, audit: { record: () => undefined }, retryDelaysMs: [5, 5] });
+  assert.deepEqual(notifier.status().metrics, {}, "nothing has been sent yet");
+  notifier.notify(raised, "armed");
+  await notifier.idle();
+  notifier.notify(raised, "armed");
+  await notifier.idle();
+  const webhook = notifier.status().metrics.webhook;
+  assert.equal(webhook.delivered, 1);
+  assert.equal(webhook.failed, 1);
+  assert.equal(webhook.dropped, 0);
+  assert.equal(webhook.queued, 0);
+  assert.equal(webhook.last_failure, "HTTP 400");
+  assert.match(String(webhook.last_delivered_at), /^\d{4}-\d\d-\d\dT/);
+  assert.doesNotMatch(JSON.stringify(notifier.status()), /north-1/);
+  notifier.close();
+  await target.stop();
+});
+
 test("history and rules are operator-only and validated over HTTP", async () => {
   const running = await startServer({ ARMOR_ALERT_DWELL_MS: "0" });
   try {
