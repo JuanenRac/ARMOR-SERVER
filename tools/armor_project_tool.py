@@ -199,6 +199,16 @@ def test_project(project: Path, manifest: dict[str, object]) -> None:
     elif name == "ARMOR-ANDROID-CONTROL":
         gradle = "gradlew.bat" if os.name == "nt" and (project / "gradlew.bat").is_file() else ("./gradlew" if (project / "gradlew").is_file() else check_tool("gradle", "Gradle or the project wrapper is required; open the project in Android Studio once to generate/restore it"))
         command(project, [gradle, "test", "assembleDebug"])
+    elif name == "ARMOR-IOS-CONTROL":
+        # no Mac needed: the structure, the eight language tables and the contract are checked in Python, and the tests of ArmorCore run wherever a Swift toolchain exists (macOS, Linux)
+        command(project, [sys.executable, "tools/ios_lint.py"])
+        swift = shutil.which("swift")
+        if swift:
+            command(project, [swift, "test"])
+        elif os.environ.get("ARMOR_REQUIRE_SWIFT"):
+            raise RuntimeError("Swift is required to run the tests of ArmorCore")
+        else:
+            print("SWIFT_TESTS=SKIPPED no Swift toolchain on this machine (they run in CI)")
     elif name == "ARMOR-HARDWARE":
         unit_tests(project)
         openscad = check_tool("openscad", "OpenSCAD is required to validate the parametric enclosure")
@@ -427,7 +437,7 @@ def run_project(project: Path, manifest: dict[str, object]) -> None:
         command(project, [NPM, "run", "dev"], environment)
     elif name == "ARMOR-DEVOPS":
         command(project, ["docker", "compose", "up", "--build"])
-    elif name in {"ARMOR-NODE-RADAR", "ARMOR-NODE-SOLAR", "ARMOR-NODE-ELECTRICAL", "ARMOR-NODE-ALARM", "ARMOR-NODE-HMI", "ARMOR-ANDROID-CONTROL", "ARMOR-HARDWARE", "ARMOR-DOCS", "ARMOR-UPDATER"}:
+    elif name in {"ARMOR-NODE-RADAR", "ARMOR-NODE-SOLAR", "ARMOR-NODE-ELECTRICAL", "ARMOR-NODE-ALARM", "ARMOR-NODE-HMI", "ARMOR-ANDROID-CONTROL", "ARMOR-IOS-CONTROL", "ARMOR-HARDWARE", "ARMOR-DOCS", "ARMOR-UPDATER"}:
         print(f"{name} has no safe generic runtime command. Use build-test to validate it, then follow its project documentation for hardware or IDE deployment.")
     else:
         raise RuntimeError(f"no run rule registered for {name}")
