@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { isVoiceLanguage, spokenResult, VOICE_LANGUAGES } from "../src/voice.js";
 import { parseTelemetry } from "../src/contracts.js";
-import { startServer, studioCookie, type Running } from "./helpers.js";
+import { SECRETS, startServer, studioCookie, type Running } from "./helpers.js";
 
 const TOKEN = "v".repeat(32);
 const json = { "Content-Type": "application/json" };
@@ -207,4 +207,41 @@ test("every order to the gateway carries the silence policy the server keeps, an
     await call(running, cookie, "POST", "/api/v1/voice/command", { text: "silence", language: "en", policy: { silence_confirmation: "off" } });
     assert.deepEqual(gateway.seen.at(-1)?.policy, { silence_confirmation: "double_turn" });
   } finally { await running.stop(); await gateway.close(); }
+});
+
+test("a command the voice gateway carries for a wall panel is that panel's: its confirmation is its own and the audit trail says which panel", async () => {
+  const gateway = await fakeGateway();
+  const running = await startServer({ ARMOR_VOICE_URL: gateway.url, ARMOR_VOICE_TOKEN: TOKEN });
+  try {
+    const asGateway = (panel: string | undefined, body: unknown) => fetch(`${running.base}/api/v1/voice/command`, { method: "POST", headers: { ...json, Authorization: `Bearer ${SECRETS.ARMOR_OPERATOR_TOKEN}`, ...(panel ? { "X-Armor-Panel": panel } : {}) }, body: JSON.stringify(body) });
+    assert.equal((await asGateway("wall-1", { text: "silence" })).status, 200);
+    assert.equal((await asGateway("Bad Panel!", { text: "silence" })).status, 200);
+    assert.equal((await asGateway(undefined, { text: "silence" })).status, 200);
+    assert.deepEqual(gateway.seen.map(item => (item as { subject?: string }).subject), ["panel:wall-1", "operator", "operator"], "a name that is not a node id is not believed");
+    // a person with a session of their own stays themselves, whatever the header says
+    const cookie = await studioCookie(running.base);
+    const person = await fetch(`${running.base}/api/v1/voice/command`, { method: "POST", headers: { ...json, Cookie: cookie, "X-Armor-Panel": "wall-1" }, body: JSON.stringify({ text: "silence" }) });
+    assert.equal(person.status, 200);
+    assert.notEqual((gateway.seen.at(-1) as { subject?: string }).subject, "panel:wall-1");
+    const audit = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8");
+    assert.match(audit, /operator via wall-1/);
+    assert.doesNotMatch(audit, /Bad Panel/);
+  } finally { await running.stop(); await gateway.close(); }
+});
+
+test("the panel that spoke is told to the voice gateway with its turn, when it gave a node id", async () => {
+  const seen: string[] = [];
+  const gateway = http.createServer((request, response) => {
+    request.on("data", () => undefined);
+    request.on("end", () => { seen.push(String(request.headers["x-armor-panel"])); response.writeHead(200, json); response.end(JSON.stringify({ heard: "status", reply: "ok" })); });
+  });
+  await new Promise<void>(resolve => gateway.listen(0, "127.0.0.1", resolve));
+  const running = await startServer({ ARMOR_VOICE_URL: `http://127.0.0.1:${(gateway.address() as { port: number }).port}`, ARMOR_VOICE_TOKEN: TOKEN });
+  try {
+    const send = (panel?: string) => fetch(`${running.base}/api/v1/voice/turn`, { method: "POST", headers: { "Content-Type": "audio/L16;rate=16000", "X-Armor-Voice-Token": TOKEN, ...(panel ? { "X-Armor-Panel": panel } : {}) }, body: new Uint8Array(3200) });
+    assert.equal((await send("wall-1")).status, 200);
+    assert.equal((await send("Wall One")).status, 200);
+    assert.equal((await send()).status, 200);
+    assert.deepEqual(seen, ["wall-1", "undefined", "undefined"]);
+  } finally { await running.stop(); await new Promise<void>(resolve => gateway.close(() => resolve())); }
 });

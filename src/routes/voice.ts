@@ -14,10 +14,15 @@ import { FRAMING_OVERHEAD, isMultipartForm, MAX_META_BYTES, parseVoiceTurnReques
 import crypto from "node:crypto";
 
 const MAX_TEXT = 200;
+/** The wall panel that spoke, as it says it in `X-Armor-Panel` (its node id): the voice gateway hands it back on the command, so that what the panel asked is written down as that panel's and a pending question is its own. */
+const PANEL = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const panelOf = (value: unknown): string | undefined => (typeof value === "string" && PANEL.test(value) ? value : undefined);
 
 export function registerVoiceRoutes(app: Express, context: AppContext): void {
   const { config, store, alarms, audit, requireOperator, studioUser } = context;
-  const actor = (request: Request): string => studioUser(request)?.username ?? "operator";
+  /** The panel behind a command that came with the operator token of the voice gateway (a person with a session of their own is never replaced by the panel). */
+  const panelBehind = (request: Request): string | undefined => (studioUser(request) ? undefined : panelOf(request.headers["x-armor-panel"]));
+  const actor = (request: Request): string => studioUser(request)?.username ?? (panelBehind(request) ? `operator via ${panelBehind(request)}` : "operator");
   const limit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
 
   /** Whether written and spoken commands are available on this install (the phone asks before it shows the microphone). */
@@ -74,12 +79,12 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
     try {
       const reply = await fetch(`${config_voice.url.replace(/\/$/, "")}/v1/turn`, {
         method: "POST", body: new Uint8Array(audio), signal: AbortSignal.timeout(30_000),
-        headers: { "Content-Type": "audio/L16;rate=16000", "X-Armor-Voice-Token": config_voice.token, "X-Armor-Language": language, "X-Armor-Client": request.ip ?? "panel",
+        headers: { "Content-Type": "audio/L16;rate=16000", "X-Armor-Voice-Token": config_voice.token, "X-Armor-Language": language, "X-Armor-Client": request.ip ?? "panel", ...(panelOf(request.headers["x-armor-panel"]) ? { "X-Armor-Panel": panelOf(request.headers["x-armor-panel"])! } : {}),
           // The policy of this server for the voice service (JSON): what it asks before silencing the alarm (setting voice.silence_confirmation: off, pin or double_turn). A service that does not know it treats it as off.
           "X-Armor-Policy": JSON.stringify({ silence_confirmation: context.securitySettings.get("voice.silence_confirmation") }) },
       });
       const text = await reply.text();
-      audit.record({ action: "voice.turn", outcome: reply.ok ? "allowed" : "denied", detail: `${reply.status}${multipart ? " multipart" : ""}` });
+      audit.record({ action: "voice.turn", outcome: reply.ok ? "allowed" : "denied", detail: `${reply.status}${multipart ? " multipart" : ""}${panelOf(request.headers["x-armor-panel"]) ? ` ${panelOf(request.headers["x-armor-panel"])}` : ""}` });
       if (multipart && reply.ok && replyAudio !== "base64") {
         const shaped = shapeReply(text, replyAudio, context.securitySettings.get("voice.reply_audio_max_bytes"));
         if (!shaped) return response.status(502).json({ error: "voice_bad_reply" });
@@ -103,7 +108,7 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
 
     try {
       // The confirmation token the gateway issues is bound to the person who asked: another session cannot use it.
-      const subject = (studioUser(request)?.id ?? "operator").slice(0, 64);
+      const subject = (studioUser(request)?.id ?? (panelBehind(request) ? `panel:${panelBehind(request)}` : "operator")).slice(0, 64);
       const answer = await askVoice(config.voice, { text, language, subject, policy: { silence_confirmation: context.securitySettings.get("voice.silence_confirmation") }, ...(confirmation ? { confirmation } : {}) });
       let speech = answer.speech ?? "";
       let result: Record<string, unknown> | undefined;
