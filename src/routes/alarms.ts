@@ -66,7 +66,7 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
     audit.record({ action: "alarm.acknowledge", outcome: "allowed", actor: actor(request), target: alarm.id });
     return response.json(alarm);
   });
-  // Clearing the record is the operator's too (it used to need an administrator and, when the role was missing, silently did nothing): it takes away every alarm
+  // Clearing the record is the operator's too: it takes away every alarm
   // somebody has acknowledged - ended or not, since what is being lived with is not news - and leaves the ones nobody has seen.
   app.delete("/api/v1/alarms", requireOperator, (request, response) => {
     const deleted = alarms.clearAcknowledged(sees(request));

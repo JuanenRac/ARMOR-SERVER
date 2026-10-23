@@ -144,7 +144,7 @@ export function loadDotEnv(file: string, env: Env = process.env): void {
     const key = line.slice(0, separator).trim();
     if (env[key]) continue;
     let value = line.slice(separator + 1).trim();
-    // A value in quotes (ARMOR_STUDIO_PASSWORD="abc") is the text inside them: the quotes used to be part of the password.
+    // A value in quotes (ARMOR_STUDIO_PASSWORD="abc") is the text inside them, quotes excluded.
     if (value.length >= 2 && (value[0] === '"' || value[0] === "'") && value[value.length - 1] === value[0]) value = value.slice(1, -1);
     env[key] = value;
   }

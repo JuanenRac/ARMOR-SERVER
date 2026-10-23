@@ -1,5 +1,5 @@
 /**
- * The levels at which the batteries and inverters raise alarms, kept by the server so that an operator can change them from Studio (they used to be fixed in the code): the state of charge that is
+ * The levels at which the batteries and inverters raise alarms, kept by the server so that an operator can change them from Studio: the state of charge that is
  * low and the one that is enough again, the spread of the cells of a battery, its temperature, how worn it is and how hot an inverter may get.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */

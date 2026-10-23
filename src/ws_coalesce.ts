@@ -1,5 +1,5 @@
 /**
- * Many changes in a burst (a dozen nodes reporting in the same second) used to send the whole state to every console once per change. The console only needs the newest state: this
+ * Many changes in a burst (a dozen nodes reporting in the same second) would send the whole state to every console once per change, and the console only needs the newest state: this
  * keeps the latest one and sends it at most once per window, so a burst costs one message, and a quiet moment still delivers within one window.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
