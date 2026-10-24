@@ -14,7 +14,9 @@ silently fall behind a structural change to the English original."""
 
 from __future__ import annotations
 
+import fnmatch
 import re
+import subprocess
 from pathlib import Path
 from typing import Sequence
 
@@ -80,4 +82,73 @@ def check_readme_section_parity(
             problems.append(
                 f"{language_file} links do not match {language_files[0]}: missing {missing}, extra {extra}"
             )
+    return problems
+
+
+# The first level of the repository is described by the file tree of the README, so an entry that is
+# versioned but missing from it is a README that went stale. The entries that every repository has and
+# the files of tooling and configuration that need no sentence of their own are not asked for.
+_TREE_EXEMPT = re.compile(
+    r"^(README(_[a-z]{3})?\.md|LICENSE(\.md)?|CHANGELOG\.md|CODE_OF_CONDUCT\.md|CONTRIBUTING\.md|SECURITY\.md|SUPPORT\.md"
+    r"|THIRD_PARTY_NOTICES\.md|armor\.project\.json|images|\..*|build.*|run.*|dev.*|bump.*|.*project\.json"
+    r"|pyproject\.toml|.*\.toml|.*\.lock|package(-lock)?\.json|Dockerfile.*|docker-compose.*|eslint.*|tsconfig.*|vite.*"
+    r"|requirements.*|gradle.*|gradlew.*|settings\.gradle.*|local\.properties)$"
+)
+_TREE_FENCE = re.compile(r"```[a-z]*\n(.*?)```", re.S)
+_TREE_LINE = re.compile(r"^[├└]── ([^\s,]+(?:, [^\s,]+)*)")
+
+
+def readme_tree_entries(path: Path) -> set[str] | None:
+    """The first-level names that the file tree of `path` lists (patterns such as `sdkconfig.board.*` included), or None when there is no tree."""
+    text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+    for fence in _TREE_FENCE.finditer(text):
+        body = fence.group(1)
+        if not re.search(r"^[├└]── ", body, re.M):
+            continue
+        names: set[str] = set()
+        for line in body.split("\n"):
+            found = _TREE_LINE.match(line)
+            if found:
+                names.update(part.rstrip("/").split("/")[0] for part in found.group(1).split(", "))
+        return names
+    return None
+
+
+def tracked_first_level(root: Path) -> dict[str, bool] | None:
+    """The first-level entries of the repository that Git versions (name -> is a folder), or None when Git cannot tell."""
+    try:
+        result = subprocess.run(["git", "ls-files", "-z"], cwd=root, capture_output=True, check=True)
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    entries: dict[str, bool] = {}
+    for item in result.stdout.decode("utf-8", "replace").split("\0"):
+        if item:
+            parts = item.split("/")
+            entries[parts[0]] = entries.get(parts[0], False) or len(parts) > 1
+    return entries or None
+
+
+def check_readme_tree(
+    root: Path,
+    language_files: Sequence[str] = DEFAULT_LANGUAGE_FILES,
+    tracked: dict[str, bool] | None = None,
+) -> list[str]:
+    """Reports, for every README that has a file tree, the versioned first-level entries that the tree leaves out."""
+    entries = tracked if tracked is not None else tracked_first_level(root)
+    if entries is None:
+        return []
+    problems: list[str] = []
+    for language_file in language_files:
+        path = root / language_file
+        if not path.is_file():
+            continue
+        listed = readme_tree_entries(path)
+        if listed is None:
+            continue
+        missing = sorted(
+            name for name in entries
+            if not _TREE_EXEMPT.match(name) and not any(fnmatch.fnmatchcase(name, pattern) for pattern in listed)
+        )
+        if missing:
+            problems.append(f"{language_file} file tree does not list: {', '.join(missing)}")
     return problems

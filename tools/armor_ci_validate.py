@@ -12,8 +12,9 @@
 """Dependency-free CI baseline for one A.R.M.O.R. repository: the manifest
 is well-formed and matches this checkout, the version is not stale anywhere
 it is restated (CHANGELOG.md's own heading, README prose), the seven
-translated READMEs have the same structure as the English original, and
-every local Markdown link resolves. Never runs a build - that is
+translated READMEs have the same structure as the English original, the file
+tree of each README lists every versioned first-level entry, and every local
+Markdown link resolves. Never runs a build - that is
 `armor_project_tool.py build-test`'s job, run as a separate CI step so a
 manifest problem is reported without waiting on a slow build first.
 """
@@ -26,7 +27,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _armor_readme_parity import check_readme_section_parity  # noqa: E402
+from _armor_readme_parity import check_readme_section_parity, check_readme_tree  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = ROOT / "armor.project.json"
@@ -227,6 +228,8 @@ def main() -> int:
 
     for readme_problem in check_readme_section_parity(ROOT):
         fail(readme_problem)
+    for tree_problem in check_readme_tree(ROOT):
+        fail(tree_problem)
 
     print(f"CI_VALIDATION=PASS project={manifest['name']} version={manifest['version']}")
     return 0
