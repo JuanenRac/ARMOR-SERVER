@@ -6,7 +6,7 @@
  */
 import { onlyKnown, readNodeId, readTimestamp, record, integer } from "./contracts.js";
 import { parseArmProfile, type ArmProfile } from "./arm_profiles.js";
-import { sweepStale } from "./staleness.js";
+import { refresh, sweepStale } from "./staleness.js";
 
 export const PHASES = ["disarmed", "exit_delay", "armed", "entry_delay", "alarm"] as const;
 export type Phase = (typeof PHASES)[number];
@@ -171,8 +171,9 @@ export class AlarmStore {
     const entry = this.#entries.get(message.node_id);
     if (!entry && this.#entries.size >= this.#options.maxNodes) throw new Error("too many alarm nodes");
     const previous = entry?.state;
-    const wasStale = entry?.stale ?? false;
-    this.#entries.set(message.node_id, { state: message, receivedAtMs: this.#options.now(), stale: false });
+    let wasStale = false;
+    if (entry) { entry.state = message; wasStale = refresh(entry, this.#options.now()); }
+    else this.#entries.set(message.node_id, { state: message, receivedAtMs: this.#options.now(), stale: false });
     if (wasStale) this.#options.onStale?.(message.node_id, false);
     this.#options.onMessage?.(message, previous);
   }
