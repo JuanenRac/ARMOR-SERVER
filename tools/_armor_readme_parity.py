@@ -99,19 +99,23 @@ _TREE_LINE = re.compile(r"^[├└]── ([^\s,]+(?:, [^\s,]+)*)")
 
 
 def readme_tree_entries(path: Path) -> set[str] | None:
-    """The first-level names that the file tree of `path` lists (patterns such as `sdkconfig.board.*` included), or None when there is no tree."""
+    """The first-level names that the file tree of `path` lists (patterns such as `sdkconfig.board.*` included), or None when there is no tree.
+    The tree is the code block with the most tree rows."""
     text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+    best = ""
+    best_rows = 0
     for fence in _TREE_FENCE.finditer(text):
-        body = fence.group(1)
-        if not re.search(r"^[├└]── ", body, re.M):
-            continue
-        names: set[str] = set()
-        for line in body.split("\n"):
-            found = _TREE_LINE.match(line)
-            if found:
-                names.update(part.rstrip("/").split("/")[0] for part in found.group(1).split(", "))
-        return names
-    return None
+        rows = len(re.findall(r"^[├└]── ", fence.group(1), re.M))
+        if rows > best_rows:
+            best, best_rows = fence.group(1), rows
+    if not best_rows:
+        return None
+    names: set[str] = set()
+    for line in best.split("\n"):
+        found = _TREE_LINE.match(line)
+        if found:
+            names.update(part.rstrip("/").split("/")[0] for part in found.group(1).split(", "))
+    return names
 
 
 def tracked_first_level(root: Path) -> dict[str, bool] | None:
