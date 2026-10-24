@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## [Unreleased]
+## [0.8.0.5] - The pairing text for a phone and the push tells which event it is
 
 - The alarm panels keep what they last said the way the electrical, network and solar nodes do: a message from a panel that had gone silent brings it back through the same rule of staleness.
 - **The network overview says which version of the contract each node speaks** (`contract`, and `outdated` when it is older than the server); the stores that keep what a node last said share one rule for a message that arrives (`refresh` in `staleness.ts`), and the workflow that tries Studio and the server together (nginx of the image, this server, a browser) runs here too.
