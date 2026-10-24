@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+- **The still picture of a camera is served by the server:** `POST /api/v1/cameras/{id}/preview-ticket` (an operator, or a viewer) hands out a five-minute ticket and `GET /api/v1/cameras/{id}/preview` returns the picture the camera gives at its snapshot address, fetched with the camera's own login (Basic or Digest), on the camera's own host only, never following a redirect, JPEG or PNG up to 3 MB. The address stored for a camera carries no login, so a console could not show it itself.
+
 ## [0.8.0.5] - The pairing text for a phone and the push tells which event it is
 
 - The alarm panels keep what they last said the way the electrical, network and solar nodes do: a message from a panel that had gone silent brings it back through the same rule of staleness.

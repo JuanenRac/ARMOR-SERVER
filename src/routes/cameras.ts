@@ -12,6 +12,7 @@ import type { AppContext } from "../context.js";
 import { discoveryPrefixes, scanNetworks } from "../cameras/discovery.js";
 import { clientMessage } from "../cameras/errors.js";
 import { parseCameraInput, type CameraConnection } from "../cameras/model.js";
+import { fetchCameraPicture } from "../cameras/preview.js";
 import { discoverRtspPaths } from "../cameras/rtsp.js";
 import { isLiveQuality, type LiveQuality } from "../media/relay.js";
 
@@ -31,6 +32,8 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
   const ptzLimit = rateLimit({ windowMs: 60_000, limit: 240, standardHeaders: "draft-8", legacyHeaders: false });
   const lastPtzAudit = new Map<string, number>();
   const sensitiveLimit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
+  // A tile that shows a still picture asks for it every few seconds.
+  const previewLimit = rateLimit({ windowMs: 60_000, limit: 240, standardHeaders: "draft-8", legacyHeaders: false });
 
   // The parts of the picture that the observation service must not look at (a tree, a road, a screen): rectangles in fractions of the picture, set by an administrator.
   app.get("/api/v1/cameras/:id/ignore-zones", requireOperator, (request, response) => {
@@ -171,6 +174,32 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
       return undefined;
     } catch (error) {
       return response.status(503).json({ error: clientMessage(error, "live-video relay unavailable") });
+    }
+  });
+
+  // The still picture of a camera that has a snapshot address, fetched by this server with the camera's own login. The console cannot do it itself (the address carries no login and a
+  // page cannot send one), so it asks for a short-lived ticket, as for a stream, and puts the picture address in an <img>.
+  app.post("/api/v1/cameras/:id/preview-ticket", requireOperator, (request, response) => {
+    const camera = withCamera(request, response);
+    if (!camera) return undefined;
+    if (!camera.snapshotUrl) return response.status(422).json({ error: "this camera has no snapshot address" });
+    const grant = tickets.issue(camera.id, "normal");
+    return response.status(201).json({ path: `/api/v1/cameras/${encodeURIComponent(camera.id)}/preview?ticket=${encodeURIComponent(grant.ticket)}`, expiresAt: grant.expiresAt });
+  });
+
+  app.get("/api/v1/cameras/:id/preview", previewLimit, async (request, response) => {
+    const camera = vault.get(param(request, "id"));
+    if (!camera) return response.sendStatus(404);
+    if (!operatorAuthorized(request) && !tickets.valid(request.query.ticket, camera.id)) {
+      audit.record({ actor: who(request), action: "camera.preview", outcome: "denied", target: camera.id });
+      return response.status(401).json({ error: "operator authorization or a ticket is required" });
+    }
+    try {
+      const picture = await fetchCameraPicture(camera);
+      response.status(200).set({ "Cache-Control": "no-store", "Content-Type": picture.contentType, "X-Content-Type-Options": "nosniff" }).send(picture.body);
+      return undefined;
+    } catch (error) {
+      return response.status(502).json({ error: clientMessage(error, "the camera picture is unavailable") });
     }
   });
 

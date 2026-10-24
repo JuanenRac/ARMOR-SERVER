@@ -428,7 +428,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   // A viewer (the family, a guard) only looks: every read, the stream tickets that let them watch a camera, and nothing that changes, deletes, switches, arms or configures. What holds secrets or
   // settings (the administration routes, the users, the console, the node tokens) is closed to them even to read.
   const viewerCloses = /^\/api\/v1\/(admin|users|system\/ingest|preferences|installation)(\/|$)/;
-  const viewerMay = (method: string, path: string): boolean => (method === "GET" || method === "HEAD" ? !viewerCloses.test(path) : (method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/stream-ticket$/.test(path)) || ((method === "POST" || method === "DELETE") && (path === "/api/v1/push/register" || path === "/api/v1/push/unregister")));
+  const viewerMay = (method: string, path: string): boolean => (method === "GET" || method === "HEAD" ? !viewerCloses.test(path) : (method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/(stream|preview)-ticket$/.test(path)) || ((method === "POST" || method === "DELETE") && (path === "/api/v1/push/register" || path === "/api/v1/push/unregister")));
   const requireOperator: RequestHandler = (request, response, next) => {
     // Whoever is let in (or turned away as a viewer or a wall panel) is a client the history knows about; a request that is not signed in is not, so strangers cannot fill the list.
     if (studioUser(request) || hasBearer(request, config.operatorToken) || operatorSessions.has(request)) { try { connections.seen(sightingOf(request, studioUser(request)?.username)); } catch { /* the list of clients never stops a request */ } }

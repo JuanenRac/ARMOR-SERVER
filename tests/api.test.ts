@@ -48,7 +48,7 @@ test("every operator route refuses an anonymous caller", async () => {
   const routes: [string, string][] = [
     ["GET", "/api/v1/cameras"], ["POST", "/api/v1/cameras/configure"], ["DELETE", "/api/v1/cameras/cam-gate"], ["POST", "/api/v1/cameras/discover"],
     ["POST", "/api/v1/cameras/cam-gate/ptz"], ["POST", "/api/v1/cameras/cam-gate/discover-rtsp"], ["POST", "/api/v1/cameras/cam-gate/stream-ticket"],
-    ["POST", "/api/v1/cameras/cam-gate/snapshot"], ["POST", "/api/v1/cameras/cam-gate/recordings/start"], ["POST", "/api/v1/cameras/cam-gate/recordings/stop"],
+    ["POST", "/api/v1/cameras/cam-gate/preview-ticket"], ["POST", "/api/v1/cameras/cam-gate/snapshot"], ["POST", "/api/v1/cameras/cam-gate/recordings/start"], ["POST", "/api/v1/cameras/cam-gate/recordings/stop"],
     ["GET", "/api/v1/media"], ["GET", "/api/v1/media/cam-gate/snapshots/a.jpg"], ["GET", "/api/v1/media/cam-gate/snapshots/a.jpg/sha256"],
     ["PUT", "/api/v1/media/cam-gate/snapshots/a.jpg/protected"], ["DELETE", "/api/v1/media/cam-gate/snapshots/a.jpg"], ["DELETE", "/api/v1/media"],
   ];
@@ -106,6 +106,24 @@ test("camera lifecycle: configure, list without the password, view without the u
   assert.equal((await post("/api/v1/cameras/configure", { ...camera, id: "x" }, { cookie })).status, 400);
   assert.equal((await call("/api/v1/cameras/cam-gate", { method: "DELETE", cookie })).status, 204);
   assert.equal((await call("/api/v1/cameras/cam-gate", { method: "DELETE", cookie })).status, 404);
+});
+
+test("the still picture of a camera needs an operator or a ticket issued for that camera, and the server fetches it with the camera's login", async () => {
+  await post("/api/v1/cameras/configure", camera, { cookie });
+  assert.equal((await call("/api/v1/cameras/cam-gate/preview")).status, 401);
+  assert.equal((await call("/api/v1/cameras/cam-gate/preview?ticket=forged")).status, 401);
+  assert.equal((await call("/api/v1/cameras/cam-gate/preview-ticket", { method: "POST" })).status, 401);
+  assert.equal((await call("/api/v1/cameras/none/preview", { cookie })).status, 404);
+  // A camera with no snapshot address has no still picture to ask for.
+  assert.equal((await post("/api/v1/cameras/cam-gate/preview-ticket", {}, { cookie })).status, 422);
+  // One whose address is on its own host but answers nothing: authorised by ticket, and told plainly that the camera is silent (no address, no login in the answer).
+  await post("/api/v1/cameras/configure", { ...camera, id: "cam-still", host: "127.0.0.1", snapshotUrl: "http://127.0.0.1:1/snap.jpg", username: "", password: "" }, { cookie });
+  const grant = await (await post("/api/v1/cameras/cam-still/preview-ticket", {}, { cookie })).json() as { path: string };
+  assert.match(grant.path, /^\/api\/v1\/cameras\/cam-still\/preview\?ticket=/);
+  const answered = await call(grant.path);
+  assert.equal(answered.status, 502);
+  assert.doesNotMatch(JSON.stringify(await answered.json()), /127\.0\.0\.1|hunter2/);
+  assert.equal((await call(grant.path.replace("cam-still", "cam-gate"))).status, 401, "a ticket belongs to its own camera");
 });
 
 test("a live stream needs an operator or a ticket issued for that camera", async () => {

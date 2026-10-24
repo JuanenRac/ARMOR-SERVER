@@ -126,7 +126,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   app.use((request, response, next) => {
     if (config.remotePolicy === "full" || context.studioSessions.originOf(request) !== "remote") return next();
     const reads = request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS";
-    const own = /^\/api\/v1\/(studio\/(session|sessions|elevate|totp)|push\/(un)?register)/.test(request.path) || (request.method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/stream-ticket$/.test(request.path));
+    const own = /^\/api\/v1\/(studio\/(session|sessions|elevate|totp)|push\/(un)?register)/.test(request.path) || (request.method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/(stream|preview)-ticket$/.test(request.path));
     const admin = /^\/api\/v1\/(admin|users|installation|system\/ingest|preferences|solar\/battery-ops|diagnostics\/tokens|nodes\/control|nodes\/[^/]+\/(panel|control|diagnostics))(\/|$)/.test(request.path);
     if (reads && !(admin && config.remotePolicy === "view")) return next();
     if (own || (config.remotePolicy === "operate" && !admin)) return next();

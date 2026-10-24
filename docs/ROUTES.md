@@ -88,6 +88,8 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/cameras/:id/ignore-zones` | operator | `routes/cameras.ts` |
 | PUT | `/api/v1/cameras/:id/ignore-zones` | administrator | `routes/cameras.ts` |
 | GET | `/api/v1/cameras/:id/mjpeg` | none here | `routes/cameras.ts` |
+| GET | `/api/v1/cameras/:id/preview` | none here | `routes/cameras.ts` |
+| POST | `/api/v1/cameras/:id/preview-ticket` | operator | `routes/cameras.ts` |
 | POST | `/api/v1/cameras/:id/ptz` | operator | `routes/cameras.ts` |
 | POST | `/api/v1/cameras/:id/recordings/start` | operator | `routes/cameras.ts` |
 | POST | `/api/v1/cameras/:id/recordings/stop` | operator | `routes/cameras.ts` |
