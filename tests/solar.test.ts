@@ -213,6 +213,17 @@ test("an operator declares solar equipment, it waits for its first reading, an e
     const after = await (await call("GET", "/api/v1/solar")).json() as { devices: Array<{ example: boolean; registered?: { name: string }; reading: { stack: Array<{ cells_v: number[] }>; capacity_ah: number; full_capacity_ah: number } }>; waiting: unknown[] };
     assert.equal(after.waiting.length, 0);
     assert.deepEqual([after.devices[0].example, after.devices[0].registered?.name, after.devices[0].reading.stack.length, after.devices[0].reading.stack[0].cells_v.length, after.devices[0].reading.full_capacity_ah], [true, "Baterías del garaje", 2, 15, 148]);
+    // the example can be taken away to wait for the real readings: the device goes back to the waiting list, still declared; a second try finds nothing
+    assert.equal((await call("DELETE", "/api/v1/solar/devices/solar-1/nobody/example")).status, 404);
+    assert.equal((await call("DELETE", "/api/v1/solar/devices/solar-1/baterias-del-garaje/example")).status, 204);
+    assert.equal((await call("DELETE", "/api/v1/solar/devices/solar-1/baterias-del-garaje/example")).status, 404);
+    const waitingAgain = await (await call("GET", "/api/v1/solar")).json() as { devices: unknown[]; waiting: unknown[] };
+    assert.deepEqual([waitingAgain.devices.length, waitingAgain.waiting.length], [0, 1]);
+    // every example at once, and none that reports for real
+    assert.equal((await call("POST", "/api/v1/solar/devices/solar-1/baterias-del-garaje/example")).status, 202);
+    assert.deepEqual(await (await call("DELETE", "/api/v1/solar/examples")).json(), { removed: 1 });
+    assert.deepEqual(await (await call("DELETE", "/api/v1/solar/examples")).json(), { removed: 0 });
+    assert.equal((await call("POST", "/api/v1/solar/devices/solar-1/baterias-del-garaje/example")).status, 202);
     // the first real reading replaces the example
     const real = await fetch(`${running.base}/api/v1/solar`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SECRETS.ARMOR_INGEST_TOKEN}` }, body: JSON.stringify(battery({ device: "baterias-del-garaje" })) });
     assert.equal(real.status, 202);

@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The example readings of the solar equipment can be taken away:** `DELETE /api/v1/solar/devices/{node}/{device}/example` removes the example reading of one declared device and `DELETE /api/v1/solar/examples` removes every one of them, so that the devices wait for their first real reading. A device that reports for real is never touched. Both are for an operator and are written in the audit.
 - **The panel of a node through the server shows its page:** the node keeps its page, script and style compressed and says so (`Content-Encoding: gzip`), and the server did not pass that header on, so the browser showed the compressed bytes as text and a blank page. The header is passed on now (the test of the panel through the server has a compressed script).
 - **The still picture of a camera is served by the server:** `POST /api/v1/cameras/{id}/preview-ticket` (an operator, or a viewer) hands out a five-minute ticket and `GET /api/v1/cameras/{id}/preview` returns the picture the camera gives at its snapshot address, fetched with the camera's own login (Basic or Digest), on the camera's own host only, never following a redirect, JPEG or PNG up to 3 MB. The address stored for a camera carries no login, so a console could not show it itself.
 

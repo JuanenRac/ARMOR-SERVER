@@ -86,6 +86,19 @@ export function registerSolarRoutes(app: Express, context: AppContext): void {
     } catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "could not make the example" }); }
   });
 
+  // The example readings go away when the person wants the real ones: one device's, or every one of them. A device that reports for real is never touched.
+  app.delete("/api/v1/solar/devices/:node/:device/example", requireOperator, (request, response) => {
+    const node = String(request.params.node), device = String(request.params.device);
+    if (solar.removeExamples(node, device) === 0) return response.status(404).json({ error: "there is no example reading of this device" });
+    audit.record({ action: "solar.example_remove", outcome: "allowed", actor: actor(request), target: `${node}/${device}` });
+    return response.sendStatus(204);
+  });
+  app.delete("/api/v1/solar/examples", requireOperator, (request, response) => {
+    const removed = solar.removeExamples();
+    audit.record({ action: "solar.example_remove", outcome: "allowed", actor: actor(request), detail: `${removed} removed` });
+    return response.json({ removed });
+  });
+
   // What the panels made, the load used and the battery took and gave, day by day (the last `days`, at most a year), in kilowatt-hours.
   app.get("/api/v1/solar/energy", requireOperator, (request, response) => {
     const asked = Number(request.query.days ?? 30);

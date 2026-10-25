@@ -335,6 +335,20 @@ export class SolarStore {
     this.#options.onMessage?.(message);
   }
 
+  /**
+   * Take away the example readings (the made-up ones that try the menus), of one device or of all of them, so that the device waits for its first real reading. A device that reports for real is never touched.
+   * Returns how many went.
+   */
+  removeExamples(node?: string, device?: string): number {
+    let removed = 0;
+    for (const entry of [...this.#entries.values()]) {
+      if (!entry.example) continue;
+      if (node !== undefined && (entry.reading.node_id !== node || entry.reading.device !== device)) continue;
+      if (this.remove(entry.reading.node_id, entry.reading.device)) removed += 1;
+    }
+    return removed;
+  }
+
   /** Forget a device (its reading and its history). */
   remove(node: string, device: string): boolean { this.#cells.forget(`${node}/${device}`); this.#events.forget(`${node}/${device}`); return this.#entries.delete(`${node}/${device}`); }
 
