@@ -207,8 +207,10 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/solar/battery-ops/images` | administrator | `routes/battery_ops.ts` |
 | POST | `/api/v1/solar/devices` | operator | `routes/solar.ts` |
 | DELETE | `/api/v1/solar/devices/:node/:device` | operator | `routes/solar.ts` |
+| DELETE | `/api/v1/solar/devices/:node/:device/example` | operator | `routes/solar.ts` |
 | POST | `/api/v1/solar/devices/:node/:device/example` | operator | `routes/solar.ts` |
 | GET | `/api/v1/solar/energy` | operator | `routes/solar.ts` |
+| DELETE | `/api/v1/solar/examples` | operator | `routes/solar.ts` |
 | GET | `/api/v1/solar/history` | operator | `routes/solar.ts` |
 | GET | `/api/v1/status` | operator | `routes/ingest.ts` |
 | POST | `/api/v1/studio/elevate` | signed-in user | `routes/sessions.ts` |
