@@ -267,7 +267,8 @@ export function registerNodePanelRoutes(app: Express, context: AppContext): void
       }
       const status = reply.statusCode ?? 502;
       const location = reply.headers.location;
-      for (const name of ["content-type", "content-length", "content-disposition", "etag", "last-modified"]) { const value = reply.headers[name]; if (typeof value === "string") response.setHeader(name, value); }
+      // content-encoding too: a node keeps its page, script and style compressed (gzip) and says so; without it the browser shows the compressed bytes as text
+      for (const name of ["content-type", "content-encoding", "content-length", "content-disposition", "etag", "last-modified"]) { const value = reply.headers[name]; if (typeof value === "string") response.setHeader(name, value); }
       response.setHeader("Cache-Control", "no-store");
       response.setHeader("X-Frame-Options", "SAMEORIGIN");
       response.setHeader("X-Content-Type-Options", "nosniff");

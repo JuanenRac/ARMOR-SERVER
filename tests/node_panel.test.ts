@@ -9,6 +9,7 @@ import https from "node:https";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import zlib from "node:zlib";
 import { cleanPanelPath, normaliseFingerprint, PanelRegistry } from "../src/node_panel_proxy.js";
 import { SECRETS, startServer, studioCookie } from "./helpers.js";
 
@@ -25,6 +26,7 @@ function fakeNode(secure?: { key: string; cert: string }): Promise<{ port: numbe
       if (request.url === "/api/v1/login") { response.writeHead(200, { ...json, "Set-Cookie": "armor_session=node-secret; Path=/; HttpOnly" }); return response.end("{\"ok\":true}"); }
       if (request.url === "/old") { response.writeHead(302, { Location: "/new" }); return response.end(); }
       if (request.url === "/") { response.writeHead(200, { "Content-Type": "text/html" }); return response.end("<html>panel</html>"); }
+      if (request.url === "/app.js") { const packed = zlib.gzipSync("console.log(\"panel\");"); response.writeHead(200, { "Content-Type": "text/javascript", "Content-Encoding": "gzip", "Content-Length": String(packed.length) }); return response.end(packed); }
       response.writeHead(200, json); response.end(JSON.stringify({ ok: true, cookie: request.headers.cookie ?? null }));
     });
   };
@@ -83,6 +85,10 @@ test("the panel of a node goes through the server, keeps the cookie of the node 
     assert.equal(page.status, 200);
     assert.equal(await page.text(), "<html>panel</html>");
     assert.match(page.headers.get("content-security-policy") ?? "", /frame-ancestors 'self'/);
+    // the compressed script of the node reaches the browser saying it is compressed, so the browser reads it and not the bytes
+    const script = await viaServer(running.base, cookie, "GET", "/api/v1/nodes/radar-salon/panel/app.js");
+    assert.equal(script.headers.get("content-encoding"), "gzip");
+    assert.equal(await script.text(), "console.log(\"panel\");");
     assert.equal(page.headers.get("x-frame-options"), "SAMEORIGIN");
     const login = await viaServer(running.base, cookie, "POST", "/api/v1/nodes/radar-salon/panel/api/v1/login", "{\"user\":\"a\",\"password\":\"b\"}", { ...json, "X-Requested-With": "armor", Origin: "http://evil.example", Referer: "http://evil.example/x" });
     assert.equal(login.status, 200);

@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The panel of a node through the server shows its page:** the node keeps its page, script and style compressed and says so (`Content-Encoding: gzip`), and the server did not pass that header on, so the browser showed the compressed bytes as text and a blank page. The header is passed on now (the test of the panel through the server has a compressed script).
 - **The still picture of a camera is served by the server:** `POST /api/v1/cameras/{id}/preview-ticket` (an operator, or a viewer) hands out a five-minute ticket and `GET /api/v1/cameras/{id}/preview` returns the picture the camera gives at its snapshot address, fetched with the camera's own login (Basic or Digest), on the camera's own host only, never following a redirect, JPEG or PNG up to 3 MB. The address stored for a camera carries no login, so a console could not show it itself.
 
 ## [0.8.0.5] - The pairing text for a phone and the push tells which event it is
