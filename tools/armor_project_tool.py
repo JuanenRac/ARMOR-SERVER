@@ -488,7 +488,9 @@ def main() -> int:
         raise RuntimeError("refusing non-A.R.M.O.R. manifest")
     global PANEL
     PANEL = None   # a run that comes after another one in the same process starts clean
-    if Panel is not None and os.environ.get("ARMOR_PRETTY") != "0" and args.action != "run":
+    # the panel is for a person at a terminal (or when ARMOR_PRETTY=1 asks for it); a log, a pipe or a test gets the plain lines
+    wanted = os.environ.get("ARMOR_PRETTY") == "1" or (os.environ.get("ARMOR_PRETTY") != "0" and sys.stdout.isatty())
+    if Panel is not None and wanted and args.action != "run":
         PANEL = Panel(str(manifest["name"]), args.action, str(manifest["version"]), "A.R.M.O.R.")
         PANEL.banner()
     else:
