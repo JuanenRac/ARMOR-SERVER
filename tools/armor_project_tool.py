@@ -29,6 +29,12 @@ NODE_PROJECTS = {"ARMOR-SERVER", "ARMOR-STUDIO"}
 NPM = "npm.cmd" if os.name == "nt" else "npm"
 
 
+try:
+    from pretty_run import Panel
+except ImportError:   # a copy of this tool without the panel: the plain lines
+    Panel = None  # type: ignore[assignment,misc]
+
+
 def load_server_environment(project: Path, environment: dict[str, str]) -> dict[str, str]:
     """Load local server secrets, creating an ignored development file once.
 
@@ -56,7 +62,7 @@ def load_server_environment(project: Path, environment: dict[str, str]) -> dict[
             f"ARMOR_STUDIO_PASSWORD={studio_password}\n",
             encoding="utf-8",
         )
-        print("ARMOR_LOCAL_SECRETS=CREATED .env (Git-ignored)")
+        report("ARMOR_LOCAL_SECRETS=CREATED .env (Git-ignored)")
     for line in env_file.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -70,7 +76,32 @@ def load_server_environment(project: Path, environment: dict[str, str]) -> dict[
     return environment
 
 
+PANEL: "Panel | None" = None   # the live panel of the run (see pretty_run.py); None prints the plain lines of before
+
+
+def report(line: str) -> None:
+    """A status line of the workflow: a skipped step is a line of the panel, anything else a dimmed note."""
+    if PANEL is None:
+        print(line)
+        return
+    name, _, rest = line.partition(" ")
+    if "SKIPPED" in line or "NOT_BUILT" in line:
+        PANEL.skip(name.split("=")[0].replace("_", " ").capitalize(), rest)
+    else:
+        PANEL.note(line)
+
+
+def step_title(args: list[str]) -> str:
+    """A short name for a step, from its command: `npm run typecheck`, `python -m pytest`."""
+    words = [Path(args[0]).stem if Path(args[0]).suffix.lower() in (".exe", ".bat", ".cmd") else Path(args[0]).name] + [a for a in args[1:] if not a.startswith("-") or a == "-m"]
+    return " ".join(words)[:52]
+
+
 def command(project: Path, args: list[str], environment: dict[str, str] | None = None) -> None:
+    if PANEL is not None:
+        if not PANEL.step(step_title(args), args, cwd=project, env=environment, tests=True):
+            raise RuntimeError("a step failed (its output is above)")
+        return
     print("$", " ".join(args), flush=True)
     try:
         result = subprocess.run(args, cwd=project, env=environment, check=False)
@@ -120,7 +151,7 @@ def test_common(project: Path) -> None:
     elif siblings_required():
         raise RuntimeError("the node repositories are not next to ARMOR-COMMON, so the shared firmware could not be compared (missing: " + ", ".join(sorted(set(NODE_REPOSITORIES) - set(present))) + ")")
     else:
-        print("FIRMWARE_BASE=SKIPPED the node repositories are not next to ARMOR-COMMON")
+        report("FIRMWARE_BASE=SKIPPED the node repositories are not next to ARMOR-COMMON")
 
 
 def host_tests(project: Path, build: Path) -> None:
@@ -132,7 +163,7 @@ def host_tests(project: Path, build: Path) -> None:
 def unit_tests(project: Path, folder: str = "tests") -> None:
     """The standard-library unit tests of a repository that is not a Python program (documentation, hardware): every tests/test_*.py. A repository without the folder says so and goes on."""
     if not (project / folder).is_dir():
-        print(f"UNIT_TESTS=SKIPPED there is no {folder}/ folder")
+        report(f"UNIT_TESTS=SKIPPED there is no {folder}/ folder")
         return
     command(project, [sys.executable, "-m", "unittest", "discover", "-s", folder, "-p", "test_*.py"])
 
@@ -146,7 +177,7 @@ def devops_tests(project: Path) -> None:
     They need Unix sockets, bash and openssl (Linux, macOS, WSL); on Windows they are reported as not run, never as passed."""
     scripts = project / "scripts"
     if os.name == "nt":
-        print("DEVOPS_TESTS=SKIPPED they need Unix sockets, bash and openssl: run build-test on Linux, macOS or WSL")
+        report("DEVOPS_TESTS=SKIPPED they need Unix sockets, bash and openssl: run build-test on Linux, macOS or WSL")
         return
     command(project, [sys.executable, "-W", "ignore", "-m", "unittest", "discover", "-s", "scripts", "-p", "test_*.py"])
     bash = check_tool("bash", "bash is required to run the shell tests of ARMOR-DEVOPS")
@@ -208,7 +239,7 @@ def test_project(project: Path, manifest: dict[str, object]) -> None:
         elif os.environ.get("ARMOR_REQUIRE_SWIFT"):
             raise RuntimeError("Swift is required to run the tests of ArmorCore")
         else:
-            print("SWIFT_TESTS=SKIPPED no Swift toolchain on this machine (they run in CI)")
+            report("SWIFT_TESTS=SKIPPED no Swift toolchain on this machine (they run in CI)")
     elif name == "ARMOR-HARDWARE":
         unit_tests(project)
         openscad = check_tool("openscad", "OpenSCAD is required to validate the parametric enclosure")
@@ -257,7 +288,7 @@ def test_radar(project: Path) -> None:
     if shutil.which("idf.py"):
         command(project, ["idf.py", "build"])
     else:
-        print("ARMOR_RADAR_FIRMWARE=NOT_BUILT ESP-IDF (idf.py) was not found; only the host-tested core was verified")
+        report("ARMOR_RADAR_FIRMWARE=NOT_BUILT ESP-IDF (idf.py) was not found; only the host-tested core was verified")
 
 
 def test_solar(project: Path) -> None:
@@ -324,7 +355,7 @@ def validate_markdown_links(project: Path) -> None:
                 missing.append(f"{file.relative_to(project)} -> {target}")
     if missing:
         raise RuntimeError("broken local Markdown links:\n" + "\n".join(missing))
-    print("ARMOR_DOCS_LINKS=PASS")
+    report("ARMOR_DOCS_LINKS=PASS")
 
 
 def next_version(version: str) -> str:
@@ -455,11 +486,23 @@ def main() -> int:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("ecosystem") != "A.R.M.O.R.":
         raise RuntimeError("refusing non-A.R.M.O.R. manifest")
-    print(f"PROJECT={manifest['name']} VERSION={manifest['version']} ACTION={args.action}")
+    global PANEL
+    if Panel is not None and os.environ.get("ARMOR_PRETTY") != "0" and args.action != "run":
+        PANEL = Panel(str(manifest["name"]), args.action, str(manifest["version"]), "A.R.M.O.R.")
+        PANEL.banner()
+    else:
+        print(f"PROJECT={manifest['name']} VERSION={manifest['version']} ACTION={args.action}")
     if args.action == "run":
         run_project(project, manifest)
         return 0
-    test_project(project, manifest)
+    try:
+        test_project(project, manifest)
+    except RuntimeError as error:
+        if PANEL is None:
+            raise
+        if not any(step[1] == "fail" for step in PANEL.steps):   # a step that failed has already said so above
+            PANEL.fail("Workflow", str(error))
+        return PANEL.finish()
     if args.action == "build":
         before, after = bump(project, manifest)
         # The version change above must be compiled into the Android APK; a
@@ -467,10 +510,13 @@ def main() -> int:
         # installable artifact whose version equals its manifest.
         if manifest.get("name") == "ARMOR-ANDROID-CONTROL":
             test_project(project, manifest)
-        print(f"VERSION_BUMP=PASS v{before} -> v{after}")
+        done = f"VERSION_BUMP=PASS v{before} -> v{after}"
     else:
-        print("BUILD_TEST=PASS manifest and CHANGELOG unchanged")
-    return 0
+        done = "BUILD_TEST=PASS manifest and CHANGELOG unchanged"
+    if PANEL is None:
+        print(done)
+        return 0
+    return PANEL.finish(done)
 
 
 if __name__ == "__main__":
