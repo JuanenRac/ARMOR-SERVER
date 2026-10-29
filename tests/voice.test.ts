@@ -12,7 +12,7 @@ const json = { "Content-Type": "application/json" };
 
 /** A stand-in for the voice gateway: the same protocol (token header, two turns for arm and disarm), nothing else. */
 async function fakeGateway() {
-  const seen: Array<{ text: string; language?: string; confirmation?: string; policy?: unknown }> = [];
+  const seen: Array<{ text: string; language?: string; confirmation?: string; policy?: unknown; pin?: string }> = [];
   const server = http.createServer((request, response) => {
     const chunks: Buffer[] = [];
     request.on("data", chunk => chunks.push(chunk as Buffer));
@@ -67,6 +67,12 @@ test("a written command is understood by the gateway and carried out by the serv
     assert.deepEqual([second.body.executed, second.body.intent, second.body.speech, second.body.result], [true, "arm", "Sistema armado.", { mode: "armed" }]);
     assert.equal(mode(running), "armed");
     assert.deepEqual(gateway.seen.map(item => item.language), ["es", "es"]);
+    // the PIN that silencing asks for goes to the gateway; the PIN of the signed-in user (for disarming) never does
+    await call(running, cookie, "POST", "/api/v1/voice/command", { text: "silence", language: "en", silence_pin: "4821", pin: "9999" });
+    const sent = gateway.seen[gateway.seen.length - 1];
+    assert.equal(sent.pin, "4821");
+    assert.doesNotMatch(JSON.stringify(sent), /9999/);
+    assert.equal((await call(running, cookie, "POST", "/api/v1/voice/command", { text: "silence", silence_pin: "1".repeat(33) })).status, 422);
 
     // a wrong confirmation does nothing
     const refused = await call(running, cookie, "POST", "/api/v1/voice/command", { text: "disarm", confirmation: "forged" });

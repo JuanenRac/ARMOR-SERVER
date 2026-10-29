@@ -104,12 +104,15 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
     const language: VoiceLanguage = isVoiceLanguage(input.language) ? input.language : "en";
     if (input.language !== undefined && !isVoiceLanguage(input.language)) return response.status(422).json({ error: "invalid_language" });
     const confirmation = typeof input.confirmation === "string" && input.confirmation ? input.confirmation : undefined;
+    // The PIN that silencing asks for in the `pin` mode travels apart from `pin`, which is the signed-in user's own PIN for disarming and must never reach the gateway.
+    const silencePin = typeof input.silence_pin === "string" && input.silence_pin ? input.silence_pin : undefined;
+    if (silencePin !== undefined && silencePin.length > 32) return response.status(422).json({ error: "invalid_pin" });
     if (!config.voice) return response.status(503).json({ error: "voice_unavailable" });
 
     try {
       // The confirmation token the gateway issues is bound to the person who asked: another session cannot use it.
       const subject = (studioUser(request)?.id ?? (panelBehind(request) ? `panel:${panelBehind(request)}` : "operator")).slice(0, 64);
-      const answer = await askVoice(config.voice, { text, language, subject, policy: { silence_confirmation: context.securitySettings.get("voice.silence_confirmation") }, ...(confirmation ? { confirmation } : {}) });
+      const answer = await askVoice(config.voice, { text, language, subject, policy: { silence_confirmation: context.securitySettings.get("voice.silence_confirmation") }, ...(confirmation ? { confirmation } : {}), ...(silencePin ? { pin: silencePin } : {}) });
       let speech = answer.speech ?? "";
       let result: Record<string, unknown> | undefined;
       let executed = false;

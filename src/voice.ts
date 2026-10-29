@@ -26,7 +26,7 @@ export class VoiceError extends Error {
 }
 
 /** Asks the gateway about one phrase; `policy` is the silence rule the gateway applies (it falls back to the strictest value if it does not understand it). Its refusals keep their meaning (a phrase that is not a command is an answer, not an error). */
-export async function askVoice(gateway: VoiceGateway, request: { text: string; language?: string; confirmation?: string; subject?: string; policy?: { silence_confirmation: string } }): Promise<VoiceAnswer> {
+export async function askVoice(gateway: VoiceGateway, request: { text: string; language?: string; confirmation?: string; subject?: string; policy?: { silence_confirmation: string }; /** The PIN that silencing by voice asks for in the `pin` mode (not the PIN of the signed-in user). */ pin?: string }): Promise<VoiceAnswer> {
   let reply: Response;
   try {
     reply = await fetch(`${gateway.url.replace(/\/$/, "")}/v1/command`, {
