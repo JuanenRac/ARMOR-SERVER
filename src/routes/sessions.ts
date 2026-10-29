@@ -23,7 +23,7 @@ export function capabilitiesOf(context: AppContext, role: string) {
   return {
     version: 1,
     actions: { arm: operator, disarm: operator, acknowledge: operator, operate: operator, camera_control: operator, administer: admin, manage_users: admin, security_settings: admin },
-    features: ["security_settings", "zone_feed_key", "rtsp_tunnel"],
+    features: ["security_settings", "zone_feed_key", "rtsp_tunnel", "alarm_audio"],
     security: { ...context.securitySettings.effective, locked: context.securitySettings.lockedKeys },
   };
 }

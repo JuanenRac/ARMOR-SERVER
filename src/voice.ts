@@ -73,3 +73,20 @@ export function spokenResult(language: VoiceLanguage, result: { intent: "arm" | 
     case "silence": return result.acknowledged > 0 ? fill(words.silenced, result.acknowledged) : words.noAlarms;
   }
 }
+
+/** Asks the gateway to say a sentence out loud (`POST /v1/speak`): the answer is the samples of it, 16 kHz 16-bit mono PCM, or a VoiceError (the gateway has no speech engine, or does not answer). */
+export async function speakVoice(gateway: VoiceGateway, request: { text: string; language: VoiceLanguage }, maxBytes: number): Promise<Buffer> {
+  let reply: Response;
+  try {
+    reply = await fetch(`${gateway.url.replace(/\/$/, "")}/v1/speak`, {
+      method: "POST", headers: { "Content-Type": "application/json", "X-Armor-Voice-Token": gateway.token }, body: JSON.stringify(request), signal: AbortSignal.timeout(20_000),
+    });
+  } catch { throw new VoiceError(503, "voice_not_answering"); }
+  if (reply.status === 401) throw new VoiceError(503, "voice_refused_the_token");
+  if (reply.status === 501) throw new VoiceError(503, "tts_unavailable");
+  const answer = await reply.json().catch(() => undefined) as { audio?: unknown } | undefined;
+  if (!reply.ok || !answer || typeof answer.audio !== "string") throw new VoiceError(502, "voice_bad_answer");
+  const samples = Buffer.from(answer.audio, "base64");
+  if (samples.length === 0 || samples.length % 2 !== 0 || samples.length > maxBytes) throw new VoiceError(502, "voice_bad_answer");
+  return samples;
+}

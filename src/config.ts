@@ -36,6 +36,8 @@ export type ArmorConfig = {
   voiceTurnMaxBytes: number;
   /** ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES: the most spoken answer handed on to the panel in the binary form; a longer one is left out and the text still goes. */
   voiceReplyAudioMaxBytes: number;
+  /** ARMOR_ALARM_SOUND_MAX_BYTES: the most samples a sound an administrator uploads for an alarm origin may have; 128000 bytes is 4 seconds of 16 kHz 16-bit mono. */
+  alarmSoundMaxBytes: number;
   /** Where a request comes from (see origin.ts): the house and its VPN are local, the rest is remote. */
   localNetworks: ReturnType<typeof parseRanges>;
   vpnNetworks: ReturnType<typeof parseRanges>;
@@ -371,6 +373,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     operatorSessionTtlMs: integer(env, "ARMOR_OPERATOR_SESSION_TTL_MS", 28_800_000, 60_000, 7 * 86_400_000),
     voiceTurnMaxBytes: integer(env, "ARMOR_VOICE_TURN_MAX_BYTES", 480_000, 3_200, 1_920_000),
     voiceReplyAudioMaxBytes: integer(env, "ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES", 200_000, 3_200, 1_000_000),
+    alarmSoundMaxBytes: integer(env, "ARMOR_ALARM_SOUND_MAX_BYTES", 128_000, 3_200, 256_000),
     localNetworks: ranges(env, "ARMOR_LOCAL_NETWORKS", DEFAULT_LOCAL_NETWORKS), vpnNetworks: ranges(env, "ARMOR_VPN_NETWORKS", ""),
     totpPolicy: oneOf(env, "ARMOR_TOTP_REQUIRED", ["off", "remote", "always"] as const, "off"),
     remoteSessionTtlMs: integer(env, "ARMOR_REMOTE_SESSION_TTL_MS", 12 * 3_600_000, 60_000, 30 * 86_400_000),

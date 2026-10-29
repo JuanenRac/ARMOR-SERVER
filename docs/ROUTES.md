@@ -54,6 +54,11 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/ai/cameras/:id/frame` | AI service | `routes/ai.ts` |
 | GET | `/api/v1/ai/context` | AI service | `routes/ai.ts` |
 | POST | `/api/v1/ai/observations` | AI service | `routes/ai.ts` |
+| GET | `/api/v1/alarm-audio` | operator | `routes/alarm_audio.ts` |
+| DELETE | `/api/v1/alarm-audio/sounds/:source` | administrator, fresh proof of identity | `routes/alarm_audio.ts` |
+| GET | `/api/v1/alarm-audio/sounds/:source` | operator | `routes/alarm_audio.ts` |
+| PUT | `/api/v1/alarm-audio/sounds/:source` | administrator, fresh proof of identity | `routes/alarm_audio.ts` |
+| GET | `/api/v1/alarm-audio/spoken` | operator | `routes/alarm_audio.ts` |
 | POST | `/api/v1/alarm/command` | administrator | `routes/alarm.ts` |
 | GET | `/api/v1/alarm/commands` | operator | `routes/alarm.ts` |
 | GET | `/api/v1/alarm/design` | operator | `routes/alarm_design.ts` |

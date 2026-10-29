@@ -64,6 +64,7 @@ import { RadarEventStore, type RadarEvent } from "./radar_events.js";
 import { EnergyAlarmStore } from "./energy_alarms.js";
 import { ClientRegistry, ConnectionTracker, identify, NodeLife, systemBody, systemFromAudit, type Sighting, type SystemInput } from "./connections.js";
 import path from "node:path";
+import { SoundLibrary, SpokenCache } from "./alarm_audio.js";
 
 export type AppContext = {
   config: ArmorConfig;
@@ -149,6 +150,9 @@ export type AppContext = {
   zoneFeedSigner: ZoneFeedSigner;
   /** The security options an administrator turns on and off from Studio (see security_settings.ts). */
   securitySettings: SecuritySettings;
+  /** The sounds an administrator uploaded for the origins of an alarm, and the spoken sentences already made. */
+  alarmSounds: SoundLibrary;
+  spokenAlarms: SpokenCache;
   /** The Zigbee sensors linked to the zones of the alarm panels, told to the panel while this server holds the radio. */
   alarmZoneFeed: AlarmZoneFeed;
   /** The photos and the video taken by themselves when a camera sees something while the perimeter is armed. */
@@ -224,6 +228,8 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     initial: { "voice.turn_max_bytes": config.voiceTurnMaxBytes, "voice.reply_audio_max_bytes": config.voiceReplyAudioMaxBytes },
     onChange: changes => securityChanged.tell?.(changes),
   });
+  const alarmSounds = new SoundLibrary(path.join(config.dataDir, "alarm-sounds"));
+  const spokenAlarms = new SpokenCache();
   const rtspProxy = () => securitySettings.get("media.rtsp_proxy");
   const evidence = new EvidenceLibrary({ root: path.join(config.dataDir, "media"), proxy: rtspProxy, ffmpegPath: config.ffmpegPath, maxBytes: config.maxMediaBytes, retentionMs: config.mediaRetentionMs, warn });
   const relays = new RelayManager({ proxy: rtspProxy, ffmpegPath: config.ffmpegPath, maxRelays: config.maxMjpegRelays, fps: config.liveFps, width: config.liveWidth, lowFps: config.liveLowFps, lowWidth: config.liveLowWidth });
@@ -419,7 +425,9 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const preferences = new PreferencesStore(path.join(config.dataDir, "preferences.json"));
   const studioUser = (request: HeaderSource): PublicUser | undefined => { const id = studioSessions.userId(request); return id ? users.get(id) : undefined; };
   // A wall panel's account is of the `panel` role: it is not an operator. It may only do what a wall panel does: read the summary, change the mode and acknowledge the alarms.
-  const panelRoutes = new Set(["GET /api/v1/panel/summary", "POST /api/v1/mode", "POST /api/v1/alarms/acknowledge"]);
+  const panelRoutes = new Set(["GET /api/v1/panel/summary", "POST /api/v1/mode", "POST /api/v1/alarms/acknowledge", "GET /api/v1/alarm-audio/spoken"]);
+  // and the sound uploaded for an origin (one path per origin, so the list is closed)
+  const panelSoundRoute = /^GET \/api\/v1\/alarm-audio\/sounds\/(device|solar|electrical|network|alarm|other)$/;
   const operatorAuthorized = (request: HeaderSource): boolean => {
     if (hasBearer(request, config.operatorToken) || operatorSessions.has(request)) return true;
     const user = studioUser(request);
@@ -440,7 +448,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
       return response.status(403).json({ error: "this account can only look" });
     }
     if (panel?.role === "panel") {
-      if (panelRoutes.has(`${request.method} ${request.path}`)) return next();
+      if (panelRoutes.has(`${request.method} ${request.path}`) || panelSoundRoute.test(`${request.method} ${request.path}`)) return next();
       audit.record({ action: "panel.access", outcome: "denied", actor: panel.username, target: `${request.method} ${request.path}` });
       return response.status(403).json({ error: "this account only serves a wall panel" });
     }
@@ -471,7 +479,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, securitySettings, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, securitySettings, alarmSounds, spokenAlarms, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

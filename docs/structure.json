@@ -238,14 +238,14 @@
     {
      "name": "tests/",
      "desc": {
-      "en": "700 tests, unit and HTTP integration",
-      "es": "700 pruebas, unitarias e integración HTTP",
-      "de": "700 Tests, Unit und HTTP-Integration",
-      "fr": "700 tests, unitaires et intégration HTTP",
-      "it": "700 test, unitari e integrazione HTTP",
-      "ja": "700 件（単体と HTTP 結合）",
-      "zh": "700 项测试（单元与 HTTP 集成）",
-      "pt": "700 testes, unitários e integração HTTP"
+      "en": "708 tests, unit and HTTP integration",
+      "es": "708 pruebas, unitarias e integración HTTP",
+      "de": "708 Tests, Unit und HTTP-Integration",
+      "fr": "708 tests, unitaires et intégration HTTP",
+      "it": "708 test, unitari e integrazione HTTP",
+      "ja": "708 件（単体と HTTP 結合）",
+      "zh": "708 项测试（单元与 HTTP 集成）",
+      "pt": "708 testes, unitários e integração HTTP"
      }
     },
     {

@@ -15,6 +15,8 @@
  *   nodes.nvs_encryption         off | secrets            the alarm nodes keep only the secrets they store (passwords, token, keys) encrypted in their flash (told in the policy message; off, the default, tells nothing)
  *   voice.turn_max_bytes         3200 to 1920000          the most audio one spoken turn of the wall panel may carry (the environment's ARMOR_VOICE_TURN_MAX_BYTES is where it starts)
  *   voice.reply_audio_max_bytes  3200 to 1000000          the most spoken answer handed on to the panel in the binary form (ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES is where it starts)
+ *   alarm_audio.spoken           on | off                  the wall panel may ask for an alarm to be said out loud (origin, severity and what it is, made by the voice gateway; off, the default, answers 404)
+ *   alarm_audio.custom_sounds    on | off                  administrators may upload a short sound for an alarm origin and the wall panel may ask for it (off, the default: nothing is accepted or served)
  *   network.login_secure_only    on | off                 a stored device login is handed to a network node only when its request came over TLS or from this machine (off, the default: any request of the node)
  *
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
@@ -49,6 +51,8 @@ export type SecuritySettingsValues = {
   "nodes.nvs_encryption": NvsEncryption;
   "voice.turn_max_bytes": number;
   "voice.reply_audio_max_bytes": number;
+  "alarm_audio.spoken": boolean;
+  "alarm_audio.custom_sounds": boolean;
 };
 export type SecuritySettingKey = keyof SecuritySettingsValues;
 
@@ -66,6 +70,8 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "nodes.nvs_encryption": "off",
   "voice.turn_max_bytes": VOICE_TURN_BYTES.default,
   "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES.default,
+  "alarm_audio.spoken": false,
+  "alarm_audio.custom_sounds": false,
 });
 
 /** The settings that are whole numbers, with the range each may take. */
@@ -160,7 +166,7 @@ export class SecuritySettings {
 
 /** True when the new value lowers security compared with the old one (the audit trail and Studio say so). */
 export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boolean {
-  if (key === "voice.multipart_turn" || key === "panel.live_events") return false;   // a way in that is turned off is not a loss of protection; turning it on is the default way
+  if (key === "voice.multipart_turn" || key === "panel.live_events" || key === "alarm_audio.spoken" || key === "alarm_audio.custom_sounds") return false;   // a way in that is turned off is not a loss of protection; turning it on is the default way
   if (key === "voice.turn_max_bytes" || key === "voice.reply_audio_max_bytes") return typeof from === "number" && typeof to === "number" && to > from;   // a larger turn costs the server more memory and time
   if (key === "alarm.disarm_pin") return DISARM_PIN_VALUES.indexOf(to as DisarmPinMode) < DISARM_PIN_VALUES.indexOf(from as DisarmPinMode);
   if (key === "voice.silence_confirmation") return SILENCE_VALUES.indexOf(to as SilenceConfirmation) < SILENCE_VALUES.indexOf(from as SilenceConfirmation);

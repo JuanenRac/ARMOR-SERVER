@@ -8,6 +8,7 @@ Every setting is an environment variable (a `.env` file next to the server is re
 | `ARMOR_ADMIN_TOKEN` |  | `replace-with-long-random-admin-token` | The other services: the voice gateway, the observation service, the administration and maintenance agents of ARMOR-DEVOPS, Home Assistant discovery. |
 | `ARMOR_AI_TOKEN` |  | `replace-with-long-random-ai-token` | The other services: the voice gateway, the observation service, the administration and maintenance agents of ARMOR-DEVOPS, Home Assistant discovery. |
 | `ARMOR_ALARM_COMMANDS` |  | `0` | 1 lets this server arm, disarm and silence the panels of alarm nodes (off by default; the node and the broker have to allow it too). |
+| `ARMOR_ALARM_SOUND_MAX_BYTES` | integer 3200 to 256000, default 128000 | `128000` | The most samples a sound uploaded in Studio for an alarm origin may have, in bytes (128000 is 4 seconds of 16 kHz 16-bit mono WAVE; 3200 to 256000). Sounds and spoken alarms are off until an administrator turns them on in Studio (Configuration > Security). |
 | `ARMOR_ALERT_DWELL_MS` | integer 0 to 60000, default 2000 |  |  |
 | `ARMOR_ALERT_LANGUAGE` |  | `en` | The other services: the voice gateway, the observation service, the administration and maintenance agents of ARMOR-DEVOPS, Home Assistant discovery. |
 | `ARMOR_ALERT_MIN_TARGETS` | integer 1 to 20, default 1 | `1` | How many targets at once make an alert high while armed (1 by default), and how long an unacknowledged critical alarm waits before it is told again (minutes; 0 = never). |
