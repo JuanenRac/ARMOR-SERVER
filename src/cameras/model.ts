@@ -148,11 +148,19 @@ export function parseTraits(input: Record<string, unknown>): CameraTraits {
   return traits;
 }
 
+/**
+ * Some cameras (the H264DVR / XMeye family, very common with two lenses) take the login in the path of the stream instead of only in the headers:
+ * `user=admin&password=...&channel=1&stream=0.sdp?real_stream`. The path is stored with the two words `{user}` and `{password}` where the login goes, and the
+ * real values are put in only in memory, when the address is built or asked for. The login is never stored in the path.
+ */
+export const expandRtspPath = (path: string, secrets?: CameraSecrets): string =>
+  secrets ? path.replace(/\{user\}/g, encodeURIComponent(secrets.username)).replace(/\{password\}/g, encodeURIComponent(secrets.password)) : path;
+
 /** The RTSP source URL, built only in memory when it is needed. `preview` asks for the lighter stream of the live picture when the camera has one. */
 export function rtspUrl(camera: CameraConnection, preview = false): string | null {
   const path = preview && camera.previewPath ? camera.previewPath : camera.rtspPath;
   if (!camera.secrets?.username || !camera.secrets.password || !path) return null;
   const user = encodeURIComponent(camera.secrets.username);
   const password = encodeURIComponent(camera.secrets.password);
-  return `rtsp://${user}:${password}@${camera.host}:${camera.rtspPort}/${path.replace(/^\/+/, "")}`;
+  return `rtsp://${user}:${password}@${camera.host}:${camera.rtspPort}/${expandRtspPath(path, camera.secrets).replace(/^\/+/, "")}`;
 }

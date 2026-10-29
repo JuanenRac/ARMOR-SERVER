@@ -4,8 +4,8 @@ import path from "node:path";
 import test from "node:test";
 import { approvedCameraEndpoint, isPtzCommand, onvifTag, xmlEscape, xmlUnescape } from "../src/cameras/ptz.js";
 import { DiscoveryGate, discoveryPrefixes, isPrivateIpv4, scanNetworks } from "../src/cameras/discovery.js";
-import { cameraPublic, cameraView, parseCameraInput, rtspUrl, type CameraConnection } from "../src/cameras/model.js";
-import { discoverRtspPaths } from "../src/cameras/rtsp.js";
+import { cameraPublic, cameraView, expandRtspPath, parseCameraInput, rtspUrl, type CameraConnection } from "../src/cameras/model.js";
+import { candidatesFor, discoverRtspPaths, rtspFamily } from "../src/cameras/rtsp.js";
 import { CameraVault, decryptSecrets, encryptSecrets } from "../src/cameras/vault.js";
 import { tempDir } from "./helpers.js";
 import { createHash } from "node:crypto";
@@ -176,4 +176,33 @@ test("the traits of a camera (lenses, movement, web page, field of view, paramet
   assert.equal(bad.fovDeg, undefined);
   assert.equal(bad.params, undefined);
   assert.equal(parseCameraInput(base)!.ptz, undefined);
+});
+
+test("a camera of the H264DVR family is told from its banner, and its paths are tried first", () => {
+  assert.equal(rtspFamily("H264DVR 1.0"), "xm");
+  assert.equal(rtspFamily("Hikvision-Webs"), "hikvision");
+  assert.equal(rtspFamily("Dahua Rtsp Server 3.0"), "dahua");
+  assert.equal(rtspFamily(""), "generic");
+  assert.match(candidatesFor("xm")[0], /user=\{user\}&password=\{password\}&channel=1&stream=0/);
+  assert.equal(candidatesFor("generic")[0], "/11");
+  assert.equal(new Set(candidatesFor("xm")).size, candidatesFor("xm").length, "each path once");
+});
+
+test("the login goes into the path of a camera that asks for it there only in memory", () => {
+  const template = "user={user}&password={password}&channel=1&stream=0.sdp?real_stream";
+  const camera = parseCameraInput({ ...base, username: "ad min", password: "p&ss", rtspPath: template })!;
+  assert.equal(camera.rtspPath, template, "what is stored keeps the two words, never the login");
+  assert.equal(expandRtspPath(template, camera.secrets), "user=ad%20min&password=p%26ss&channel=1&stream=0.sdp?real_stream");
+  assert.equal(rtspUrl(camera), "rtsp://ad%20min:p%26ss@192.168.0.203:554/user=ad%20min&password=p%26ss&channel=1&stream=0.sdp?real_stream");
+  assert.equal(expandRtspPath(template), template);
+});
+
+test("discovery asks for the banner of the camera and finds the main and the lighter stream of an XM camera", async () => {
+  const camera = parseCameraInput({ ...base, rtspPath: "" })!;
+  const asked: string[] = [];
+  const describe = async (_camera: CameraConnection, requestPath: string) => { asked.push(requestPath); return /stream=[01]\.sdp/.test(requestPath) && requestPath.includes("channel=1") ? 200 : 404; };
+  const found = await discoverRtspPaths(camera, undefined, 0, describe, async () => "H264DVR 1.0");
+  assert.deepEqual(found.slice(0, 2), ["/user={user}&password={password}&channel=1&stream=0.sdp?real_stream", "/user={user}&password={password}&channel=1&stream=1.sdp?real_stream"]);
+  assert.ok(found.every(path => path.includes("channel=1")), "the second lens, channel 2, did not answer on this stand-in");
+  assert.match(asked[0], /^\/user=/, "the paths of its family come first");
 });

@@ -17,7 +17,7 @@ import { discoverRtspPaths } from "../cameras/rtsp.js";
 import { isLiveQuality, type LiveQuality } from "../media/relay.js";
 
 /** The paths that cameras of the common families give to their lighter second stream (Hi3510 12, Hikvision 102, Dahua subtype 1). */
-const SUB_STREAM = /^\/(12|13|stream2)$|Channels\/(2|102|202)$|subtype=1/;
+const SUB_STREAM = /^\/(12|13|stream2|ch0_1\.264|ch1_1\.264|onvif2|av0_1)$|Channels\/(2|102|202)$|subtype=1|stream=1\.sdp|ch00_1$|h264minor|sub\/av_stream/;
 
 const param = (request: Request, name: string): string => {
   const value = request.params[name];
