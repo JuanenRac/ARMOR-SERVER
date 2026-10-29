@@ -9,7 +9,7 @@
 import { createSign } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { alertTitle, type AlertLanguage } from "./alert_text.js";
+import { alertText, alertTitle, isAlertLanguage, type AlertLanguage } from "./alert_text.js";
 import { durableRename } from "./durable.js";
 import type { NotifyChannel } from "./channels.js";
 import { pushDataOf } from "./notify.js";
@@ -44,7 +44,7 @@ export const MAX_PER_USER = 5;
 export class FcmFull extends FcmInvalid {}
 
 /** A phone that asked for push: the token of its app, who registered it, and when. A token with no user was registered with the operator token of a service. */
-export type FcmDevice = { token: string; user: string; registered_at: string };
+export type FcmDevice = { token: string; user: string; registered_at: string; language?: AlertLanguage };
 
 /** The phones that asked for push, kept in a file of the data directory and bound to the person who registered each, so that taking the person away takes their phones away. */
 export class FcmDevices {
@@ -57,25 +57,30 @@ export class FcmDevices {
           // The first versions kept bare tokens; those are kept with no user (they are rebound when the phone's app registers again).
           if (typeof item === "string" && TOKEN.test(item)) this.#devices.push({ token: item, user: "", registered_at: "" });
           else if (typeof item === "object" && item !== null) {
-            const { token, user, registered_at: at } = item as Record<string, unknown>;
-            if (typeof token === "string" && TOKEN.test(token)) this.#devices.push({ token, user: typeof user === "string" ? user.slice(0, 60) : "", registered_at: typeof at === "string" ? at : "" });
+            const { token, user, registered_at: at, language } = item as Record<string, unknown>;
+            if (typeof token === "string" && TOKEN.test(token)) this.#devices.push({ token, user: typeof user === "string" ? user.slice(0, 60) : "", registered_at: typeof at === "string" ? at : "", ...(isAlertLanguage(language) ? { language } : {}) });
           }
         }
       }
     } catch { this.#devices = []; }
   }
   list(): string[] { return this.#devices.map(device => device.token); }
+  /** The language a phone asked for when it registered (one of the eight), if it said. */
+  languageOf(token: string): AlertLanguage | undefined { return this.#devices.find(device => device.token === token)?.language; }
   entries(): FcmDevice[] { return this.#devices.map(device => ({ ...device })); }
   count(): number { return this.#devices.length; }
   forUser(user: string): number { return this.#devices.filter(device => device.user === user).length; }
-  /** Registers (or rebinds) a phone. True when the token is new. At most MAX_PER_USER per person (the oldest of theirs makes room); a full list is not emptied of other people's phones. */
-  add(token: unknown, user = ""): boolean {
+  /** Registers (or rebinds) a phone. True when the token is new. At most MAX_PER_USER per person (the oldest of theirs makes room); a full list is not emptied of other people's phones. `language` is the one the phone's app is in (anything that is not one of the eight is ignored). */
+  add(token: unknown, user = "", language?: unknown): boolean {
     if (typeof token !== "string" || !TOKEN.test(token)) throw new FcmInvalid("invalid token");
     const existing = this.#devices.find(device => device.token === token);
     const now = new Date().toISOString();
+    const spoken = isAlertLanguage(language) ? language : undefined;
     if (existing) {
-      if (existing.user === user) return false;
-      existing.user = user; existing.registered_at = now;
+      const languageChanged = spoken !== undefined && existing.language !== spoken;
+      if (existing.user === user && !languageChanged) return false;
+      if (existing.user !== user) { existing.user = user; existing.registered_at = now; }
+      if (spoken) existing.language = spoken;
       this.#save();
       return false;
     }
@@ -88,7 +93,7 @@ export class FcmDevices {
       if (unbound < 0) throw new FcmFull("too many phones");
       this.#devices.splice(unbound, 1);
     }
-    this.#devices.push({ token, user, registered_at: now });
+    this.#devices.push({ token, user, registered_at: now, ...(spoken ? { language: spoken } : {}) });
     this.#save();
     return true;
   }
@@ -170,6 +175,8 @@ export function fcmChannel(options: FcmOptions): NotifyChannel {
       try {
         const bearer = await accessToken();
         const channelId = fcmChannelFor(message);
+        // A phone that said which language its app is in gets the notice in it; one that did not gets the server's.
+        const spoken = (token: string): AlertLanguage => options.devices.languageOf(token) ?? language;
         const event = pushDataOf(message);   // what the phone needs to tell the event itself; nothing when the message is not the line of an event (the test message)
         let failed = 0, retry = false;
         const send = async (token: string): Promise<void> => {
@@ -179,7 +186,7 @@ export function fcmChannel(options: FcmOptions): NotifyChannel {
               method: "POST", redirect: "error", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), headers: { "Content-Type": "application/json", Authorization: `Bearer ${bearer}` },
               body: JSON.stringify({ message: options.dataOnly && event
                 ? { token, data: { event: String(message.event), ...event }, android: { priority: "HIGH" } }
-                : { token, notification: { title: alertTitle(language), body: text }, data: { event: String(message.event), severity: String(message.severity ?? ""), ...(event ?? {}) },
+                : { token, notification: { title: alertTitle(spoken(token)), body: spoken(token) === language ? text : alertText(message, spoken(token)) }, data: { event: String(message.event), severity: String(message.severity ?? ""), ...(event ?? {}) },
                   android: { priority: "HIGH", notification: { channel_id: channelId } } } }),
             });
             if (reply.ok) { got.add(token); return; }

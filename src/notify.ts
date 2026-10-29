@@ -30,6 +30,8 @@ export type AlertMessage = {
   automation?: string;
   /** For a sign-in from outside the house at a place not seen before: who, and from which address. */
   login_user?: string; login_from?: string;
+  /** The country of that address (two capital letters) when the server has a country database, and `true` when the person had never signed in from it. */
+  login_country?: string; login_country_new?: true;
 };
 
 /**

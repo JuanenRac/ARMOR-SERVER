@@ -64,6 +64,8 @@ export type ArmorConfig = {
   liveLowWidth: number;
   /** Push as data only (ARMOR_FCM_DATA_ONLY=1): the phone writes the notice in its own language, once per event; off by default because an app from before it shows nothing for such a message. */
   fcmDataOnly: boolean;
+  /** The MaxMind DB file with countries (ARMOR_GEOIP_DB, e.g. the free GeoLite2 Country the owner downloads): off when empty. Read only from disk; nothing is asked of the network. */
+  geoipDb: string | null;
   maxMediaBytes: number;
   mediaRetentionMs: number;
   discoveryCidr: string | null;
@@ -391,6 +393,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     liveLowFps: integer(env, "ARMOR_LIVE_LOW_FPS", 4, 1, 30),
     liveLowWidth: integer(env, "ARMOR_LIVE_LOW_WIDTH", 480, 160, 1920),
     fcmDataOnly: env.ARMOR_FCM_DATA_ONLY === "1",
+    geoipDb: env.ARMOR_GEOIP_DB?.trim() ? path.resolve(env.ARMOR_GEOIP_DB.trim()) : null,
     maxMediaBytes: integer(env, "ARMOR_MEDIA_MAX_BYTES", 20 * 1024 ** 3, 64 * 1024 ** 2, Number.MAX_SAFE_INTEGER),
     mediaRetentionMs: integer(env, "ARMOR_MEDIA_RETENTION_DAYS", 30, 0, 3650) * 86_400_000,
     discoveryCidr: cidr,

@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { FcmDevices, FcmFull, FcmInvalid, MAX_PER_USER, fcmChannel, fcmChannelFor, parseServiceAccount, signedAssertion, type FcmServiceAccount } from "../src/push_fcm.js";
+import { alertText, alertTitle } from "../src/alert_text.js";
 import { alertMessageFor, pushDataOf } from "../src/notify.js";
 import { startServer, studioCookie } from "./helpers.js";
 
@@ -74,6 +75,33 @@ test("an alarm is sent to every registered phone with one access token, and a ph
   assert.equal(body.message.notification.body, "Door open");
   await channel.deliver({ event: "alarm.raised", severity: "warning" } as never, "Battery low", "en", AbortSignal.timeout(5000));
   assert.equal(calls.filter(call => call.url === account.token_uri).length, 1);   // the access token is reused
+});
+
+test("a phone that says its language gets the notice in it, and one that does not gets the server's", async () => {
+  const file = devicesFile();
+  const devices = new FcmDevices(file);
+  assert.equal(devices.add(TOKEN_A, "ana", "de"), true);
+  assert.equal(devices.add(TOKEN_B, "ana", "klingon"), true);   // not one of the eight: ignored
+  assert.equal(devices.languageOf(TOKEN_A), "de");
+  assert.equal(devices.languageOf(TOKEN_B), undefined);
+  assert.equal(new FcmDevices(file).languageOf(TOKEN_A), "de");   // kept in the file
+  assert.equal(devices.add(TOKEN_A, "ana", "fr"), false);   // the same phone changing its language is not a new phone
+  assert.equal(new FcmDevices(file).languageOf(TOKEN_A), "fr");
+  const bodies = new Map<string, { title: string; body: string }>();
+  const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url) === account.token_uri) return new Response(JSON.stringify({ access_token: "t", expires_in: 3600 }), { status: 200 });
+    const sent = JSON.parse(String(init?.body)) as { message: { token: string; notification: { title: string; body: string } } };
+    bodies.set(sent.message.token, sent.message.notification);
+    return new Response("{}", { status: 200 });
+  }) as unknown as typeof fetch;
+  const channel = fcmChannel({ account, devices, fetchImpl, now: () => 5_000_000 });
+  const message = { event: "alarm.raised", severity: "critical", source: "door", message: "x" } as never;
+  await channel.deliver(message, "server text", "es", AbortSignal.timeout(5000));
+  assert.equal(bodies.get(TOKEN_B)?.body, "server text");   // no language: the server's text
+  assert.equal(bodies.get(TOKEN_B)?.title, alertTitle("es"));
+  assert.equal(bodies.get(TOKEN_A)?.title, alertTitle("fr"));
+  assert.equal(bodies.get(TOKEN_A)?.body, alertText(message, "fr"));   // told again in the phone's language, not the server's text
+  assert.notEqual(bodies.get(TOKEN_A)?.body, "server text");
 });
 
 test("the notification channel is one that the Android app has", () => {

@@ -17,6 +17,7 @@
  *   voice.reply_audio_max_bytes  3200 to 1000000          the most spoken answer handed on to the panel in the binary form (ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES is where it starts)
  *   alarm_audio.spoken           on | off                  the wall panel may ask for an alarm to be said out loud (origin, severity and what it is, made by the voice gateway; off, the default, answers 404)
  *   alarm_audio.custom_sounds    on | off                  administrators may upload a short sound for an alarm origin and the wall panel may ask for it (off, the default: nothing is accepted or served)
+ *   login.country_alert          on | off                 a sign-in from outside the house from a country that person never signed in from before is told to the places the alarms go to (on, the default; it only acts when the server has a country database, ARMOR_GEOIP_DB)
  *   network.login_secure_only    on | off                 a stored device login is handed to a network node only when its request came over TLS or from this machine (off, the default: any request of the node)
  *
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
@@ -45,6 +46,7 @@ export type SecuritySettingsValues = {
   "server.zone_feed_signature": boolean;
   "media.rtsp_proxy": boolean;
   "network.login_secure_only": boolean;
+  "login.country_alert": boolean;
   "voice.multipart_turn": boolean;
   "panel.live_events": boolean;
   "client.device_lock": DeviceLockPolicy;
@@ -64,6 +66,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "server.zone_feed_signature": true,
   "media.rtsp_proxy": true,
   "network.login_secure_only": false,
+  "login.country_alert": true,
   "voice.multipart_turn": true,
   "panel.live_events": true,
   "client.device_lock": "user",

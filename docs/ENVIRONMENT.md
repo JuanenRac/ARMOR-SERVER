@@ -30,6 +30,7 @@ Every setting is an environment variable (a `.env` file next to the server is re
 | `ARMOR_FCM_DATA_ONLY` |  | `1` | Send the push as data only: the phone writes the notice in its own language, once per event. Leave it off while a phone still runs an app from before this (it shows nothing for such a message). |
 | `ARMOR_FCM_SERVICE_ACCOUNT` |  | `/etc/armor/firebase-service-account.json` | Where alarms are told besides the apps: a webhook (signed with the secret), Telegram, ntfy, Home Assistant and Firebase push. |
 | `ARMOR_FFMPEG_PATH` |  | `C:\\Tools\\ffmpeg\\bin\\ffmpeg.exe` | Optional absolute path to FFmpeg for the server-local RTSP-to-MJPEG relay. Keep this unset until the media gateway is intentionally installed. |
+| `ARMOR_GEOIP_DB` |  | `/opt/armor/etc/GeoLite2-Country.mmdb` | A MaxMind DB file with countries (the free GeoLite2 Country, which you download yourself): a sign-in from outside the house then also says its country, and a country that person never signed in from is told as such. Read from this disk only. |
 | `ARMOR_HA_DISCOVERY` |  | `1` | The other services: the voice gateway, the observation service, the administration and maintenance agents of ARMOR-DEVOPS, Home Assistant discovery. |
 | `ARMOR_HA_DISCOVERY_PREFIX` |  | `homeassistant` | The name Home Assistant discovery uses for its topics. |
 | `ARMOR_HOMEASSISTANT_URL` |  | `http://192.168.0.20:8123` | Where alarms are told besides the apps: a webhook (signed with the secret), Telegram, ntfy, Home Assistant and Firebase push. |

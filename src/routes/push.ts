@@ -19,7 +19,8 @@ export function registerPushRoutes(app: Express, context: AppContext): void {
   app.post("/api/v1/push/register", requireOperator, limit, (request, response) => {
     if (!context.fcmEnabled) return response.status(409).json({ error: "push_off" });
     try {
-      const added = fcmDevices.add(tokenOf(request.body), who(request) ?? "");
+      const body = request.body as { language?: unknown } | undefined;
+      const added = fcmDevices.add(tokenOf(request.body), who(request) ?? "", typeof body === "object" && body !== null ? body.language : undefined);
       if (added) audit.record({ actor: who(request), action: "push.register", outcome: "allowed", target: "a phone" });
       return response.status(added ? 201 : 200).json({ registered: true, devices: fcmDevices.count() });
     } catch (error) {

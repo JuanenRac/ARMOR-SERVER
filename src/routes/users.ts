@@ -60,7 +60,7 @@ export function registerUserRoutes(app: Express, context: AppContext): void {
       const target = users.get(id);
       users.remove(id);
       studioSessions.revokeUser(id);
-      if (target) context.fcmDevices.removeUser(target.username);
+      if (target) { context.fcmDevices.removeUser(target.username); context.loginCountries.forget(target.id); }
       audit.record({ action: "user.delete", outcome: "allowed", actor: actor?.username, target: target?.username });
       return response.sendStatus(204);
     } catch (error) {

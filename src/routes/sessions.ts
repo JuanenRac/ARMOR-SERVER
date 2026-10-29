@@ -38,10 +38,19 @@ export function registerSessionRoutes(app: Express, context: AppContext): void {
     connections.login(sightingOf(request, user.username), twoFactor);
     const expiresAt = studioSessions.open(response, user.id, { origin, ip, agent, ...(origin === "remote" ? { ttlMs: config.remoteSessionTtlMs } : {}) });
     audit.record({ action: "studio.login", outcome: "allowed", actor: user.username, detail: `${origin} ${ip}` });
-    if (origin === "remote" && config.loginAlerts && !knownPlaces.has(`${user.id}|${ip}`)) {
-      if (knownPlaces.size >= 500) knownPlaces.delete(knownPlaces.values().next().value!);
-      knownPlaces.add(`${user.id}|${ip}`);
-      notifier.send({ service: "armor-server", event: "login.remote", at: new Date().toISOString(), mode: store.snapshot().mode, login_user: user.username, login_from: ip });
+    if (origin === "remote" && config.loginAlerts) {
+      // With a country database and the option on, a country this person never signed in from is told even from an address seen before; the first country of a person is only learned.
+      const country = context.geoip && context.securitySettings.get("login.country_alert") ? context.geoip.country(ip) : undefined;
+      const verdict = country ? context.loginCountries.note(user.id, country) : undefined;
+      const newCountry = verdict === "new";
+      const newPlace = !knownPlaces.has(`${user.id}|${ip}`);
+      if (newPlace || newCountry) {
+        if (knownPlaces.size >= 500) knownPlaces.delete(knownPlaces.values().next().value!);
+        knownPlaces.add(`${user.id}|${ip}`);
+        notifier.send({ service: "armor-server", event: "login.remote", at: new Date().toISOString(), mode: store.snapshot().mode, login_user: user.username, login_from: ip,
+          ...(country ? { login_country: country } : {}), ...(newCountry ? { login_country_new: true as const } : {}) });
+        if (newCountry) audit.record({ action: "studio.login_new_country", outcome: "allowed", actor: user.username, detail: country });
+      }
     }
     return { expiresAt, user: { id: user.id, username: user.username, role: user.role } };
   };

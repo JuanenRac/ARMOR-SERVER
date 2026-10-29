@@ -35,6 +35,8 @@ import { AlarmZoneFeed, ZoneFeedSigner } from "./alarm_zone_feed.js";
 import { CaptureOnDetect } from "./capture_on_detect.js";
 import { IgnoreZones } from "./ignore_zones.js";
 import { FcmDevices, fcmChannel, parseServiceAccount } from "./push_fcm.js";
+import { GeoIpDatabase } from "./geoip.js";
+import { LoginCountries } from "./login_places.js";
 import { KnownNodes } from "./known_nodes.js";
 import { SiteStore } from "./site.js";
 import { SolarStore } from "./solar.js";
@@ -161,6 +163,10 @@ export type AppContext = {
   ignoreZones: IgnoreZones;
   /** The Android phones that asked for push through Firebase; empty and unused unless ARMOR_FCM_SERVICE_ACCOUNT is set. */
   fcmDevices: FcmDevices;
+  /** The country of an address, from the database the owner put on this machine (ARMOR_GEOIP_DB); null when there is none or it could not be read. */
+  geoip: GeoIpDatabase | null;
+  /** The countries each person has signed in from outside the house. */
+  loginCountries: LoginCountries;
   /** The electrical nodes, alarm panels and network watchers that have ever spoken, and when: a restart does not make a node that is dead at that moment disappear. */
   knownNodes: KnownNodes;
   /** Reports as silent the known nodes that have said nothing since the server started (called now and then). */
@@ -251,6 +257,11 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   if (config.telegram) channels.push(telegramChannel({ token: config.telegram.token, chatIds: config.telegram.chatIds, api: process.env.ARMOR_TELEGRAM_API || undefined }));
   if (config.ntfy) channels.push(ntfyChannel({ url: config.ntfy.url, token: config.ntfy.token || undefined }));
   const fcmDevices = new FcmDevices(path.join(config.dataDir, "fcm-devices.json"));
+  let geoip: GeoIpDatabase | null = null;
+  if (config.geoipDb) {
+    try { geoip = GeoIpDatabase.open(config.geoipDb); } catch (error) { warn(`The country database named by ARMOR_GEOIP_DB cannot be used (${error instanceof Error ? error.message : "unreadable"}); sign-ins are not told by country.`); }
+  }
+  const loginCountries = new LoginCountries(path.join(config.dataDir, "login-countries.json"));
   if (config.fcmServiceAccount) channels.push(fcmChannel({ account: parseServiceAccount(fs.readFileSync(config.fcmServiceAccount, "utf8")), devices: fcmDevices, dataOnly: config.fcmDataOnly }));
   if (config.homeAssistant) channels.push(homeAssistantChannel({ url: config.homeAssistant.url, webhookId: config.homeAssistant.webhookId }));
   const notifier = new AlertNotifier({ webhookUrl: config.alertWebhookUrl ?? undefined, webhookSecret: config.alertWebhookSecret || undefined, audit, channels, language: config.alertLanguage });
@@ -479,7 +490,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, securitySettings, alarmSounds, spokenAlarms, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, securitySettings, geoip, loginCountries, alarmSounds, spokenAlarms, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),
