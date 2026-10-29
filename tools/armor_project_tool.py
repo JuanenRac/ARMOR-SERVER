@@ -476,7 +476,7 @@ def run_project(project: Path, manifest: dict[str, object]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="A.R.M.O.R. standardized project workflow")
-    parser.add_argument("action", choices=("build", "build-test", "run"))
+    parser.add_argument("action", choices=("build", "build-test", "test", "run"))
     parser.add_argument("project", type=Path)
     args = parser.parse_args()
     project = args.project.resolve()

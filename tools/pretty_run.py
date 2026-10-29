@@ -201,6 +201,89 @@ class Panel:
                 print("     " + _c("31", line))
             print()
 
+    # ---- a whole script as a run of steps --------------------------------------------------------------------------------------------------------------------
+    _MARKER = re.compile(r"^\s*\[(\d+)/(\d+)\]\s*(.+?)\s*$")
+    _COMMAND = re.compile(r"^[+$] (\S.*)$")
+
+    def wrap(self, args: Sequence[str], cwd: Path | str | None = None, env: Mapping[str, str] | None = None) -> int:
+        """Runs a script as it is and draws it as steps: a line `[2/5] Running the tests...` starts a step; when the script has no such lines, a line `+ command` or `$ command` does.
+        Whatever the script prints before the first step (its own banner) is left out of the panel. The exit code is the one of the script; the step that was running when it failed is the failed one."""
+        import queue
+        environment = {**os.environ, **(env or {}), "PYTHONUNBUFFERED": "1", "FORCE_COLOR": "0", "NO_COLOR": "1", "PRETTY_RUN": "1"}
+        try:
+            process = subprocess.Popen(list(args), cwd=cwd, env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1)
+        except FileNotFoundError:
+            self.fail("Start", f"required executable was not found: {args[0]}")
+            return self.finish()
+        lines: "queue.Queue[str | None]" = queue.Queue()
+
+        def read() -> None:
+            assert process.stdout is not None
+            for raw in process.stdout:
+                lines.put(raw.rstrip("\r\n"))
+            lines.put(None)
+
+        threading.Thread(target=read, daemon=True).start()
+        preamble: list[str] = []                    # what the script prints before its first step
+        current: list[str] | None = None            # the output of the step that is running
+        title = ""
+        began = 0.0
+        markers = False
+        frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+        tick = 0
+        last = ""
+        done = False
+
+        def close(ok: bool) -> None:
+            nonlocal current, title
+            if current is not None:
+                self._finish_step(title, ok, time.monotonic() - began, current, count=True)
+            current = None
+
+        def begin(text: str) -> None:
+            nonlocal current, title, began, last
+            close(True)
+            current, title, began, last = [], text[:60], time.monotonic(), ""
+
+        while not done:
+            try:
+                line = lines.get(timeout=0.1)
+            except queue.Empty:
+                line = ""
+                if _TTY and current is not None:
+                    room = self._width - 24 - len(title)
+                    tail = last[:max(10, room)] if room > 10 else ""
+                    sys.stdout.write("\r\033[2K " + _c("36", frames[tick % len(frames)]) + f" {title}  {_c('2', _seconds(time.monotonic() - began))}  {_c('2', tail)}")
+                    sys.stdout.flush()
+                    tick += 1
+                continue
+            if line is None:
+                done = True
+                break
+            marker = self._MARKER.match(line)
+            command = None if markers else self._COMMAND.match(line)
+            if marker:
+                markers = True
+                begin(marker.group(3))
+                continue
+            if command:
+                begin(command.group(1))
+                continue
+            if current is not None:
+                current.append(line)
+                if line.strip():
+                    last = line.strip()
+            else:
+                preamble.append(line)
+        code = process.wait()
+        if current is None and not self.steps:   # a script that says nothing about steps is one step
+            current, title, began = preamble, (Path(str(args[-1])).stem or "script"), self.started
+        close(code == 0)
+        if code != 0 and not any(step[1] == "fail" for step in self.steps):
+            self.fail("Script", f"it ended with exit code {code}")
+        result = self.finish()
+        return code if code else result
+
     # ---- the end -----------------------------------------------------------------------------------------------------------------------------------------
     def finish(self, extra: str = "") -> int:
         """The summary; the exit code that the script should return (0 when no step failed)."""
@@ -228,7 +311,45 @@ class Panel:
         return 0 if ok else 1
 
 
+def _wrap_main(argv: Sequence[str]) -> int:
+    """`pretty_run.py --wrap [--mode build] -- <script and its arguments>`: the script runs as it is and its steps are drawn as a panel."""
+    import argparse
+    import json
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--wrap", action="store_true")
+    parser.add_argument("--mode", default="build")
+    parser.add_argument("command", nargs=argparse.REMAINDER)
+    options = parser.parse_args(list(argv))
+    command = [c for c in options.command if c != "--"]
+    if not command:
+        print("usage: pretty_run.py --wrap [--mode build] -- <script> [arguments]", file=sys.stderr)
+        return 2
+    script = Path(command[-1] if Path(command[-1]).exists() else command[0]).resolve()
+    folder = script.parent if script.is_file() else Path.cwd()
+    name, version, tagline = folder.name, "", "Electro Hobby 3D"
+    for manifest in sorted(folder.glob("*.project.json")):
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            name, version = str(data.get("name", name)), str(data.get("version", ""))
+            tagline = {"A.R.M.O.R.": "A.R.M.O.R.", "HYDRA-UMC": "HYDRA-UMC", "URTC": "URTC", "EH3D": "EH3D"}.get(str(data.get("ecosystem", "")), tagline)
+        except (OSError, ValueError):
+            continue
+        break
+    panel = Panel(name, options.mode, version, tagline)
+    panel.banner()
+    code = panel.wrap(command, cwd=folder)
+    if sys.stdin.isatty() and not os.environ.get("CI") and not os.environ.get("HYDRA_UMC_CI") and os.environ.get("PRETTY_PAUSE") != "0":
+        try:
+            input("  Press Enter to close...")
+        except EOFError:
+            pass
+    return code
+
+
+
 if __name__ == "__main__":
+    if "--wrap" in sys.argv[1:]:
+        raise SystemExit(_wrap_main(sys.argv[1:]))
     # a small demonstration, with no project: python tools/pretty_run.py
     demo = Panel("DEMO", "build-test", "0.0.1")
     demo.banner()
