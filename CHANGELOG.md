@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+- **The pictures of the README come from shared tools:** `tools/make_architecture.py` draws `images/architecture.svg` from `docs/architecture.json` and `tools/make_structure.py` draws the Repository Structure (the text tree and the animated picture) from `docs/structure.json`; both measure every text, and `--check` fails when a picture, its description or the code it points to disagree. They are vendored from ARMOR-COMMON like the shared CI checks.
+- **The architecture picture of the README is generated:** `docs/architecture.json` describes the boxes and `images/architecture.svg` is drawn from it (the Mermaid diagram stays in the README as text).
+
 ## [0.8.0.6] - A camera keeps its kind, lenses and parameters, and a written command can carry the silencing PIN
 
 - **A written command can carry the PIN that silencing by voice asks for:** `POST /api/v1/voice/command` takes `silence_pin` and passes it to the voice gateway as its `pin`, so the `pin` mode of the silence rule also works by text. It is a field of its own: the PIN of the signed-in user (`pin`, for disarming) is never sent to the gateway.
