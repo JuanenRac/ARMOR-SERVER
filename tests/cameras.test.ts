@@ -156,3 +156,24 @@ test("a camera can have a lighter stream for the live picture, which only the li
   const plain = parseCameraInput({ id: "gate-cam", name: "Gate", host: "192.168.0.203", username: "u", password: "p", rtspPath: "11" })!;
   assert.match(rtspUrl(plain, true)!, /\/11$/, "without a lighter stream the live picture uses the main one");
 });
+
+test("the traits of a camera (lenses, movement, web page, field of view, parameters) are kept when valid and dropped when not", () => {
+  const camera = parseCameraInput({
+    ...base, layout: "split", group: "yard-1", lensName: "Wide", preset: "dual-split", ptz: true, zoom: false, webUrl: "http://192.168.0.203/",
+    fovDeg: 110, panRangeDeg: 355, tiltRangeDeg: 90, rangeM: 25, params: { wifiSsid: "Home", ip: "192.168.0.203", encoder: "H.265", bitrateKbps: 2048, resolution: "2560x1440" },
+  })!;
+  assert.equal(camera.layout, "split");
+  assert.equal(camera.group, "yard-1");
+  assert.equal(camera.ptz, true);
+  assert.equal(camera.zoom, false);
+  assert.equal(camera.webUrl, "http://192.168.0.203/");
+  assert.equal(camera.panRangeDeg, 355);
+  assert.equal(camera.params?.encoder, "H.265");
+  const bad = parseCameraInput({ ...base, layout: "weird", group: "a", webUrl: "http://u:p@cam/", fovDeg: 999, params: { ip: "<script>" } })!;
+  assert.equal(bad.layout, undefined);
+  assert.equal(bad.group, undefined);
+  assert.equal(bad.webUrl, undefined);
+  assert.equal(bad.fovDeg, undefined);
+  assert.equal(bad.params, undefined);
+  assert.equal(parseCameraInput(base)!.ptz, undefined);
+});

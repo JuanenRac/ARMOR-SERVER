@@ -10,7 +10,29 @@ export type CameraConnection = {
   /** A lighter stream of the same camera (its sub-stream) for the live picture in the console, when it has one; empty: the live picture uses `rtspPath`. */
   previewPath?: string;
   onvifPort: number; rtspPort: number; secrets?: CameraSecrets;
+} & CameraTraits;
+
+/**
+ * What a camera is, beyond how to reach it. A camera with several lenses is stored as one camera per lens (each with its own stream and its own movement), tied by `group`; a camera
+ * whose single stream carries two lenses one above the other has `layout: "split"` and the console shows it in two windows. Every field is optional: a camera saved before has none.
+ */
+export type CameraTraits = {
+  /** "split": the stream is two lenses, one on top of the other, shown as two windows. */
+  layout?: "single" | "split";
+  /** The cameras that are the lenses of one body share this identifier; `lensName` says which lens this one is. */
+  group?: string; lensName?: string;
+  /** The type of camera chosen in the form (informative; the fields below are what counts). */
+  preset?: string;
+  /** Whether the lens turns (pan and tilt) and whether it zooms: the movement buttons of the console follow these. */
+  ptz?: boolean; zoom?: boolean;
+  /** The web page of the camera's own configurator, opened from a button. */
+  webUrl?: string;
+  /** Field of view of the lens at rest, how far the motor sweeps (pan, tilt) and how far it sees, for the site designer. */
+  fovDeg?: number; panRangeDeg?: number; tiltRangeDeg?: number; rangeM?: number;
+  /** Internal parameters of the camera that the operator wants noted: network and encoder. */
+  params?: CameraParams;
 };
+export type CameraParams = { wifiSsid?: string; ip?: string; encoder?: string; bitrateKbps?: number; resolution?: string };
 /** What an authorised operator sees: everything except the password. */
 export type PublicCamera = Omit<CameraConnection, "secrets"> & { username: string; hasCredentials: boolean; liveVideoAvailable: boolean };
 /** What any local viewer sees: no username and no credentials at all. */
@@ -74,7 +96,56 @@ export function parseCameraInput(body: unknown, existing?: CameraConnection): Ca
     previewPath: text("previewPath").replace(/^\/+/, "").slice(0, 500),
     onvifPort: validPort(input.onvifPort, 80), rtspPort: validPort(input.rtspPort, 554),
     secrets,
+    ...parseTraits(input),
   };
+}
+
+const number = (value: unknown, min: number, max: number): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) && value >= min && value <= max ? Math.round(value * 10) / 10 : undefined;
+const short = (value: unknown, max = 80): string => typeof value === "string" ? value.trim().slice(0, max) : "";
+
+/** A web address for the configurator button: http or https, no login inside. */
+export function parseWebUrl(value: unknown): string {
+  const raw = short(value, 300);
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    return (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password ? url.toString() : "";
+  } catch { return ""; }
+}
+
+/** The optional traits of a camera; a wrong value is dropped, never an error, so an older Studio keeps working. */
+export function parseTraits(input: Record<string, unknown>): CameraTraits {
+  const traits: CameraTraits = {};
+  if (input.layout === "single" || input.layout === "split") traits.layout = input.layout;
+  const group = short(input.group, 80);
+  if (CAMERA_ID.test(group)) traits.group = group;
+  const lensName = short(input.lensName, 40);
+  if (lensName) traits.lensName = lensName;
+  const preset = short(input.preset, 40);
+  if (/^[a-z0-9_-]+$/.test(preset)) traits.preset = preset;
+  if (typeof input.ptz === "boolean") traits.ptz = input.ptz;
+  if (typeof input.zoom === "boolean") traits.zoom = input.zoom;
+  const webUrl = parseWebUrl(input.webUrl);
+  if (webUrl) traits.webUrl = webUrl;
+  const fov = number(input.fovDeg, 1, 360), pan = number(input.panRangeDeg, 0, 360), tilt = number(input.tiltRangeDeg, 0, 180), range = number(input.rangeM, 1, 500);
+  if (fov !== undefined) traits.fovDeg = fov;
+  if (pan !== undefined) traits.panRangeDeg = pan;
+  if (tilt !== undefined) traits.tiltRangeDeg = tilt;
+  if (range !== undefined) traits.rangeM = range;
+  const raw = input.params;
+  if (raw && typeof raw === "object") {
+    const p = raw as Record<string, unknown>, params: CameraParams = {};
+    const wifiSsid = short(p.wifiSsid, 32), ip = short(p.ip, 45), encoder = short(p.encoder, 20), resolution = short(p.resolution, 20);
+    const bitrate = number(p.bitrateKbps, 16, 100000);
+    if (wifiSsid) params.wifiSsid = wifiSsid;
+    if (/^[0-9A-Fa-f:.]+$/.test(ip)) params.ip = ip;
+    if (encoder) params.encoder = encoder;
+    if (resolution) params.resolution = resolution;
+    if (bitrate !== undefined) params.bitrateKbps = bitrate;
+    if (Object.keys(params).length) traits.params = params;
+  }
+  return traits;
 }
 
 /** The RTSP source URL, built only in memory when it is needed. `preview` asks for the lighter stream of the live picture when the camera has one. */
