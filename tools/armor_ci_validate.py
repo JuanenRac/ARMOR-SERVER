@@ -29,6 +29,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _armor_readme_parity import check_readme_section_parity, check_readme_tree  # noqa: E402
 
+try:   # vendored next to this file by sync_ci_tools.py; a checkout that does not have it yet simply skips the check
+    import universal_readme_check  # noqa: E402
+except ImportError:
+    universal_readme_check = None
+
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = ROOT / "armor.project.json"
 REQUIRED_DOCUMENTS = (
@@ -230,6 +235,12 @@ def main() -> int:
         fail(readme_problem)
     for tree_problem in check_readme_tree(ROOT):
         fail(tree_problem)
+
+    # The layout of the README (22 sections in a fixed order, in the eight languages). A warning for now: the family turns it into a failure in FAMILY_STRICT of
+    # universal_readme_check.py, or for one run with the variable UNIVERSAL_README_STRICT=1.
+    if universal_readme_check is not None:
+        for universal_problem in universal_readme_check.run_in_ci(ROOT):
+            fail(universal_problem)
 
     print(f"CI_VALIDATION=PASS project={manifest['name']} version={manifest['version']}")
     return 0

@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The layout of the README is checked in the CI:** the validator runs the shared `tools/universal_readme_check.py` and lists, as a warning, what differs from the universal layout of the README.
 - **The search for the stream of a camera knows the H264DVR / XMeye family:** many cheap cameras, often with two lenses, answer to `H264DVR` and take the login in the path of the stream. The search asks the camera what it is (the `Server` header of RTSP, no login needed), tries the paths of its family first (including `user={user}&password={password}&channel=1&stream=0.sdp?real_stream` and the ones for the second lens), and finds the lighter stream of those cameras. The words `{user}` and `{password}` stay in the stored path and are replaced, in memory only, when the address is built.
 - **The pictures of the README come from shared tools:** `tools/make_architecture.py` draws `images/architecture.svg` from `docs/architecture.json` and `tools/make_structure.py` draws the Repository Structure (the text tree and the animated picture) from `docs/structure.json`; both measure every text, and `--check` fails when a picture, its description or the code it points to disagree. They are vendored from ARMOR-COMMON like the shared CI checks.
 - **The architecture picture of the README is generated:** `docs/architecture.json` describes the boxes and `images/architecture.svg` is drawn from it (the Mermaid diagram stays in the README as text).
