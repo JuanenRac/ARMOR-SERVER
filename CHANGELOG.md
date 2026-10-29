@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## [Unreleased]
+## [0.8.0.6] - A camera keeps its kind, lenses and parameters, and a written command can carry the silencing PIN
 
 - **A written command can carry the PIN that silencing by voice asks for:** `POST /api/v1/voice/command` takes `silence_pin` and passes it to the voice gateway as its `pin`, so the `pin` mode of the silence rule also works by text. It is a field of its own: the PIN of the signed-in user (`pin`, for disarming) is never sent to the gateway.
 - **A camera keeps what kind of camera it is:** besides how to reach it, a camera can now carry its layout (one stream, or two lenses one above the other), the group and name of its lens (a body with several lenses is stored as one camera per lens, each with its own stream and movement), the kind chosen in the form, whether it pans, tilts and zooms, the address of its own configurator page, its field of view and ranges, and notes of its internal parameters (Wi-Fi network, address, encoder, bitrate, resolution). Every field is optional and a wrong value is dropped instead of refusing the camera, so a camera saved before keeps working.
