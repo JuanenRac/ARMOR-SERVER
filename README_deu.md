@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="images/ARMOR_BANNER.svg" alt="ARMOR-SERVER banner" width="100%">
+  <img src="images/ARMOR_BANNER.svg" alt="ARMOR-SERVER-Banner" width="100%">
 </p>
 
 # 🛡️ ARMOR-SERVER
@@ -18,17 +18,17 @@
 ### Zentraler Sicherheitskoordinator: Knoten, Alarme, Geräte, Energie, Kameras, das lokale Netz und die Wartung der Anlage
 
 <p align="center">
-  <img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="GPL 3.0">
-  <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
+  <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 oder neuer">
+  <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Sprache">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-696%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-700%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Version-0.8.0.6-0f6cbd.svg" alt="Version">
-  <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
+  <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Reifegrad">
 </p>
 
 ---
 
-**Ehrlichkeitsprüfung - was heute läuft:** Jede Route, Sitzung, Verschlüsselung und Beweisregel unten ist real und durch Tests abgedeckt (`npm test`: 696 Tests, darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server und eine Prüfung, dass jede Route in der OpenAPI-Datei dokumentiert ist). Er läuft im täglichen Einsatz auf dem CM5-Testaufbau mit einem echten MQTT-Broker, der Firmware eines echten Radarknotens auf einer ESP32-S3-Platine, echten IP-Kameras (Livevideo, Schnappschüsse, Aufnahmen, PTZ an den Hi3510-Geräten), der Studio-Konsole, der Android-App sowie den Sprach- und Beobachtungsdiensten. Was **noch nicht** bewiesen ist: ONVIF mit einer echten ONVIF-Kamera, jegliche Jetson-Hardware, die Solar-, Elektro-, Alarmzentralen- und Touchpanel-Routen mit echten Knoten (sie werden mit erzeugten Nachrichten getestet: nur die Radarplatine existiert) und Push über Firebase mit einem echten Firebase-Projekt.
+**Ehrlichkeitsprüfung - was heute läuft:** Jede Route, Sitzung, Verschlüsselung und Beweisregel unten ist real und durch Tests abgedeckt (`npm test`: 700 Tests, darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server und eine Prüfung, dass jede Route in der OpenAPI-Datei dokumentiert ist). Er läuft im täglichen Einsatz auf dem CM5-Testaufbau mit einem echten MQTT-Broker, der Firmware eines echten Radarknotens auf einer ESP32-S3-Platine, echten IP-Kameras (Livevideo, Schnappschüsse, Aufnahmen, PTZ an den Hi3510-Geräten), der Studio-Konsole, der Android-App sowie den Sprach- und Beobachtungsdiensten. Was **noch nicht** bewiesen ist: ONVIF mit einer echten ONVIF-Kamera, jegliche Jetson-Hardware, die Solar-, Elektro-, Alarmzentralen- und Touchpanel-Routen mit echten Knoten (sie werden mit erzeugten Nachrichten getestet: nur die Radarplatine existiert) und Push über Firebase mit einem echten Firebase-Projekt.
 
 ---
 
@@ -38,9 +38,16 @@
 |---|---|
 | Version | `0.8.0.6` |
 | Reifegrad | Etabliert |
-| Tests | 696 (`npm test`) |
-| Technik | Node.js 22+ / TypeScript / Docker Compose |
+| Rolle | Zentraler Sicherheitskoordinator der Familie: Knoten, Alarme, Geräte, Energie, Kameras, Netzwerk |
+| Technik | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
+| Tests | 700 (`npm test`: Unit und volle HTTP-Integration) |
+| Vertrag | 191 HTTP-Pfade, 247 Operationen (OpenAPI in ARMOR-COMMON), Routentabelle in `docs/ROUTES.md` |
+| Lauscht auf | `127.0.0.1:8080` (`ARMOR_HOST`, `ARMOR_PORT`) |
+| Läuft auf | Der CM5-Prüfstand (als Dienst, siehe ARMOR-DEVOPS) oder jeder Computer mit Node.js |
 | Auf echter Hardware | Der CM5-Testaufbau im täglichen Einsatz: ein echter MQTT-Broker, echte IP-Kameras, ein echter Radarknoten auf einer ESP32-S3-Platine, Studio, die Android-App und die Sprach- und Beobachtungsdienste daran |
+| Lizenz | GPL-3.0-or-later |
+
+**Springe zu:** [Überblick](#-überblick) · [Architektur](#-architektur) · [Sicherheit](#-sicherheit-und-schutz) · [Schnittstellen](#-schnittstellen) · [Konfiguration](#-konfiguration) · [Schnellstart](#-schnellstart) · [Tests](#-tests) · [Probleme](#-fehlerbehebung) · [Struktur](#-struktur-des-repositorys) · [Verwandte](#-verwandte-projekte)
 
 ## 🚦 Projektstatus
 
@@ -51,7 +58,7 @@ Jede Zeile ist ein Teil dieses Repositorys, und die Ampel sagt, wie weit er heut
 | Bereich | Stand | Was das hier bedeutet |
 |---|---|---|
 | Software | 🟢 | Die Routen, Sitzungen, Verschlüsselung und Beweisregeln laufen täglich auf dem CM5-Prüfstand. |
-| Tests | 🟢 | 696 Tests bestehen (`npm test`), darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server und eine Prüfung, dass jede Route in der OpenAPI-Datei dokumentiert ist. |
+| Tests | 🟢 | 700 Tests bestehen (`npm test`), darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server und eine Prüfung, dass jede Route in der OpenAPI-Datei dokumentiert ist. |
 | Protokolle und Daten | 🟡 | Die Radar-Nachrichten stammen von einer echten Platine; die Routen für Solar, Elektrik, Alarmzentrale und Touch-Panel sind mit erzeugten Nachrichten getestet, und ONVIF ist keiner echten ONVIF-Kamera begegnet. |
 | Hardware | 🟡 | Er läuft auf dem CM5-Prüfstand mit einem echten MQTT-Broker, echten IP-Kameras (Live-Video, Standbilder, Aufnahmen, PTZ an den Hi3510-Geräten) und einem echten Radar-Knoten; auf einem Jetson lief nichts. |
 | Sicherheit | 🟡 | Die Regeln für Sitzungen, Verschlüsselung, Beweise und Anmeldung sind durch Tests abgedeckt; es gab keine unabhängige Prüfung. |
@@ -86,7 +93,23 @@ Jede Zeile ist ein Teil dieses Repositorys, und die Ampel sagt, wie weit er heut
 
 ARMOR-SERVER ist das eine vertrauenswürdige Zentrum der Familie. Die Feldknoten ([ARMOR-NODE-RADAR](https://github.com/JuanenRac/ARMOR-NODE-RADAR), [ARMOR-NODE-SOLAR](https://github.com/JuanenRac/ARMOR-NODE-SOLAR), [ARMOR-NODE-ELECTRICAL](https://github.com/JuanenRac/ARMOR-NODE-ELECTRICAL), [ARMOR-NODE-ALARM](https://github.com/JuanenRac/ARMOR-NODE-ALARM), [ARMOR-NODE-HMI](https://github.com/JuanenRac/ARMOR-NODE-HMI)) und [ARMOR-NETWORK](https://github.com/JuanenRac/ARMOR-NETWORK) sprechen per MQTT oder HTTP mit ihm; [ARMOR-STUDIO](https://github.com/JuanenRac/ARMOR-STUDIO) und [ARMOR-ANDROID-CONTROL](https://github.com/JuanenRac/ARMOR-ANDROID-CONTROL) lesen es und geben ihm Befehle; [ARMOR-SERVER-AI](https://github.com/JuanenRac/ARMOR-SERVER-AI) wägt ab, was die Kameras sehen, gegen die Radare und empfiehlt nur; [ARMOR-VOICE-AI](https://github.com/JuanenRac/ARMOR-VOICE-AI) macht aus Sprache eine geschlossene Liste von Befehlen; [ARMOR-DEVOPS](https://github.com/JuanenRac/ARMOR-DEVOPS) installiert und aktualisiert alles auf dem CM5. Der Server entscheidet: nichts sonst schaltet scharf, unscharf oder irgendetwas.
 
-## 🔄 Architektur
+| Er spricht mit | Wie | Wozu |
+|---|---|---|
+| ARMOR-NODE-RADAR, SOLAR, ELECTRICAL, ALARM, HMI | MQTT `armor/*/#` oder HTTP `POST` mit dem Ingest-Token | ihre Nachrichten hinein, Befehle hinaus |
+| ARMOR-NETWORK | Zustand hinein, Aufträge und versiegelte Logins hinaus | das lokale Netz |
+| ARMOR-STUDIO, ARMOR-ANDROID-CONTROL | HTTP, MJPEG und der WebSocket `/api/v1/events` | die Konsolen |
+| ARMOR-VOICE-AI | `/v1/command`, `/v1/turn` mit eigenem Token | entscheidet über einen Satz; der Server handelt |
+| ARMOR-SERVER-AI | `ARMOR_AI_TOKEN`, `/api/v1/ai/...` | Beobachtung der Kameras |
+| IP-Kameras | RTSP, ONVIF, Hi3510, PSIA (der Server ruft sie auf) | Live-Video, Standbilder, Aufnahme, PTZ |
+
+## 🏛️ Architektur
+
+<p align="center">
+  <img src="images/architecture.svg" alt="ARMOR-SERVER architecture: the nodes, cameras, consoles and services that call it, the server and its modules, and what it keeps and calls" width="100%">
+</p>
+
+<details>
+<summary>Textversion des Diagramms (Mermaid)</summary>
 
 ```mermaid
 flowchart LR
@@ -99,7 +122,9 @@ flowchart LR
     S --> D[("data/: cameras.json (AES-GCM), media/, audit.log")]
 ```
 
-## 🔒 Sicherheitsmodell
+</details>
+
+## 🔒 Sicherheit und Schutz
 
 * Getrennte Geheimnisse: **ingest** (die Knoten senden ihre Nachrichten; jeder Knoten kann außerdem ein eigenes, vom gemeinsamen abgeleitetes Token haben, und ein strenger Modus akzeptiert nur diese), **control** (scharf / unscharf, Ereignisse), **operator** (Automation) und das **Studio-Login**; jedes wird in konstanter Zeit verglichen, und keines ersetzt ein anderes. Ein einem Netzwerkknoten gegebener Login reist nur für diesen Knoten versiegelt.
 * Drei Rollen: **admin**, **operator** und **viewer** (liest, ändert nie). Jede Route, die konfiguriert, bewegt, aufnimmt, aufzeichnet, schützt, löscht oder scharf schaltet, braucht einen Operator; Livevideo braucht einen Operator oder ein kurzlebiges Stream-Ticket für eine Kamera. Gefährliche Befehle (Unscharfschalten, einen Stromkreis schalten, die Root-Konsole) verlangen einen Administrator und zum Unscharfschalten die PIN.
@@ -108,53 +133,170 @@ flowchart LR
 * Der Server lauscht auf 127.0.0.1, außer `ARMOR_HOST` wird absichtlich gesetzt; dann wird ein Studio-Passwort unter 12 Zeichen abgelehnt.
 * Von außerhalb des Hauses: zweiter Faktor (TOTP, RFC 6238), ein neuer Identitätsnachweis für Benutzer, Firmware und Knoten-Panels, eine Richtlinie, die Verwaltung nur im Haus oder über das VPN erlaubt, nur signierte Firmware-Releases und ein Proxy für Knoten-Panels, der nie eine Adresse aus der Anfrage übernimmt, nur das Nötige weiterreicht und einen Knoten ablehnt, dessen Zertifikat nicht das vertrauenswürdige ist.
 
-## 🌐 API
+| Bedrohung | Abwehr |
+|---|---|
+| Erraten des Studio-Passworts | scrypt (N=16384, r=8, p=1), gleicher Aufwand, ob der Benutzer existiert oder nicht; 12 Versuche je 15 Minuten je Person und Adresse, 60 je Adresse, 40 pro Minute insgesamt; unter 8 Zeichen wird abgelehnt (12, wenn der Server aus dem Netz erreichbar ist) |
+| Ein gestohlenes Cookie, eine Anfrage von einer anderen Seite | HttpOnly, SameSite=Strict und Secure hinter HTTPS; Sitzungen dauern 7 Tage (Studio), 8 Stunden (Bediener) und 12 Stunden mit 30 Minuten Leerlauf von außen |
+| Zeitangriffe und schwache Geheimnisse | Geheimnisse werden zeitkonstant verglichen, brauchen mindestens 24 Zeichen und müssen alle verschieden sein (Ingest, Steuerung, Bediener, Kameraschlüssel, KI, Beweisschlüssel) |
+| Entschärfen ohne Nachweis | Eine PIN mit 4 bis 10 Ziffern gemäß `alarm.disarm_pin` (never, if_set, always); 3 Fehlversuche sperren 60 s, 5 min, 15 min, dann 1 h, auf Platte über Neustarts gespeichert; eine Zwangs-PIN wird still erkannt; das Steuer-Token entschärft nur mit `ARMOR_CONTROL_DISARM=1` |
+| Kennwörter der Kameras gelangen nach außen | AES-256-GCM in `data/cameras.json`; keine API gibt sie zurück; FFmpeg läuft über einen lokalen RTSP-Tunnel (`media.rtsp_proxy`), damit das Kennwort nie in der Kommandozeile steht; ONVIF-Weiterleitungen werden abgelehnt |
+| Live-Video ohne Anmeldung | Ein Stream-Ticket für genau eine Kamera, nur an Bediener ausgestellt |
+| Überfluten der API | allgemein 240 Anfragen pro Minute (Knoten-POSTs haben ein eigenes Budget von 6000 pro Minute); JSON-Inhalte bis 64 kB (9 MB für eine Installationsdatei) |
+| Eine falsche oder fehlerhafte Knotennachricht | An der Grenze von den Parsern in `src/contracts.ts` geprüft, getestet mit den gemeinsamen Vektoren von ARMOR-COMMON: höchstens 15 Spuren, Lux bis 200 000, eine Knoten-ID aus Buchstaben, Ziffern, `_` und `-`; ein Token je Knoten, vom gemeinsamen abgeleitet, und ein strenger Modus (`ARMOR_INGEST_STRICT=1`) |
+| Eine Sitzung von außerhalb des Hauses | Zweiter Faktor (`ARMOR_TOTP_REQUIRED`: off, remote, always), eine Richtlinie, was sie darf (`ARMOR_REMOTE_POLICY`: full, operate, view), erneuter Identitätsnachweis bei kritischen Aktionen (standardmäßig 5 Minuten) und ein Hinweis bei Anmeldung von einem neuen Ort |
+| Ein Knoten-Panel als offener Proxy | Die Adresse stammt nie aus der Anfrage; HTTPS ist an den SHA-256-Fingerabdruck des Knotenzertifikats gebunden |
+| Sprache: Stummschalten ohne Prüfung, langer Text, riesiges Audio | Die Richtlinie `voice.silence_confirmation` (off, pin, double_turn) reist mit jedem Turn; Bestätigung an die Person gebunden; 200 Zeichen, 8 Sprachen, 30 Anfragen pro Minute; Audio höchstens 480 000 Bytes, Antwort höchstens 200 000 Bytes |
+| Gefährliche Schreibzugriffe aus Versehen | Aus, außer mit `ARMOR_BATTERY_WRITE=1`, `ARMOR_ELECTRICAL_SWITCHING=1` oder `ARMOR_ALARM_COMMANDS=1`, mit Warnung beim Start |
+
+**Schalter in Studio.** Die einstellbaren Schutzmaßnahmen sind 13 Werte in `security-settings.json` (Modus 0600, atomares Schreiben), jeweils mit konservativem Standard; das Absenken eines Werts landet im Audit: `alarm.disarm_pin`, `voice.silence_confirmation`, `alarm.config_hash`, `server.zone_feed`, `server.zone_feed_signature`, `media.rtsp_proxy`, `network.login_secure_only`, `voice.multipart_turn`, `panel.live_events`, `client.device_lock`, `nodes.nvs_encryption`, `voice.turn_max_bytes` und `voice.reply_audio_max_bytes`.
+
+**Was es nie tut:** ein Kamerakennwort zurückgeben, das Gesprochene speichern (nur Befehl und Ergebnis) oder eine PIN, ein Token oder ein Cookie in ein Protokoll schreiben. Eine unabhängige Sicherheitsprüfung gab es nicht.
+
+## 🔌 Schnittstellen
+
+Die Routentabelle (`docs/ROUTES.md`, aus dem Code erzeugt) listet jede Route mit den Berechtigten; die OpenAPI-Datei von ARMOR-COMMON beschreibt 191 Pfade und 247 Operationen, und ein Test schlägt fehl, wenn eine Route fehlt. Die wichtigsten:
+
+| Route | Authentifizierung | Was sie tut |
+|---|---|---|
+| `GET /healthz` | keine | lebt und ist bereit |
+| `POST /api/v1/telemetry`  `/health`  `/solar`  `/electrical/readings`  `/alarm/state`  `/network/state`  `/devices/state` | Ingest-Token | was die Knoten senden |
+| `WS /api/v1/events` | Sitzung | der ganze Zustand bei jeder Änderung (ein Schwung ist eine Nachricht; ein zurückfallender Client wird getrennt; höchstens 1 KB vom Client) |
+| `WS /api/v1/panel/events` | Panel | ein kleinerer Kanal für das Wandpanel (höchstens 128 Bytes vom Client) |
+| `POST /api/v1/voice/command` | Bediener, 30 pro Minute | ein geschriebener oder gesprochener Befehl: `{text, language, confirmation?, pin?}`; Antwort `{accepted, executed, intent, outcome, speech, confirmation_token?, reason?, result?}` |
+| `POST /api/v1/voice/turn`  `/api/v1/voice/v1/turn` | Header `X-Armor-Voice-Token` | das Audio eines Turns (Multipart); Fehler `unauthorized`, `multipart_turn_disabled` (415), `audio_too_large` (413), `bad_multipart` (400), `voice_bad_reply` (502) |
+| `POST /api/v1/nodes/{id}/control`  `POST /api/v1/nodes/control` | Administrator, der sich eben erneut ausgewiesen hat | ein Befehl (Neustart, Pause, Fortsetzen, Standby, Identifizieren, Diagnose, Wartung) an einen Knoten oder alle |
+| `POST /api/v1/cameras/{id}/stream-ticket` | Bediener | ein kurzlebiges Ticket für das Live-Video einer Kamera |
 
 * Öffentlich: `GET /healthz`. Für einen angemeldeten Benutzer: Status, Informationen, Kameras, Medien, Verlauf, Regeln, Geräte, Alarme, Automationen, die Pläne (Standort, Alarm, Elektro, Netzwerk), Solar- und Elektrowerte, das lokale Netz, Benachrichtigungen und Einstellungen und für einen Administrator Benutzer, Dienste, Firmware, Updates und die Konsole.
 * Für die Knoten: `POST /api/v1/telemetry`, `/health`, `/solar`, `/electrical/readings`, `/alarm/state`, `/network/state` und `/devices/state` mit dem Ingest-Token sowie die MQTT-Themen `armor/node/#`, `armor/solar/#`, `armor/electrical/#`, `armor/alarm/#` und `armor/network/#`. Ereignisse erreichen die Konsolen über den WebSocket `/api/v1/events`.
-* Jede Route (heute 135 Pfade), ihre Zugriffsregel und ihr Schema stehen in der OpenAPI-Datei von [ARMOR-COMMON](https://github.com/JuanenRac/ARMOR-COMMON), und ein Test prüft, dass keine fehlt.
 
 ## ⚙️ Konfiguration
 
-* Kopieren Sie `.env.example` nach `.env` (von Git ignoriert), oder lassen Sie `run.bat` / `run.sh` beim ersten Start zufällige Geheimnisse erzeugen.
+`.env.example` nach `.env` kopieren (von Git ignoriert) oder `run.bat` / `run.sh` beim ersten Start zufällige Geheimnisse erzeugen lassen. Die vollständige Liste der Variablen mit Bereichen steht in [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) (aus dem Code erzeugt), die des Fernzugriffs in [docs/REMOTE_ACCESS.md](docs/REMOTE_ACCESS.md). Die Werte, die die Installation schützen, stehen nicht hier, sondern in Studio (siehe Sicherheit).
+
+| Einstellung | Standard | Was sie tut |
+|---|---|---|
+| `ARMOR_INGEST_TOKEN`  `ARMOR_CONTROL_TOKEN` | ja (24+ Zeichen, alle verschieden) | womit die Knoten senden; was schärft, entschärft und Ereignisse liest |
+| `ARMOR_STUDIO_USERNAME`  `ARMOR_STUDIO_PASSWORD` | ja | der erste Administrator |
+| `ARMOR_HOST`  `ARMOR_PORT` | 127.0.0.1  8080 | wo er lauscht; ein Studio-Passwort unter 12 Zeichen wird abgelehnt, wenn es nicht Loopback ist |
+| `ARMOR_DATA_DIR`  `ARMOR_FFMPEG_PATH` | data/ | Zustandsordner; FFmpeg für Live-Video und Aufnahme |
+| `ARMOR_MQTT_URL`  `ARMOR_MQTT_CA_FILE` | optional | der Broker; die eigene Stelle der Installation für `mqtts://` (der Server vertraut nur ihr, prüft den Brokernamen und startet bei falscher Datei nicht) |
+| `ARMOR_NODE_STALE_AFTER_S` | 30 (5-3600) | Sekunden Stille, bis ein Knoten veraltet ist |
+| `ARMOR_ALERT_DWELL_MS`  `ARMOR_ALERT_MIN_TARGETS` | 2000 (0-60000)  1 (1-20) | wie lange und wie viele Ziele bis zu einem Radar-Alarm |
+| `ARMOR_ESCALATE_AFTER_MIN` | 0 = off (0-1440) | Minuten, bis ein unbeachteter kritischer Alarm eskaliert |
+| `ARMOR_MEDIA_RETENTION_DAYS`  `ARMOR_MEDIA_MAX_BYTES` | 30 (0-3650)  20 GiB | Beweise nach Alter und Größe, älteste zuerst; geschützte Beweise werden nie gelöscht |
+| `ARMOR_STUDIO_SESSION_TTL_MS`  `ARMOR_OPERATOR_SESSION_TTL_MS`  `ARMOR_REMOTE_SESSION_TTL_MS`  `ARMOR_REMOTE_IDLE_MS`  `ARMOR_ELEVATION_MS` | 7 d  8 h  12 h  30 min  5 min | Sitzungsdauer und Gültigkeit eines erneuten Nachweises |
+| `ARMOR_TOTP_REQUIRED`  `ARMOR_REMOTE_POLICY` | off  full | zweiter Faktor und was eine Sitzung von außen darf |
+| `ARMOR_ALERT_LANGUAGE` | es | Sprache der Alarme (eine der acht) |
+| `ARMOR_NTFY_URL`  `ARMOR_TELEGRAM_BOT_TOKEN`  `ARMOR_HOMEASSISTANT_URL`  `ARMOR_ALERT_WEBHOOK_URL`  `ARMOR_FCM_SERVICE_ACCOUNT` | aus | wohin die Alarme gehen (alles standardmäßig aus) |
+| `ARMOR_ALARM_COMMANDS`  `ARMOR_BATTERY_WRITE`  `ARMOR_ELECTRICAL_SWITCHING`  `ARMOR_INGEST_STRICT`  `ARMOR_CONTROL_DISARM` | 0 | gefährliche Schreibzugriffe und strenge Modi, alles aus |
+| `ARMOR_COOKIE_SECURE`  `ARMOR_STUDIO_ORIGIN` | - | `1` hinter TLS setzen; der Ursprung von Studio |
+
 * Erforderlich: `ARMOR_INGEST_TOKEN` und `ARMOR_CONTROL_TOKEN` (24 Zeichen oder mehr, alle verschieden) sowie `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD` (der erste Administrator).
 * Üblich: `ARMOR_HOST` / `ARMOR_PORT`, `ARMOR_DATA_DIR`, `ARMOR_FFMPEG_PATH` (Livevideo und Aufnahme), `ARMOR_MQTT_URL`, `ARMOR_MQTT_CA_FILE`, `ARMOR_STUDIO_ORIGIN`, `ARMOR_NODE_STALE_AFTER_S`, `ARMOR_CAMERA_CHECK_S`, `ARMOR_ALERT_DWELL_MS`, `ARMOR_ALERT_WEBHOOK_URL` und `ARMOR_COOKIE_SECURE` (auf `1` hinter TLS).
-* Optional, alle standardmäßig aus: `ARMOR_NTFY_URL`, `ARMOR_TELEGRAM_BOT_TOKEN`, `ARMOR_HOMEASSISTANT_URL`, `ARMOR_FCM_SERVICE_ACCOUNT` (Push über das eigene Firebase-Projekt der Anlage), `ARMOR_ALARM_COMMANDS=1` (lässt den Server Alarmzentralen scharf und unscharf schalten), `ARMOR_ELECTRICAL_SWITCHING` und `ARMOR_INGEST_STRICT=1`.
 
-## 📂 Struktur des Repositorys
+## 🚀 Schnellstart
 
-```text
-ARMOR-SERVER/
-├── src/            server, app, config, context, store, persistence, events, contracts, rules, mqtt, mqtt_tls, audit, notify, channels,
-│   │               alarms, alarm, alarm_design, alarm_commands, alarm_zone_feed, escalation, preflight, automations, users,
-│   │               site, solar, solar_registry, electrical, electrical_energy, electrical_switching, network, network_commands,
-│   │               firmware, installation, admin, voice, voice_actions, ai, capture_on_detect, ignore_zones, push_fcm, ...
-│   ├── http/       auth, per-node tokens, sealed credentials
-│   ├── routes/     sessions, users, cameras, media, ingest, history, devices, alarms, alarm, alarm_design, solar, electrical,
-│   │               network, firmware, maintenance, admin, notifications, voice, ai, push, preferences, system
-│   ├── devices/    catalog, registry, commands, mapping (the device model and its MQTT bridge)
-│   ├── cameras/    model, vault, digest, ptz, rtsp, discovery, health, errors
-│   └── media/      relay, evidence
-├── tests/          696 tests: unit + full HTTP integration
-├── docs/           state machine, camera gateway, integration, node firmware
-├── tools/          project tooling and the CI checks
-├── data/           runtime state (ignored by Git)
-└── images/         brand assets
-```
-
-## 🛠️ Entwicklungsumgebung
-
-**Voraussetzungen:** Node.js 22+, FFmpeg (Live-Video und Aufnahme), ein MQTT-Broker (Mosquitto)
+**Voraussetzungen:** Node.js 22+, FFmpeg (Live-Video und Aufnahme), ein MQTT-Broker (Mosquitto).
 
 ```powershell
-npm install
-npm run typecheck   # tsc --noEmit
-npm test            # 696 tests: unit + full HTTP integration (every route must be in the OpenAPI file)
-npm run build       # dist/server.mjs
-.\run.bat           # development server with hot reload
+npm install           # Abhängigkeiten
+npm run typecheck     # tsc --noEmit
+npm test              # 700 Tests: Unit und volle HTTP-Integration
+npm run build         # dist/server.mjs
+.\run.bat   (run.sh)  # Entwicklungsserver mit Hot-Reload
 ```
 
 Zur Installation auf dem CM5-Prüfstand (isoliert von jedem anderen Projekt, eigener Benutzer, eigene Ports) siehe [ARMOR-DEVOPS](https://github.com/JuanenRac/ARMOR-DEVOPS).
+
+## 🧪 Tests
+
+```powershell
+npm run typecheck  # tsc --noEmit
+npm test           # tsx --test tests/*.test.ts
+python -I tools/armor_ci_validate.py
+```
+
+`npm test` führt jede Datei in `tests/` aus (95 Dateien): Unit-Tests jedes Moduls und eine volle HTTP-Integrationssuite gegen einen isolierten Server (`tests/vertical-slice.test.ts`). `tests/conformance.test.ts` führt die gemeinsamen Vektoren von ARMOR-COMMON aus und prüft, dass **die vom Server registrierten Routen genau die Operationen sind, die die OpenAPI-Datei beschreibt**, nach Methode und Pfad, und dass jede Antwort sagt, welchen Inhalt sie hat; er wird übersprungen, wenn ARMOR-COMMON nicht neben diesem Repository liegt. Die TLS-Tests brauchen installiertes `openssl`. GitHub Actions führt bei jedem Push und Pull Request die A.R.M.O.R.-Basis aus: die Prüfung von Manifest, Version, Änderungsprotokoll und README-Parität, dann den eigenen Build und die eigenen Tests des Projekts.
+
+## 🏗️ Build und Veröffentlichung
+
+`npm run build` bündelt den Server in `dist/server.mjs` (das `Dockerfile` baut daraus das Container-Image). Die Version steht in `package.json`, in `armor.project.json` und im README-Badge (aus dem Manifest gelesen); jede Version hat ihren Eintrag in [CHANGELOG.md](CHANGELOG.md). Releases werden auf GitHub veröffentlicht.
+
+## 🩺 Fehlerbehebung
+
+| Du siehst | Weil | Tu |
+|---|---|---|
+| `ARMOR_INGEST_TOKEN must be at least 24 characters` | ein Geheimnis fehlt oder ist kurz | setzen (24+ Zeichen); `run.sh` kann sie erzeugen |
+| `... and ... must be different values` | zwei Geheimnisse sind gleich | jedem einen eigenen Wert geben |
+| `ARMOR_STUDIO_PASSWORD must be at least 12 characters when the server is reachable from the network` | `ARMOR_HOST` ist nicht Loopback | ein längeres Passwort nehmen oder `127.0.0.1` lassen |
+| `ARMOR_MQTT_CA_FILE needs an mqtts:// address in ARMOR_MQTT_URL` | die Datei der Stelle ist gesetzt, die Broker-Adresse aber nicht `mqtts://` | eine `mqtts://`-Adresse verwenden oder die Datei entfernen |
+| `TLS_CERT_PATH and TLS_KEY_PATH must both be set` | nur eines von beiden ist gesetzt | beide für HTTPS setzen oder keines für einfaches HTTP |
+| `voice_unavailable`  `voice_not_answering` (503) | der Sprachdienst ist nicht erreichbar | ARMOR-VOICE-AI starten und `ARMOR_VOICE_URL` samt Token prüfen |
+
+## 📂 Struktur des Repositorys
+
+<p align="center">
+  <img src="images/repository-structure.svg" alt="Repository structure of ARMOR-SERVER" width="100%">
+</p>
+
+<details>
+<summary>Textversion des Baums</summary>
+
+```text
+ARMOR-SERVER/
+├── src/
+│   ├── server.ts app.ts              Start, Express-App, Ratenbegrenzung
+│   ├── config.ts                     jede Einstellung, beim Start geprüft
+│   ├── contracts.ts mqtt_router.ts   Prüfung an der Grenze
+│   ├── store.ts persistence.ts       Knotenzustand und was einen Neustart übersteht
+│   ├── alarms.ts escalation.ts       Alarmzentrale und Eskalation
+│   ├── users.ts totp.ts              Benutzer, Rollen, PIN und zweiter Faktor
+│   ├── security_settings.ts          die 13 Schalter aus Studio
+│   ├── voice.ts voice_turn.ts        geschriebene und gesprochene Befehle
+│   ├── firmware.ts installation.ts   Knoten-Firmware und eigene Updates
+│   ├── http/                         Sitzungen, Knoten-Tokens, versiegelte Logins
+│   ├── routes/                       eine Datei je Routengruppe
+│   ├── cameras/                      Tresor, PTZ, RTSP, Suche, Zustand
+│   ├── media/                        FFmpeg-Relais und Beweisbibliothek
+│   └── devices/                      Gerätemodell und MQTT-Brücke
+├── tests/                            700 Tests, Unit und HTTP-Integration
+├── docs/                             7 Leitfäden, Routentabelle, Umgebung
+├── tools/                            Generatoren für docs/ROUTES.md und docs/ENVIRONMENT.md, gemeinsame CI-Prüfungen, Starter
+├── images/                           Banner, Symbol und die Bilder des READMEs
+├── .github/                          CI-Workflow, Dashboard-Hinweis, Vorlagen für Issues und Pull Requests
+├── Dockerfile                        Container-Image des Servers
+├── armor.project.json                Manifest: Version, Rolle, Reife
+├── CHANGELOG.md                      was sich in jeder Version geändert hat
+├── package.json package-lock.json    Abhängigkeiten und Skripte
+├── tsconfig.json                     TypeScript-Einstellungen
+├── run.sh run.bat                    Start, gemeinsamer Ablauf
+├── build.sh build.bat                Bauen und Testen, gemeinsamer Ablauf
+├── build-test.sh build-test.bat      Bauen, Testen und Verpacken
+├── test.sh test.bat                  nur die Tests, nie die Version
+└── SECURITY.md SUPPORT.md CONTRIBUTING.md CODE_OF_CONDUCT.md LICENSE
+```
+
+</details>
+
+## 🗺️ Roadmap und bekannte Grenzen
+
+**Bekannte Grenzen heute**
+
+* ONVIF ist keiner echten ONVIF-Kamera begegnet, und nichts lief auf einem Jetson.
+* Die Routen für Solar, Elektro, Alarmpanel und Touchpanel werden mit erzeugten Nachrichten getestet: Es gibt nur die Radar-Platine.
+* Push über Firebase lief nie gegen ein echtes Firebase-Projekt.
+* Die Steuerbefehle für Knoten und natives TLS mit öffentlichem Zertifikat liefen nicht auf einem echten Knoten.
+* Keine unabhängige Sicherheitsprüfung.
+
+**Als Nächstes**
+
+* ONVIF mit einer echten Kamera und die Routen der anderen Knoten mit ihren Platinen ausprobieren.
+* Push über ein echtes Firebase-Projekt ausprobieren.
+
+## 🌍 Sprachen
+
+README und Texte gibt es auf Englisch, Spanisch, Französisch, Italienisch, Deutsch, Chinesisch, Japanisch und europäischem Portugiesisch.
 
 ## 🔗 Verwandte Projekte
 
@@ -177,18 +319,29 @@ Zur Installation auf dem CM5-Prüfstand (isoliert von jedem anderen Projekt, eig
 * **[ARMOR-HARDWARE](https://github.com/JuanenRac/ARMOR-HARDWARE)** - Gehäuse, Elektronik und die Abnahmematrix am Prüfstand
 * **[ARMOR-DEVOPS](https://github.com/JuanenRac/ARMOR-DEVOPS)** - Bereitstellung, CM5-Prüfstand, Backup und TLS
 * **[ARMOR-SIMULATOR](https://github.com/JuanenRac/ARMOR-SIMULATOR)** - Offline-Telemetriesimulator mit wiederholbaren Fehlern
-* **[ARMOR-UPDATER](https://github.com/JuanenRac/ARMOR-UPDATER)** - Erkennt, installiert und aktualisiert die eigenen Repositories des Ökosystems
+* **[ARMOR-UPDATER](https://github.com/JuanenRac/ARMOR-UPDATER)** - Erkennt, installiert und aktualisiert die eigenen Repositorys des Ökosystems
 * **[ARMOR-DOCS](https://github.com/JuanenRac/ARMOR-DOCS)** - Architektur, Sicherheitsgrundlage und die Fähigkeitsmatrix
 
-## 📚 Dokumentation und Community
+## 📚 Dokumentation
 
-Hier gibt es mehr zu lesen:
-
+* [Routentabelle](docs/ROUTES.md): jede Route und wer sie aufrufen darf (erzeugt)
+* [Umgebung](docs/ENVIRONMENT.md): jede Variable mit Bereich (erzeugt)
+* [Integration](docs/INTEGRATION.md): wie Knoten, Apps und Dienste mit dem Server sprechen
+* [Fernzugriff](docs/REMOTE_ACCESS.md): zweiter Faktor, Richtlinie und das Haus von außen
+* [Kamera- und Medien-Gateway](docs/CAMERA_MEDIA_GATEWAY.md): Tresor, PTZ, Relais und Beweise
+* [Knoten-Firmware](docs/NODE_FIRMWARE.md): die Knoten aus Studio aktualisieren
+* [Zustandsautomat](docs/STATE_MACHINE.md): das Leben eines Knotens und eines Alarms
 * [Fähigkeitsmatrix: was belegt ist und was nicht](https://github.com/JuanenRac/ARMOR-DOCS/blob/main/docs/CAPABILITY_MATRIX.md)
 * [Projektkatalog: Versionen und wie die Repositorys voneinander abhängen](https://github.com/JuanenRac/ARMOR-DOCS/blob/main/docs/PROJECT_CATALOG.md)
 * [Änderungsverlauf dieses Repositorys](CHANGELOG.md)
-* [Lizenz (GPL-3.0-or-later)](LICENSE)
-* Fragen, Ideen und Meldungen: electrohobby3d@gmail.com
+
+## 🤝 Mitwirken und Community
+
+* Führe vor einem Pull Request `python -I tools/armor_ci_validate.py` und die Tests aus: Beide müssen bestehen. Siehe [CONTRIBUTING.md](CONTRIBUTING.md) und den [Verhaltenskodex](CODE_OF_CONDUCT.md).
+* Das README gibt es in acht Sprachen, und es wird aus den Quellen in ARMOR-DOCS erzeugt: Eine Textänderung erfolgt dort.
+* Eine Änderung an einer Nachricht zwischen Komponenten beginnt in ARMOR-COMMON.
+* Beschreibe nichts als auf einer Platine funktionierend, was nur gebaut wurde.
+* Melde eine Schwachstelle privat: [SECURITY.md](SECURITY.md). Fragen, Ideen und Meldungen: electrohobby3d@gmail.com ([SUPPORT.md](SUPPORT.md)).
 
 ## 👤 AUTOR
 

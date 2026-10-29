@@ -1,0 +1,501 @@
+{
+ "repo": "ARMOR-SERVER",
+ "ecosystem": "armor",
+ "svg": "en",
+ "cards": [
+  {
+   "name": "src/",
+   "span": 3,
+   "accent": "a",
+   "sub": {
+    "en": "the server, in TypeScript",
+    "es": "el servidor, en TypeScript",
+    "de": "der Server in TypeScript",
+    "fr": "le serveur, en TypeScript",
+    "it": "il server, in TypeScript",
+    "ja": "TypeScript のサーバー",
+    "zh": "TypeScript 编写的服务器",
+    "pt": "o servidor, em TypeScript"
+   },
+   "rows": [
+    {
+     "name": "server.ts  app.ts",
+     "desc": {
+      "en": "start-up, Express app, rate limits",
+      "es": "arranque, aplicación Express, límites",
+      "de": "Start, Express-App, Ratenbegrenzung",
+      "fr": "démarrage, application Express, limites",
+      "it": "avvio, app Express, limiti",
+      "ja": "起動、Express アプリ、レート制限",
+      "zh": "启动、Express 应用、限流",
+      "pt": "arranque, aplicação Express, limites"
+     },
+     "tree_name": "server.ts app.ts"
+    },
+    {
+     "name": "config.ts",
+     "desc": {
+      "en": "every setting, checked at start-up",
+      "es": "cada ajuste, comprobado al arrancar",
+      "de": "jede Einstellung, beim Start geprüft",
+      "fr": "chaque réglage, vérifié au démarrage",
+      "it": "ogni impostazione, verificata all'avvio",
+      "ja": "全設定を起動時に検証",
+      "zh": "启动时校验每项设置",
+      "pt": "cada definição, verificada no arranque"
+     }
+    },
+    {
+     "name": "contracts.ts  mqtt_router.ts",
+     "desc": {
+      "en": "validation at the boundary",
+      "es": "validación en el borde",
+      "de": "Prüfung an der Grenze",
+      "fr": "validation à la frontière",
+      "it": "validazione al confine",
+      "ja": "境界での検証",
+      "zh": "边界处的校验",
+      "pt": "validação na fronteira"
+     },
+     "tree_name": "contracts.ts mqtt_router.ts"
+    },
+    {
+     "name": "store.ts  persistence.ts",
+     "desc": {
+      "en": "node state and what survives a restart",
+      "es": "estado de nodos y lo que sobrevive a un reinicio",
+      "de": "Knotenzustand und was einen Neustart übersteht",
+      "fr": "état des nœuds et ce qui survit à un redémarrage",
+      "it": "stato dei nodi e ciò che sopravvive a un riavvio",
+      "ja": "ノード状態と再起動後も残るもの",
+      "zh": "节点状态与重启后保留的内容",
+      "pt": "estado dos nós e o que sobrevive a um reinício"
+     },
+     "tree_name": "store.ts persistence.ts"
+    },
+    {
+     "name": "alarms.ts  escalation.ts",
+     "desc": {
+      "en": "alarm centre and escalation",
+      "es": "centro de alarmas y escalado",
+      "de": "Alarmzentrale und Eskalation",
+      "fr": "centrale d'alarme et escalade",
+      "it": "centrale allarmi ed escalation",
+      "ja": "アラームセンターとエスカレーション",
+      "zh": "报警中心与升级",
+      "pt": "central de alarmes e escalada"
+     },
+     "tree_name": "alarms.ts escalation.ts"
+    },
+    {
+     "name": "users.ts  totp.ts",
+     "desc": {
+      "en": "users, roles, PIN and second factor",
+      "es": "usuarios, roles, PIN y segundo factor",
+      "de": "Benutzer, Rollen, PIN und zweiter Faktor",
+      "fr": "utilisateurs, rôles, PIN et second facteur",
+      "it": "utenti, ruoli, PIN e secondo fattore",
+      "ja": "ユーザー、ロール、PIN、2 要素",
+      "zh": "用户、角色、PIN 与第二因素",
+      "pt": "utilizadores, funções, PIN e segundo fator"
+     },
+     "tree_name": "users.ts totp.ts"
+    },
+    {
+     "name": "security_settings.ts",
+     "desc": {
+      "en": "the 13 switches Studio changes",
+      "es": "los 13 interruptores de Studio",
+      "de": "die 13 Schalter aus Studio",
+      "fr": "les 13 interrupteurs de Studio",
+      "it": "i 13 interruttori di Studio",
+      "ja": "Studio で変える 13 のスイッチ",
+      "zh": "Studio 修改的 13 个开关",
+      "pt": "os 13 interruptores do Studio"
+     }
+    },
+    {
+     "name": "voice.ts  voice_turn.ts",
+     "desc": {
+      "en": "written and spoken commands",
+      "es": "órdenes escritas y habladas",
+      "de": "geschriebene und gesprochene Befehle",
+      "fr": "commandes écrites et vocales",
+      "it": "comandi scritti e vocali",
+      "ja": "文字と音声のコマンド",
+      "zh": "文字和语音命令",
+      "pt": "ordens escritas e faladas"
+     },
+     "tree_name": "voice.ts voice_turn.ts"
+    },
+    {
+     "name": "firmware.ts  installation.ts",
+     "desc": {
+      "en": "node firmware and own updates",
+      "es": "firmware de nodos y actualizaciones propias",
+      "de": "Knoten-Firmware und eigene Updates",
+      "fr": "firmware des nœuds et mises à jour propres",
+      "it": "firmware dei nodi e aggiornamenti propri",
+      "ja": "ノードのファームウェアと自己更新",
+      "zh": "节点固件与自身更新",
+      "pt": "firmware dos nós e atualizações próprias"
+     },
+     "tree_name": "firmware.ts installation.ts"
+    },
+    {
+     "name": "http/",
+     "desc": {
+      "en": "sessions, per-node tokens, sealed logins",
+      "es": "sesiones, tokens por nodo, accesos sellados",
+      "de": "Sitzungen, Knoten-Tokens, versiegelte Logins",
+      "fr": "sessions, jetons par nœud, identifiants scellés",
+      "it": "sessioni, token per nodo, accessi sigillati",
+      "ja": "セッション、ノード別トークン、封印した認証情報",
+      "zh": "会话、节点令牌、密封凭据",
+      "pt": "sessões, tokens por nó, credenciais seladas"
+     }
+    },
+    {
+     "name": "routes/",
+     "desc": {
+      "en": "one file per group of routes",
+      "es": "un fichero por grupo de rutas",
+      "de": "eine Datei je Routengruppe",
+      "fr": "un fichier par groupe de routes",
+      "it": "un file per gruppo di rotte",
+      "ja": "ルート群ごとに 1 ファイル",
+      "zh": "每组路由一个文件",
+      "pt": "um ficheiro por grupo de rotas"
+     }
+    },
+    {
+     "name": "cameras/",
+     "desc": {
+      "en": "vault, PTZ, RTSP, discovery, health",
+      "es": "caja fuerte, PTZ, RTSP, descubrimiento, salud",
+      "de": "Tresor, PTZ, RTSP, Suche, Zustand",
+      "fr": "coffre, PTZ, RTSP, découverte, santé",
+      "it": "cassaforte, PTZ, RTSP, scoperta, salute",
+      "ja": "金庫、PTZ、RTSP、探索、健全性",
+      "zh": "保险库、PTZ、RTSP、发现、健康",
+      "pt": "cofre, PTZ, RTSP, descoberta, saúde"
+     }
+    },
+    {
+     "name": "media/",
+     "desc": {
+      "en": "FFmpeg relay and evidence library",
+      "es": "relé FFmpeg y biblioteca de evidencias",
+      "de": "FFmpeg-Relais und Beweisbibliothek",
+      "fr": "relais FFmpeg et bibliothèque de preuves",
+      "it": "relè FFmpeg e libreria di prove",
+      "ja": "FFmpeg 中継と証拠ライブラリ",
+      "zh": "FFmpeg 中继与证据库",
+      "pt": "relé FFmpeg e biblioteca de provas"
+     }
+    },
+    {
+     "name": "devices/",
+     "desc": {
+      "en": "device model and its MQTT bridge",
+      "es": "modelo de dispositivos y su puente MQTT",
+      "de": "Gerätemodell und MQTT-Brücke",
+      "fr": "modèle d'appareils et son pont MQTT",
+      "it": "modello dei dispositivi e ponte MQTT",
+      "ja": "デバイスモデルと MQTT ブリッジ",
+      "zh": "设备模型及其 MQTT 桥",
+      "pt": "modelo de dispositivos e a sua ponte MQTT"
+     }
+    }
+   ]
+  },
+  {
+   "name": {
+    "en": "tests, docs and tools",
+    "es": "pruebas, docs y herramientas",
+    "de": "Tests, Doku und Werkzeuge",
+    "fr": "tests, docs et outils",
+    "it": "test, documenti e strumenti",
+    "ja": "テスト・文書・ツール",
+    "zh": "测试、文档和工具",
+    "pt": "testes, docs e ferramentas"
+   },
+   "kind": "group",
+   "span": 3,
+   "accent": "b",
+   "columns": 2,
+   "sub": {
+    "en": "checked in CI",
+    "es": "comprobado en CI",
+    "de": "in der CI geprüft",
+    "fr": "vérifié en CI",
+    "it": "verificato in CI",
+    "ja": "CI で検証",
+    "zh": "CI 检查",
+    "pt": "verificado na CI"
+   },
+   "rows": [
+    {
+     "name": "tests/",
+     "desc": {
+      "en": "700 tests, unit and HTTP integration",
+      "es": "700 pruebas, unitarias e integración HTTP",
+      "de": "700 Tests, Unit und HTTP-Integration",
+      "fr": "700 tests, unitaires et intégration HTTP",
+      "it": "700 test, unitari e integrazione HTTP",
+      "ja": "700 件（単体と HTTP 結合）",
+      "zh": "700 项测试（单元与 HTTP 集成）",
+      "pt": "700 testes, unitários e integração HTTP"
+     }
+    },
+    {
+     "name": "docs/",
+     "desc": {
+      "en": "7 guides, route table, environment",
+      "es": "7 guías, tabla de rutas, entorno",
+      "de": "7 Leitfäden, Routentabelle, Umgebung",
+      "fr": "7 guides, table des routes, environnement",
+      "it": "7 guide, tabella delle rotte, ambiente",
+      "ja": "7 つのガイド、ルート表、環境変数",
+      "zh": "7 份指南、路由表、环境变量",
+      "pt": "7 guias, tabela de rotas, ambiente"
+     }
+    },
+    {
+     "name": "tools/",
+     "desc": {
+      "en": "route and variable tables, CI checks",
+      "es": "tablas de rutas y variables, CI",
+      "de": "Routen- und Variablentabellen, CI",
+      "fr": "tables de routes et variables, CI",
+      "it": "tabelle di rotte e variabili, CI",
+      "ja": "ルート表と環境変数表、CI",
+      "zh": "路由与变量表、CI 检查",
+      "pt": "tabelas de rotas e variáveis, CI"
+     },
+     "tree_desc": {
+      "en": "generators of docs/ROUTES.md and docs/ENVIRONMENT.md, shared CI checks, launcher",
+      "es": "generadores de docs/ROUTES.md y docs/ENVIRONMENT.md, comprobaciones de CI, lanzador",
+      "de": "Generatoren für docs/ROUTES.md und docs/ENVIRONMENT.md, gemeinsame CI-Prüfungen, Starter",
+      "fr": "générateurs de docs/ROUTES.md et docs/ENVIRONMENT.md, vérifications CI, lanceur",
+      "it": "generatori di docs/ROUTES.md e docs/ENVIRONMENT.md, controlli CI, avviatore",
+      "ja": "docs/ROUTES.md と docs/ENVIRONMENT.md の生成、CI 検査、ランチャー",
+      "zh": "docs/ROUTES.md 和 docs/ENVIRONMENT.md 的生成器、CI 检查、启动器",
+      "pt": "geradores de docs/ROUTES.md e docs/ENVIRONMENT.md, verificações de CI, lançador"
+     }
+    },
+    {
+     "name": "images/",
+     "desc": {
+      "en": "banner, icon, README pictures",
+      "es": "banner, icono, imágenes del README",
+      "de": "Banner, Symbol, README-Bilder",
+      "fr": "bannière, icône, images du README",
+      "it": "banner, icona, immagini del README",
+      "ja": "バナー、アイコン、README の画像",
+      "zh": "横幅图、图标、README 图片",
+      "pt": "faixa, ícone, imagens do README"
+     },
+     "tree_desc": {
+      "en": "banner, icon and the pictures of the README",
+      "es": "banner, icono y las imágenes del README",
+      "de": "Banner, Symbol und die Bilder des READMEs",
+      "fr": "bannière, icône et images du README",
+      "it": "banner, icona e immagini del README",
+      "ja": "バナー、アイコン、README の画像",
+      "zh": "横幅图、图标和 README 的图片",
+      "pt": "faixa, ícone e as imagens do README"
+     }
+    },
+    {
+     "name": ".github/",
+     "desc": {
+      "en": "CI, dashboard notice, templates",
+      "es": "CI, aviso al panel, plantillas",
+      "de": "CI, Dashboard-Hinweis, Vorlagen",
+      "fr": "CI, avis au tableau de bord, modèles",
+      "it": "CI, avviso alla dashboard, modelli",
+      "ja": "CI、ダッシュボード通知、テンプレート",
+      "zh": "CI、仪表板通知、模板",
+      "pt": "CI, aviso ao painel, modelos"
+     },
+     "tree_desc": {
+      "en": "CI workflow, dashboard notice, issue and pull-request templates",
+      "es": "flujo de CI, aviso al panel, plantillas de incidencias y pull requests",
+      "de": "CI-Workflow, Dashboard-Hinweis, Vorlagen für Issues und Pull Requests",
+      "fr": "workflow CI, avis au tableau de bord, modèles d'issues et de pull requests",
+      "it": "workflow CI, avviso alla dashboard, modelli per issue e pull request",
+      "ja": "CI ワークフロー、ダッシュボード通知、Issue と Pull Request のテンプレート",
+      "zh": "CI 工作流、仪表板通知、议题和 pull request 模板",
+      "pt": "fluxo de CI, aviso ao painel, modelos de issues e pull requests"
+     }
+    },
+    {
+     "name": "Dockerfile",
+     "desc": {
+      "en": "container image of the server",
+      "es": "imagen de contenedor del servidor",
+      "de": "Container-Image des Servers",
+      "fr": "image de conteneur du serveur",
+      "it": "immagine container del server",
+      "ja": "サーバーのコンテナイメージ",
+      "zh": "服务器容器镜像",
+      "pt": "imagem de contentor do servidor"
+     }
+    }
+   ]
+  },
+  {
+   "name": {
+    "en": "project files",
+    "es": "ficheros del proyecto",
+    "de": "Projektdateien",
+    "fr": "fichiers du projet",
+    "it": "file del progetto",
+    "ja": "プロジェクトのファイル",
+    "zh": "项目文件",
+    "pt": "ficheiros do projeto"
+   },
+   "kind": "group",
+   "span": 3,
+   "accent": "c",
+   "columns": 2,
+   "sub": {
+    "en": "at the root",
+    "es": "en la raíz",
+    "de": "im Stammordner",
+    "fr": "à la racine",
+    "it": "alla radice",
+    "ja": "ルート",
+    "zh": "根目录",
+    "pt": "na raiz"
+   },
+   "rows": [
+    {
+     "name": "armor.project.json",
+     "desc": {
+      "en": "manifest: version, role, maturity",
+      "es": "manifiesto: versión, función, madurez",
+      "de": "Manifest: Version, Rolle, Reife",
+      "fr": "manifeste : version, rôle, maturité",
+      "it": "manifesto: versione, ruolo, maturità",
+      "ja": "マニフェスト：版・役割・成熟度",
+      "zh": "清单：版本、角色、成熟度",
+      "pt": "manifesto: versão, função, maturidade"
+     }
+    },
+    {
+     "name": "CHANGELOG.md",
+     "desc": {
+      "en": "what changed in each version",
+      "es": "qué cambió en cada versión",
+      "de": "was sich in jeder Version geändert hat",
+      "fr": "ce qui a changé à chaque version",
+      "it": "cosa è cambiato in ogni versione",
+      "ja": "各バージョンの変更点",
+      "zh": "每个版本的变化",
+      "pt": "o que mudou em cada versão"
+     }
+    },
+    {
+     "name": "package.json  package-lock.json",
+     "desc": {
+      "en": "dependencies and scripts",
+      "es": "dependencias y scripts",
+      "de": "Abhängigkeiten und Skripte",
+      "fr": "dépendances et scripts",
+      "it": "dipendenze e script",
+      "ja": "依存関係とスクリプト",
+      "zh": "依赖与脚本",
+      "pt": "dependências e scripts"
+     },
+     "tree_name": "package.json package-lock.json"
+    },
+    {
+     "name": "tsconfig.json",
+     "desc": {
+      "en": "TypeScript settings",
+      "es": "ajustes de TypeScript",
+      "de": "TypeScript-Einstellungen",
+      "fr": "réglages TypeScript",
+      "it": "impostazioni TypeScript",
+      "ja": "TypeScript 設定",
+      "zh": "TypeScript 设置",
+      "pt": "definições do TypeScript"
+     }
+    },
+    {
+     "name": "run.sh  run.bat",
+     "tree_name": "run.sh run.bat",
+     "desc": {
+      "en": "start, shared workflow",
+      "es": "arrancar, flujo compartido",
+      "de": "Start, gemeinsamer Ablauf",
+      "fr": "démarrer, flux partagé",
+      "it": "avvio, flusso condiviso",
+      "ja": "起動（共通フロー）",
+      "zh": "启动（共用流程）",
+      "pt": "arrancar, fluxo partilhado"
+     }
+    },
+    {
+     "name": "build.sh  build.bat",
+     "tree_name": "build.sh build.bat",
+     "desc": {
+      "en": "build and test, shared workflow",
+      "es": "construir y probar, flujo compartido",
+      "de": "Bauen und Testen, gemeinsamer Ablauf",
+      "fr": "construire et tester, flux partagé",
+      "it": "compila e prova, flusso condiviso",
+      "ja": "ビルドとテスト（共通フロー）",
+      "zh": "构建并测试（共用流程）",
+      "pt": "compilar e testar, fluxo partilhado"
+     }
+    },
+    {
+     "name": "build-test.sh  build-test.bat",
+     "tree_name": "build-test.sh build-test.bat",
+     "desc": {
+      "en": "build, test and package",
+      "es": "construir, probar y empaquetar",
+      "de": "Bauen, Testen und Verpacken",
+      "fr": "construire, tester, empaqueter",
+      "it": "compila, prova e impacchetta",
+      "ja": "ビルド、テスト、パッケージ化",
+      "zh": "构建、测试并打包",
+      "pt": "compilar, testar e empacotar"
+     }
+    },
+    {
+     "name": "test.sh  test.bat",
+     "tree_name": "test.sh test.bat",
+     "desc": {
+      "en": "only the tests, never the version",
+      "es": "solo las pruebas, nunca la versión",
+      "de": "nur die Tests, nie die Version",
+      "fr": "seulement les tests, jamais la version",
+      "it": "solo i test, mai la versione",
+      "ja": "テストのみ（版は変えません）",
+      "zh": "只运行测试，不改版本",
+      "pt": "só os testes, nunca a versão"
+     }
+    },
+    {
+     "name": "SECURITY  SUPPORT  CONTRIBUTING  LICENSE",
+     "tree_name": "SECURITY.md SUPPORT.md CONTRIBUTING.md CODE_OF_CONDUCT.md LICENSE",
+     "desc": {
+      "en": "community and licence files",
+      "es": "comunidad y licencia",
+      "de": "Community und Lizenz",
+      "fr": "communauté et licence",
+      "it": "comunità e licenza",
+      "ja": "コミュニティとライセンス",
+      "zh": "社区与许可证",
+      "pt": "comunidade e licença"
+     },
+     "tree_desc": ""
+    }
+   ]
+  }
+ ]
+}
