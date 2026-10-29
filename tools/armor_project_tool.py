@@ -487,6 +487,7 @@ def main() -> int:
     if manifest.get("ecosystem") != "A.R.M.O.R.":
         raise RuntimeError("refusing non-A.R.M.O.R. manifest")
     global PANEL
+    PANEL = None   # a run that comes after another one in the same process starts clean
     if Panel is not None and os.environ.get("ARMOR_PRETTY") != "0" and args.action != "run":
         PANEL = Panel(str(manifest["name"]), args.action, str(manifest["version"]), "A.R.M.O.R.")
         PANEL.banner()
