@@ -5,7 +5,8 @@ import test from "node:test";
 import { approvedCameraEndpoint, isPtzCommand, onvifTag, xmlEscape, xmlUnescape } from "../src/cameras/ptz.js";
 import { DiscoveryGate, discoveryPrefixes, isPrivateIpv4, scanNetworks } from "../src/cameras/discovery.js";
 import { cameraPublic, cameraView, expandRtspPath, parseCameraInput, rtspUrl, type CameraConnection } from "../src/cameras/model.js";
-import { candidatesFor, discoverRtspPaths, rtspFamily } from "../src/cameras/rtsp.js";
+import { createServer } from "node:net";
+import { candidatesFor, discoverRtspPaths, rtspDescribeMany, rtspFamily } from "../src/cameras/rtsp.js";
 import { CameraVault, decryptSecrets, encryptSecrets } from "../src/cameras/vault.js";
 import { tempDir } from "./helpers.js";
 import { createHash } from "node:crypto";
@@ -205,4 +206,33 @@ test("discovery asks for the banner of the camera and finds the main and the lig
   assert.deepEqual(found.slice(0, 2), ["/user={user}&password={password}&channel=1&stream=0.sdp?real_stream", "/user={user}&password={password}&channel=1&stream=1.sdp?real_stream"]);
   assert.ok(found.every(path => path.includes("channel=1")), "the second lens, channel 2, did not answer on this stand-in");
   assert.match(asked[0], /^\/user=/, "the paths of its family come first");
+});
+
+test("many paths are asked over one connection, answering the Digest challenge of the camera once", async () => {
+  let connections = 0;
+  const server = createServer(socket => {
+    connections += 1;
+    let pending = "";
+    socket.on("data", chunk => {
+      pending += chunk.toString("latin1");
+      let end: number;
+      while ((end = pending.indexOf("\r\n\r\n")) >= 0) {
+        const head = pending.slice(0, end); pending = pending.slice(end + 4);
+        const cseq = /CSeq: (\d+)/.exec(head)?.[1] ?? "0";
+        if (!/Authorization: Digest/.test(head)) { socket.write(`RTSP/1.0 401 Unauthorized\r\nCSeq: ${cseq}\r\nWWW-Authenticate: Digest realm="cam", nonce="abc123"\r\n\r\n`); continue; }
+        if (/stream=0/.test(head)) { const sdp = "v=0\r\ns=stream\r\n"; socket.write(`RTSP/1.0 200 OK\r\nCSeq: ${cseq}\r\nContent-Type: application/sdp\r\nContent-Length: ${sdp.length}\r\n\r\n${sdp}`); }
+        else socket.write(`RTSP/1.0 404 Not Found\r\nCSeq: ${cseq}\r\n\r\n`);
+      }
+    });
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (server.address() as { port: number }).port;
+    const camera = parseCameraInput({ ...base, host: "127.0.0.1", rtspPort: port, rtspPath: "" })!;
+    const answers = await rtspDescribeMany(camera, ["/user={user}&password={password}&channel=1&stream=0.sdp", "/user={user}&password={password}&channel=1&stream=1.sdp", "/live", "/user={user}&password={password}&channel=2&stream=0.sdp"], 2_000);
+    assert.deepEqual([...answers.values()], [200, 404, 404, 200]);
+    assert.equal(connections, 1, "one connection for every path");
+    const found = await discoverRtspPaths(camera, undefined, 0, undefined, async () => "H264DVR 1.0");
+    assert.deepEqual(found, ["/user={user}&password={password}&channel=1&stream=0.sdp?real_stream", "/user={user}_password={password}_channel=1_stream=0.sdp?real_stream", "/user={user}&password={password}&channel=2&stream=0.sdp?real_stream"]);
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
 });

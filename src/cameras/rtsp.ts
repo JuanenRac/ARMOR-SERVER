@@ -29,10 +29,16 @@ export function rtspFamily(banner: string): RtspFamily {
   return "generic";
 }
 
+/** The paths of a family, and the generic ones that are tried after them (each once). */
+export function candidateGroups(family: RtspFamily): { own: string[]; rest: string[] } {
+  const own = family === "xm" ? XM_PATHS : family === "hikvision" ? HIKVISION_PATHS : family === "dahua" ? DAHUA_PATHS : [];
+  return { own: [...own], rest: [...new Set([...GENERIC_PATHS, ...XM_PATHS.slice(0, 4)])].filter(path => !own.includes(path)) };
+}
+
 /** The candidates for a family, its own first and then the rest of the generic ones, each once. */
 export function candidatesFor(family: RtspFamily): string[] {
-  const own = family === "xm" ? XM_PATHS : family === "hikvision" ? HIKVISION_PATHS : family === "dahua" ? DAHUA_PATHS : [];
-  return [...new Set([...own, ...GENERIC_PATHS, ...XM_PATHS.slice(0, 4)])];
+  const { own, rest } = candidateGroups(family);
+  return [...own, ...rest];
 }
 
 /** The `Server` header that the camera gives to an RTSP OPTIONS request, or an empty text when it gives none. */
@@ -79,14 +85,76 @@ export function rtspDescribe(camera: CameraConnection, requestPath: string, time
   });
 }
 
-/** Every candidate path that answers 200, in order; main and sub streams are not collapsed. */
-export async function discoverRtspPaths(camera: CameraConnection, candidates?: readonly string[], pauseMs = 300, describe = rtspDescribe, banner = rtspBanner): Promise<string[]> {
+/**
+ * Asks DESCRIBE for many paths over ONE connection: a camera on Wi-Fi takes a second to open each connection and cheap ones allow very few at a time, so the search
+ * that opened one connection per path took a minute and lost answers. The first answer carries the Digest challenge; the following requests answer it again with their own path.
+ * Returns the status of each path (0 for the ones that got no answer).
+ */
+export function rtspDescribeMany(camera: CameraConnection, paths: readonly string[], perRequestMs = 5_000): Promise<Map<string, number>> {
+  return new Promise(resolve => {
+    const credentials = camera.secrets;
+    const result = new Map<string, number>();
+    if (!credentials?.username || !credentials.password || paths.length === 0) { resolve(result); return; }
+    const socket = createConnection({ host: camera.host, port: camera.rtspPort });
+    let buffer = "", index = 0, sequence = 1, challenge: string | undefined, retried = false, timer: NodeJS.Timeout | undefined;
+    const sourceOf = (path: string) => `rtsp://${camera.host}:${camera.rtspPort}/${expandRtspPath(path, credentials).replace(/^\/+/, "")}`;
+    const finish = () => { if (timer) clearTimeout(timer); socket.destroy(); resolve(result); };
+    const next = () => {
+      if (index >= paths.length) { finish(); return; }
+      const source = sourceOf(paths[index]);
+      const authorization = challenge ? answerChallenge(challenge, credentials, "DESCRIBE", source) : null;
+      socket.write(`DESCRIBE ${source} RTSP/1.0\r\nCSeq: ${sequence++}\r\nAccept: application/sdp\r\n${authorization ? `Authorization: ${authorization}\r\n` : ""}\r\n`);
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { result.set(paths[index], 0); finish(); }, perRequestMs);
+    };
+    socket.once("connect", next);
+    socket.on("data", chunk => {
+      buffer += chunk.toString("latin1");
+      const end = buffer.indexOf("\r\n\r\n");
+      if (end < 0) return;
+      const head = buffer.slice(0, end);
+      const length = Number(/^Content-Length:\s*(\d+)/im.exec(head)?.[1] ?? 0);
+      if (buffer.length < end + 4 + length) return;   // the body of the answer (the SDP) is still on its way
+      buffer = buffer.slice(end + 4 + length);
+      const status = Number(/^RTSP\/1\.0 (\d{3})/.exec(head)?.[1] ?? 0);
+      if (status === 401) {
+        const header = /WWW-Authenticate:\s*([^\r\n]+)/i.exec(head)?.[1];
+        if (header && !retried) { challenge = header; retried = true; next(); return; }   // the challenge of the camera: ask the same path again, now with the answer
+      }
+      retried = false;
+      result.set(paths[index], status);
+      index += 1;
+      next();
+    });
+    socket.once("error", () => finish());
+    socket.once("close", () => finish());
+  });
+}
+
+/**
+ * Every candidate path that answers 200, in order; main and sub streams are not collapsed. When the camera says which family it is, only the paths of that family are tried
+ * if any of them answers: a camera on Wi-Fi takes a second or two for each one, and the generic paths would only make the search last a minute for nothing.
+ */
+export async function discoverRtspPaths(camera: CameraConnection, candidates?: readonly string[], pauseMs = 100, describe = rtspDescribe, banner = rtspBanner): Promise<string[]> {
   if (!camera.secrets?.username || !camera.secrets.password) return [];
-  if (!candidates) candidates = candidatesFor(rtspFamily(await banner(camera.host, camera.rtspPort).catch(() => "")));
+  let groups: string[][];
+  if (candidates) groups = [[...candidates]];
+  else {
+    const { own, rest } = candidateGroups(rtspFamily(await banner(camera.host, camera.rtspPort).catch(() => "")));
+    groups = [own, rest];
+  }
   const found: string[] = [];
-  for (const candidate of candidates) {
-    try { if (await describe(camera, candidate) === 200) found.push(candidate); } catch { /* Candidate unavailable. */ }
-    if (pauseMs) await new Promise(resolve => setTimeout(resolve, pauseMs));
+  for (const group of groups) {
+    if (describe === rtspDescribe) {
+      const answers = await rtspDescribeMany(camera, group);
+      for (const path of group) if (answers.get(path) === 200) found.push(path);
+    } else {
+      for (const candidate of group) {
+        try { if (await describe(camera, candidate, 4_000) === 200) found.push(candidate); } catch { /* Candidate unavailable. */ }
+        if (pauseMs) await new Promise(resolve => setTimeout(resolve, pauseMs));
+      }
+    }
+    if (found.length > 0) break;   // the first group that answers is the camera's: no need to go on with the others
   }
   return found;
 }
