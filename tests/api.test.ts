@@ -85,6 +85,23 @@ test("the operator token opens an operator session and a wrong one does not", as
   assert.equal((await call("/api/v1/cameras", { bearer: SECRETS.ARMOR_INGEST_TOKEN })).status, 401);
 });
 
+test("the traits of a camera (lenses, movement, web page) go through configure, the list and the file", async () => {
+  const traits = { layout: "split", group: "yard", lensName: "Wide", preset: "dual_ptz", ptz: true, zoom: false, webUrl: "http://192.168.0.203/", params: { ip: "192.168.0.203", encoder: "H.265" } };
+  const configured = await post("/api/v1/cameras/configure", { ...camera, id: "cam-traits", ...traits }, { cookie });
+  assert.equal(configured.status, 200);
+  const stored = await configured.json() as Record<string, unknown>;
+  assert.equal(stored.layout, "split");
+  assert.equal(stored.ptz, true);
+  assert.equal(stored.zoom, false);
+  const listed = await (await call("/api/v1/cameras", { cookie })).json() as { cameras: Array<Record<string, unknown>> };
+  const found = listed.cameras.find(item => item.id === "cam-traits");
+  assert.equal(found?.group, "yard");
+  assert.deepEqual(found?.params, { ip: "192.168.0.203", encoder: "H.265" });
+  const views = await (await call("/api/v1/camera-views", { cookie })).json() as { cameras: Array<Record<string, unknown>> };
+  assert.equal(views.cameras.find(item => item.id === "cam-traits")?.webUrl, "http://192.168.0.203/");
+  assert.equal((await call("/api/v1/cameras/cam-traits", { method: "DELETE", cookie })).status, 204);
+});
+
 test("camera lifecycle: configure, list without the password, view without the username, remove", async () => {
   const configured = await post("/api/v1/cameras/configure", camera, { cookie });
   assert.equal(configured.status, 200);
