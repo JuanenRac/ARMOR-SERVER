@@ -34,6 +34,11 @@ try:   # vendored next to this file by sync_ci_tools.py; a checkout that does no
 except ImportError:
     universal_readme_check = None
 
+try:   # the same: the traffic lights of the Project status table against the manifest
+    import status_lights  # noqa: E402
+except ImportError:
+    status_lights = None
+
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = ROOT / "armor.project.json"
 REQUIRED_DOCUMENTS = (
@@ -241,6 +246,11 @@ def main() -> int:
     if universal_readme_check is not None:
         for universal_problem in universal_readme_check.run_in_ci(ROOT):
             fail(universal_problem)
+
+    # No light of the Project status table above what the manifest (maturity, evidence) allows.
+    if status_lights is not None:
+        for lights_problem in status_lights.run_in_ci(ROOT):
+            fail(lights_problem)
 
     print(f"CI_VALIDATION=PASS project={manifest['name']} version={manifest['version']}")
     return 0
