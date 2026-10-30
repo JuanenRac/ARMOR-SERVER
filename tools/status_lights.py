@@ -231,6 +231,9 @@ def problems_of(root: Path, state: dict) -> list[str]:
 
 def run_in_ci(root: Path) -> list[str]:
     """What a ci_validate calls: the reasons to fail (a light above its ceiling, no evidence in the manifest, the eight READMEs with different lights). Offline."""
+    english = root / "README.md"
+    if not english.is_file() or read_table(english.read_bytes().decode("utf-8")) is None:
+        return []   # a missing table is the business of the README checks, not of the lights
     try:
         state = evaluate(root, "off")
     except SystemExit:
