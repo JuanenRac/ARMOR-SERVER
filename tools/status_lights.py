@@ -128,7 +128,7 @@ def read_table(text: str) -> tuple[int, list[list[str]]] | None:
                 start = index
     if start is None:
         return None
-    block, first = [], None
+    block = []
     for index in range(start + 1, len(lines)):
         if lines[index].startswith("## "):
             break
