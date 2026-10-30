@@ -40,6 +40,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 RED, ORANGE, YELLOW, GREEN = "\U0001F534", "\U0001F7E0", "\U0001F7E1", "\U0001F7E2"
 ORDER = (RED, ORANGE, YELLOW, GREEN)            # worst to best
@@ -55,7 +56,7 @@ SKIP_DIRS = {".git", "node_modules", "target", "build", "dist", ".venv", "venv",
 TEST_NAME = re.compile(r"(^test_.*\.(py|js|ts|rs|cpp|c|kt)$)|(_test\.(py|go|rs|c|cpp)$)|(\.(test|spec)\.(js|ts|tsx|mjs)$)|(Tests?\.(kt|java|swift|cs)$)")
 
 
-def fail(message: str) -> "None":
+def fail(message: str) -> NoReturn:
     print(f"STATUS_LIGHTS=FAIL {message}", file=sys.stderr)
     raise SystemExit(1)
 
@@ -349,8 +350,8 @@ def apply(root: Path, state: dict, allow_raise: bool) -> int:
     if wanted != before:
         armor = patch_armor_source(root, wanted)
         touched = ([armor] if armor else []) + patch_urtc_source(root, wanted)
-        for path in touched:
-            print(f"source updated: {path}")
+        for source in touched:
+            print(f"source updated: {source}")
         for item, light in zip(state["items"], wanted):
             if item["light"] != light:
                 print(f"{root.name}: {item['label']}: {WORDS[item['light']]} -> {WORDS[light]} ({item['why']})")
