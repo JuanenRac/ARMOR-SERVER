@@ -92,9 +92,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes openscad
 
+      # The field nodes' tests play the node's MQTT client against a real broker (tests/check_mosquitto.py); here the broker is installed and its absence is a failure, not a skipped check.
+      - name: Install a real MQTT broker for the field-node tests
+        if: ${{ startsWith(github.event.repository.name, 'ARMOR-NODE-') }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes mosquitto
+          sudo systemctl stop mosquitto || true
+
       - name: Run this project's real build and test
         run: python tools/armor_project_tool.py build-test .
         env:
           PYTHONPATH: src
+          ARMOR_REQUIRE_MOSQUITTO: ${{ startsWith(github.event.repository.name, 'ARMOR-NODE-') && '1' || '' }}
           # A comparison with another repository that cannot be made is a failure here, not a skipped test.
           ARMOR_REQUIRE_SIBLINGS: "1"

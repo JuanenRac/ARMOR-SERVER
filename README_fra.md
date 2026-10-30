@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 ou ultérieure">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Langage">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-708%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-724%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Version-0.8.0.7-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturité">
 </p>
 
 ---
 
-**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** Chaque route, session, chiffrement et règle de preuves ci-dessous est réel et couvert par des tests (`npm test` : 708 tests, dont une suite complète d'intégration HTTP contre un serveur isolé et une vérification que chaque route est documentée dans le fichier OpenAPI). Il fonctionne en usage quotidien sur le banc de test CM5 avec un vrai broker MQTT, le firmware d'un vrai nœud radar sur une carte ESP32-S3, de vraies caméras IP (vidéo en direct, captures, enregistrements, PTZ sur les unités Hi3510), la console Studio, l'application Android et les services de voix et d'observation. Ce qui n'est **pas** encore prouvé : ONVIF avec une vraie caméra ONVIF, tout matériel Jetson, les routes solaires, électriques, de centrales d'alarme et de panneau tactile avec de vrais nœuds (testées avec des messages générés : seule la carte radar existe) et le push via Firebase avec un vrai projet Firebase.
+**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** Chaque route, session, chiffrement et règle de preuves ci-dessous est réel et couvert par des tests (`npm test` : 724 tests, dont une suite complète d'intégration HTTP contre un serveur isolé et une vérification que chaque route est documentée dans le fichier OpenAPI). Il fonctionne en usage quotidien sur le banc de test CM5 avec un vrai broker MQTT, le firmware d'un vrai nœud radar sur une carte ESP32-S3, de vraies caméras IP (vidéo en direct, captures, enregistrements, PTZ sur les unités Hi3510), la console Studio, l'application Android et les services de voix et d'observation. Ce qui n'est **pas** encore prouvé : ONVIF avec une vraie caméra ONVIF, tout matériel Jetson, les routes solaires, électriques, de centrales d'alarme et de panneau tactile avec de vrais nœuds (testées avec des messages générés : seule la carte radar existe) et le push via Firebase avec un vrai projet Firebase.
 
 ---
 
@@ -40,7 +40,7 @@
 | Maturité | Établi |
 | Rôle | Coordinateur central de sécurité de la famille : nœuds, alarmes, appareils, énergie, caméras, réseau |
 | Technologie | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| Tests | 708 (`npm test` : unitaires et intégration HTTP complète) |
+| Tests | 724 (`npm test` : unitaires et intégration HTTP complète) |
 | Contrat | 191 chemins HTTP, 247 opérations (OpenAPI dans ARMOR-COMMON), table des routes dans `docs/ROUTES.md` |
 | Écoute sur | `127.0.0.1:8080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Fonctionne sur | Le banc d'essai CM5 (en service, voir ARMOR-DEVOPS) ou tout ordinateur avec Node.js |
@@ -58,7 +58,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 | Domaine | État | Ce que cela veut dire ici |
 |---|---|---|
 | Logiciel | 🟢 | Les routes, les sessions, le chiffrement et les règles de preuves tournent au quotidien sur le banc d'essai CM5. |
-| Tests | 🟢 | 708 tests réussissent (`npm test`), dont une suite d'intégration HTTP complète contre un serveur isolé et un contrôle que chaque route est documentée dans le fichier OpenAPI. |
+| Tests | 🟢 | 724 tests réussissent (`npm test`), dont une suite d'intégration HTTP complète contre un serveur isolé et un contrôle que chaque route est documentée dans le fichier OpenAPI. |
 | Protocoles et données | 🟡 | Les messages du radar viennent d'une vraie carte ; les routes solaire, électrique, de centrale d'alarme et de panneau tactile sont testées avec des messages générés, et ONVIF n'a pas rencontré de vraie caméra ONVIF. |
 | Matériel | 🟡 | Il tourne sur le banc d'essai CM5 avec un vrai courtier MQTT, de vraies caméras IP (vidéo en direct, captures, enregistrements, PTZ sur les unités Hi3510) et un vrai nœud radar ; rien n'a tourné sur un Jetson. |
 | Sécurité | 🟡 | Les règles de sessions, de chiffrement, de preuves et de connexion sont couvertes par des tests ; il n'y a pas eu de revue indépendante. |
@@ -205,7 +205,7 @@ Copiez `.env.example` en `.env` (ignoré par Git), ou laissez `run.bat` / `run.s
 ```powershell
 npm install           # dépendances
 npm run typecheck     # tsc --noEmit
-npm test              # 708 tests : unitaires et intégration HTTP complète
+npm test              # 724 tests : unitaires et intégration HTTP complète
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # serveur de développement avec rechargement à chaud
 ```

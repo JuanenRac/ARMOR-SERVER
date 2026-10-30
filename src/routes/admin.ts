@@ -187,6 +187,44 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
     }
   });
 
+  /**
+   * Read, and optionally change, the settings of a node that Studio can set from a screen (today: system.login_limit_per_minute, the wrong passwords per minute the node
+   * lets through before it locks sign-in; 0 for no limit, at most 120). Like adoption it signs in to the node's own panel with the login given, which is used once and never kept,
+   * and it writes through the node's own PUT /api/v1/config. Without the field the node is only read.
+   */
+  app.post("/api/v1/admin/nodes/settings", requireAdmin, async (request, response) => {
+    const input = body(request);
+    const nodeId = String(input.node_id ?? ""), address = String(input.address ?? "");
+    if (!NODE_ID.test(nodeId)) return response.status(422).json({ error: "invalid_node_id" });
+    const testPort = process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0;
+    if (!PRIVATE_V4.test(address) && !(testPort > 0 && address === "127.0.0.1")) return response.status(422).json({ error: "invalid_address" });
+    const user = typeof input.panel_user === "string" ? input.panel_user : "", password = typeof input.panel_password === "string" ? input.panel_password : "";
+    if (!user || !password) return response.status(422).json({ error: "no_panel_login" });
+    const wanted = input.login_limit_per_minute;
+    if (wanted !== undefined && !(typeof wanted === "number" && Number.isInteger(wanted) && wanted >= 0 && wanted <= 120)) return response.status(422).json({ error: "invalid_login_limit" });
+    const answer = (why: string, limit?: number, written = false) => { response.setHeader("Cache-Control", "no-store"); return response.json({ ok: why === "", written, why, ...(limit !== undefined ? { login_limit_per_minute: limit } : {}) }); };
+    try {
+      const base = `http://${address}${testPort > 0 ? `:${testPort}` : ""}`;
+      const signal = AbortSignal.timeout(8000);
+      const login = await fetch(`${base}/api/v1/login`, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "armor" }, body: JSON.stringify({ user, password }), signal });
+      const cookie = login.headers.get("set-cookie")?.split(";")[0];
+      if (!login.ok || !cookie) return answer(login.status === 401 ? "panel_login_refused" : "panel_login_failed");
+      const headers = { "Content-Type": "application/json", "X-Requested-With": "armor", Cookie: cookie };
+      if (wanted !== undefined) {
+        const saved = await fetch(`${base}/api/v1/config`, { method: "PUT", headers, body: JSON.stringify({ system: { login_limit_per_minute: wanted } }), signal });
+        if (!saved.ok) return answer("panel_config_refused");
+        audit.record({ action: "admin.node.configure", outcome: "allowed", actor: actor(request), target: nodeId, detail: `login_limit_per_minute=${wanted}` });
+        return answer("", wanted, true);
+      }
+      const read = await fetch(`${base}/api/v1/config`, { headers, signal });
+      if (!read.ok) return answer("panel_config_refused");
+      const current = ((await read.json()) as { system?: { login_limit_per_minute?: unknown } }).system?.login_limit_per_minute;
+      return typeof current === "number" ? answer("", current) : answer("setting_unknown");
+    } catch {
+      return answer("panel_not_reachable");
+    }
+  });
+
   // The whole installation as one file (cameras without their passwords, the designs, the rules, the automations, the devices, the solar equipment, the energy alarms, and who the
   // users are): to keep, or to move to another machine. Importing replaces the designs, the rules and the alarm levels and only adds what is missing of the rest (see installation.ts).
   const installationJson = express.json({ limit: 9 * 1024 * 1024, type: "application/json" });

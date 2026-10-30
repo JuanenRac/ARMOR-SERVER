@@ -11,7 +11,7 @@ import { refresh, sweepStale } from "./staleness.js";
 
 export type ElectricalChannel = {
   id: string; domain: "ac" | "dc"; label?: string; voltage_v?: number; current_a?: number; power_w?: number; energy_kwh?: number; power_estimated?: boolean; frequency_hz?: number; power_factor?: number;
-  state?: "closed" | "open" | "unknown"; alarm?: boolean; alarm_code?: string;
+  state?: "closed" | "open" | "unknown"; alarm?: boolean; alarm_code?: string; reading_age_ms?: number; errors?: number;
 };
 export type Side = "none" | "a" | "b";
 export type SwitchFault = "none" | "did_not_close" | "did_not_open" | "both_closed" | "disabled";
@@ -138,9 +138,11 @@ export function electricalTopic(topic: string, leaf: "state" | "command" | "resu
 
 // ---- the store --------------------------------------------------------------------------------------------------------------------------
 
-export type ElectricalNodeView = { node_id: string; reading: ElectricalMessage; received_at: string; stale: boolean };
+export type ElectricalNodeView = { node_id: string; reading: ElectricalMessage; received_at: string; stale: boolean; /** The channels whose own reading is older than the node tolerates (see STALE_READING_MS): their numbers are the last good ones, not a measurement of now. Only given while the option to set them aside is on. */ stale_channels?: string[] };
 export type ElectricalTotals = {
   nodes: number; channels: number; stale: number;
+  /** Channels of nodes that are not stale whose own reading is old and that are therefore left out of the grid figure (0 when the option is off). */
+  stale_readings: number;
   /** The power drawn from the grid in watts (negative when the house feeds it), from the channel called `grid` of the nodes that are not stale; null when none reports it. */
   grid_w: number | null;
   /** True when the grid figure includes a channel the node only estimated (apparent power from a current and a nominal voltage). */
@@ -154,6 +156,8 @@ export type ElectricalSample = { t: number } & Partial<Record<"voltage_v" | "cur
 
 export type ElectricalStoreOptions = {
   now?: () => number;
+  /** Whether a channel whose own reading is old is set aside (not counted in the grid figure, not written to the history, listed in `stale_channels`). Asked each time; on when not given. */
+  setAsideOldReadings?: () => boolean;
   /** A node that has not reported for this long is stale. */
   staleAfterMs?: number;
   /** At most one sample of history per channel in this time. */
@@ -167,6 +171,9 @@ export type ElectricalStoreOptions = {
 type Entry = { reading: ElectricalMessage; receivedAtMs: number; stale: boolean; samples: Map<string, ElectricalSample[]>; coarse: Map<string, CoarseTier>; lastSampleMs: Map<string, number> };
 /** What is kept of the history of the channels between runs, by node and channel. */
 export type ElectricalHistoryFile = { nodes: Record<string, Record<string, { samples: ElectricalSample[]; coarse: ElectricalSample[] }>> };
+/** How old (in milliseconds) the reading of one channel may be before its numbers are no longer a measurement of now: a meter that stopped answering keeps its last good numbers, with a growing age. */
+export const STALE_READING_MS = 60_000;
+const oldReading = (channel: ElectricalChannel): boolean => channel.reading_age_ms !== undefined && channel.reading_age_ms > STALE_READING_MS;
 const round = (value: number, places = 1): number => Math.round(value * 10 ** places) / 10 ** places;
 
 export class ElectricalStore {
@@ -178,6 +185,8 @@ export class ElectricalStore {
   constructor(options: ElectricalStoreOptions = {}) {
     this.#options = { ...options, now: options.now ?? (() => Date.now()), staleAfterMs: options.staleAfterMs ?? 60_000, sampleEveryMs: options.sampleEveryMs ?? 30_000, keepSamples: options.keepSamples ?? 2880, maxNodes: options.maxNodes ?? 32 };
   }
+
+  #aside(): boolean { return this.#options.setAsideOldReadings?.() ?? true; }
 
   /** Keep a message. Refuses (throws) a new node when the store is full, so a broker full of noise cannot grow it without limit. */
   ingest(message: ElectricalMessage): void {
@@ -198,7 +207,9 @@ export class ElectricalStore {
     }
     entry.reading = message;
     const wasStale = refresh(entry, now);
+    const aside = this.#aside();
     for (const channel of message.channels) {
+      if (aside && oldReading(channel)) continue;   // an old number is not a point of the graph
       if (now - (entry.lastSampleMs.get(channel.id) ?? 0) < this.#options.sampleEveryMs) continue;
       const samples = entry.samples.get(channel.id) ?? [];
       const sample: ElectricalSample = { t: now };
@@ -224,25 +235,28 @@ export class ElectricalStore {
 
   list(): ElectricalNodeView[] {
     this.sweep();
-    return [...this.#entries.values()].map(entry => ({ node_id: entry.reading.node_id, reading: entry.reading, received_at: new Date(entry.receivedAtMs).toISOString(), stale: entry.stale }))
+    const aside = this.#aside();
+    return [...this.#entries.values()].map(entry => ({ node_id: entry.reading.node_id, reading: entry.reading, received_at: new Date(entry.receivedAtMs).toISOString(), stale: entry.stale, ...(aside ? { stale_channels: entry.reading.channels.filter(oldReading).map(channel => channel.id) } : {}) }))
       .sort((a, b) => a.node_id.localeCompare(b.node_id));
   }
 
   totals(): ElectricalTotals {
     this.sweep();
-    let channels = 0, stale = 0, alarms = 0, grid: number | null = null, gridEnergy: number | null = null, gridEstimated = false;
+    const aside = this.#aside();
+    let channels = 0, stale = 0, staleReadings = 0, alarms = 0, grid: number | null = null, gridEnergy: number | null = null, gridEstimated = false;
     for (const entry of this.#entries.values()) {
       channels += entry.reading.channels.length;
       if (entry.stale) { stale += 1; continue; }
       for (const channel of entry.reading.channels) {
         if (channel.alarm === true) alarms += 1;
+        if (aside && oldReading(channel)) { staleReadings += 1; continue; }
         if (channel.id === "grid" && channel.domain === "ac") {
           if (channel.power_w !== undefined) { grid = (grid ?? 0) + channel.power_w; if (channel.power_estimated === true) gridEstimated = true; }
           if (channel.energy_kwh !== undefined) gridEnergy = (gridEnergy ?? 0) + channel.energy_kwh;
         }
       }
     }
-    return { nodes: this.#entries.size, channels, stale, grid_w: grid === null ? null : round(grid, 0), grid_estimated: gridEstimated, grid_kwh: gridEnergy === null ? null : round(gridEnergy, 2), alarms };
+    return { nodes: this.#entries.size, channels, stale, stale_readings: staleReadings, grid_w: grid === null ? null : round(grid, 0), grid_estimated: gridEstimated, grid_kwh: gridEnergy === null ? null : round(gridEnergy, 2), alarms };
   }
 
   /** The recent samples of one channel, oldest first; `minutes` bounds how far back. Past a day the five-minute averages answer. */

@@ -4,6 +4,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The sign-in limit of a node can be read and changed:** `POST /api/v1/admin/nodes/settings` (administrators) signs in to the node's own panel with the login given, which is used once and never kept, and reads or writes `system.login_limit_per_minute` (0 to 120) through the node's own configuration route; the change is written in the audit trail without the login.
+- **A channel whose own reading is old is set aside:** a channel of an electrical node whose `reading_age_ms` is over a minute is left out of the grid figure and the graphs, listed in `stale_channels` of the node and counted in `totals.stale_readings`; the option `electrical.set_aside_old_readings` of the security settings is on by default and turns it off.
+- **An uploaded firmware image goes only to a node of its board:** when the name of the file says a board (`armor_<kind>-<board>.bin`) and the node says another, the node fails with `wrong_board` before anything is sent to it.
+
 ## [0.8.0.7] - Alarm audio for the wall panel, the country of a sign-in, the language of a push and the search for the stream of XMeye cameras
 
 - **A sign-in from a country never used before is told as such:** with a country database on the machine (`ARMOR_GEOIP_DB`, the free GeoLite2 Country that you download; the server reads it from disk and asks nobody), the notice of a sign-in from outside the house names the country, and a country that person had never signed in from is told as new, once, even from an address seen before. The first country of a person is only learned. The option `login.country_alert` (on by default, in Configuration > Security) turns the lookup off; a file that cannot be read only turns it off. The countries are kept per person and go with the person.

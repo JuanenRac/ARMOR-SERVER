@@ -237,3 +237,47 @@ test("an older admin agent that does not report its protection leaves it unknown
     assert.deepEqual([status.available, status.sensitive_writes], [true, null]);
   } finally { await running.stop(); await agent.close(); }
 });
+
+test("the login limit of a node is read and written through the node's own panel with the login given, which is never kept", async () => {
+  const seen: Array<{ url: string; cookie: string; body: string }> = [];
+  let limit = 30;
+  const panel = http.createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", chunk => chunks.push(chunk as Buffer));
+    request.on("end", () => {
+      const body = Buffer.concat(chunks).toString("utf8");
+      seen.push({ url: `${request.method} ${request.url}`, cookie: String(request.headers.cookie ?? ""), body });
+      if (request.method !== "GET" && request.headers["x-requested-with"] !== "armor") { response.writeHead(403, json); return response.end("{}"); }
+      if (request.url === "/api/v1/login") {
+        const ok = JSON.parse(body).password === "node-admin-pass";
+        response.writeHead(ok ? 200 : 401, ok ? { ...json, "Set-Cookie": "armor_session=abc123; Path=/" } : json);
+        return response.end(JSON.stringify({ ok }));
+      }
+      if (request.url === "/api/v1/config" && request.method === "PUT") { limit = JSON.parse(body).system.login_limit_per_minute; response.writeHead(200, json); return response.end('{"ok":true}'); }
+      if (request.url === "/api/v1/config") { response.writeHead(200, json); return response.end(JSON.stringify({ system: { login_limit_per_minute: limit } })); }
+      response.writeHead(404, json); response.end("{}");
+    });
+  });
+  await new Promise<void>(resolve => panel.listen(0, "127.0.0.1", resolve));
+  process.env.ARMOR_ADMIN_NODE_PORT = String((panel.address() as { port: number }).port);
+  const running = await startServer({});
+  try {
+    const cookie = await studioCookie(running.base);
+    const login = { node_id: "nodo-hmi-1", address: "127.0.0.1", panel_user: "admin", panel_password: "node-admin-pass" };
+    const read = await call(running, cookie, "POST", "/api/v1/admin/nodes/settings", login);
+    assert.deepEqual([read.status, read.body.ok, read.body.login_limit_per_minute, read.body.written], [200, true, 30, false]);
+    const wrote = await call(running, cookie, "POST", "/api/v1/admin/nodes/settings", { ...login, login_limit_per_minute: 0 });
+    assert.deepEqual([wrote.body.ok, wrote.body.written, wrote.body.login_limit_per_minute], [true, true, 0]);
+    assert.deepEqual(JSON.parse(seen.find(item => item.url === "PUT /api/v1/config")!.body), { system: { login_limit_per_minute: 0 } });
+    assert.equal((await call(running, cookie, "POST", "/api/v1/admin/nodes/settings", { ...login, panel_password: "wrong" })).body.why, "panel_login_refused");
+    assert.equal((await call(running, cookie, "POST", "/api/v1/admin/nodes/settings", { ...login, login_limit_per_minute: 121 })).status, 422);
+    assert.equal((await call(running, cookie, "POST", "/api/v1/admin/nodes/settings", { ...login, login_limit_per_minute: 1.5 })).status, 422);
+    assert.equal((await call(running, cookie, "POST", "/api/v1/admin/nodes/settings", { node_id: "x", address: "127.0.0.1" })).status, 422);
+    assert.equal((await call(running, cookie, "POST", "/api/v1/admin/nodes/settings", { ...login, node_id: "Bad Id" })).status, 422);
+    const audit = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8");
+    assert.match(audit, /login_limit_per_minute=0/);
+    assert.doesNotMatch(audit, /node-admin-pass/);
+    delete process.env.ARMOR_ADMIN_NODE_PORT;
+    assert.equal((await call(running, cookie, "POST", "/api/v1/admin/nodes/settings", { ...login, address: "8.8.8.8" })).status, 422);
+  } finally { delete process.env.ARMOR_ADMIN_NODE_PORT; await running.stop(); await new Promise<void>(resolve => panel.close(() => resolve())); }
+});

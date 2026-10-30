@@ -308,7 +308,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   });
   const site = new SiteStore(path.join(config.dataDir, "site.json"));
   const electricalEnergy = new ElectricalEnergy();
-  const electricalNodes = new ElectricalStore({ now: overrides.now, onMessage: message => { knownNodes.seen("electrical", message.node_id); alarmRules.handleElectrical(message); const at = (overrides.now ?? Date.now)(); for (const channel of message.channels) electricalEnergy.add(message.node_id, channel.id, channel.energy_kwh, at); }, onStale: (node, stale) => { alarmRules.handleElectricalStale(node, stale); if (stale) nodeLife.gone(node); else nodeLife.report(node); } });
+  const electricalNodes = new ElectricalStore({ now: overrides.now, setAsideOldReadings: () => securitySettings.get("electrical.set_aside_old_readings"), onMessage: message => { knownNodes.seen("electrical", message.node_id); alarmRules.handleElectrical(message); const at = (overrides.now ?? Date.now)(); for (const channel of message.channels) electricalEnergy.add(message.node_id, channel.id, channel.energy_kwh, at); }, onStale: (node, stale) => { alarmRules.handleElectricalStale(node, stale); if (stale) nodeLife.gone(node); else nodeLife.report(node); } });
   const electrical = new SiteStore(path.join(config.dataDir, "electrical.json"), () => new Date(), "electrical design");
   const networkNotes = new DeviceNotes(path.join(config.dataDir, "network-devices.json"));
   const systemMonitor = new SystemMonitor();

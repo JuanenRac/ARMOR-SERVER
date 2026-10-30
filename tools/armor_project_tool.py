@@ -269,6 +269,14 @@ def test_project(project: Path, manifest: dict[str, object]) -> None:
         raise RuntimeError(f"no build rule registered for {name}")
 
 
+def check_broker(project: Path, samples: str = "") -> None:
+    """The messages a node's serialiser prints, through a real Mosquitto with a stand-in for the node's MQTT client (tests/check_mosquitto.py). Where Mosquitto is not installed the check says so and
+    passes; the CI of the node repositories installs it and sets ARMOR_REQUIRE_MOSQUITTO, so there a missing broker is a failure."""
+    checker = subprocess.run([sys.executable, "tests/check_mosquitto.py"], cwd=project, input=samples, text=True, check=False)
+    if checker.returncode:
+        raise RuntimeError("a real MQTT broker and the node's client do not agree (tests/check_mosquitto.py)")
+
+
 def test_radar(project: Path) -> None:
     """Build and run the hardware-independent core on this computer, then the firmware if ESP-IDF is present.
 
@@ -285,6 +293,7 @@ def test_radar(project: Path) -> None:
     checker = subprocess.run([sys.executable, "tests/check_contract.py"], cwd=project, input=emitter.stdout, text=True, check=False)
     if checker.returncode:
         raise RuntimeError("the firmware serialiser produces payloads the published contract rejects")
+    check_broker(project, emitter.stdout)
     if shutil.which("idf.py"):
         command(project, ["idf.py", "build"])
     else:
@@ -304,6 +313,7 @@ def test_solar(project: Path) -> None:
         checker = subprocess.run([sys.executable, "tests/check_samples.py"], cwd=project, input=emitter.stdout, text=True, check=False)
         if checker.returncode:
             raise RuntimeError("the solar messages do not have the fields of contract version 0")
+        check_broker(project, emitter.stdout)
 
 
 def test_electrical(project: Path) -> None:
@@ -318,6 +328,7 @@ def test_electrical(project: Path) -> None:
     checker = subprocess.run([sys.executable, "tests/check_samples.py"], cwd=project, input=emitter.stdout, text=True, check=False)
     if checker.returncode:
         raise RuntimeError("the electrical messages do not have the fields of contract version 0")
+    check_broker(project, emitter.stdout)
 
 
 def test_alarm(project: Path) -> None:
@@ -332,6 +343,7 @@ def test_alarm(project: Path) -> None:
     checker = subprocess.run([sys.executable, "tests/check_samples.py"], cwd=project, input=emitter.stdout, text=True, check=False)
     if checker.returncode:
         raise RuntimeError("the alarm messages do not have the fields of contract version 0")
+    check_broker(project, emitter.stdout)
 
 
 def test_hmi(project: Path) -> None:
@@ -341,6 +353,7 @@ def test_hmi(project: Path) -> None:
     command(project, [cmake, "-S", "tests", "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug"])
     command(project, [cmake, "--build", str(build)])
     host_tests(project, build)
+    check_broker(project)
 
 
 def validate_markdown_links(project: Path) -> None:

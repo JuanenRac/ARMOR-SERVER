@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 or later">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-708%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-724%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Version-0.8.0.7-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
 ---
 
-**Honesty check - what runs today:** Every route, session, encryption and evidence rule below is real and covered by tests (`npm test`: 708 tests, including a full HTTP integration suite against an isolated server and a check that every route is documented in the OpenAPI file). It runs in daily use on the CM5 test bench with a real MQTT broker, the firmware of a real radar node on an ESP32-S3 board, real IP cameras (live video, snapshots, recordings, PTZ on the Hi3510 units), the Studio console, the Android app and the voice and observation services. What is **not** proven yet: ONVIF against a real ONVIF camera, any Jetson hardware, the solar, electrical, alarm-panel and touch-panel routes against real nodes (they are tested with generated messages: only the radar board exists) and push through Firebase against a real Firebase project.
+**Honesty check - what runs today:** Every route, session, encryption and evidence rule below is real and covered by tests (`npm test`: 724 tests, including a full HTTP integration suite against an isolated server and a check that every route is documented in the OpenAPI file). It runs in daily use on the CM5 test bench with a real MQTT broker, the firmware of a real radar node on an ESP32-S3 board, real IP cameras (live video, snapshots, recordings, PTZ on the Hi3510 units), the Studio console, the Android app and the voice and observation services. What is **not** proven yet: ONVIF against a real ONVIF camera, any Jetson hardware, the solar, electrical, alarm-panel and touch-panel routes against real nodes (they are tested with generated messages: only the radar board exists) and push through Firebase against a real Firebase project.
 
 ---
 
@@ -40,7 +40,7 @@
 | Maturity | Established |
 | Role | Central security coordinator of the family: nodes, alarms, devices, energy, cameras, network |
 | Stack | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| Tests | 708 (`npm test`: unit and full HTTP integration) |
+| Tests | 724 (`npm test`: unit and full HTTP integration) |
 | Contract | 191 HTTP paths, 247 operations (OpenAPI in ARMOR-COMMON), route table in `docs/ROUTES.md` |
 | Listens on | `127.0.0.1:8080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Runs on | The CM5 test bench (as a service, see ARMOR-DEVOPS) or any computer with Node.js |
@@ -58,7 +58,7 @@ Each line is one part of this repository and the light says how far it is today.
 | Area | State | What it means here |
 |---|---|---|
 | Software | 🟢 | The routes, sessions, encryption and evidence rules run in daily use on the CM5 test bench. |
-| Tests | 🟢 | 708 tests pass (`npm test`), including a full HTTP integration suite against an isolated server and a check that every route is documented in the OpenAPI file. |
+| Tests | 🟢 | 724 tests pass (`npm test`), including a full HTTP integration suite against an isolated server and a check that every route is documented in the OpenAPI file. |
 | Protocols and data | 🟡 | The radar messages come from a real board; the solar, electrical, alarm-panel and touch-panel routes are tested with generated messages, and ONVIF has not met a real ONVIF camera. |
 | Hardware | 🟡 | It runs on the CM5 test bench with a real MQTT broker, real IP cameras (live video, snapshots, recordings, PTZ on the Hi3510 units) and a real radar node; nothing has run on a Jetson. |
 | Security | 🟡 | The sessions, encryption, evidence and login rules are covered by tests; there has been no independent review. |
@@ -205,7 +205,7 @@ Copy `.env.example` to `.env` (ignored by Git), or let `run.bat` / `run.sh` gene
 ```powershell
 npm install           # dependencies
 npm run typecheck     # tsc --noEmit
-npm test              # 708 tests: unit and full HTTP integration
+npm test              # 724 tests: unit and full HTTP integration
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # development server with hot reload
 ```

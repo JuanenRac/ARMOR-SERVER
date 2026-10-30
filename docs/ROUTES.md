@@ -33,6 +33,7 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/admin/node-panels/:id/fingerprint` | administrator, fresh proof of identity | `node_panel_proxy.ts` |
 | GET | `/api/v1/admin/nodes/:id/token` | administrator | `routes/admin.ts` |
 | POST | `/api/v1/admin/nodes/provision` | administrator | `routes/admin.ts` |
+| POST | `/api/v1/admin/nodes/settings` | administrator | `routes/admin.ts` |
 | GET | `/api/v1/admin/notifications` | administrator | `routes/notifications.ts` |
 | POST | `/api/v1/admin/notifications/test` | administrator | `routes/notifications.ts` |
 | GET | `/api/v1/admin/remote` | administrator | `routes/maintenance.ts` |

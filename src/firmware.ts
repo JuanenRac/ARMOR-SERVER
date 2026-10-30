@@ -82,7 +82,12 @@ export class FirmwareError extends Error {
   constructor(readonly code: string) { super(code); }
 }
 
-type Image = { bytes: Buffer; sha256: string; version?: string };
+type Image = { bytes: Buffer; sha256: string; version?: string; /** The board the file name says it was built for (`armor_<kind>-<board>.bin`), when it says one: an uploaded image carries no board inside, so this is the only thing that can tell it from another board's. */ board?: string };
+/** The board an image file name says (`armor_electrical-s3-wifi.bin` is for `s3-wifi`); undefined for a name that does not say one (the plain name, or one the person changed). */
+export function boardFromName(name: string): string | undefined {
+  const found = /^armor_(?:radar|solar|electrical|alarm|hmi)-([a-z0-9][a-z0-9-]{0,30})\.bin$/i.exec(name);
+  return found ? found[1].toLowerCase() : undefined;
+}
 
 export type FirmwareOptions = {
   now?: () => number;
@@ -163,7 +168,8 @@ export class FirmwareService {
     while (this.#uploads.size >= MAX_UPLOADS) this.#uploads.delete(this.#uploads.keys().next().value as string);
     const sha256 = sha256Of(bytes);
     const info: UploadInfo = { id: crypto.randomUUID(), name: name.replace(/[^\w.-]/g, "_").slice(0, 80) || "firmware.bin", bytes: bytes.length, sha256, ...(imageProject(bytes) ? { project: imageProject(bytes) } : {}) };
-    this.#uploads.set(info.id, { info, image: { bytes, sha256 }, at: this.#now() });
+    const board = boardFromName(info.name);
+    this.#uploads.set(info.id, { info, image: { bytes, sha256, ...(board ? { board } : {}) }, at: this.#now() });
     return info;
   }
 
@@ -246,6 +252,8 @@ export class FirmwareService {
     target.node_id = before.node_id; target.version_before = before.version;
     // A node that says what it is must be the kind this job updates: the updates of a kind go only to nodes of that kind (the image of another one would be taken for good).
     if (before.kind && before.kind !== kind) throw new FirmwareError("wrong_node_kind");
+    // An uploaded image whose name says a board goes only to a node of that board (an image for the Wi-Fi board would be taken for good by the Ethernet one, and the signed way would never have allowed it).
+    if (image.board && before.board && image.board.toLowerCase() !== before.board.toLowerCase()) throw new FirmwareError("wrong_board");
 
     // Signing in and sending the image are tried twice when the node cannot be reached (a connection that dropped, a socket the node had closed): the second try starts from a new sign-in.
     let answer: { error?: string; version?: string; sha256?: string } = {};

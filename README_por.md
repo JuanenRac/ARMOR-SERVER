@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 or later">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-708%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-724%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Version-0.8.0.7-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
 ---
 
-**Verificação de honestidade - o que funciona hoje:** Cada rota, sessão, cifra e regra de provas abaixo é real e está coberta por testes (`npm test`: 708 testes, incluindo um conjunto completo de integração HTTP contra um servidor isolado e uma verificação de que cada rota está documentada no ficheiro OpenAPI). Funciona em uso diário na bancada de testes do CM5 com um broker MQTT real, o firmware de um nó radar real numa placa ESP32-S3, câmaras IP reais (vídeo em direto, fotografias, gravações, PTZ nas unidades Hi3510), a consola Studio, a aplicação Android e os serviços de voz e de observação. O que **ainda não** está provado: ONVIF com uma câmara ONVIF real, qualquer hardware Jetson, as rotas solares, elétricas, de centrais de alarme e de painel tátil com nós reais (testam-se com mensagens geradas: só existe a placa radar) e o push por Firebase com um projeto Firebase real.
+**Verificação de honestidade - o que funciona hoje:** Cada rota, sessão, cifra e regra de provas abaixo é real e está coberta por testes (`npm test`: 724 testes, incluindo um conjunto completo de integração HTTP contra um servidor isolado e uma verificação de que cada rota está documentada no ficheiro OpenAPI). Funciona em uso diário na bancada de testes do CM5 com um broker MQTT real, o firmware de um nó radar real numa placa ESP32-S3, câmaras IP reais (vídeo em direto, fotografias, gravações, PTZ nas unidades Hi3510), a consola Studio, a aplicação Android e os serviços de voz e de observação. O que **ainda não** está provado: ONVIF com uma câmara ONVIF real, qualquer hardware Jetson, as rotas solares, elétricas, de centrais de alarme e de painel tátil com nós reais (testam-se com mensagens geradas: só existe a placa radar) e o push por Firebase com um projeto Firebase real.
 
 ---
 
@@ -40,7 +40,7 @@
 | Maturidade | Estabelecido |
 | Função | Coordenador central de segurança da família: nós, alarmes, dispositivos, energia, câmaras, rede |
 | Tecnologia | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| Testes | 708 (`npm test`: unitários e integração HTTP completa) |
+| Testes | 724 (`npm test`: unitários e integração HTTP completa) |
 | Contrato | 191 caminhos HTTP, 247 operações (OpenAPI no ARMOR-COMMON), tabela de rotas em `docs/ROUTES.md` |
 | Escuta em | `127.0.0.1:8080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Funciona em | A bancada do CM5 (como serviço, ver ARMOR-DEVOPS) ou qualquer computador com Node.js |
@@ -58,7 +58,7 @@ Cada linha é uma parte deste repositório e a luz diz até onde chega hoje. É 
 | Área | Estado | O que significa aqui |
 |---|---|---|
 | Software | 🟢 | As rotas, as sessões, a cifragem e as regras de provas funcionam todos os dias na bancada de testes CM5. |
-| Testes | 🟢 | Passam 708 testes (`npm test`), incluindo uma bateria de integração HTTP completa contra um servidor isolado e uma verificação de que cada rota está documentada no ficheiro OpenAPI. |
+| Testes | 🟢 | Passam 724 testes (`npm test`), incluindo uma bateria de integração HTTP completa contra um servidor isolado e uma verificação de que cada rota está documentada no ficheiro OpenAPI. |
 | Protocolos e dados | 🟡 | As mensagens do radar vêm de uma placa real; as rotas solar, elétrica, de painel de alarme e de painel tátil são testadas com mensagens geradas, e o ONVIF não encontrou uma câmara ONVIF real. |
 | Hardware | 🟡 | Funciona na bancada de testes CM5 com um broker MQTT real, câmaras IP reais (vídeo em direto, capturas, gravações, PTZ nas unidades Hi3510) e um nó radar real; nada funcionou num Jetson. |
 | Segurança | 🟡 | As regras de sessões, cifragem, provas e acesso estão cobertas por testes; não houve revisão independente. |
@@ -205,7 +205,7 @@ Copie `.env.example` para `.env` (ignorado pelo Git), ou deixe `run.bat` / `run.
 ```powershell
 npm install           # dependências
 npm run typecheck     # tsc --noEmit
-npm test              # 708 testes: unitários e integração HTTP completa
+npm test              # 724 testes: unitários e integração HTTP completa
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # servidor de desenvolvimento com recarga a quente
 ```

@@ -305,3 +305,24 @@ test("an image that says it is built for another kind, or a node of another kind
     });
   } finally { await node.close(); }
 });
+
+test("an uploaded image whose name says a board goes only to a node of that board", async () => {
+  const { boardFromName } = await import("../src/firmware.js");
+  assert.equal(boardFromName("armor_electrical-s3-wifi.bin"), "s3-wifi");
+  assert.equal(boardFromName("armor_hmi-lcd7box.bin"), "lcd7box");
+  assert.equal(boardFromName("armor_electrical.bin"), undefined);
+  assert.equal(boardFromName("firmware.bin"), undefined);
+  const node = await fakeNode();   // a radar on the s3-eth board
+  try {
+    await withServer(node, null, async (running, cookie) => {
+      const bytes = image(7, 120 * 1024);
+      const upload = async (name: string) => (await call(running, cookie, "POST", "/api/v1/admin/firmware/uploads", bytes, { "Content-Type": "application/octet-stream", "X-Firmware-Name": name })).body.id as string;
+      const start = (id: string) => call(running, cookie, "POST", "/api/v1/admin/firmware/jobs", { kind: "radar", source: "upload", upload_id: id, targets: [{ address: "127.0.0.1" }], panel_user: "admin", panel_password: "node-pass" });
+      const wrong = await start(await upload("armor_radar-s3-wifi.bin"));
+      assert.equal(wrong.status, 202, JSON.stringify(wrong.body));
+      const job = await finished(running, cookie, wrong.body.id);
+      assert.equal(job.targets[0].error, "wrong_board");
+      assert.equal(node.seen.length, 0, "nothing was sent to the node");
+    });
+  } finally { await node.close(); }
+});

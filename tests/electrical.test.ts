@@ -39,10 +39,10 @@ test("the store keeps the latest reading, samples now and then, goes stale, come
   assert.equal(store.history("electrical-1", "grid", 60)!.length, 2);
   assert.equal(store.history("electrical-1", "nope", 60), undefined);
   assert.equal(store.history("other", "grid", 60), undefined);
-  assert.deepEqual(store.totals(), { nodes: 1, channels: 1, stale: 0, grid_w: 3200, grid_estimated: false, grid_kwh: 5231, alarms: 0 });
+  assert.deepEqual(store.totals(), { nodes: 1, channels: 1, stale: 0, stale_readings: 0, grid_w: 3200, grid_estimated: false, grid_kwh: 5231, alarms: 0 });
   clock += 61_000;
   assert.equal(store.list()[0].stale, true);
-  assert.deepEqual(store.totals(), { nodes: 1, channels: 1, stale: 1, grid_w: null, grid_estimated: false, grid_kwh: null, alarms: 0 });   // a silent node counts for nothing
+  assert.deepEqual(store.totals(), { nodes: 1, channels: 1, stale: 1, stale_readings: 0, grid_w: null, grid_estimated: false, grid_kwh: null, alarms: 0 });   // a silent node counts for nothing
   store.ingest(message({ node_id: "electrical-1" }));
   assert.equal(store.list()[0].stale, false);
   assert.deepEqual(told.filter(item => item !== "message electrical-1"), ["stale electrical-1", "back electrical-1"]);
@@ -55,7 +55,7 @@ test("the store keeps the latest reading, samples now and then, goes stale, come
 test("the sums count the grid channel of the nodes that report and the alarms they raise", () => {
   const store = new ElectricalStore();
   store.ingest(message({ channels: [{ id: "grid", domain: "ac", power_w: -800, energy_kwh: 10.5 }, { id: "heater", domain: "ac", power_w: 1500, alarm: true, alarm_code: "over_current" }, { id: "dc-bus", domain: "dc", power_w: 400 }] }));
-  assert.deepEqual(store.totals(), { nodes: 1, channels: 3, stale: 0, grid_w: -800, grid_estimated: false, grid_kwh: 10.5, alarms: 1 });
+  assert.deepEqual(store.totals(), { nodes: 1, channels: 3, stale: 0, stale_readings: 0, grid_w: -800, grid_estimated: false, grid_kwh: 10.5, alarms: 1 });
 });
 
 test("a grid figure made from an estimated power says that it is an estimate", () => {
@@ -136,4 +136,38 @@ test("the alarms: a meter's own alarm, the mains out of range with a recovery ma
   rules.handleElectrical(at(190, { alarm: true }));
   assert.deepEqual(centre.active().filter(alarm => !alarm.cleared_at).map(alarm => alarm.source.type), ["electrical", "electrical"]);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("a channel whose own reading is old is set aside from the grid figure and the graph while the option is on, and taken as sent when it is off", () => {
+  let aside = true, clock = 1_000_000;
+  const store = new ElectricalStore({ now: () => clock, sampleEveryMs: 1_000, setAsideOldReadings: () => aside });
+  const old = message({ channels: [{ id: "grid", domain: "ac", power_w: 1500, energy_kwh: 20, reading_age_ms: 600_000, errors: 7 }, { id: "heater", domain: "ac", power_w: 900, reading_age_ms: 800 }] });
+  assert.doesNotThrow(() => parseElectricalMessage(JSON.parse(JSON.stringify(old))));
+  store.ingest(old);
+  assert.deepEqual(store.list()[0]!.stale_channels, ["grid"]);
+  assert.deepEqual([store.totals().grid_w, store.totals().grid_kwh, store.totals().stale_readings], [null, null, 1], "an old number is not the grid figure of now");
+  assert.equal(store.history("electrical-1", "grid", 60)!.length, 0, "and it is not a point of the graph");
+  assert.equal(store.history("electrical-1", "heater", 60)!.length, 1);
+  aside = false; clock += 2_000;
+  store.ingest(old);
+  assert.equal(store.list()[0]!.stale_channels, undefined);
+  assert.deepEqual([store.totals().grid_w, store.totals().stale_readings], [1500, 0], "off: the numbers are taken as the node sends them");
+});
+
+test("the option to set old readings aside is on by default and is one of the security options", async () => {
+  const { SECURITY_DEFAULTS } = await import("../src/security_settings.js");
+  assert.equal(SECURITY_DEFAULTS["electrical.set_aside_old_readings"], true);
+  const running = await startServer();
+  try {
+    const cookie = await studioCookie(running.base);
+    const headers = { "Content-Type": "application/json", cookie };
+    const read = await (await fetch(`${running.base}/api/v1/security/settings`, { headers })).json() as { settings: Record<string, unknown> };
+    assert.equal(read.settings["electrical.set_aside_old_readings"], true);
+    running.app.context.electricalNodes.ingest(message({ channels: [{ id: "grid", domain: "ac", power_w: 1500, reading_age_ms: 600_000 }] }));
+    const view = await (await fetch(`${running.base}/api/v1/electrical/readings`, { headers })).json() as { nodes: Array<{ stale_channels?: string[] }>; totals: { stale_readings: number } };
+    assert.deepEqual([view.nodes[0]!.stale_channels, view.totals.stale_readings], [["grid"], 1]);
+    running.app.context.securitySettings.update({ "electrical.set_aside_old_readings": false });
+    const off = await (await fetch(`${running.base}/api/v1/electrical/readings`, { headers })).json() as { nodes: Array<{ stale_channels?: string[] }>; totals: { stale_readings: number } };
+    assert.deepEqual([off.nodes[0]!.stale_channels, off.totals.stale_readings], [undefined, 0]);
+  } finally { await running.stop(); }
 });
