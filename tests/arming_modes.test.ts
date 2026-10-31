@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { AlarmCentre, AlarmRules } from "../src/alarms.js";
 import { ARMED_MODES, ArmingModes, ModeChangeError, ModesInvalid, parseArmingModes, type ArmingModesDocument, type Timers, type Unit } from "../src/arming_modes.js";
 import { lowers, SECURITY_DEFAULTS } from "../src/security_settings.js";
 import { SECRETS, startServer, studioCookie, tempDir, type Running } from "./helpers.js";
@@ -694,4 +695,14 @@ test("property: whatever the lists are, only the listed units wait, by the delay
       }
     }
   }
+});
+
+test("a node or a camera that is already down when the system is armed sounds at once, whatever the entry delay says", () => {
+  const centre = new AlarmCentre({ file: path.join(tempDir(), "alarms.json") });
+  const rules = new AlarmRules(centre, () => "armed");
+  const waits: string[] = [];
+  rules.arming = { guards: () => true, entryDelayMs: () => 60_000, later: key => { waits.push(key); }, cancelLater: () => undefined };
+  rules.raisePresentProblems({ nodesDown: ["garden"], camerasDown: ["gate"], devicesTriggered: [] });
+  assert.deepEqual(centre.active().map(alarm => `${alarm.code}:${alarm.source.id}`).sort(), ["camera_down:gate", "node_down:garden"]);
+  assert.deepEqual(waits, [], "nothing waited");
 });
