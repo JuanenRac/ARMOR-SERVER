@@ -219,6 +219,8 @@ export class AlarmCentre {
    * panel, the summary, the voice and the escalation all read this without it.
    */
   active(options: { silent?: boolean } = {}): Alarm[] { return this.#alarms.filter(alarm => (options.silent === true || !alarm.silent) && (!alarm.acknowledged_at || !alarm.cleared_at)).reverse(); }
+  /** Every alarm kept, open or closed, oldest first, without the silent ones (a duress disarm is never in a report). Copies: the caller cannot change the record. */
+  kept(): Alarm[] { return this.#alarms.filter(alarm => !alarm.silent).map(alarm => ({ ...alarm })); }
   /** Closed (acknowledged and ended): the record. Newest first. */
   recent(limit = 50, options: { silent?: boolean } = {}): Alarm[] { return this.#alarms.filter(alarm => (options.silent === true || !alarm.silent) && alarm.acknowledged_at && alarm.cleared_at).reverse().slice(0, limit); }
   /**

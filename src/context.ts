@@ -72,6 +72,7 @@ import { EnergyAlarmStore } from "./energy_alarms.js";
 import { ClientRegistry, ConnectionTracker, identify, NodeLife, systemBody, systemFromAudit, type Sighting, type SystemInput } from "./connections.js";
 import path from "node:path";
 import { SoundLibrary, SpokenCache } from "./alarm_audio.js";
+import { runReportCommand, type RunReport } from "./reports.js";
 
 export type AppContext = {
   config: ArmorConfig;
@@ -167,6 +168,8 @@ export type AppContext = {
   securitySettings: SecuritySettings;
   /** The sounds an administrator uploaded for the origins of an alarm, and the spoken sentences already made. */
   alarmSounds: SoundLibrary;
+  /** How the summary of a day and the heat map run their Python command (a test stands in for it). */
+  runReport: RunReport;
   spokenAlarms: SpokenCache;
   /** The Zigbee sensors linked to the zones of the alarm panels, told to the panel while this server holds the radio. */
   alarmZoneFeed: AlarmZoneFeed;
@@ -220,7 +223,7 @@ export type AppContext = {
   viewCamera(camera: CameraConnection): ReturnType<typeof cameraView>;
 };
 
-export type ContextOverrides = Partial<Pick<AppContext, "audit" | "admin" | "maintenance" | "firmware" | "ai">> & { broadcast?: (state: SystemState) => void; now?: () => number };
+export type ContextOverrides = Partial<Pick<AppContext, "audit" | "admin" | "maintenance" | "firmware" | "ai" | "runReport">> & { broadcast?: (state: SystemState) => void; now?: () => number };
 
 export function createContext(config: ArmorConfig, overrides: ContextOverrides = {}): AppContext {
   const baseAudit = overrides.audit ?? createAuditLog(config.dataDir);
@@ -506,7 +509,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   };
   // A viewer (the family, a guard) only looks: every read, the stream tickets that let them watch a camera, and nothing that changes, deletes, switches, arms or configures. What holds secrets or
   // settings (the administration routes, the users, the console, the node tokens) is closed to them even to read.
-  const viewerCloses = /^\/api\/v1\/(admin|users|system\/ingest|preferences|installation)(\/|$)/;
+  const viewerCloses = /^\/api\/v1\/(admin|users|system\/ingest|preferences|installation|summary|vision)(\/|$)/;
   const viewerMay = (method: string, path: string): boolean => (method === "GET" || method === "HEAD" ? !viewerCloses.test(path) : (method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/(stream|preview)-ticket$/.test(path)) || ((method === "POST" || method === "DELETE") && (path === "/api/v1/push/register" || path === "/api/v1/push/unregister")));
   const requireOperator: RequestHandler = (request, response, next) => {
     // Whoever is let in (or turned away as a viewer or a wall panel) is a client the history knows about; a request that is not signed in is not, so strangers cannot fill the list.
@@ -550,7 +553,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, securitySettings, geoip, loginCountries, alarmSounds, spokenAlarms, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, securitySettings, geoip, loginCountries, alarmSounds, runReport: overrides.runReport ?? runReportCommand, spokenAlarms, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

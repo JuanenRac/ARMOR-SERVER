@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 or later">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-838%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-854%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Version-0.8.1.0-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
 ---
 
-**Honesty check - what runs today:** Every route, session, encryption and evidence rule below is real and covered by tests (`npm test`: 838 tests, including a full HTTP integration suite against an isolated server and a check that every route is documented in the OpenAPI file). It runs in daily use on the CM5 test bench with a real MQTT broker, the firmware of a real radar node on an ESP32-S3 board, real IP cameras (live video, snapshots, recordings, PTZ on the Hi3510 units), the Studio console, the Android app and the voice and observation services. What is **not** proven yet: ONVIF against a real ONVIF camera, any Jetson hardware, the solar, electrical, alarm-panel and touch-panel routes against real nodes (they are tested with generated messages: only the radar board exists) and push through Firebase against a real Firebase project.
+**Honesty check - what runs today:** Every route, session, encryption and evidence rule below is real and covered by tests (`npm test`: 854 tests, including a full HTTP integration suite against an isolated server and a check that every route is documented in the OpenAPI file). It runs in daily use on the CM5 test bench with a real MQTT broker, the firmware of a real radar node on an ESP32-S3 board, real IP cameras (live video, snapshots, recordings, PTZ on the Hi3510 units), the Studio console, the Android app and the voice and observation services. What is **not** proven yet: ONVIF against a real ONVIF camera, any Jetson hardware, the solar, electrical, alarm-panel and touch-panel routes against real nodes (they are tested with generated messages: only the radar board exists) and push through Firebase against a real Firebase project.
 
 ---
 
@@ -40,7 +40,7 @@
 | Maturity | Established |
 | Role | Central security coordinator of the family: nodes, alarms, devices, energy, cameras, network |
 | Stack | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| Tests | 838 (`npm test`: unit and full HTTP integration) |
+| Tests | 854 (`npm test`: unit and full HTTP integration) |
 | Contract | 196 HTTP paths, 255 operations (OpenAPI in ARMOR-COMMON), route table in `docs/ROUTES.md` |
 | Listens on | `127.0.0.1:8080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Runs on | The CM5 test bench (as a service, see ARMOR-DEVOPS) or any computer with Node.js |
@@ -58,7 +58,7 @@ Each line is one part of this repository and the light says how far it is today.
 | Area | State | What it means here |
 |---|---|---|
 | Software | 🟢 | The routes, sessions, encryption and evidence rules run in daily use on the CM5 test bench. |
-| Tests | 🟢 | 838 tests pass (`npm test`), including a full HTTP integration suite against an isolated server and a check that every route is documented in the OpenAPI file. |
+| Tests | 🟢 | 854 tests pass (`npm test`), including a full HTTP integration suite against an isolated server and a check that every route is documented in the OpenAPI file. |
 | Protocols and data | 🟡 | The radar messages come from a real board; the solar, electrical, alarm-panel and touch-panel routes are tested with generated messages, and ONVIF has not met a real ONVIF camera. |
 | Hardware | 🟡 | It runs on the CM5 test bench with a real MQTT broker, real IP cameras (live video, snapshots, recordings, PTZ on the Hi3510 units) and a real radar node; nothing has run on a Jetson. |
 | Security | 🟡 | The sessions, encryption, evidence and login rules are covered by tests; there has been no independent review. |
@@ -151,7 +151,7 @@ flowchart LR
 | Voice: silencing without checking, long text, huge audio | The policy `voice.silence_confirmation` (off, pin, double_turn) travels with every turn; confirmation tied to the person; 200 characters, 8 languages, 30 requests a minute; audio of 480 000 bytes and a reply of 200 000 bytes at most |
 | Dangerous writes by mistake | Off unless `ARMOR_BATTERY_WRITE=1`, `ARMOR_ELECTRICAL_SWITCHING=1` or `ARMOR_ALARM_COMMANDS=1`, with a warning at start-up |
 
-**Switches in Studio.** The protections that can be tuned are 22 settings kept in `security-settings.json` (mode 0600, atomic writes), each with a conservative default, and lowering one is written in the audit: `alarm.disarm_pin`, `alarm.arming_modes`, `alarm.mode_downgrade_pin`, `alarm.mode_schedule`, `alarm.mode_schedule_lowers`, `alarm.mode_panel_sync`, `voice.silence_confirmation`, `alarm.config_hash`, `server.zone_feed`, `server.zone_feed_signature`, `media.rtsp_proxy`, `network.login_secure_only`, `login.country_alert`, `electrical.set_aside_old_readings`, `voice.multipart_turn`, `panel.live_events`, `client.device_lock`, `nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`, `voice.turn_max_bytes` and `voice.reply_audio_max_bytes`.
+**Switches in Studio.** The protections that can be tuned are 24 settings kept in `security-settings.json` (mode 0600, atomic writes), each with a conservative default, and lowering one is written in the audit: `alarm.disarm_pin`, `alarm.arming_modes`, `alarm.mode_downgrade_pin`, `alarm.mode_schedule`, `alarm.mode_schedule_lowers`, `alarm.mode_panel_sync`, `voice.silence_confirmation`, `alarm.config_hash`, `server.zone_feed`, `server.zone_feed_signature`, `media.rtsp_proxy`, `network.login_secure_only`, `login.country_alert`, `electrical.set_aside_old_readings`, `voice.multipart_turn`, `panel.live_events`, `client.device_lock`, `nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`, `summary.daily`, `vision.heatmap`, `voice.turn_max_bytes` and `voice.reply_audio_max_bytes`.
 
 **What it never does:** return a camera password, keep the words that were spoken (only the command and its result), or write a PIN, a token or a cookie in a log. There has been no independent security review.
 
@@ -210,7 +210,7 @@ Copy `.env.example` to `.env` (ignored by Git), or let `run.bat` / `run.sh` gene
 ```powershell
 npm install           # dependencies
 npm run typecheck     # tsc --noEmit
-npm test              # 838 tests: unit and full HTTP integration
+npm test              # 854 tests: unit and full HTTP integration
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # development server with hot reload
 ```
@@ -268,7 +268,7 @@ ARMOR-SERVER/
 │   ├── cameras/                      vault, PTZ, RTSP, discovery, health
 │   ├── media/                        FFmpeg relay and evidence library
 │   └── devices/                      device model and its MQTT bridge
-├── tests/                            838 tests, unit and HTTP integration
+├── tests/                            854 tests, unit and HTTP integration
 ├── docs/                             8 guides, route table, environment
 ├── tools/                            generators of docs/ROUTES.md and docs/ENVIRONMENT.md, shared CI checks, launcher
 ├── images/                           banner, icon and the pictures of the README

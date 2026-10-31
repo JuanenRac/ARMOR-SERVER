@@ -233,6 +233,7 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/studio/totp` | signed-in user | `routes/sessions.ts` |
 | POST | `/api/v1/studio/totp/enable` | signed-in user | `routes/sessions.ts` |
 | POST | `/api/v1/studio/totp/setup` | signed-in user | `routes/sessions.ts` |
+| GET | `/api/v1/summary/daily` | operator | `routes/reports.ts` |
 | GET | `/api/v1/system` | operator | `routes/system.ts` |
 | GET | `/api/v1/system/connection` | administrator | `routes/system.ts` |
 | PUT | `/api/v1/system/connection` | administrator | `routes/system.ts` |
@@ -247,6 +248,7 @@ Every route the code registers, with who may call it and the file that registers
 | DELETE | `/api/v1/users/:id/pin` | administrator, fresh proof of identity | `routes/users.ts` |
 | PUT | `/api/v1/users/:id/pin` | administrator, fresh proof of identity | `routes/users.ts` |
 | DELETE | `/api/v1/users/:id/totp` | administrator, fresh proof of identity | `routes/sessions.ts` |
+| GET | `/api/v1/vision/heatmap` | operator | `routes/reports.ts` |
 | POST | `/api/v1/voice/command` | operator | `routes/voice.ts` |
 | GET | `/api/v1/voice/status` | operator | `routes/voice.ts` |
 | POST | `/api/v1/voice/turn` | none here | `routes/voice.ts` |

@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 or later">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-838%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-854%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Version-0.8.1.0-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
 ---
 
-**诚实性检查 - 今天真正能运行的部分：** 下面的每条路由、会话、加密和证据规则都是真实的，并有测试覆盖（`npm test`：838 个测试，包括针对隔离服务器的完整 HTTP 集成测试套件，以及检查每条路由都已写入 OpenAPI 文件）。它在 CM5 测试台上日常运行，配有真实的 MQTT 代理、ESP32-S3 板上真实雷达节点的固件、真实的 IP 摄像头（实时视频、快照、录像、Hi3510 设备上的 PTZ）、Studio 控制台、Android 应用以及语音和观察服务。**尚未**证明的是：用真实 ONVIF 摄像头测试 ONVIF、任何 Jetson 硬件、用真实节点测试太阳能、电气、报警主机和触摸屏的路由（它们用生成的消息测试：目前只有雷达板存在），以及用真实 Firebase 项目测试 Firebase 推送。
+**诚实性检查 - 今天真正能运行的部分：** 下面的每条路由、会话、加密和证据规则都是真实的，并有测试覆盖（`npm test`：854 个测试，包括针对隔离服务器的完整 HTTP 集成测试套件，以及检查每条路由都已写入 OpenAPI 文件）。它在 CM5 测试台上日常运行，配有真实的 MQTT 代理、ESP32-S3 板上真实雷达节点的固件、真实的 IP 摄像头（实时视频、快照、录像、Hi3510 设备上的 PTZ）、Studio 控制台、Android 应用以及语音和观察服务。**尚未**证明的是：用真实 ONVIF 摄像头测试 ONVIF、任何 Jetson 硬件、用真实节点测试太阳能、电气、报警主机和触摸屏的路由（它们用生成的消息测试：目前只有雷达板存在），以及用真实 Firebase 项目测试 Firebase 推送。
 
 ---
 
@@ -40,7 +40,7 @@
 | 成熟度 | 成熟 |
 | 角色 | 家族的中央安全协调器：节点、报警、设备、能源、摄像头、网络 |
 | 技术栈 | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| 测试 | 838 项（`npm test`：单元与完整 HTTP 集成） |
+| 测试 | 854 项（`npm test`：单元与完整 HTTP 集成） |
 | 契约 | 196 条 HTTP 路径、255 个操作（OpenAPI 在 ARMOR-COMMON 中），路由表见 `docs/ROUTES.md` |
 | 监听地址 | `127.0.0.1:8080`（`ARMOR_HOST`、`ARMOR_PORT`） |
 | 运行位置 | CM5 测试台（作为服务，见 ARMOR-DEVOPS）或任何装有 Node.js 的计算机 |
@@ -58,7 +58,7 @@
 | 领域 | 状态 | 在这里的含义 |
 |---|---|---|
 | 软件 | 🟢 | 路由、会话、加密和证据规则每天都在 CM5 测试台上运行。 |
-| 测试 | 🟢 | 838 项测试通过（`npm test`），包括针对隔离服务器的完整 HTTP 集成测试，以及检查每条路由都已写入 OpenAPI 文件。 |
+| 测试 | 🟢 | 854 项测试通过（`npm test`），包括针对隔离服务器的完整 HTTP 集成测试，以及检查每条路由都已写入 OpenAPI 文件。 |
 | 协议与数据 | 🟡 | 雷达消息来自真实的板子；光伏、电气、报警面板和触摸面板的路由是用生成的消息测试的，ONVIF 也没有遇到过真正的 ONVIF 摄像头。 |
 | 硬件 | 🟡 | 它在 CM5 测试台上运行，配有真实的 MQTT 代理、真实的 IP 摄像头（实时视频、截图、录像、Hi3510 机型的云台）和真实的雷达节点；还没有在 Jetson 上运行过。 |
 | 安全 | 🟡 | 会话、加密、证据和登录规则均有测试覆盖；没有经过独立审查。 |
@@ -151,7 +151,7 @@ flowchart LR
 | 语音：未确认就静音、超长文本、超大音频 | 策略 `voice.silence_confirmation`（off、pin、double_turn）随每个轮次发送；确认与本人绑定；200 个字符、8 种语言、每分钟 30 个请求；音频最多 480 000 字节，回复最多 200 000 字节 |
 | 误操作的危险写入 | 除非设置 `ARMOR_BATTERY_WRITE=1`、`ARMOR_ELECTRICAL_SWITCHING=1` 或 `ARMOR_ALARM_COMMANDS=1`，否则关闭；启动时给出警告 |
 
-**Studio 中的开关。** 可调的保护措施是保存在 `security-settings.json`（权限 0600，原子写入）中的 22 项设置，每项都有保守的默认值，调低任何一项都会写入审计：`alarm.disarm_pin`、`alarm.arming_modes`、`alarm.mode_downgrade_pin`、`alarm.mode_schedule`、`alarm.mode_schedule_lowers`、`alarm.mode_panel_sync`、`voice.silence_confirmation`、`alarm.config_hash`、`server.zone_feed`、`server.zone_feed_signature`、`media.rtsp_proxy`、`network.login_secure_only`、`login.country_alert`、`electrical.set_aside_old_readings`、`voice.multipart_turn`、`panel.live_events`、`client.device_lock`、`nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`、`voice.turn_max_bytes` 和 `voice.reply_audio_max_bytes`。
+**Studio 中的开关。** 可调的保护措施是保存在 `security-settings.json`（权限 0600，原子写入）中的 24 项设置，每项都有保守的默认值，调低任何一项都会写入审计：`alarm.disarm_pin`、`alarm.arming_modes`、`alarm.mode_downgrade_pin`、`alarm.mode_schedule`、`alarm.mode_schedule_lowers`、`alarm.mode_panel_sync`、`voice.silence_confirmation`、`alarm.config_hash`、`server.zone_feed`、`server.zone_feed_signature`、`media.rtsp_proxy`、`network.login_secure_only`、`login.country_alert`、`electrical.set_aside_old_readings`、`voice.multipart_turn`、`panel.live_events`、`client.device_lock`、`nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`、`summary.daily`、`vision.heatmap`、`voice.turn_max_bytes` 和 `voice.reply_audio_max_bytes`。
 
 **它绝不会：** 返回摄像头密码、保存所说的话（只保留命令及其结果），或把 PIN、令牌或 Cookie 写进日志。没有独立的安全审查。
 
@@ -210,7 +210,7 @@ flowchart LR
 ```powershell
 npm install           # 依赖
 npm run typecheck     # tsc --noEmit
-npm test              # 838 项：单元与完整 HTTP 集成
+npm test              # 854 项：单元与完整 HTTP 集成
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # 带热重载的开发服务器
 ```
@@ -268,7 +268,7 @@ ARMOR-SERVER/
 │   ├── cameras/                      保险库、PTZ、RTSP、发现、健康
 │   ├── media/                        FFmpeg 中继与证据库
 │   └── devices/                      设备模型及其 MQTT 桥
-├── tests/                            838 项测试（单元与 HTTP 集成）
+├── tests/                            854 项测试（单元与 HTTP 集成）
 ├── docs/                             8 份指南、路由表、环境变量
 ├── tools/                            docs/ROUTES.md 和 docs/ENVIRONMENT.md 的生成器、CI 检查、启动器
 ├── images/                           横幅图、图标和 README 的图片

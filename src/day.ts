@@ -14,3 +14,10 @@ export function dayOf(ms: number): string {
   // en-CA writes a date as YYYY-MM-DD
   return new Intl.DateTimeFormat("en-CA", { timeZone: zone(), year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
 }
+
+/** The second of the day (0 to 86399) of a moment, in the same time zone as dayOf. */
+export function secondOfDay(ms: number): number {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: zone(), hourCycle: "h23", hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(new Date(ms));
+  const at = (type: string): number => Number(parts.find(part => part.type === type)?.value ?? 0);
+  return at("hour") * 3600 + at("minute") * 60 + at("second");
+}

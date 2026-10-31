@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 or later">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-838%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-854%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Version-0.8.1.0-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
 ---
 
-**正直さのチェック - 今日動いているもの:** 以下のすべてのルート、セッション、暗号化、証拠のルールは実在し、テストでカバーされています（`npm test`：838 件。隔離したサーバーに対する完全な HTTP 統合テストと、すべてのルートが OpenAPI ファイルに記載されていることの確認を含む）。CM5 テストベンチで日常的に動作しており、実際の MQTT ブローカー、ESP32-S3 基板上の実際のレーダーノードのファームウェア、実際の IP カメラ（ライブ映像、スナップショット、録画、Hi3510 機での PTZ）、Studio コンソール、Android アプリ、音声・観察サービスと組み合わせています。**まだ**証明されていないもの：実際の ONVIF カメラでの ONVIF、Jetson ハードウェア全般、実ノードでのソーラー・電気・警報盤・タッチパネルのルート（生成したメッセージでテスト：存在するのはレーダー基板のみ）、実際の Firebase プロジェクトでの Firebase プッシュ。
+**正直さのチェック - 今日動いているもの:** 以下のすべてのルート、セッション、暗号化、証拠のルールは実在し、テストでカバーされています（`npm test`：854 件。隔離したサーバーに対する完全な HTTP 統合テストと、すべてのルートが OpenAPI ファイルに記載されていることの確認を含む）。CM5 テストベンチで日常的に動作しており、実際の MQTT ブローカー、ESP32-S3 基板上の実際のレーダーノードのファームウェア、実際の IP カメラ（ライブ映像、スナップショット、録画、Hi3510 機での PTZ）、Studio コンソール、Android アプリ、音声・観察サービスと組み合わせています。**まだ**証明されていないもの：実際の ONVIF カメラでの ONVIF、Jetson ハードウェア全般、実ノードでのソーラー・電気・警報盤・タッチパネルのルート（生成したメッセージでテスト：存在するのはレーダー基板のみ）、実際の Firebase プロジェクトでの Firebase プッシュ。
 
 ---
 
@@ -40,7 +40,7 @@
 | 成熟度 | 確立 |
 | 役割 | ファミリーの中央セキュリティコーディネーター：ノード、アラーム、デバイス、エネルギー、カメラ、ネットワーク |
 | 技術 | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| テスト | 838 件（`npm test`：単体と完全な HTTP 結合） |
+| テスト | 854 件（`npm test`：単体と完全な HTTP 結合） |
 | 契約 | HTTP パス 196 本、255 操作（OpenAPI は ARMOR-COMMON）、ルート表は `docs/ROUTES.md` |
 | 待ち受け | `127.0.0.1:8080`（`ARMOR_HOST`、`ARMOR_PORT`） |
 | 動作環境 | CM5 テストベンチ（サービスとして。ARMOR-DEVOPS 参照）または Node.js のある任意のコンピューター |
@@ -58,7 +58,7 @@
 | 領域 | 状態 | ここでの意味 |
 |---|---|---|
 | ソフトウェア | 🟢 | ルート、セッション、暗号化、証拠の規則は、CM5 テストベンチで毎日使われています。 |
-| テスト | 🟢 | 838 件のテストが通ります（`npm test`）。隔離したサーバーに対する HTTP 統合テスト一式と、すべてのルートが OpenAPI ファイルに記載されているかの確認を含みます。 |
+| テスト | 🟢 | 854 件のテストが通ります（`npm test`）。隔離したサーバーに対する HTTP 統合テスト一式と、すべてのルートが OpenAPI ファイルに記載されているかの確認を含みます。 |
 | プロトコルとデータ | 🟡 | レーダーのメッセージは実機のボードから来ています。太陽光・電気・警報パネル・タッチパネルのルートは生成したメッセージでテストしており、ONVIF は本物の ONVIF カメラと接続していません。 |
 | ハードウェア | 🟡 | CM5 テストベンチで、実際の MQTT ブローカー、実際の IP カメラ（ライブ映像、スナップショット、録画、Hi3510 機の PTZ）、実際のレーダーノードとともに動作しています。Jetson ではまだ何も動かしていません。 |
 | セキュリティ | 🟡 | セッション、暗号化、証拠、ログインの規則はテストでカバーされています。独立したレビューはありません。 |
@@ -151,7 +151,7 @@ flowchart LR
 | 音声：確認なしの消音、長文、巨大な音声 | ポリシー `voice.silence_confirmation`（off、pin、double_turn）を毎ターン送信。確認は本人に紐づく。200 文字、8 言語、毎分 30 リクエスト、音声は最大 480 000 バイト、応答は最大 200 000 バイト |
 | 誤った危険な書き込み | `ARMOR_BATTERY_WRITE=1`、`ARMOR_ELECTRICAL_SWITCHING=1`、`ARMOR_ALARM_COMMANDS=1` を設定しない限りオフ。起動時に警告 |
 
-**Studio のスイッチ。** 調整できる保護は `security-settings.json`（モード 0600、アトミック書き込み）にある 22 項目で、どれも保守的な既定値です。下げた場合は監査に記録されます：`alarm.disarm_pin`、`alarm.arming_modes`、`alarm.mode_downgrade_pin`、`alarm.mode_schedule`、`alarm.mode_schedule_lowers`、`alarm.mode_panel_sync`、`voice.silence_confirmation`、`alarm.config_hash`、`server.zone_feed`、`server.zone_feed_signature`、`media.rtsp_proxy`、`network.login_secure_only`、`login.country_alert`、`electrical.set_aside_old_readings`、`voice.multipart_turn`、`panel.live_events`、`client.device_lock`、`nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`、`voice.turn_max_bytes`、`voice.reply_audio_max_bytes`。
+**Studio のスイッチ。** 調整できる保護は `security-settings.json`（モード 0600、アトミック書き込み）にある 24 項目で、どれも保守的な既定値です。下げた場合は監査に記録されます：`alarm.disarm_pin`、`alarm.arming_modes`、`alarm.mode_downgrade_pin`、`alarm.mode_schedule`、`alarm.mode_schedule_lowers`、`alarm.mode_panel_sync`、`voice.silence_confirmation`、`alarm.config_hash`、`server.zone_feed`、`server.zone_feed_signature`、`media.rtsp_proxy`、`network.login_secure_only`、`login.country_alert`、`electrical.set_aside_old_readings`、`voice.multipart_turn`、`panel.live_events`、`client.device_lock`、`nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`、`summary.daily`、`vision.heatmap`、`voice.turn_max_bytes`、`voice.reply_audio_max_bytes`。
 
 **決してしないこと：** カメラのパスワードを返す、話した内容を保存する（コマンドと結果のみ）、PIN・トークン・Cookie をログに書く。第三者によるセキュリティレビューはありません。
 
@@ -210,7 +210,7 @@ flowchart LR
 ```powershell
 npm install           # 依存関係
 npm run typecheck     # tsc --noEmit
-npm test              # 838 件：単体と完全な HTTP 結合
+npm test              # 854 件：単体と完全な HTTP 結合
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # ホットリロード付き開発サーバー
 ```
@@ -268,7 +268,7 @@ ARMOR-SERVER/
 │   ├── cameras/                      金庫、PTZ、RTSP、探索、健全性
 │   ├── media/                        FFmpeg 中継と証拠ライブラリ
 │   └── devices/                      デバイスモデルと MQTT ブリッジ
-├── tests/                            838 件（単体と HTTP 結合）
+├── tests/                            854 件（単体と HTTP 結合）
 ├── docs/                             8 つのガイド、ルート表、環境変数
 ├── tools/                            docs/ROUTES.md と docs/ENVIRONMENT.md の生成、CI 検査、ランチャー
 ├── images/                           バナー、アイコン、README の画像

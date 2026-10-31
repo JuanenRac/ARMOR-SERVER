@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 o successiva">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Linguaggio">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-838%20passing-2ea44f.svg" alt="Test">
+  <img src="https://img.shields.io/badge/Tests-854%20passing-2ea44f.svg" alt="Test">
   <img src="https://img.shields.io/badge/Version-0.8.1.0-0f6cbd.svg" alt="Versione">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturità">
 </p>
 
 ---
 
-**Controllo di onestà - cosa funziona oggi:** Ogni rotta, sessione, cifratura e regola delle prove qui sotto è reale e coperta da test (`npm test`: 838 test, compresa una suite completa di integrazione HTTP contro un server isolato e un controllo che ogni rotta sia documentata nel file OpenAPI). Funziona in uso quotidiano sul banco di prova CM5 con un vero broker MQTT, il firmware di un vero nodo radar su una scheda ESP32-S3, vere telecamere IP (video dal vivo, istantanee, registrazioni, PTZ sulle unità Hi3510), la console Studio, l'app Android e i servizi di voce e di osservazione. Ciò che **non** è ancora provato: ONVIF con una vera telecamera ONVIF, qualsiasi hardware Jetson, le rotte solari, elettriche, delle centrali d'allarme e del pannello touch con nodi reali (si provano con messaggi generati: esiste solo la scheda radar) e il push tramite Firebase con un vero progetto Firebase.
+**Controllo di onestà - cosa funziona oggi:** Ogni rotta, sessione, cifratura e regola delle prove qui sotto è reale e coperta da test (`npm test`: 854 test, compresa una suite completa di integrazione HTTP contro un server isolato e un controllo che ogni rotta sia documentata nel file OpenAPI). Funziona in uso quotidiano sul banco di prova CM5 con un vero broker MQTT, il firmware di un vero nodo radar su una scheda ESP32-S3, vere telecamere IP (video dal vivo, istantanee, registrazioni, PTZ sulle unità Hi3510), la console Studio, l'app Android e i servizi di voce e di osservazione. Ciò che **non** è ancora provato: ONVIF con una vera telecamera ONVIF, qualsiasi hardware Jetson, le rotte solari, elettriche, delle centrali d'allarme e del pannello touch con nodi reali (si provano con messaggi generati: esiste solo la scheda radar) e il push tramite Firebase con un vero progetto Firebase.
 
 ---
 
@@ -40,7 +40,7 @@
 | Maturità | Consolidato |
 | Ruolo | Coordinatore centrale di sicurezza della famiglia: nodi, allarmi, dispositivi, energia, telecamere, rete |
 | Tecnologia | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| Test | 838 (`npm test`: unitari e integrazione HTTP completa) |
+| Test | 854 (`npm test`: unitari e integrazione HTTP completa) |
 | Contratto | 196 percorsi HTTP, 255 operazioni (OpenAPI in ARMOR-COMMON), tabella delle rotte in `docs/ROUTES.md` |
 | In ascolto su | `127.0.0.1:8080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Gira su | Il banco di prova CM5 (come servizio, vedi ARMOR-DEVOPS) o qualsiasi computer con Node.js |
@@ -58,7 +58,7 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 | Area | Stato | Cosa significa qui |
 |---|---|---|
 | Software | 🟢 | Le route, le sessioni, la cifratura e le regole delle prove girano ogni giorno sul banco di prova CM5. |
-| Test | 🟢 | Superano 838 test (`npm test`), compresa una suite di integrazione HTTP completa contro un server isolato e un controllo che ogni rotta sia documentata nel file OpenAPI. |
+| Test | 🟢 | Superano 854 test (`npm test`), compresa una suite di integrazione HTTP completa contro un server isolato e un controllo che ogni rotta sia documentata nel file OpenAPI. |
 | Protocolli e dati | 🟡 | I messaggi del radar vengono da una scheda reale; le rotte solare, elettrica, della centralina d'allarme e del pannello touch sono provate con messaggi generati, e ONVIF non ha incontrato una vera telecamera ONVIF. |
 | Hardware | 🟡 | Gira sul banco di prova CM5 con un broker MQTT reale, telecamere IP reali (video dal vivo, istantanee, registrazioni, PTZ sulle unità Hi3510) e un nodo radar reale; nulla ha girato su una Jetson. |
 | Sicurezza | 🟡 | Le regole di sessioni, cifratura, prove e accesso sono coperte da test; non c'è stata una revisione indipendente. |
@@ -151,7 +151,7 @@ flowchart LR
 | Voce: silenziare senza verifica, testo lungo, audio enorme | La politica `voice.silence_confirmation` (off, pin, double_turn) viaggia con ogni turno; conferma legata alla persona; 200 caratteri, 8 lingue, 30 richieste al minuto; audio al massimo 480 000 byte e risposta 200 000 byte |
 | Scritture pericolose per errore | Spente salvo `ARMOR_BATTERY_WRITE=1`, `ARMOR_ELECTRICAL_SWITCHING=1` o `ARMOR_ALARM_COMMANDS=1`, con avviso all'avvio |
 
-**Interruttori in Studio.** Le protezioni regolabili sono 22 valori in `security-settings.json` (modo 0600, scrittura atomica), ciascuno con un default prudente; abbassarne uno viene registrato nell'audit: `alarm.disarm_pin`, `alarm.arming_modes`, `alarm.mode_downgrade_pin`, `alarm.mode_schedule`, `alarm.mode_schedule_lowers`, `alarm.mode_panel_sync`, `voice.silence_confirmation`, `alarm.config_hash`, `server.zone_feed`, `server.zone_feed_signature`, `media.rtsp_proxy`, `network.login_secure_only`, `login.country_alert`, `electrical.set_aside_old_readings`, `voice.multipart_turn`, `panel.live_events`, `client.device_lock`, `nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`, `voice.turn_max_bytes` e `voice.reply_audio_max_bytes`.
+**Interruttori in Studio.** Le protezioni regolabili sono 24 valori in `security-settings.json` (modo 0600, scrittura atomica), ciascuno con un default prudente; abbassarne uno viene registrato nell'audit: `alarm.disarm_pin`, `alarm.arming_modes`, `alarm.mode_downgrade_pin`, `alarm.mode_schedule`, `alarm.mode_schedule_lowers`, `alarm.mode_panel_sync`, `voice.silence_confirmation`, `alarm.config_hash`, `server.zone_feed`, `server.zone_feed_signature`, `media.rtsp_proxy`, `network.login_secure_only`, `login.country_alert`, `electrical.set_aside_old_readings`, `voice.multipart_turn`, `panel.live_events`, `client.device_lock`, `nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`, `summary.daily`, `vision.heatmap`, `voice.turn_max_bytes` e `voice.reply_audio_max_bytes`.
 
 **Cosa non fa mai:** restituire una password di telecamera, conservare le parole dette (solo il comando e il suo risultato) né scrivere un PIN, un token o un cookie in un registro. Non c'è stata una revisione di sicurezza indipendente.
 
@@ -210,7 +210,7 @@ Copia `.env.example` in `.env` (ignorato da Git), oppure lascia che `run.bat` / 
 ```powershell
 npm install           # dipendenze
 npm run typecheck     # tsc --noEmit
-npm test              # 838 test: unitari e integrazione HTTP completa
+npm test              # 854 test: unitari e integrazione HTTP completa
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # server di sviluppo con ricarica a caldo
 ```
@@ -268,7 +268,7 @@ ARMOR-SERVER/
 │   ├── cameras/                      cassaforte, PTZ, RTSP, scoperta, salute
 │   ├── media/                        relè FFmpeg e libreria di prove
 │   └── devices/                      modello dei dispositivi e ponte MQTT
-├── tests/                            838 test, unitari e integrazione HTTP
+├── tests/                            854 test, unitari e integrazione HTTP
 ├── docs/                             8 guide, tabella delle rotte, ambiente
 ├── tools/                            generatori di docs/ROUTES.md e docs/ENVIRONMENT.md, controlli CI, avviatore
 ├── images/                           banner, icona e immagini del README

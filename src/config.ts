@@ -38,6 +38,12 @@ export type ArmorConfig = {
   voiceReplyAudioMaxBytes: number;
   /** ARMOR_ALARM_SOUND_MAX_BYTES: the most samples a sound an administrator uploads for an alarm origin may have; 128000 bytes is 4 seconds of 16 kHz 16-bit mono. */
   alarmSoundMaxBytes: number;
+  /**
+   * The two reports made by the Python projects of the family, run as a command (see reports.ts) only when an administrator turns on the option summary.daily or vision.heatmap:
+   * ARMOR_PYTHON (the interpreter), ARMOR_DAILY_SUMMARY_AI_DIR (the checkout or install of ARMOR-SERVER-AI) and ARMOR_DAILY_SUMMARY_CONFIG (its settings file for the summary), and
+   * ARMOR_VISION_DIR (ARMOR-VISION), ARMOR_VISION_ACTIVITY_CONFIG (its activity settings), ARMOR_VISION_CONFIG (its zones, optional) and ARMOR_VISION_DETECTIONS (the recorded detections). An empty one is "not set up".
+   */
+  reports: { python: string; dailySummaryAiDir: string; dailySummaryConfig: string; visionDir: string; visionActivityConfig: string; visionConfig: string; visionDetections: string };
   /** Where a request comes from (see origin.ts): the house and its VPN are local, the rest is remote. */
   localNetworks: ReturnType<typeof parseRanges>;
   vpnNetworks: ReturnType<typeof parseRanges>;
@@ -301,6 +307,9 @@ function readMqtt(env: Env): { mqttUrl: string | undefined; mqttCa: MqttCa | und
   return { mqttUrl, mqttCa };
 }
 
+/** A path from the environment as an absolute one; "" when it is not set. */
+const pathOf = (value: string | undefined): string => (value?.trim() ? path.resolve(value.trim()) : "");
+
 export function readConfig(env: Env = process.env): ArmorConfig {
   const ingestToken = secret(env, "ARMOR_INGEST_TOKEN");
   const controlToken = secret(env, "ARMOR_CONTROL_TOKEN");
@@ -376,6 +385,11 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     voiceTurnMaxBytes: integer(env, "ARMOR_VOICE_TURN_MAX_BYTES", 480_000, 3_200, 1_920_000),
     voiceReplyAudioMaxBytes: integer(env, "ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES", 200_000, 3_200, 1_000_000),
     alarmSoundMaxBytes: integer(env, "ARMOR_ALARM_SOUND_MAX_BYTES", 128_000, 3_200, 256_000),
+    reports: {
+      python: env.ARMOR_PYTHON?.trim() || (process.platform === "win32" ? "python" : "python3"),
+      dailySummaryAiDir: pathOf(env.ARMOR_DAILY_SUMMARY_AI_DIR), dailySummaryConfig: pathOf(env.ARMOR_DAILY_SUMMARY_CONFIG),
+      visionDir: pathOf(env.ARMOR_VISION_DIR), visionActivityConfig: pathOf(env.ARMOR_VISION_ACTIVITY_CONFIG), visionConfig: pathOf(env.ARMOR_VISION_CONFIG), visionDetections: pathOf(env.ARMOR_VISION_DETECTIONS),
+    },
     localNetworks: ranges(env, "ARMOR_LOCAL_NETWORKS", DEFAULT_LOCAL_NETWORKS), vpnNetworks: ranges(env, "ARMOR_VPN_NETWORKS", ""),
     totpPolicy: oneOf(env, "ARMOR_TOTP_REQUIRED", ["off", "remote", "always"] as const, "off"),
     remoteSessionTtlMs: integer(env, "ARMOR_REMOTE_SESSION_TTL_MS", 12 * 3_600_000, 60_000, 30 * 86_400_000),

@@ -24,6 +24,8 @@
  *   alarm_audio.custom_sounds    on | off                  administrators may upload a short sound for an alarm origin and the wall panel may ask for it (off, the default: nothing is accepted or served)
  *   electrical.set_aside_old_readings  on | off   a channel of an electrical node whose own reading is old (its meter stopped answering and the node repeats the last good numbers) is left out of the grid figure and the graphs and marked as having no data (on, the default; off: the numbers are taken as the node sends them)
  *   login.country_alert          on | off                 a sign-in from outside the house from a country that person never signed in from before is told to the places the alarms go to (on, the default; it only acts when the server has a country database, ARMOR_GEOIP_DB)
+ *   summary.daily                on | off                 administrators and operators may ask for the summary of a day (GET /api/v1/summary/daily, made by ARMOR-SERVER-AI from the alarms the server kept; off, the default, answers 404)
+ *   vision.heatmap               on | off                 administrators and operators may ask for the activity heat map of a camera (GET /api/v1/vision/heatmap, made by ARMOR-VISION; positions only, never a picture; off, the default, answers 404)
  *   network.login_secure_only    on | off                 a stored device login is handed to a network node only when its request came over TLS or from this machine (off, the default: any request of the node)
  *
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
@@ -69,6 +71,8 @@ export type SecuritySettingsValues = {
   "voice.reply_audio_max_bytes": number;
   "alarm_audio.spoken": boolean;
   "alarm_audio.custom_sounds": boolean;
+  "summary.daily": boolean;
+  "vision.heatmap": boolean;
 };
 export type SecuritySettingKey = keyof SecuritySettingsValues;
 
@@ -95,6 +99,8 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES.default,
   "alarm_audio.spoken": false,
   "alarm_audio.custom_sounds": false,
+  "summary.daily": false,
+  "vision.heatmap": false,
 });
 
 /** The settings that are whole numbers, with the range each may take. */
@@ -191,6 +197,7 @@ export class SecuritySettings {
 /** True when the new value lowers security compared with the old one (the audit trail and Studio say so). */
 export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boolean {
   if (key === "voice.multipart_turn" || key === "panel.live_events" || key === "alarm_audio.spoken" || key === "alarm_audio.custom_sounds") return false;   // a way in that is turned off is not a loss of protection; turning it on is the default way
+  if (key === "summary.daily" || key === "vision.heatmap") return from === false && to === true;   // a report about what happens in the house is a way in for whoever may ask: turning it on is the loss
   if (key === "alarm.arming_modes" || key === "alarm.mode_schedule" || key === "alarm.mode_panel_sync") return false;   // a way of arming that is added or taken away: the protection of what is armed does not drop by it
   if (key === "alarm.mode_schedule_lowers") return from === false && to === true;   // letting a timetable defend less is the loss
   if (key === "alarm.mode_downgrade_pin") return from === "required" && to === "not_required";

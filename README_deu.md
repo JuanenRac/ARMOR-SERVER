@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 oder neuer">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Sprache">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-838%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-854%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Version-0.8.1.0-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Reifegrad">
 </p>
 
 ---
 
-**Ehrlichkeitsprüfung - was heute läuft:** Jede Route, Sitzung, Verschlüsselung und Beweisregel unten ist real und durch Tests abgedeckt (`npm test`: 838 Tests, darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server und eine Prüfung, dass jede Route in der OpenAPI-Datei dokumentiert ist). Er läuft im täglichen Einsatz auf dem CM5-Testaufbau mit einem echten MQTT-Broker, der Firmware eines echten Radarknotens auf einer ESP32-S3-Platine, echten IP-Kameras (Livevideo, Schnappschüsse, Aufnahmen, PTZ an den Hi3510-Geräten), der Studio-Konsole, der Android-App sowie den Sprach- und Beobachtungsdiensten. Was **noch nicht** bewiesen ist: ONVIF mit einer echten ONVIF-Kamera, jegliche Jetson-Hardware, die Solar-, Elektro-, Alarmzentralen- und Touchpanel-Routen mit echten Knoten (sie werden mit erzeugten Nachrichten getestet: nur die Radarplatine existiert) und Push über Firebase mit einem echten Firebase-Projekt.
+**Ehrlichkeitsprüfung - was heute läuft:** Jede Route, Sitzung, Verschlüsselung und Beweisregel unten ist real und durch Tests abgedeckt (`npm test`: 854 Tests, darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server und eine Prüfung, dass jede Route in der OpenAPI-Datei dokumentiert ist). Er läuft im täglichen Einsatz auf dem CM5-Testaufbau mit einem echten MQTT-Broker, der Firmware eines echten Radarknotens auf einer ESP32-S3-Platine, echten IP-Kameras (Livevideo, Schnappschüsse, Aufnahmen, PTZ an den Hi3510-Geräten), der Studio-Konsole, der Android-App sowie den Sprach- und Beobachtungsdiensten. Was **noch nicht** bewiesen ist: ONVIF mit einer echten ONVIF-Kamera, jegliche Jetson-Hardware, die Solar-, Elektro-, Alarmzentralen- und Touchpanel-Routen mit echten Knoten (sie werden mit erzeugten Nachrichten getestet: nur die Radarplatine existiert) und Push über Firebase mit einem echten Firebase-Projekt.
 
 ---
 
@@ -40,7 +40,7 @@
 | Reifegrad | Etabliert |
 | Rolle | Zentraler Sicherheitskoordinator der Familie: Knoten, Alarme, Geräte, Energie, Kameras, Netzwerk |
 | Technik | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| Tests | 838 (`npm test`: Unit und volle HTTP-Integration) |
+| Tests | 854 (`npm test`: Unit und volle HTTP-Integration) |
 | Vertrag | 196 HTTP-Pfade, 255 Operationen (OpenAPI in ARMOR-COMMON), Routentabelle in `docs/ROUTES.md` |
 | Lauscht auf | `127.0.0.1:8080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Läuft auf | Der CM5-Prüfstand (als Dienst, siehe ARMOR-DEVOPS) oder jeder Computer mit Node.js |
@@ -58,7 +58,7 @@ Jede Zeile ist ein Teil dieses Repositorys, und die Ampel sagt, wie weit er heut
 | Bereich | Stand | Was das hier bedeutet |
 |---|---|---|
 | Software | 🟢 | Die Routen, Sitzungen, Verschlüsselung und Beweisregeln laufen täglich auf dem CM5-Prüfstand. |
-| Tests | 🟢 | 838 Tests bestehen (`npm test`), darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server und eine Prüfung, dass jede Route in der OpenAPI-Datei dokumentiert ist. |
+| Tests | 🟢 | 854 Tests bestehen (`npm test`), darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server und eine Prüfung, dass jede Route in der OpenAPI-Datei dokumentiert ist. |
 | Protokolle und Daten | 🟡 | Die Radar-Nachrichten stammen von einer echten Platine; die Routen für Solar, Elektrik, Alarmzentrale und Touch-Panel sind mit erzeugten Nachrichten getestet, und ONVIF ist keiner echten ONVIF-Kamera begegnet. |
 | Hardware | 🟡 | Er läuft auf dem CM5-Prüfstand mit einem echten MQTT-Broker, echten IP-Kameras (Live-Video, Standbilder, Aufnahmen, PTZ an den Hi3510-Geräten) und einem echten Radar-Knoten; auf einem Jetson lief nichts. |
 | Sicherheit | 🟡 | Die Regeln für Sitzungen, Verschlüsselung, Beweise und Anmeldung sind durch Tests abgedeckt; es gab keine unabhängige Prüfung. |
@@ -151,7 +151,7 @@ flowchart LR
 | Sprache: Stummschalten ohne Prüfung, langer Text, riesiges Audio | Die Richtlinie `voice.silence_confirmation` (off, pin, double_turn) reist mit jedem Turn; Bestätigung an die Person gebunden; 200 Zeichen, 8 Sprachen, 30 Anfragen pro Minute; Audio höchstens 480 000 Bytes, Antwort höchstens 200 000 Bytes |
 | Gefährliche Schreibzugriffe aus Versehen | Aus, außer mit `ARMOR_BATTERY_WRITE=1`, `ARMOR_ELECTRICAL_SWITCHING=1` oder `ARMOR_ALARM_COMMANDS=1`, mit Warnung beim Start |
 
-**Schalter in Studio.** Die einstellbaren Schutzmaßnahmen sind 22 Werte in `security-settings.json` (Modus 0600, atomares Schreiben), jeweils mit konservativem Standard; das Absenken eines Werts landet im Audit: `alarm.disarm_pin`, `alarm.arming_modes`, `alarm.mode_downgrade_pin`, `alarm.mode_schedule`, `alarm.mode_schedule_lowers`, `alarm.mode_panel_sync`, `voice.silence_confirmation`, `alarm.config_hash`, `server.zone_feed`, `server.zone_feed_signature`, `media.rtsp_proxy`, `network.login_secure_only`, `login.country_alert`, `electrical.set_aside_old_readings`, `voice.multipart_turn`, `panel.live_events`, `client.device_lock`, `nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`, `voice.turn_max_bytes` und `voice.reply_audio_max_bytes`.
+**Schalter in Studio.** Die einstellbaren Schutzmaßnahmen sind 24 Werte in `security-settings.json` (Modus 0600, atomares Schreiben), jeweils mit konservativem Standard; das Absenken eines Werts landet im Audit: `alarm.disarm_pin`, `alarm.arming_modes`, `alarm.mode_downgrade_pin`, `alarm.mode_schedule`, `alarm.mode_schedule_lowers`, `alarm.mode_panel_sync`, `voice.silence_confirmation`, `alarm.config_hash`, `server.zone_feed`, `server.zone_feed_signature`, `media.rtsp_proxy`, `network.login_secure_only`, `login.country_alert`, `electrical.set_aside_old_readings`, `voice.multipart_turn`, `panel.live_events`, `client.device_lock`, `nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`, `summary.daily`, `vision.heatmap`, `voice.turn_max_bytes` und `voice.reply_audio_max_bytes`.
 
 **Was es nie tut:** ein Kamerakennwort zurückgeben, das Gesprochene speichern (nur Befehl und Ergebnis) oder eine PIN, ein Token oder ein Cookie in ein Protokoll schreiben. Eine unabhängige Sicherheitsprüfung gab es nicht.
 
@@ -210,7 +210,7 @@ Die Routentabelle (`docs/ROUTES.md`, aus dem Code erzeugt) listet jede Route mit
 ```powershell
 npm install           # Abhängigkeiten
 npm run typecheck     # tsc --noEmit
-npm test              # 838 Tests: Unit und volle HTTP-Integration
+npm test              # 854 Tests: Unit und volle HTTP-Integration
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # Entwicklungsserver mit Hot-Reload
 ```
@@ -268,7 +268,7 @@ ARMOR-SERVER/
 │   ├── cameras/                      Tresor, PTZ, RTSP, Suche, Zustand
 │   ├── media/                        FFmpeg-Relais und Beweisbibliothek
 │   └── devices/                      Gerätemodell und MQTT-Brücke
-├── tests/                            838 Tests, Unit und HTTP-Integration
+├── tests/                            854 Tests, Unit und HTTP-Integration
 ├── docs/                             8 Leitfäden, Routentabelle, Umgebung
 ├── tools/                            Generatoren für docs/ROUTES.md und docs/ENVIRONMENT.md, gemeinsame CI-Prüfungen, Starter
 ├── images/                           Banner, Symbol und die Bilder des READMEs

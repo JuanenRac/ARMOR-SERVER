@@ -57,6 +57,7 @@ import { registerNodePanelRoutes } from "./node_panel_proxy.js";
 import { buildPanelSummary, createPanelFeed, PANEL_HEARTBEAT_MS } from "./panel_feed.js";
 import { registerVoiceRoutes } from "./routes/voice.js";
 import { registerAlarmAudioRoutes } from "./routes/alarm_audio.js";
+import { registerReportRoutes } from "./routes/reports.js";
 import { registerAiRoutes } from "./routes/ai.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
 import { registerSystemRoutes } from "./routes/system.js";
@@ -162,6 +163,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerNodePanelRoutes(app, context);
   registerVoiceRoutes(app, context);
   registerAlarmAudioRoutes(app, context);
+  registerReportRoutes(app, context);
   registerAiRoutes(app, context);
   registerNotificationRoutes(app, context);
   registerHistoryRoutes(app, context);
