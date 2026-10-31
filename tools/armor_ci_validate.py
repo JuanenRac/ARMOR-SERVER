@@ -110,7 +110,7 @@ def validate_changelog_order() -> None:
             seen_version = True
         elif unreleased.match(line) and seen_version:
             fail(f"CHANGELOG.md line {number}: 'Unreleased' must be at the top, above the versions (merge it into the version that shipped it)")
-    for (newer, _), (older, line) in zip(versions, versions[1:]):
+    for (newer, _), (older, line) in zip(versions, versions[1:], strict=False):
         if key(newer) == key(older):
             fail(f"CHANGELOG.md line {line}: version {older} has two entries; make it one")
         if key(newer) < key(older):
