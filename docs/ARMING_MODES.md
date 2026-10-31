@@ -24,6 +24,39 @@ The server arms in three ways: **away** (everything is defended: the `armed` of 
 
 When the mode changes between two armed modes, what the new mode does not defend stops being an alarm (it goes to the record, settled by "mode", as a disarm does) and what it defends and is wrong sounds.
 
+## Modes and profiles
+
+They are two different things that can be tied together:
+
+| | Mode (`/api/v1/alarm/modes`) | Profile (`/api/v1/alarm/profiles`) |
+| --- | --- | --- |
+| Decides | what **the server** defends: which sensors, nodes and cameras raise an alarm, and the exit and entry delays of the server | what **an alarm panel** does when it is armed: which of its zones guard, which sound at once, its delays, siren and how loudly people are told |
+| Lives in | the server (`arming-modes.json`) | the server, and travels inside the arm command to the panel, which enforces it |
+| Names | `away`, `home`, `night` | `away`, `stay`, `night` and the ones the owner makes (at most eight) |
+
+With the setting `alarm.mode_panel_sync` on (off by default; it needs `alarm.arming_modes`), choosing a mode on the server also asks every known alarm panel to arm with the matching profile, through the command that already exists:
+
+| Mode chosen | Profile asked of the panel | Base of the command |
+| --- | --- | --- |
+| `away` (or `armed`) | `away` | `away` |
+| `home` | `stay` | `stay` |
+| `night` | `night` | `stay` |
+
+The map is fixed (`MODE_PROFILE` in `src/mode_panel_sync.ts`); the profiles themselves are edited as always, so what the panel does for "home" is whatever the profile `stay` says. It runs for every way of choosing a mode: a person in Studio or a client, a wall-panel account, and the timetable (then the actor in the audit is `schedule`).
+
+**Fail closed.** The mode of the server applies the moment it is chosen: a silent or refusing panel never holds the server's defence back, and never makes the request fail. What is told apart is the panel, in `panel_sync` (in `GET /api/v1/status`, in the answer of `POST /api/v1/mode` and in `GET /api/v1/alarm/modes`):
+
+* `pending`: the panels were asked and at least one answer is missing (the wait is five seconds per command);
+* `confirmed`: every panel answered **accepted**; nothing else counts as a confirmation (a command that was sent, or a node that is merely online, is pending);
+* `failed`: a panel refused (`not_disarmed`, `zones_open`, `locked_out`...), was silent (`timeout`) or could not be asked (`commands_disabled`, `node_unavailable`, `node_commands_off`, `profiles_unsupported`, `unknown_profile`, `busy`, `mqtt_unavailable`), with the reason of each panel;
+* `none`: no alarm panel is known, so none was asked (not a failure).
+
+Choosing the same mode again after a failure asks the panels again; after a confirmation or while waiting it asks nothing. A new mode replaces the report; an answer that arrives for an older command is dropped. Studio shows the report (a failure as an alert); the Android and iOS clients show it too.
+
+**Who may, and the audit.** It adds no way of acting: whoever may change the mode (an operator or an administrator, a wall-panel account, the timetable) may, and an arm needs no PIN, as arming never did. The commands to the panel stay behind their own gates (`ARMOR_ALARM_COMMANDS=1`, the `server.commands` setting of the node, the broker list), so a panel behind a closed gate is a `failed` panel with its reason, never a bypass. A mode that is refused (no zones assigned, wrong PIN on a downgrade, a viewer) asks no panel. Each choice leaves `control.mode_panel` in the audit trail when the panels are asked and again when they all answered (outcome `allowed` for confirmed or none, `denied` for a refusal or a panel that could not be asked, `failed` for silence), next to the `alarm.command` lines of each command.
+
+**What it does not do.** A disarm is not sent to the panels (that needs a PIN and is a separate decision): disarming the server clears the report and the panel keeps its state. A panel that is already armed may refuse a different profile (`not_disarmed`) until its firmware accepts a change of profile while armed; that shows as `failed`. Arming by the control API or the voice assistant (which arm away without going through a mode) does not ask the panels. The report is kept in memory: after a restart of the server it starts empty. No alarm-centre alarm is raised for a failure (the report, the audit trail and the clients tell it).
+
 ## Settings (Studio, Security)
 
 | Setting | Default | Lowers the security when |
@@ -32,11 +65,12 @@ When the mode changes between two armed modes, what the new mode does not defend
 | `alarm.mode_downgrade_pin` | `required` | set to `not_required` |
 | `alarm.mode_schedule` | off | never |
 | `alarm.mode_schedule_lowers` | off | turned on |
+| `alarm.mode_panel_sync` | off | never (it only asks panels to arm, and a disarm is never sent) |
 
 ## Assumptions and what it does NOT do
 
-* The alarm panel of an ARMOR-NODE-ALARM node keeps its own zones, delays, PIN and lockout, and `POST /api/v1/alarm/command` and the arming profiles (`/api/v1/alarm/profiles`) are untouched: the modes decide what **the server** defends, the profile decides what the **panel** does when it is armed. Choosing a mode does not arm a panel; tying the two together is not done.
-* It does **not** touch firmware, `firmware_base`, the HMI or any node display: a wall panel or a node shows `armed` or `disarmed` as before. The studio, the apps and the simulator learn the modes in a later step.
+* The alarm panel of an ARMOR-NODE-ALARM node keeps its own zones, delays, PIN and lockout, and `POST /api/v1/alarm/command` and the arming profiles (`/api/v1/alarm/profiles`) are untouched. Unless `alarm.mode_panel_sync` is on (see "Modes and profiles" below), choosing a mode does not arm a panel.
+* It does **not** touch firmware, `firmware_base`, the HMI or any node display: a wall panel or a node shows `armed` or `disarmed` as before. What a real panel does with the arm command, and the HMI showing the mode, are pending on hardware.
 * The notifier still words "offline while the system is armed" for a node or a camera outside the mode; only the alarm centre and the intrusion level of a radar node follow the mode.
 * The exit delay does not apply to arming by the control API or the voice assistant (they arm away at once). An intrusion that comes and goes inside the exit delay is not remembered.
 * The timetable runs in the clock of the server; if the server is off at the minute, that change is lost (it is not replayed).

@@ -32,7 +32,7 @@ export type NodeState = {
 export type SystemState = {
   mode: SecurityMode;
   /** The arming mode in force (disarmed, away, home or night); only present while the arming modes are turned on, so a client that knows none ignores it and reads `mode`. */
-  arming_mode?: string; revision: number; nodes: Record<string, NodeState>; updated_at: string };
+  arming_mode?: string; panel_sync?: unknown; revision: number; nodes: Record<string, NodeState>; updated_at: string };
 
 type StoredNode = Omit<NodeState, "stale" | "panel"> & { received_at_ms: number; status: NodeStatus; high_since_ms: number | null };
 
@@ -56,6 +56,8 @@ export type StoreOptions = {
   guards?: (nodeId: string) => boolean;
   /** The arming mode to show in the state, or undefined while the arming modes are off. */
   armingMode?: () => string | undefined;
+  /** What the alarm panels did about the mode in force (mode_panel_sync.ts); undefined: nothing to say, and the field is left out. */
+  panelSync?: () => unknown;
 };
 
 export class ArmorStore {
@@ -69,6 +71,7 @@ export class ArmorStore {
   readonly #minTargets: number;
   readonly #guards: (nodeId: string) => boolean;
   readonly #armingMode: () => string | undefined;
+  readonly #panelSync: () => unknown;
   /** The nodes that have sent telemetry since this server started: for them, silence is judged by the telemetry, not by the heartbeat. */
   readonly #telemetrySeen = new Set<string>();
   readonly #onChange: ((state: SystemState) => void) | undefined;
@@ -88,6 +91,7 @@ export class ArmorStore {
     this.#minTargets = options.minTargets ?? 2;
     this.#guards = options.guards ?? (() => true);
     this.#armingMode = options.armingMode ?? (() => undefined);
+    this.#panelSync = options.panelSync ?? (() => undefined);
     this.#restore(this.#persistence?.load());
   }
 
@@ -103,7 +107,8 @@ export class ArmorStore {
       nodes[id] = { ...visible, stale, online: visible.online && !stale, panel: this.#panels.get(id) ?? null };
     }
     const arming = this.#armingMode();
-    return { mode: this.#mode, ...(arming ? { arming_mode: arming } : {}), revision: this.#revision, nodes, updated_at: this.#updatedAt };
+    const panelSync = arming ? this.#panelSync() : undefined;
+    return { mode: this.#mode, ...(arming ? { arming_mode: arming } : {}), ...(panelSync ? { panel_sync: panelSync } : {}), revision: this.#revision, nodes, updated_at: this.#updatedAt };
   }
 
   arm(mode: SecurityMode): SystemState {

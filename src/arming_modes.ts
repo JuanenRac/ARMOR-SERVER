@@ -130,6 +130,8 @@ export type ArmingOptions = {
   /** One armed mode became another armed mode / an exit delay ended: the rules and the nodes look again. */
   afterSwitch: () => void;
   afterExit: () => void;
+  /** A mode was chosen (by whom: a person, or `schedule`), including choosing the one already in force (`noop`) and disarming. Whoever listens must not make the change fail. */
+  afterApplied?: (to: ArmingMode, plan: ModePlan, by: string) => void;
   /** What the timetable did (or could not do), for the audit trail. */
   report?: (what: { applied: boolean; mode: ArmedMode; reason?: string }) => void;
   warn?: (message: string) => void;
@@ -236,11 +238,13 @@ export class ArmingModes {
   }
 
   /** Do the change. The caller has already checked who may (and the PIN); this refuses what is unsafe by itself: a mode that defends nothing, unless it is confirmed. */
-  apply(to: ArmingMode, options: { confirmUnassigned?: boolean } = {}): ModePlan {
-    if (to === "disarmed") return this.#disarm();
+  apply(to: ArmingMode, options: { confirmUnassigned?: boolean; by?: string } = {}): ModePlan {
+    const by = options.by ?? "operator";
+    const told = (plan: ModePlan): ModePlan => { try { this.#o.afterApplied?.(to, plan, by); } catch { /* a listener never breaks the change */ } return plan; };
+    if (to === "disarmed") return told(this.#disarm());
     if (!this.enabled && to !== "away") throw new ModeChangeError("modes_disabled", "the arming modes are not turned on in this server: arm away, or disarm", 400);
     const plan = this.plan(to);
-    if (plan.kind === "noop") return plan;
+    if (plan.kind === "noop") return told(plan);
     if (plan.empty && options.confirmUnassigned !== true) throw new ModeChangeError("no_zones_assigned", `the mode ${to} has no zones or sensors assigned, so it would defend nothing: assign some in the alarm designer, or confirm`);
     this.#clearExit();
     this.cancelLater();
@@ -253,7 +257,7 @@ export class ArmingModes {
     this.#save();
     if (plan.kind === "arm") this.#o.setArmed(true);
     else this.#o.afterSwitch();
-    return plan;
+    return told(plan);
   }
 
   #disarm(): ModePlan {
@@ -311,7 +315,7 @@ export class ArmingModes {
     if (plan.kind === "noop") return;
     if (plan.empty) { this.#o.report?.({ applied: false, mode: entry.mode, reason: "no_zones_assigned" }); return; }
     if (plan.lowers && !this.#o.scheduleMayLower()) { this.#o.report?.({ applied: false, mode: entry.mode, reason: "would_defend_less" }); return; }
-    this.apply(entry.mode);
+    this.apply(entry.mode, { by: "schedule" });
     this.#o.report?.({ applied: true, mode: entry.mode });
   }
 

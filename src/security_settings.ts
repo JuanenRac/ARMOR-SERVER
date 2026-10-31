@@ -8,6 +8,7 @@
  *   alarm.mode_downgrade_pin     required | not_required   going to a mode that defends LESS than the current one asks for the PIN like a disarm (required, the default)
  *   alarm.mode_schedule          on | off                  the timetable of the arming modes changes the mode by itself (off, the default; it needs alarm.arming_modes)
  *   alarm.mode_schedule_lowers   on | off                  the timetable may go to a mode that defends less (off, the default: it only keeps or raises the defence, it can never disarm)
+ *   alarm.mode_panel_sync        on | off                  choosing away, home or night also arms the alarm panels with the profile that goes with it (off, the default: the modes decide only what the server defends; it needs alarm.arming_modes)
  *   voice.silence_confirmation   off | pin | double_turn   what the voice assistant asks before silencing the alarm (sent to the voice service with every turn)
  *   alarm.config_hash            on | off                  the panel binds its saved armed state to its zones and PIN and does not restore it if they changed (panel side)
  *   server.zone_feed             on | off                  the server tells the panels the state of their Zigbee zones
@@ -52,6 +53,7 @@ export type SecuritySettingsValues = {
   "alarm.mode_downgrade_pin": ModeDowngradePin;
   "alarm.mode_schedule": boolean;
   "alarm.mode_schedule_lowers": boolean;
+  "alarm.mode_panel_sync": boolean;
   "alarm.config_hash": boolean;
   "server.zone_feed": boolean;
   "server.zone_feed_signature": boolean;
@@ -77,6 +79,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "alarm.mode_downgrade_pin": "required",
   "alarm.mode_schedule": false,
   "alarm.mode_schedule_lowers": false,
+  "alarm.mode_panel_sync": false,
   "alarm.config_hash": true,
   "server.zone_feed": true,
   "server.zone_feed_signature": true,
@@ -188,7 +191,7 @@ export class SecuritySettings {
 /** True when the new value lowers security compared with the old one (the audit trail and Studio say so). */
 export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boolean {
   if (key === "voice.multipart_turn" || key === "panel.live_events" || key === "alarm_audio.spoken" || key === "alarm_audio.custom_sounds") return false;   // a way in that is turned off is not a loss of protection; turning it on is the default way
-  if (key === "alarm.arming_modes" || key === "alarm.mode_schedule") return false;   // a way of arming that is added or taken away: the protection of what is armed does not drop by it
+  if (key === "alarm.arming_modes" || key === "alarm.mode_schedule" || key === "alarm.mode_panel_sync") return false;   // a way of arming that is added or taken away: the protection of what is armed does not drop by it
   if (key === "alarm.mode_schedule_lowers") return from === false && to === true;   // letting a timetable defend less is the loss
   if (key === "alarm.mode_downgrade_pin") return from === "required" && to === "not_required";
   if (key === "voice.turn_max_bytes" || key === "voice.reply_audio_max_bytes") return typeof from === "number" && typeof to === "number" && to > from;   // a larger turn costs the server more memory and time

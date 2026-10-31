@@ -51,11 +51,11 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
       if (verdict.duress) {
         audit.record({ action: "control.disarm", outcome: "allowed", actor: actor(request), detail: "duress" });
         alarms.raiseDuress(actor(request));
-        armingModes.apply("disarmed");
+        armingModes.apply("disarmed", { by: actor(request) });
         return response.json(store.snapshot());
       }
       audit.record({ action: "control.disarm", outcome: "allowed", actor: actor(request) });
-      armingModes.apply("disarmed");
+      armingModes.apply("disarmed", { by: actor(request) });
       return response.json(store.snapshot());
     }
     if (!armingModes.enabled) {   // the way it always was
@@ -75,7 +75,7 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
       if (!verdict.allow) return response.status(verdict.status).json(verdict.body);
       if (verdict.duress) { audit.record({ action: "control.mode", outcome: "allowed", actor: actor(request), detail: `${what} (duress)` }); alarms.raiseDuress(actor(request)); }
     }
-    try { armingModes.apply(target, { confirmUnassigned: input.confirm_unassigned === true }); } catch (error) {
+    try { armingModes.apply(target, { confirmUnassigned: input.confirm_unassigned === true, by: actor(request) }); } catch (error) {
       if (error instanceof ModeChangeError) return response.status(error.status).json({ error: error.message, code: error.code });
       throw error;
     }

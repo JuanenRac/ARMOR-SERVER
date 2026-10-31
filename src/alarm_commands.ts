@@ -37,12 +37,14 @@ export type AlarmCommandsOptions = {
   /** Ids; injectable for tests. Sixteen lowercase hexadecimal digits. */
   random?: () => string;
   keepRecords?: number;
+  /** Told once for every command that ends: the node answered (accepted or refused) or the answer never came (refusal `timeout`). A throw in it never reaches the caller. */
+  onSettled?: (record: AlarmRecord) => void;
 };
 
 type Pending = PendingAlarm & { startedMs: number };
 
 export class AlarmCommands {
-  readonly #options: Required<Omit<AlarmCommandsOptions, "nodes" | "publish" | "audit">> & Pick<AlarmCommandsOptions, "nodes" | "publish" | "audit">;
+  readonly #options: Required<Omit<AlarmCommandsOptions, "nodes" | "publish" | "audit" | "onSettled">> & Pick<AlarmCommandsOptions, "nodes" | "publish" | "audit" | "onSettled">;
   readonly #pending = new Map<string, Pending>();       // by command id
   readonly #records: AlarmRecord[] = [];
 
@@ -121,6 +123,7 @@ export class AlarmCommands {
 
   #keep(record: AlarmRecord): void {
     this.#records.push(record);
+    try { this.#options.onSettled?.(record); } catch { /* whoever listens must not break the record */ }
     if (this.#records.length > this.#options.keepRecords) this.#records.splice(0, this.#records.length - this.#options.keepRecords);
   }
 }

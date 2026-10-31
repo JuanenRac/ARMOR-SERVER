@@ -9,7 +9,7 @@ import type { AppContext } from "../context.js";
 import { MAX_SCHEDULE, ModesConflict, ModesInvalid } from "../arming_modes.js";
 
 export function registerAlarmModeRoutes(app: Express, context: AppContext): void {
-  const { armingModes, audit, securitySettings, requireOperator, requireAdmin, studioUser } = context;
+  const { armingModes, modePanelSync, audit, securitySettings, requireOperator, requireAdmin, studioUser } = context;
 
   const view = () => {
     const stored = armingModes.get();
@@ -17,6 +17,7 @@ export function registerAlarmModeRoutes(app: Express, context: AppContext): void
       enabled: armingModes.enabled, current: armingModes.current(), available: armingModes.available(), unassigned: armingModes.unassigned(),
       downgrade_pin_required: securitySettings.get("alarm.mode_downgrade_pin") === "required", schedule_enabled: securitySettings.get("alarm.mode_schedule"),
       schedule_may_lower: securitySettings.get("alarm.mode_schedule_lowers"), max_schedule: MAX_SCHEDULE,
+      panel_sync_enabled: modePanelSync.enabled, ...(modePanelSync.view() ? { panel_sync: modePanelSync.view() } : {}),
       revision: stored.revision, updated_at: stored.updated_at, updated_by: stored.updated_by, modes: stored.modes, schedule: stored.schedule,
     };
   };
