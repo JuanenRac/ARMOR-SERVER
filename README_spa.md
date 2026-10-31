@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 o posterior">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Lenguaje">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-724%20passing-2ea44f.svg" alt="Pruebas">
+  <img src="https://img.shields.io/badge/Tests-755%20passing-2ea44f.svg" alt="Pruebas">
   <img src="https://img.shields.io/badge/Version-0.8.0.8-0f6cbd.svg" alt="Versión">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Madurez">
 </p>
 
 ---
 
-**Comprobación de honestidad - qué funciona hoy:** Cada ruta, sesión, cifrado y regla de evidencias de abajo es real y está cubierta por tests (`npm test`: 724 tests, con una suite completa de integración HTTP contra un servidor aislado y una comprobación de que cada ruta está documentada en el fichero OpenAPI). Funciona en uso diario en el banco de pruebas de la CM5 con un broker MQTT real, el firmware de un nodo radar real en una placa ESP32-S3, cámaras IP reales (vídeo en directo, capturas, grabaciones, PTZ en las unidades Hi3510), la consola Studio, la app Android y los servicios de voz y de observación. Lo que **todavía no** está probado: ONVIF con una cámara ONVIF real, cualquier hardware Jetson, las rutas solares, eléctricas, de centrales de alarma y de panel táctil con nodos reales (se prueban con mensajes generados: solo existe la placa radar) y el push por Firebase con un proyecto Firebase real.
+**Comprobación de honestidad - qué funciona hoy:** Cada ruta, sesión, cifrado y regla de evidencias de abajo es real y está cubierta por tests (`npm test`: 755 tests, con una suite completa de integración HTTP contra un servidor aislado y una comprobación de que cada ruta está documentada en el fichero OpenAPI). Funciona en uso diario en el banco de pruebas de la CM5 con un broker MQTT real, el firmware de un nodo radar real en una placa ESP32-S3, cámaras IP reales (vídeo en directo, capturas, grabaciones, PTZ en las unidades Hi3510), la consola Studio, la app Android y los servicios de voz y de observación. Lo que **todavía no** está probado: ONVIF con una cámara ONVIF real, cualquier hardware Jetson, las rutas solares, eléctricas, de centrales de alarma y de panel táctil con nodos reales (se prueban con mensajes generados: solo existe la placa radar) y el push por Firebase con un proyecto Firebase real.
 
 ---
 
@@ -40,8 +40,8 @@
 | Madurez | Establecido |
 | Función | Coordinador central de seguridad de la familia: nodos, alarmas, dispositivos, energía, cámaras, red |
 | Tecnología | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| Pruebas | 724 (`npm test`: unitarias e integración HTTP completa) |
-| Contrato | 191 rutas HTTP, 247 operaciones (OpenAPI en ARMOR-COMMON), tabla de rutas en `docs/ROUTES.md` |
+| Pruebas | 755 (`npm test`: unitarias e integración HTTP completa) |
+| Contrato | 195 rutas HTTP, 253 operaciones (OpenAPI en ARMOR-COMMON), tabla de rutas en `docs/ROUTES.md` |
 | Escucha en | `127.0.0.1:8080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Funciona en | El banco de la CM5 (como servicio, ver ARMOR-DEVOPS) o cualquier ordenador con Node.js |
 | En hardware real | El banco de pruebas de la CM5, en uso diario: un broker MQTT real, cámaras IP reales, un nodo radar real en una placa ESP32-S3, Studio, la app Android y los servicios de voz y observación contra él |
@@ -58,7 +58,7 @@ Cada línea es una parte de este repositorio y la luz dice hasta dónde llega ho
 | Área | Estado | Qué significa aquí |
 |---|---|---|
 | Software | 🟢 | Las rutas, sesiones, cifrado y reglas de evidencias funcionan a diario en el banco de pruebas CM5. |
-| Pruebas | 🟢 | Pasan 724 pruebas (`npm test`), incluida una suite de integración HTTP completa contra un servidor aislado y una comprobación de que cada ruta está documentada en el archivo OpenAPI. |
+| Pruebas | 🟢 | Pasan 755 pruebas (`npm test`), incluida una suite de integración HTTP completa contra un servidor aislado y una comprobación de que cada ruta está documentada en el archivo OpenAPI. |
 | Protocolos y datos | 🟡 | Los mensajes del radar vienen de una placa real; las rutas solar, eléctrica, de panel de alarma y de panel táctil se prueban con mensajes generados, y ONVIF no se ha probado con una cámara ONVIF real. |
 | Hardware | 🟡 | Funciona en el banco de pruebas CM5 con un broker MQTT real, cámaras IP reales (vídeo en vivo, capturas, grabaciones, PTZ en las unidades Hi3510) y un nodo radar real; nada ha funcionado en una Jetson. |
 | Seguridad | 🟡 | Las reglas de sesiones, cifrado, evidencias y acceso están cubiertas por pruebas; no ha habido una revisión independiente. |
@@ -88,6 +88,8 @@ Cada línea es una parte de este repositorio y la luz dice hasta dónde llega ho
 * **Órdenes para escribir en una batería Pylontech (desactivadas salvo `ARMOR_BATTERY_WRITE=1`):** para administradores que acaban de demostrar de nuevo quiénes son - preparar, ejecutar con el número de serie de la batería escrito otra vez, cancelar, dejar una salida como estaba, guardar una imagen de firmware durante una hora - comprobadas con la tabla compartida de operaciones y rangos, enviadas al nodo pasarela como `solar_battery_command`, con cada operación guardada (quién, qué batería, lo leído antes y después, la diferencia y la transcripción, nunca la contraseña de servicio) y contada en el historial en *Baterías*.
 * **Control de los nodos:** `POST /api/v1/nodes/{id}/control` y `POST /api/v1/nodes/control` dan una orden (reiniciar, pausar, reanudar, poner en espera, identificar, diagnóstico, mantenimiento activado o desactivado) a un nodo o a todos los que informan, solo a un administrador que acaba de demostrar quién es otra vez, con el nombre del nodo (o la palabra RESTART, PAUSE o STANDBY para todos) escrito de nuevo donde la casa quedaría menos vigilada. El servidor prepara la orden, la ejecuta con el token de un solo uso que el nodo da para esa operación, sigue a cada nodo (enviada, recibida, aplicada, de vuelta) en `GET /api/v1/nodes/control/operations`, reinicia las centrales de alarma las últimas en un reinicio escalonado, anota quién ordenó qué en el historial y en la auditoría, y muestra en la salud del nodo si está en pausa, en espera (trabajo apagado, sigue conectado) o en mantenimiento. No existe restablecimiento de fábrica, borrado ni sueño profundo. Se prueba con un broker simulado; no se ha probado en un nodo real.
 * **Estado en vivo y tabla de rutas:** el servidor empuja el estado completo a Studio por un WebSocket en `/api/v1/events` cada vez que algo cambia (una ráfaga de cambios es un solo mensaje y un cliente que se queda atrás se descarta), y cada ruta que registra, con quién puede llamarla, figura en una tabla generada desde el código. El panel de pared tiene su propio canal, más pequeño, en `/api/v1/panel/events` (el mismo resumen de unos cientos de bytes que `GET /api/v1/panel/summary`, enviado cuando cambia y cada cinco segundos, para las cuentas de panel, operador y administrador; un administrador lo desactiva con `panel.live_events`).
+* **Lecturas viejas apartadas:** un canal de un nodo eléctrico cuya propia lectura tiene más de un minuto (su contador dejó de responder y el nodo repite los últimos números buenos) queda fuera de la cifra de la red y de las gráficas, se lista en `stale_channels` del nodo y se cuenta en `totals.stale_readings`; la opción `electrical.set_aside_old_readings` (activada por defecto) lo desactiva.
+* **El límite de acceso de un nodo y la imagen correcta para cada placa:** un administrador lee y cambia las contraseñas erróneas por minuto que deja pasar un nodo (`POST /api/v1/admin/nodes/settings`, con el acceso al panel usado una vez y nunca guardado), y una imagen de firmware cuyo nombre de fichero dice otra placa distinta de la del nodo se rechaza con `wrong_board` antes de enviar nada.
 
 ## 🧩 Papel en A.R.M.O.R.
 
@@ -148,13 +150,13 @@ flowchart LR
 | Voz: silenciar sin comprobar, texto largo, audio enorme | La política `voice.silence_confirmation` (off, pin, double_turn) viaja en cada turno; confirmación atada a la persona; 200 caracteres, 8 idiomas, 30 peticiones por minuto; audio de 480 000 bytes y respuesta de 200 000 bytes como máximo |
 | Escrituras peligrosas por error | Apagadas salvo `ARMOR_BATTERY_WRITE=1`, `ARMOR_ELECTRICAL_SWITCHING=1` o `ARMOR_ALARM_COMMANDS=1`, con aviso al arrancar |
 
-**Interruptores en Studio.** Las protecciones que se pueden ajustar son 15 valores guardados en `security-settings.json` (modo 0600, escritura atómica), cada uno con un valor por defecto conservador, y bajar uno queda en la auditoría: `alarm.disarm_pin`, `voice.silence_confirmation`, `alarm.config_hash`, `server.zone_feed`, `server.zone_feed_signature`, `media.rtsp_proxy`, `network.login_secure_only`, `voice.multipart_turn`, `panel.live_events`, `client.device_lock`, `nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`, `voice.turn_max_bytes` y `voice.reply_audio_max_bytes`.
+**Interruptores en Studio.** Las protecciones que se pueden ajustar son 17 valores guardados en `security-settings.json` (modo 0600, escritura atómica), cada uno con un valor por defecto conservador, y bajar uno queda en la auditoría: `alarm.disarm_pin`, `voice.silence_confirmation`, `alarm.config_hash`, `server.zone_feed`, `server.zone_feed_signature`, `media.rtsp_proxy`, `network.login_secure_only`, `login.country_alert`, `electrical.set_aside_old_readings`, `voice.multipart_turn`, `panel.live_events`, `client.device_lock`, `nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`, `voice.turn_max_bytes` y `voice.reply_audio_max_bytes`.
 
 **Lo que nunca hace:** devolver una contraseña de cámara, guardar las palabras que se dijeron (solo el comando y su resultado) ni escribir un PIN, un token o una cookie en un registro. No ha habido revisión de seguridad independiente.
 
 ## 🔌 Interfaces
 
-La tabla de rutas (`docs/ROUTES.md`, generada del código) lista cada ruta con quién puede llamarla; el fichero OpenAPI de ARMOR-COMMON describe 191 rutas y 247 operaciones, y una prueba falla si falta alguna. Las que más importan:
+La tabla de rutas (`docs/ROUTES.md`, generada del código) lista cada ruta con quién puede llamarla; el fichero OpenAPI de ARMOR-COMMON describe 195 rutas y 253 operaciones, y una prueba falla si falta alguna. Las que más importan:
 
 | Ruta | Autenticación | Qué hace |
 |---|---|---|
@@ -168,6 +170,8 @@ La tabla de rutas (`docs/ROUTES.md`, generada del código) lista cada ruta con q
 | `GET /api/v1/alarm-audio/spoken` | operador o la cuenta de un panel de pared | una alarma dicha en voz alta (origen, gravedad, código de alarma; PCM mono de 16 bits a 16 kHz con su SHA-256), hecha por la pasarela de voz y guardada en una caché; 404 `spoken_alarms_disabled` con la opción desactivada |
 | `GET` `PUT` `DELETE /api/v1/alarm-audio/sounds/{source}` | GET: operador o la cuenta de un panel de pared; PUT y DELETE: administrador (con nueva prueba de identidad desde fuera de casa) | el sonido de un origen de alarma: un archivo WAVE de PCM mono de 16 bits a 16 kHz, leído byte a byte (de una décima de segundo hasta `ARMOR_ALARM_SOUND_MAX_BYTES`, no silencio), solo se guardan sus muestras y se sirve con su SHA-256; 409 `custom_sounds_disabled` con la opción desactivada |
 | `POST /api/v1/nodes/{id}/control`  `POST /api/v1/nodes/control` | administrador que se acaba de identificar de nuevo | una orden (reiniciar, pausar, reanudar, espera, identificar, diagnóstico, mantenimiento) a un nodo o a todos |
+| `POST /api/v1/admin/nodes/settings` | administrador | lee y, si se da `login_limit_per_minute` (de 0 a 120 contraseñas erróneas por minuto), cambia el límite de acceso de un nodo a través del propio panel del nodo; el acceso al panel se usa una vez y no se guarda, y la línea de auditoría no lo lleva |
+| `POST /api/v1/admin/firmware/jobs` | administrador, con prueba de identidad reciente | instala una imagen de firmware en los nodos uno a uno; una imagen cuyo nombre de fichero dice otra placa distinta de la del nodo (`armor_<tipo>-<placa>.bin`) hace fallar ese nodo con `wrong_board` antes de enviarle nada |
 | `POST /api/v1/cameras/{id}/stream-ticket` | operador | un ticket de vida corta para el vídeo en vivo de una cámara |
 
 * Pública: `GET /healthz`. Para un usuario con sesión: estado, información, cámaras, medios, historial, reglas, dispositivos, alarmas, automatizaciones, los diseños (sitio, alarma, eléctrico, red), lecturas solares y eléctricas, la red local, notificaciones y preferencias, y para un administrador usuarios, servicios, firmware, actualizaciones y la consola.
@@ -205,7 +209,7 @@ Copia `.env.example` a `.env` (ignorado por Git), o deja que `run.bat` / `run.sh
 ```powershell
 npm install           # dependencias
 npm run typecheck     # tsc --noEmit
-npm test              # 724 pruebas: unitarias e integración HTTP completa
+npm test              # 755 pruebas: unitarias e integración HTTP completa
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # servidor de desarrollo con recarga en caliente
 ```
@@ -220,7 +224,7 @@ npm test           # tsx --test tests/*.test.ts
 python -I tools/armor_ci_validate.py
 ```
 
-`npm test` ejecuta cada fichero de `tests/` (95 ficheros): pruebas unitarias de cada módulo y una batería de integración HTTP completa contra un servidor aislado (`tests/vertical-slice.test.ts`). `tests/conformance.test.ts` ejecuta los vectores compartidos de ARMOR-COMMON y comprueba que **las rutas que registra el servidor son exactamente las operaciones que describe el fichero OpenAPI**, por método y ruta, y que cada respuesta dice qué cuerpo lleva; se salta si ARMOR-COMMON no está junto a este repositorio. Las pruebas de TLS necesitan `openssl` instalado. GitHub Actions ejecuta la base de A.R.M.O.R. en cada push y pull request: la validación del manifiesto, la versión, el registro de cambios y la paridad de los README, y luego la compilación y las pruebas del propio proyecto.
+`npm test` ejecuta cada fichero de `tests/` (99 ficheros): pruebas unitarias de cada módulo y una batería de integración HTTP completa contra un servidor aislado (`tests/vertical-slice.test.ts`). `tests/conformance.test.ts` ejecuta los vectores compartidos de ARMOR-COMMON y comprueba que **las rutas que registra el servidor son exactamente las operaciones que describe el fichero OpenAPI**, por método y ruta, y que cada respuesta dice qué cuerpo lleva; se salta si ARMOR-COMMON no está junto a este repositorio. Las pruebas de TLS necesitan `openssl` instalado. GitHub Actions ejecuta la base de A.R.M.O.R. en cada push y pull request: la validación del manifiesto, la versión, el registro de cambios y la paridad de los README, y luego la compilación y las pruebas del propio proyecto.
 
 ## 🏗️ Compilación y publicación
 
@@ -255,7 +259,7 @@ ARMOR-SERVER/
 │   ├── store.ts persistence.ts       estado de nodos y lo que sobrevive a un reinicio
 │   ├── alarms.ts escalation.ts       centro de alarmas y escalado
 │   ├── users.ts totp.ts              usuarios, roles, PIN y segundo factor
-│   ├── security_settings.ts          los 15 interruptores de Studio
+│   ├── security_settings.ts          los 17 interruptores de Studio
 │   ├── voice.ts voice_turn.ts        órdenes escritas y habladas
 │   ├── firmware.ts installation.ts   firmware de nodos y actualizaciones propias
 │   ├── http/                         sesiones, tokens por nodo, accesos sellados
@@ -263,7 +267,7 @@ ARMOR-SERVER/
 │   ├── cameras/                      caja fuerte, PTZ, RTSP, descubrimiento, salud
 │   ├── media/                        relé FFmpeg y biblioteca de evidencias
 │   └── devices/                      modelo de dispositivos y su puente MQTT
-├── tests/                            700 pruebas, unitarias e integración HTTP
+├── tests/                            755 pruebas, unitarias e integración HTTP
 ├── docs/                             7 guías, tabla de rutas, entorno
 ├── tools/                            generadores de docs/ROUTES.md y docs/ENVIRONMENT.md, comprobaciones de CI, lanzador
 ├── images/                           banner, icono y las imágenes del README

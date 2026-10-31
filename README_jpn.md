@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 or later">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-724%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-755%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Version-0.8.0.8-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
 ---
 
-**正直さのチェック - 今日動いているもの:** 以下のすべてのルート、セッション、暗号化、証拠のルールは実在し、テストでカバーされています（`npm test`：724 件。隔離したサーバーに対する完全な HTTP 統合テストと、すべてのルートが OpenAPI ファイルに記載されていることの確認を含む）。CM5 テストベンチで日常的に動作しており、実際の MQTT ブローカー、ESP32-S3 基板上の実際のレーダーノードのファームウェア、実際の IP カメラ（ライブ映像、スナップショット、録画、Hi3510 機での PTZ）、Studio コンソール、Android アプリ、音声・観察サービスと組み合わせています。**まだ**証明されていないもの：実際の ONVIF カメラでの ONVIF、Jetson ハードウェア全般、実ノードでのソーラー・電気・警報盤・タッチパネルのルート（生成したメッセージでテスト：存在するのはレーダー基板のみ）、実際の Firebase プロジェクトでの Firebase プッシュ。
+**正直さのチェック - 今日動いているもの:** 以下のすべてのルート、セッション、暗号化、証拠のルールは実在し、テストでカバーされています（`npm test`：755 件。隔離したサーバーに対する完全な HTTP 統合テストと、すべてのルートが OpenAPI ファイルに記載されていることの確認を含む）。CM5 テストベンチで日常的に動作しており、実際の MQTT ブローカー、ESP32-S3 基板上の実際のレーダーノードのファームウェア、実際の IP カメラ（ライブ映像、スナップショット、録画、Hi3510 機での PTZ）、Studio コンソール、Android アプリ、音声・観察サービスと組み合わせています。**まだ**証明されていないもの：実際の ONVIF カメラでの ONVIF、Jetson ハードウェア全般、実ノードでのソーラー・電気・警報盤・タッチパネルのルート（生成したメッセージでテスト：存在するのはレーダー基板のみ）、実際の Firebase プロジェクトでの Firebase プッシュ。
 
 ---
 
@@ -40,8 +40,8 @@
 | 成熟度 | 確立 |
 | 役割 | ファミリーの中央セキュリティコーディネーター：ノード、アラーム、デバイス、エネルギー、カメラ、ネットワーク |
 | 技術 | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| テスト | 724 件（`npm test`：単体と完全な HTTP 結合） |
-| 契約 | HTTP パス 191 本、247 操作（OpenAPI は ARMOR-COMMON）、ルート表は `docs/ROUTES.md` |
+| テスト | 755 件（`npm test`：単体と完全な HTTP 結合） |
+| 契約 | HTTP パス 195 本、253 操作（OpenAPI は ARMOR-COMMON）、ルート表は `docs/ROUTES.md` |
 | 待ち受け | `127.0.0.1:8080`（`ARMOR_HOST`、`ARMOR_PORT`） |
 | 動作環境 | CM5 テストベンチ（サービスとして。ARMOR-DEVOPS 参照）または Node.js のある任意のコンピューター |
 | 実機での確認 | CM5 テストベンチでの日常使用：実際の MQTT ブローカー、実際の IP カメラ、ESP32-S3 基板上の実際のレーダーノード、これに接続する Studio、Android アプリ、音声・観察サービス |
@@ -58,7 +58,7 @@
 | 領域 | 状態 | ここでの意味 |
 |---|---|---|
 | ソフトウェア | 🟢 | ルート、セッション、暗号化、証拠の規則は、CM5 テストベンチで毎日使われています。 |
-| テスト | 🟢 | 724 件のテストが通ります（`npm test`）。隔離したサーバーに対する HTTP 統合テスト一式と、すべてのルートが OpenAPI ファイルに記載されているかの確認を含みます。 |
+| テスト | 🟢 | 755 件のテストが通ります（`npm test`）。隔離したサーバーに対する HTTP 統合テスト一式と、すべてのルートが OpenAPI ファイルに記載されているかの確認を含みます。 |
 | プロトコルとデータ | 🟡 | レーダーのメッセージは実機のボードから来ています。太陽光・電気・警報パネル・タッチパネルのルートは生成したメッセージでテストしており、ONVIF は本物の ONVIF カメラと接続していません。 |
 | ハードウェア | 🟡 | CM5 テストベンチで、実際の MQTT ブローカー、実際の IP カメラ（ライブ映像、スナップショット、録画、Hi3510 機の PTZ）、実際のレーダーノードとともに動作しています。Jetson ではまだ何も動かしていません。 |
 | セキュリティ | 🟡 | セッション、暗号化、証拠、ログインの規則はテストでカバーされています。独立したレビューはありません。 |
@@ -88,6 +88,8 @@
 * **Pylontechバッテリーへの書き込み命令（`ARMOR_BATTERY_WRITE=1` でなければ無効）：** 直前にあらためて本人確認をした管理者のみ——準備、バッテリーのシリアル番号を再入力して実行、取り消し、出力を元に戻す、ファームウェアイメージを1時間保持——を、共有の操作・範囲表で検査し、`solar_battery_command` としてゲートウェイノードへ送ります。各操作（誰が、どのバッテリーに、前後に読み取った内容、差分、記録。サービスパスワードは含まない）は保存され、履歴の「バッテリー」に記録されます。
 * **ノードの制御：** `POST /api/v1/nodes/{id}/control` と `POST /api/v1/nodes/control` は、1 台のノード、または報告しているすべてのノードに命令（再起動、一時停止、再開、スタンバイ、識別、診断、メンテナンスのオン／オフ）を出します。対象は、直前にもう一度本人確認をした管理者だけで、家の防護が弱まる操作ではノード名（全ノードの場合は RESTART、PAUSE、STANDBY のいずれかの単語）を再入力します。サーバーは命令を準備し、そのノードがその操作のために渡す使い捨てトークンで実行し、`GET /api/v1/nodes/control/operations` で各ノード（送信済み、受領、適用、復帰）を追跡します。順次再起動では警報パネルを最後にし、誰が何を命じたかを履歴と監査記録に残し、ノードの健全性に一時停止、スタンバイ（動作停止、接続は維持）、メンテナンスを表示します。工場出荷時リセット、消去、ディープスリープはありません。模擬ブローカーでテストしており、実機のノードでは試していません。
 * **ライブ状態とルート表：** サーバーは何かが変わるたびに、`/api/v1/events` の WebSocket で状態全体を Studio に送ります（変化の連続は1通にまとめ、遅れたクライアントは切り離します）。登録されている全ルートと呼び出せる主体は、コードから生成した表に載っています。壁掛けパネルには専用の小さなチャンネル `/api/v1/panel/events` があります（`GET /api/v1/panel/summary` と同じ数百バイトの要約を、変化したときと5秒ごとに、パネル・オペレーター・管理者アカウント向けに送ります。管理者は `panel.live_events` で無効にできます）。
+* **古い読み取り値は除外:** 電気ノードのチャンネルで、自身の読み取りが 1 分以上古いもの（メーターが応答しなくなり、ノードが最後の正常な値を繰り返している状態）は、系統の数値とグラフから外され、ノードの `stale_channels` に並び、`totals.stale_readings` に数えられます。オプション `electrical.set_aside_old_readings`（既定でオン）でオフにできます。
+* **ノードのログイン上限と、ボードに合ったイメージ:** 管理者は、ノードが許す 1 分あたりの誤パスワード数を読み取り・変更できます（`POST /api/v1/admin/nodes/settings`。パネルのログイン情報は 1 回だけ使われ保存されません）。ファイル名がノードのボードと異なるボードを示すファームウェアイメージは、何も送る前に `wrong_board` で拒否されます。
 
 ## 🧩 A.R.M.O.R. での役割
 
@@ -148,13 +150,13 @@ flowchart LR
 | 音声：確認なしの消音、長文、巨大な音声 | ポリシー `voice.silence_confirmation`（off、pin、double_turn）を毎ターン送信。確認は本人に紐づく。200 文字、8 言語、毎分 30 リクエスト、音声は最大 480 000 バイト、応答は最大 200 000 バイト |
 | 誤った危険な書き込み | `ARMOR_BATTERY_WRITE=1`、`ARMOR_ELECTRICAL_SWITCHING=1`、`ARMOR_ALARM_COMMANDS=1` を設定しない限りオフ。起動時に警告 |
 
-**Studio のスイッチ。** 調整できる保護は `security-settings.json`（モード 0600、アトミック書き込み）にある 15 項目で、どれも保守的な既定値です。下げた場合は監査に記録されます：`alarm.disarm_pin`、`voice.silence_confirmation`、`alarm.config_hash`、`server.zone_feed`、`server.zone_feed_signature`、`media.rtsp_proxy`、`network.login_secure_only`、`voice.multipart_turn`、`panel.live_events`、`client.device_lock`、`nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`、`voice.turn_max_bytes`、`voice.reply_audio_max_bytes`。
+**Studio のスイッチ。** 調整できる保護は `security-settings.json`（モード 0600、アトミック書き込み）にある 17 項目で、どれも保守的な既定値です。下げた場合は監査に記録されます：`alarm.disarm_pin`、`voice.silence_confirmation`、`alarm.config_hash`、`server.zone_feed`、`server.zone_feed_signature`、`media.rtsp_proxy`、`network.login_secure_only`、`login.country_alert`、`electrical.set_aside_old_readings`、`voice.multipart_turn`、`panel.live_events`、`client.device_lock`、`nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`、`voice.turn_max_bytes`、`voice.reply_audio_max_bytes`。
 
 **決してしないこと：** カメラのパスワードを返す、話した内容を保存する（コマンドと結果のみ）、PIN・トークン・Cookie をログに書く。第三者によるセキュリティレビューはありません。
 
 ## 🔌 インターフェース
 
-ルート表（`docs/ROUTES.md`、コードから生成）は各ルートと呼び出せる主体を一覧にします。ARMOR-COMMON の OpenAPI は 191 パス・247 操作を記述し、欠けているルートがあるとテストが失敗します。主なもの：
+ルート表（`docs/ROUTES.md`、コードから生成）は各ルートと呼び出せる主体を一覧にします。ARMOR-COMMON の OpenAPI は 195 パス・253 操作を記述し、欠けているルートがあるとテストが失敗します。主なもの：
 
 | ルート | 認証 | 内容 |
 |---|---|---|
@@ -168,6 +170,8 @@ flowchart LR
 | `GET /api/v1/alarm-audio/spoken` | オペレーターまたは壁面パネルのアカウント | 音声で読み上げたアラーム（発生元、重大度、アラームコード。SHA-256 付きの 16 kHz 16 ビットモノラル PCM）。音声ゲートウェイが作成しキャッシュに保持。オプションがオフの間は 404 `spoken_alarms_disabled` |
 | `GET` `PUT` `DELETE /api/v1/alarm-audio/sounds/{source}` | GET：オペレーターまたは壁面パネルのアカウント。PUT と DELETE：管理者（家の外からは再認証） | アラームの発生元ごとの音：16 kHz 16 ビットモノラル PCM の WAVE ファイルを 1 バイトずつ検査（0.1 秒から `ARMOR_ALARM_SOUND_MAX_BYTES` まで、無音は不可）し、サンプルだけを保存して SHA-256 付きで配信。オプションがオフの間は 409 `custom_sounds_disabled` |
 | `POST /api/v1/nodes/{id}/control`  `POST /api/v1/nodes/control` | 直前に再認証した管理者 | 1 ノードまたは全ノードへのオーダー（再起動、一時停止、再開、スタンバイ、識別、診断、メンテナンス） |
+| `POST /api/v1/admin/nodes/settings` | 管理者 | ノード自身のパネルを通して、ノードのログイン上限を読み取り、`login_limit_per_minute`（1 分あたりの誤パスワード 0〜120 回）が渡されれば変更します。パネルのログイン情報は 1 回だけ使われ保存されず、監査行にも含まれません |
+| `POST /api/v1/admin/firmware/jobs` | 管理者、直前の本人確認 | ファームウェアイメージをノードへ 1 台ずつ書き込みます。ファイル名がノードのボードと異なるボードを示すイメージ（`armor_<種類>-<ボード>.bin`）は、何も送る前にそのノードを `wrong_board` で失敗させます |
 | `POST /api/v1/cameras/{id}/stream-ticket` | オペレーター | 1 台のカメラのライブ映像用の短命チケット |
 
 * 公開：`GET /healthz`。ログイン済みユーザー向け：状態、情報、カメラ、メディア、履歴、ルール、デバイス、警報、オートメーション、各種設計（サイト、警報、電気、ネットワーク）、ソーラーと電気の測定値、ローカルネットワーク、通知と設定。管理者向けにはユーザー、サービス、ファームウェア、アップデート、コンソール。
@@ -205,7 +209,7 @@ flowchart LR
 ```powershell
 npm install           # 依存関係
 npm run typecheck     # tsc --noEmit
-npm test              # 724 件：単体と完全な HTTP 結合
+npm test              # 755 件：単体と完全な HTTP 結合
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # ホットリロード付き開発サーバー
 ```
@@ -220,7 +224,7 @@ npm test           # tsx --test tests/*.test.ts
 python -I tools/armor_ci_validate.py
 ```
 
-`npm test` は `tests/` の全ファイル（95 個）を実行します：各モジュールの単体テストと、隔離したサーバーに対する完全な HTTP 結合テスト（`tests/vertical-slice.test.ts`）。`tests/conformance.test.ts` は ARMOR-COMMON の共有ベクターを実行し、**サーバーが登録するルートが OpenAPI の記述する操作と（メソッドとパスで）完全に一致すること**、各応答が本文の種類を示していることを確認します。ARMOR-COMMON がこのリポジトリの隣にないとスキップされます。TLS のテストには `openssl` が必要です。GitHub Actions は push と pull request のたびに A.R.M.O.R. の基本検査（マニフェスト、バージョン、変更履歴、README の一致）と、プロジェクト自身のビルドとテストを実行します。
+`npm test` は `tests/` の全ファイル（99 個）を実行します：各モジュールの単体テストと、隔離したサーバーに対する完全な HTTP 結合テスト（`tests/vertical-slice.test.ts`）。`tests/conformance.test.ts` は ARMOR-COMMON の共有ベクターを実行し、**サーバーが登録するルートが OpenAPI の記述する操作と（メソッドとパスで）完全に一致すること**、各応答が本文の種類を示していることを確認します。ARMOR-COMMON がこのリポジトリの隣にないとスキップされます。TLS のテストには `openssl` が必要です。GitHub Actions は push と pull request のたびに A.R.M.O.R. の基本検査（マニフェスト、バージョン、変更履歴、README の一致）と、プロジェクト自身のビルドとテストを実行します。
 
 ## 🏗️ ビルドとリリース
 
@@ -255,7 +259,7 @@ ARMOR-SERVER/
 │   ├── store.ts persistence.ts       ノード状態と再起動後も残るもの
 │   ├── alarms.ts escalation.ts       アラームセンターとエスカレーション
 │   ├── users.ts totp.ts              ユーザー、ロール、PIN、2 要素
-│   ├── security_settings.ts          Studio で変える 15 のスイッチ
+│   ├── security_settings.ts          Studio で変える 17 のスイッチ
 │   ├── voice.ts voice_turn.ts        文字と音声のコマンド
 │   ├── firmware.ts installation.ts   ノードのファームウェアと自己更新
 │   ├── http/                         セッション、ノード別トークン、封印した認証情報
@@ -263,7 +267,7 @@ ARMOR-SERVER/
 │   ├── cameras/                      金庫、PTZ、RTSP、探索、健全性
 │   ├── media/                        FFmpeg 中継と証拠ライブラリ
 │   └── devices/                      デバイスモデルと MQTT ブリッジ
-├── tests/                            700 件（単体と HTTP 結合）
+├── tests/                            755 件（単体と HTTP 結合）
 ├── docs/                             7 つのガイド、ルート表、環境変数
 ├── tools/                            docs/ROUTES.md と docs/ENVIRONMENT.md の生成、CI 検査、ランチャー
 ├── images/                           バナー、アイコン、README の画像

@@ -104,14 +104,14 @@
     {
      "name": "security_settings.ts",
      "desc": {
-      "en": "the 13 switches Studio changes",
-      "es": "los 13 interruptores de Studio",
-      "de": "die 13 Schalter aus Studio",
-      "fr": "les 13 interrupteurs de Studio",
-      "it": "i 13 interruttori di Studio",
-      "ja": "Studio で変える 13 のスイッチ",
-      "zh": "Studio 修改的 13 个开关",
-      "pt": "os 13 interruptores do Studio"
+      "en": "the 17 switches Studio changes",
+      "es": "los 17 interruptores de Studio",
+      "de": "die 17 Schalter aus Studio",
+      "fr": "les 17 interrupteurs de Studio",
+      "it": "i 17 interruttori di Studio",
+      "ja": "Studio で変える 17 のスイッチ",
+      "zh": "Studio 修改的 17 个开关",
+      "pt": "os 17 interruptores do Studio"
      }
     },
     {
@@ -238,14 +238,14 @@
     {
      "name": "tests/",
      "desc": {
-      "en": "708 tests, unit and HTTP integration",
-      "es": "708 pruebas, unitarias e integración HTTP",
-      "de": "708 Tests, Unit und HTTP-Integration",
-      "fr": "708 tests, unitaires et intégration HTTP",
-      "it": "708 test, unitari e integrazione HTTP",
-      "ja": "708 件（単体と HTTP 結合）",
-      "zh": "708 项测试（单元与 HTTP 集成）",
-      "pt": "708 testes, unitários e integração HTTP"
+      "en": "755 tests, unit and HTTP integration",
+      "es": "755 pruebas, unitarias e integración HTTP",
+      "de": "755 Tests, Unit und HTTP-Integration",
+      "fr": "755 tests, unitaires et intégration HTTP",
+      "it": "755 test, unitari e integrazione HTTP",
+      "ja": "755 件（単体と HTTP 結合）",
+      "zh": "755 项测试（单元与 HTTP 集成）",
+      "pt": "755 testes, unitários e integração HTTP"
      }
     },
     {

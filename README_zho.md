@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 or later">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-724%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-755%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Version-0.8.0.8-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
 ---
 
-**诚实性检查 - 今天真正能运行的部分：** 下面的每条路由、会话、加密和证据规则都是真实的，并有测试覆盖（`npm test`：724 个测试，包括针对隔离服务器的完整 HTTP 集成测试套件，以及检查每条路由都已写入 OpenAPI 文件）。它在 CM5 测试台上日常运行，配有真实的 MQTT 代理、ESP32-S3 板上真实雷达节点的固件、真实的 IP 摄像头（实时视频、快照、录像、Hi3510 设备上的 PTZ）、Studio 控制台、Android 应用以及语音和观察服务。**尚未**证明的是：用真实 ONVIF 摄像头测试 ONVIF、任何 Jetson 硬件、用真实节点测试太阳能、电气、报警主机和触摸屏的路由（它们用生成的消息测试：目前只有雷达板存在），以及用真实 Firebase 项目测试 Firebase 推送。
+**诚实性检查 - 今天真正能运行的部分：** 下面的每条路由、会话、加密和证据规则都是真实的，并有测试覆盖（`npm test`：755 个测试，包括针对隔离服务器的完整 HTTP 集成测试套件，以及检查每条路由都已写入 OpenAPI 文件）。它在 CM5 测试台上日常运行，配有真实的 MQTT 代理、ESP32-S3 板上真实雷达节点的固件、真实的 IP 摄像头（实时视频、快照、录像、Hi3510 设备上的 PTZ）、Studio 控制台、Android 应用以及语音和观察服务。**尚未**证明的是：用真实 ONVIF 摄像头测试 ONVIF、任何 Jetson 硬件、用真实节点测试太阳能、电气、报警主机和触摸屏的路由（它们用生成的消息测试：目前只有雷达板存在），以及用真实 Firebase 项目测试 Firebase 推送。
 
 ---
 
@@ -40,8 +40,8 @@
 | 成熟度 | 成熟 |
 | 角色 | 家族的中央安全协调器：节点、报警、设备、能源、摄像头、网络 |
 | 技术栈 | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| 测试 | 724 项（`npm test`：单元与完整 HTTP 集成） |
-| 契约 | 191 条 HTTP 路径、247 个操作（OpenAPI 在 ARMOR-COMMON 中），路由表见 `docs/ROUTES.md` |
+| 测试 | 755 项（`npm test`：单元与完整 HTTP 集成） |
+| 契约 | 195 条 HTTP 路径、253 个操作（OpenAPI 在 ARMOR-COMMON 中），路由表见 `docs/ROUTES.md` |
 | 监听地址 | `127.0.0.1:8080`（`ARMOR_HOST`、`ARMOR_PORT`） |
 | 运行位置 | CM5 测试台（作为服务，见 ARMOR-DEVOPS）或任何装有 Node.js 的计算机 |
 | 真实硬件 | CM5 测试台的日常使用：真实的 MQTT 代理、真实的 IP 摄像头、ESP32-S3 板上的真实雷达节点，以及与之配合的 Studio、Android 应用和语音、观察服务 |
@@ -58,7 +58,7 @@
 | 领域 | 状态 | 在这里的含义 |
 |---|---|---|
 | 软件 | 🟢 | 路由、会话、加密和证据规则每天都在 CM5 测试台上运行。 |
-| 测试 | 🟢 | 724 项测试通过（`npm test`），包括针对隔离服务器的完整 HTTP 集成测试，以及检查每条路由都已写入 OpenAPI 文件。 |
+| 测试 | 🟢 | 755 项测试通过（`npm test`），包括针对隔离服务器的完整 HTTP 集成测试，以及检查每条路由都已写入 OpenAPI 文件。 |
 | 协议与数据 | 🟡 | 雷达消息来自真实的板子；光伏、电气、报警面板和触摸面板的路由是用生成的消息测试的，ONVIF 也没有遇到过真正的 ONVIF 摄像头。 |
 | 硬件 | 🟡 | 它在 CM5 测试台上运行，配有真实的 MQTT 代理、真实的 IP 摄像头（实时视频、截图、录像、Hi3510 机型的云台）和真实的雷达节点；还没有在 Jetson 上运行过。 |
 | 安全 | 🟡 | 会话、加密、证据和登录规则均有测试覆盖；没有经过独立审查。 |
@@ -88,6 +88,8 @@
 * **写入 Pylontech 电池的指令（除非设置 `ARMOR_BATTERY_WRITE=1`，否则关闭）：** 仅限刚刚再次证明身份的管理员——准备、再次输入电池序列号后执行、取消、把输出恢复原状、保存固件镜像一小时——依据共享的操作与范围表检查，以 `solar_battery_command` 发给网关节点；每次操作都会保存（谁、哪块电池、操作前后读到的内容、差异和记录，绝不含服务密码），并在历史的“电池”类别中记录。
 * **节点控制：** `POST /api/v1/nodes/{id}/control` 和 `POST /api/v1/nodes/control` 向一个节点或所有在上报的节点下达一条命令（重启、暂停、恢复、待机、识别、诊断、开启或关闭维护），仅限刚刚再次验证过身份的管理员；在会让家中防护减弱的地方，还要再次输入节点名称（对所有节点则输入单词 RESTART、PAUSE 或 STANDBY）。服务器先准备命令，再用节点为该操作给出的一次性令牌执行，在 `GET /api/v1/nodes/control/operations` 中跟踪每个节点（已发送、已确认、已应用、已恢复），滚动重启时把报警主机放在最后，在历史和审计记录中记下谁下达了什么命令，并在节点健康中显示暂停、待机（停止工作，保持连接）和维护。没有恢复出厂设置、擦除或深度睡眠。已用模拟代理测试；尚未在真实节点上试过。
 * **实时状态与路由表：** 每当有变化，服务器就通过 `/api/v1/events` 的 WebSocket 把完整状态推送给 Studio（一连串变化合并为一条消息，落后的客户端会被断开），并且它注册的每条路由及可调用者都列在由代码生成的表中。壁挂面板有自己更小的通道 `/api/v1/panel/events`（与 `GET /api/v1/panel/summary` 相同的几百字节摘要，在变化时以及每五秒发送，面向面板、操作员和管理员账户；管理员可用 `panel.live_events` 将其关闭）。
+* **搁置过旧的读数:** 电气节点中自身读数已超过一分钟的通道(其电表不再应答,节点只是重复最后一次正常的数值)不再计入电网数字和图表,列在节点的 `stale_channels` 中,并计入 `totals.stale_readings`;选项 `electrical.set_aside_old_readings`(默认开启)可将其关闭。
+* **节点的登录限制与对应开发板的镜像:** 管理员可以读取和修改节点每分钟放行的错误密码次数(`POST /api/v1/admin/nodes/settings`,面板登录信息只使用一次、绝不保存);文件名所示开发板与节点开发板不同的固件镜像会在发送任何内容之前被 `wrong_board` 拒绝。
 
 ## 🧩 在 A.R.M.O.R. 中的角色
 
@@ -148,13 +150,13 @@ flowchart LR
 | 语音：未确认就静音、超长文本、超大音频 | 策略 `voice.silence_confirmation`（off、pin、double_turn）随每个轮次发送；确认与本人绑定；200 个字符、8 种语言、每分钟 30 个请求；音频最多 480 000 字节，回复最多 200 000 字节 |
 | 误操作的危险写入 | 除非设置 `ARMOR_BATTERY_WRITE=1`、`ARMOR_ELECTRICAL_SWITCHING=1` 或 `ARMOR_ALARM_COMMANDS=1`，否则关闭；启动时给出警告 |
 
-**Studio 中的开关。** 可调的保护措施是保存在 `security-settings.json`（权限 0600，原子写入）中的 15 项设置，每项都有保守的默认值，调低任何一项都会写入审计：`alarm.disarm_pin`、`voice.silence_confirmation`、`alarm.config_hash`、`server.zone_feed`、`server.zone_feed_signature`、`media.rtsp_proxy`、`network.login_secure_only`、`voice.multipart_turn`、`panel.live_events`、`client.device_lock`、`nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`、`voice.turn_max_bytes` 和 `voice.reply_audio_max_bytes`。
+**Studio 中的开关。** 可调的保护措施是保存在 `security-settings.json`（权限 0600，原子写入）中的 17 项设置，每项都有保守的默认值，调低任何一项都会写入审计：`alarm.disarm_pin`、`voice.silence_confirmation`、`alarm.config_hash`、`server.zone_feed`、`server.zone_feed_signature`、`media.rtsp_proxy`、`network.login_secure_only`、`login.country_alert`、`electrical.set_aside_old_readings`、`voice.multipart_turn`、`panel.live_events`、`client.device_lock`、`nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`、`voice.turn_max_bytes` 和 `voice.reply_audio_max_bytes`。
 
 **它绝不会：** 返回摄像头密码、保存所说的话（只保留命令及其结果），或把 PIN、令牌或 Cookie 写进日志。没有独立的安全审查。
 
 ## 🔌 接口
 
-路由表（`docs/ROUTES.md`，由代码生成）列出每条路由及可调用者；ARMOR-COMMON 的 OpenAPI 文件描述了 191 条路径和 247 个操作，缺少任何路由时测试会失败。最重要的几条：
+路由表（`docs/ROUTES.md`，由代码生成）列出每条路由及可调用者；ARMOR-COMMON 的 OpenAPI 文件描述了 195 条路径和 253 个操作，缺少任何路由时测试会失败。最重要的几条：
 
 | 路由 | 认证 | 作用 |
 |---|---|---|
@@ -168,6 +170,8 @@ flowchart LR
 | `GET /api/v1/alarm-audio/spoken` | 操作员或壁挂面板的账户 | 大声播报的报警（来源、严重程度、报警代码；带 SHA-256 的 16 kHz 16 位单声道 PCM），由语音网关生成并缓存；选项关闭时返回 404 `spoken_alarms_disabled` |
 | `GET` `PUT` `DELETE /api/v1/alarm-audio/sounds/{source}` | GET：操作员或壁挂面板的账户；PUT 和 DELETE：管理员（从屋外访问时需再次验证身份） | 某个报警来源的声音：16 kHz 16 位单声道 PCM 的 WAVE 文件，逐字节检查（十分之一秒至 `ARMOR_ALARM_SOUND_MAX_BYTES`，不得为静音），只保存其采样，并附 SHA-256 提供；选项关闭时返回 409 `custom_sounds_disabled` |
 | `POST /api/v1/nodes/{id}/control`  `POST /api/v1/nodes/control` | 刚刚重新验证身份的管理员 | 向一个或所有节点下发一条指令（重启、暂停、恢复、待机、识别、诊断、维护） |
+| `POST /api/v1/admin/nodes/settings` | 管理员 | 通过节点自己的面板读取节点的登录限制,若给出 `login_limit_per_minute`(每分钟 0 到 120 次错误密码)则修改它;面板登录信息只使用一次、绝不保存,审计行中也不含登录信息 |
+| `POST /api/v1/admin/firmware/jobs` | 管理员，刚刚完成身份确认 | 逐个节点安装固件镜像;文件名所示开发板与节点开发板不同的镜像(`armor_<类型>-<开发板>.bin`)会在发送任何内容之前让该节点以 `wrong_board` 失败 |
 | `POST /api/v1/cameras/{id}/stream-ticket` | 操作员 | 单台摄像头实时视频的短期票据 |
 
 * 公开：`GET /healthz`。对已登录用户：状态、信息、摄像头、媒体、历史、规则、设备、报警、自动化、各类设计（场地、报警、电气、网络）、太阳能和电气读数、本地网络、通知和偏好设置；对管理员还有用户、服务、固件、更新和控制台。
@@ -205,7 +209,7 @@ flowchart LR
 ```powershell
 npm install           # 依赖
 npm run typecheck     # tsc --noEmit
-npm test              # 724 项：单元与完整 HTTP 集成
+npm test              # 755 项：单元与完整 HTTP 集成
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # 带热重载的开发服务器
 ```
@@ -220,7 +224,7 @@ npm test           # tsx --test tests/*.test.ts
 python -I tools/armor_ci_validate.py
 ```
 
-`npm test` 运行 `tests/` 的每个文件（95 个）：各模块的单元测试，以及针对隔离服务器的完整 HTTP 集成套件（`tests/vertical-slice.test.ts`）。`tests/conformance.test.ts` 运行 ARMOR-COMMON 的共享向量，并检查**服务器注册的路由与 OpenAPI 文件描述的操作（按方法和路径）完全一致**，以及每个响应都说明其请求体类型；ARMOR-COMMON 不在本仓库旁边时会跳过。TLS 测试需要安装 `openssl`。GitHub Actions 在每次推送和拉取请求时运行 A.R.M.O.R. 基线：清单、版本、更新日志和 README 一致性的校验，然后是项目自身的构建和测试。
+`npm test` 运行 `tests/` 的每个文件（99 个）：各模块的单元测试，以及针对隔离服务器的完整 HTTP 集成套件（`tests/vertical-slice.test.ts`）。`tests/conformance.test.ts` 运行 ARMOR-COMMON 的共享向量，并检查**服务器注册的路由与 OpenAPI 文件描述的操作（按方法和路径）完全一致**，以及每个响应都说明其请求体类型；ARMOR-COMMON 不在本仓库旁边时会跳过。TLS 测试需要安装 `openssl`。GitHub Actions 在每次推送和拉取请求时运行 A.R.M.O.R. 基线：清单、版本、更新日志和 README 一致性的校验，然后是项目自身的构建和测试。
 
 ## 🏗️ 构建与发布
 
@@ -255,7 +259,7 @@ ARMOR-SERVER/
 │   ├── store.ts persistence.ts       节点状态与重启后保留的内容
 │   ├── alarms.ts escalation.ts       报警中心与升级
 │   ├── users.ts totp.ts              用户、角色、PIN 与第二因素
-│   ├── security_settings.ts          Studio 修改的 15 个开关
+│   ├── security_settings.ts          Studio 修改的 17 个开关
 │   ├── voice.ts voice_turn.ts        文字和语音命令
 │   ├── firmware.ts installation.ts   节点固件与自身更新
 │   ├── http/                         会话、节点令牌、密封凭据
@@ -263,7 +267,7 @@ ARMOR-SERVER/
 │   ├── cameras/                      保险库、PTZ、RTSP、发现、健康
 │   ├── media/                        FFmpeg 中继与证据库
 │   └── devices/                      设备模型及其 MQTT 桥
-├── tests/                            700 项测试（单元与 HTTP 集成）
+├── tests/                            755 项测试（单元与 HTTP 集成）
 ├── docs/                             7 份指南、路由表、环境变量
 ├── tools/                            docs/ROUTES.md 和 docs/ENVIRONMENT.md 的生成器、CI 检查、启动器
 ├── images/                           横幅图、图标和 README 的图片

@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The documentation covers the node sign-in limit, the board of a firmware image, the old readings and the 17 switches:** the README (eight languages) lists the new routes, the setting aside of a channel whose meter stopped answering and all 17 settings of the security file; the integration guide describes `POST /api/v1/admin/nodes/settings` and the `wrong_board` and `wrong_node_kind` refusals; the figures (755 tests, 99 test files, 195 paths and 253 operations of the OpenAPI file) follow the code.
+
 ## [0.8.0.8] - The sign-in limit of a node can be read and changed, a channel whose own reading is old is set aside, an uploaded firmware image goes only to a node of its board and dependencies with known vulnerabilities updated
 
 - **Dependencies with known vulnerabilities are updated:** the request-body parser, the query-string parser and the address library move to their patched releases inside the same major version (denial-of-service fixes); the lock file is the only file changed and `npm audit` now reports nothing.

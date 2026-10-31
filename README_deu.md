@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 oder neuer">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Sprache">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-724%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-755%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Version-0.8.0.8-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Reifegrad">
 </p>
 
 ---
 
-**Ehrlichkeitsprüfung - was heute läuft:** Jede Route, Sitzung, Verschlüsselung und Beweisregel unten ist real und durch Tests abgedeckt (`npm test`: 724 Tests, darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server und eine Prüfung, dass jede Route in der OpenAPI-Datei dokumentiert ist). Er läuft im täglichen Einsatz auf dem CM5-Testaufbau mit einem echten MQTT-Broker, der Firmware eines echten Radarknotens auf einer ESP32-S3-Platine, echten IP-Kameras (Livevideo, Schnappschüsse, Aufnahmen, PTZ an den Hi3510-Geräten), der Studio-Konsole, der Android-App sowie den Sprach- und Beobachtungsdiensten. Was **noch nicht** bewiesen ist: ONVIF mit einer echten ONVIF-Kamera, jegliche Jetson-Hardware, die Solar-, Elektro-, Alarmzentralen- und Touchpanel-Routen mit echten Knoten (sie werden mit erzeugten Nachrichten getestet: nur die Radarplatine existiert) und Push über Firebase mit einem echten Firebase-Projekt.
+**Ehrlichkeitsprüfung - was heute läuft:** Jede Route, Sitzung, Verschlüsselung und Beweisregel unten ist real und durch Tests abgedeckt (`npm test`: 755 Tests, darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server und eine Prüfung, dass jede Route in der OpenAPI-Datei dokumentiert ist). Er läuft im täglichen Einsatz auf dem CM5-Testaufbau mit einem echten MQTT-Broker, der Firmware eines echten Radarknotens auf einer ESP32-S3-Platine, echten IP-Kameras (Livevideo, Schnappschüsse, Aufnahmen, PTZ an den Hi3510-Geräten), der Studio-Konsole, der Android-App sowie den Sprach- und Beobachtungsdiensten. Was **noch nicht** bewiesen ist: ONVIF mit einer echten ONVIF-Kamera, jegliche Jetson-Hardware, die Solar-, Elektro-, Alarmzentralen- und Touchpanel-Routen mit echten Knoten (sie werden mit erzeugten Nachrichten getestet: nur die Radarplatine existiert) und Push über Firebase mit einem echten Firebase-Projekt.
 
 ---
 
@@ -40,8 +40,8 @@
 | Reifegrad | Etabliert |
 | Rolle | Zentraler Sicherheitskoordinator der Familie: Knoten, Alarme, Geräte, Energie, Kameras, Netzwerk |
 | Technik | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| Tests | 724 (`npm test`: Unit und volle HTTP-Integration) |
-| Vertrag | 191 HTTP-Pfade, 247 Operationen (OpenAPI in ARMOR-COMMON), Routentabelle in `docs/ROUTES.md` |
+| Tests | 755 (`npm test`: Unit und volle HTTP-Integration) |
+| Vertrag | 195 HTTP-Pfade, 253 Operationen (OpenAPI in ARMOR-COMMON), Routentabelle in `docs/ROUTES.md` |
 | Lauscht auf | `127.0.0.1:8080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Läuft auf | Der CM5-Prüfstand (als Dienst, siehe ARMOR-DEVOPS) oder jeder Computer mit Node.js |
 | Auf echter Hardware | Der CM5-Testaufbau im täglichen Einsatz: ein echter MQTT-Broker, echte IP-Kameras, ein echter Radarknoten auf einer ESP32-S3-Platine, Studio, die Android-App und die Sprach- und Beobachtungsdienste daran |
@@ -58,7 +58,7 @@ Jede Zeile ist ein Teil dieses Repositorys, und die Ampel sagt, wie weit er heut
 | Bereich | Stand | Was das hier bedeutet |
 |---|---|---|
 | Software | 🟢 | Die Routen, Sitzungen, Verschlüsselung und Beweisregeln laufen täglich auf dem CM5-Prüfstand. |
-| Tests | 🟢 | 724 Tests bestehen (`npm test`), darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server und eine Prüfung, dass jede Route in der OpenAPI-Datei dokumentiert ist. |
+| Tests | 🟢 | 755 Tests bestehen (`npm test`), darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server und eine Prüfung, dass jede Route in der OpenAPI-Datei dokumentiert ist. |
 | Protokolle und Daten | 🟡 | Die Radar-Nachrichten stammen von einer echten Platine; die Routen für Solar, Elektrik, Alarmzentrale und Touch-Panel sind mit erzeugten Nachrichten getestet, und ONVIF ist keiner echten ONVIF-Kamera begegnet. |
 | Hardware | 🟡 | Er läuft auf dem CM5-Prüfstand mit einem echten MQTT-Broker, echten IP-Kameras (Live-Video, Standbilder, Aufnahmen, PTZ an den Hi3510-Geräten) und einem echten Radar-Knoten; auf einem Jetson lief nichts. |
 | Sicherheit | 🟡 | Die Regeln für Sitzungen, Verschlüsselung, Beweise und Anmeldung sind durch Tests abgedeckt; es gab keine unabhängige Prüfung. |
@@ -88,6 +88,8 @@ Jede Zeile ist ein Teil dieses Repositorys, und die Ampel sagt, wie weit er heut
 * **Befehle zum Schreiben auf eine Pylontech-Batterie (aus, außer mit `ARMOR_BATTERY_WRITE=1`):** für Administratoren, die sich eben erneut ausgewiesen haben - vorbereiten, mit nochmals eingetippter Seriennummer der Batterie ausführen, abbrechen, einen Ausgang zurücksetzen, ein Firmware-Image eine Stunde lang aufbewahren - geprüft an der gemeinsamen Tabelle der Operationen und Bereiche, als `solar_battery_command` an den Gateway-Knoten gesendet; jede Operation wird festgehalten (wer, welche Batterie, was davor und danach gelesen wurde, der Unterschied und das Protokoll, nie das Service-Passwort) und im Verlauf unter *Batterien* gemeldet.
 * **Steuerung der Knoten:** `POST /api/v1/nodes/{id}/control` und `POST /api/v1/nodes/control` erteilen einen Befehl (Neustart, Pause, Fortsetzen, Standby, Identifizieren, Diagnose, Wartung ein oder aus) an einen Knoten oder an alle, die sich melden, nur für einen Administrator, der sich gerade erneut ausgewiesen hat, wobei der Name des Knotens (oder das Wort RESTART, PAUSE oder STANDBY für alle) dort erneut getippt wird, wo das Haus weniger bewacht wäre. Der Server bereitet den Befehl vor, führt ihn mit dem Einmal-Token aus, das der Knoten für diese Operation gibt, verfolgt jeden Knoten (gesendet, bestätigt, angewendet, zurück) in `GET /api/v1/nodes/control/operations`, startet bei einem gestaffelten Neustart die Alarmzentralen zuletzt neu, hält im Verlauf und im Audit-Protokoll fest, wer was befohlen hat, und zeigt Pause, Standby (Arbeit aus, bleibt verbunden) und Wartung im Knotenzustand. Es gibt kein Zurücksetzen auf Werkseinstellungen, kein Löschen und keinen Tiefschlaf. Getestet mit einem Schein-Broker; auf einem echten Knoten wurde es nicht ausprobiert.
 * **Live-Zustand und Routentabelle:** Der Server schickt den gesamten Zustand über einen WebSocket unter `/api/v1/events` an Studio, sobald sich etwas ändert (eine Folge von Änderungen ist eine einzige Nachricht, ein zurückfallender Client wird fallen gelassen), und jede registrierte Route mit der Angabe, wer sie aufrufen darf, steht in einer aus dem Code erzeugten Tabelle. Das Wandpanel hat einen eigenen, kleineren Kanal unter `/api/v1/panel/events` (dieselbe Zusammenfassung von wenigen hundert Bytes wie `GET /api/v1/panel/summary`, gesendet bei Änderung und alle fünf Sekunden, für die Konten Panel, Operator und Administrator; ein Administrator schaltet ihn mit `panel.live_events` ab).
+* **Alte Messwerte beiseitegelegt:** Ein Kanal eines Elektro-Knotens, dessen eigener Messwert über eine Minute alt ist (sein Zähler antwortet nicht mehr und der Knoten wiederholt die letzten guten Zahlen), bleibt aus der Netzzahl und den Diagrammen heraus, wird in `stale_channels` des Knotens aufgeführt und in `totals.stale_readings` gezählt; die Option `electrical.set_aside_old_readings` (standardmäßig an) schaltet das ab.
+* **Das Anmeldelimit eines Knotens und das richtige Image für die richtige Platine:** Ein Administrator liest und ändert die falschen Passwörter pro Minute, die ein Knoten durchlässt (`POST /api/v1/admin/nodes/settings`, die Panel-Anmeldung einmal benutzt und nie gespeichert), und ein Firmware-Image, dessen Dateiname eine andere Platine als die des Knotens nennt, wird mit `wrong_board` abgelehnt, bevor etwas gesendet wird.
 
 ## 🧩 Rolle in A.R.M.O.R.
 
@@ -148,13 +150,13 @@ flowchart LR
 | Sprache: Stummschalten ohne Prüfung, langer Text, riesiges Audio | Die Richtlinie `voice.silence_confirmation` (off, pin, double_turn) reist mit jedem Turn; Bestätigung an die Person gebunden; 200 Zeichen, 8 Sprachen, 30 Anfragen pro Minute; Audio höchstens 480 000 Bytes, Antwort höchstens 200 000 Bytes |
 | Gefährliche Schreibzugriffe aus Versehen | Aus, außer mit `ARMOR_BATTERY_WRITE=1`, `ARMOR_ELECTRICAL_SWITCHING=1` oder `ARMOR_ALARM_COMMANDS=1`, mit Warnung beim Start |
 
-**Schalter in Studio.** Die einstellbaren Schutzmaßnahmen sind 15 Werte in `security-settings.json` (Modus 0600, atomares Schreiben), jeweils mit konservativem Standard; das Absenken eines Werts landet im Audit: `alarm.disarm_pin`, `voice.silence_confirmation`, `alarm.config_hash`, `server.zone_feed`, `server.zone_feed_signature`, `media.rtsp_proxy`, `network.login_secure_only`, `voice.multipart_turn`, `panel.live_events`, `client.device_lock`, `nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`, `voice.turn_max_bytes` und `voice.reply_audio_max_bytes`.
+**Schalter in Studio.** Die einstellbaren Schutzmaßnahmen sind 17 Werte in `security-settings.json` (Modus 0600, atomares Schreiben), jeweils mit konservativem Standard; das Absenken eines Werts landet im Audit: `alarm.disarm_pin`, `voice.silence_confirmation`, `alarm.config_hash`, `server.zone_feed`, `server.zone_feed_signature`, `media.rtsp_proxy`, `network.login_secure_only`, `login.country_alert`, `electrical.set_aside_old_readings`, `voice.multipart_turn`, `panel.live_events`, `client.device_lock`, `nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`, `voice.turn_max_bytes` und `voice.reply_audio_max_bytes`.
 
 **Was es nie tut:** ein Kamerakennwort zurückgeben, das Gesprochene speichern (nur Befehl und Ergebnis) oder eine PIN, ein Token oder ein Cookie in ein Protokoll schreiben. Eine unabhängige Sicherheitsprüfung gab es nicht.
 
 ## 🔌 Schnittstellen
 
-Die Routentabelle (`docs/ROUTES.md`, aus dem Code erzeugt) listet jede Route mit den Berechtigten; die OpenAPI-Datei von ARMOR-COMMON beschreibt 191 Pfade und 247 Operationen, und ein Test schlägt fehl, wenn eine Route fehlt. Die wichtigsten:
+Die Routentabelle (`docs/ROUTES.md`, aus dem Code erzeugt) listet jede Route mit den Berechtigten; die OpenAPI-Datei von ARMOR-COMMON beschreibt 195 Pfade und 253 Operationen, und ein Test schlägt fehl, wenn eine Route fehlt. Die wichtigsten:
 
 | Route | Authentifizierung | Was sie tut |
 |---|---|---|
@@ -168,6 +170,8 @@ Die Routentabelle (`docs/ROUTES.md`, aus dem Code erzeugt) listet jede Route mit
 | `GET /api/v1/alarm-audio/spoken` | Operator oder das Konto eines Wandpanels | ein laut gesprochener Alarm (Herkunft, Schweregrad, Alarmcode; rohes 16-kHz-16-Bit-Mono-PCM mit SHA-256), vom Sprach-Gateway erzeugt und in einem Cache gehalten; 404 `spoken_alarms_disabled`, solange die Option aus ist |
 | `GET` `PUT` `DELETE /api/v1/alarm-audio/sounds/{source}` | GET: Operator oder das Konto eines Wandpanels; PUT und DELETE: Administrator (von außerhalb des Hauses mit erneutem Identitätsnachweis) | der Ton einer Alarmherkunft: eine WAVE-Datei mit 16-kHz-16-Bit-Mono-PCM, Byte für Byte gelesen (eine Zehntelsekunde bis `ARMOR_ALARM_SOUND_MAX_BYTES`, keine Stille), nur die Samples werden gespeichert, ausgeliefert mit SHA-256; 409 `custom_sounds_disabled`, solange die Option aus ist |
 | `POST /api/v1/nodes/{id}/control`  `POST /api/v1/nodes/control` | Administrator, der sich eben erneut ausgewiesen hat | ein Befehl (Neustart, Pause, Fortsetzen, Standby, Identifizieren, Diagnose, Wartung) an einen Knoten oder alle |
+| `POST /api/v1/admin/nodes/settings` | Administrator | liest und ändert, wenn `login_limit_per_minute` angegeben ist (0 bis 120 falsche Passwörter pro Minute), das Anmeldelimit eines Knotens über dessen eigenes Panel; die Panel-Anmeldung wird einmal benutzt und nie gespeichert, und die Audit-Zeile enthält sie nicht |
+| `POST /api/v1/admin/firmware/jobs` | Administrator, frischer Identitätsnachweis | installiert ein Firmware-Image nacheinander auf den Knoten; ein Image, dessen Dateiname eine andere Platine als die des Knotens nennt (`armor_<Art>-<Platine>.bin`), lässt diesen Knoten mit `wrong_board` scheitern, bevor ihm etwas gesendet wird |
 | `POST /api/v1/cameras/{id}/stream-ticket` | Bediener | ein kurzlebiges Ticket für das Live-Video einer Kamera |
 
 * Öffentlich: `GET /healthz`. Für einen angemeldeten Benutzer: Status, Informationen, Kameras, Medien, Verlauf, Regeln, Geräte, Alarme, Automationen, die Pläne (Standort, Alarm, Elektro, Netzwerk), Solar- und Elektrowerte, das lokale Netz, Benachrichtigungen und Einstellungen und für einen Administrator Benutzer, Dienste, Firmware, Updates und die Konsole.
@@ -205,7 +209,7 @@ Die Routentabelle (`docs/ROUTES.md`, aus dem Code erzeugt) listet jede Route mit
 ```powershell
 npm install           # Abhängigkeiten
 npm run typecheck     # tsc --noEmit
-npm test              # 724 Tests: Unit und volle HTTP-Integration
+npm test              # 755 Tests: Unit und volle HTTP-Integration
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # Entwicklungsserver mit Hot-Reload
 ```
@@ -220,7 +224,7 @@ npm test           # tsx --test tests/*.test.ts
 python -I tools/armor_ci_validate.py
 ```
 
-`npm test` führt jede Datei in `tests/` aus (95 Dateien): Unit-Tests jedes Moduls und eine volle HTTP-Integrationssuite gegen einen isolierten Server (`tests/vertical-slice.test.ts`). `tests/conformance.test.ts` führt die gemeinsamen Vektoren von ARMOR-COMMON aus und prüft, dass **die vom Server registrierten Routen genau die Operationen sind, die die OpenAPI-Datei beschreibt**, nach Methode und Pfad, und dass jede Antwort sagt, welchen Inhalt sie hat; er wird übersprungen, wenn ARMOR-COMMON nicht neben diesem Repository liegt. Die TLS-Tests brauchen installiertes `openssl`. GitHub Actions führt bei jedem Push und Pull Request die A.R.M.O.R.-Basis aus: die Prüfung von Manifest, Version, Änderungsprotokoll und README-Parität, dann den eigenen Build und die eigenen Tests des Projekts.
+`npm test` führt jede Datei in `tests/` aus (99 Dateien): Unit-Tests jedes Moduls und eine volle HTTP-Integrationssuite gegen einen isolierten Server (`tests/vertical-slice.test.ts`). `tests/conformance.test.ts` führt die gemeinsamen Vektoren von ARMOR-COMMON aus und prüft, dass **die vom Server registrierten Routen genau die Operationen sind, die die OpenAPI-Datei beschreibt**, nach Methode und Pfad, und dass jede Antwort sagt, welchen Inhalt sie hat; er wird übersprungen, wenn ARMOR-COMMON nicht neben diesem Repository liegt. Die TLS-Tests brauchen installiertes `openssl`. GitHub Actions führt bei jedem Push und Pull Request die A.R.M.O.R.-Basis aus: die Prüfung von Manifest, Version, Änderungsprotokoll und README-Parität, dann den eigenen Build und die eigenen Tests des Projekts.
 
 ## 🏗️ Build und Veröffentlichung
 
@@ -255,7 +259,7 @@ ARMOR-SERVER/
 │   ├── store.ts persistence.ts       Knotenzustand und was einen Neustart übersteht
 │   ├── alarms.ts escalation.ts       Alarmzentrale und Eskalation
 │   ├── users.ts totp.ts              Benutzer, Rollen, PIN und zweiter Faktor
-│   ├── security_settings.ts          die 15 Schalter aus Studio
+│   ├── security_settings.ts          die 17 Schalter aus Studio
 │   ├── voice.ts voice_turn.ts        geschriebene und gesprochene Befehle
 │   ├── firmware.ts installation.ts   Knoten-Firmware und eigene Updates
 │   ├── http/                         Sitzungen, Knoten-Tokens, versiegelte Logins
@@ -263,7 +267,7 @@ ARMOR-SERVER/
 │   ├── cameras/                      Tresor, PTZ, RTSP, Suche, Zustand
 │   ├── media/                        FFmpeg-Relais und Beweisbibliothek
 │   └── devices/                      Gerätemodell und MQTT-Brücke
-├── tests/                            700 Tests, Unit und HTTP-Integration
+├── tests/                            755 Tests, Unit und HTTP-Integration
 ├── docs/                             7 Leitfäden, Routentabelle, Umgebung
 ├── tools/                            Generatoren für docs/ROUTES.md und docs/ENVIRONMENT.md, gemeinsame CI-Prüfungen, Starter
 ├── images/                           Banner, Symbol und die Bilder des READMEs
