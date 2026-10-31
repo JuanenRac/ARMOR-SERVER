@@ -364,16 +364,17 @@ def lint_plan(project: Path, manifest: dict[str, object]) -> tuple[bool, str]:
     """Whether this repository takes the lint and type-check step, and why not when it does not.
 
     It runs only for a repository that has Python source under src/ and has opted in to the type check by carrying a mypy configuration
-    (pyproject.toml [tool.mypy], mypy.ini or setup.cfg [mypy]). `"ci_lint": false` in armor.project.json switches it off for a repository that is not clean yet.
+    (pyproject.toml [tool.mypy], mypy.ini or setup.cfg [mypy]). `ci_lint = false` under `[tool.armor]` in pyproject.toml switches it off for a repository that is not clean yet.
     """
-    if manifest.get("ci_lint") is False:
-        return False, 'switched off by "ci_lint": false in armor.project.json'
+    pyproject = project / "pyproject.toml"
+    text = pyproject.read_text(encoding="utf-8") if pyproject.is_file() else ""
+    if re.search(r"^\[tool\.armor\][^\[]*?^ci_lint\s*=\s*false\b", text, re.MULTILINE | re.DOTALL):
+        return False, 'switched off by ci_lint = false under [tool.armor] in pyproject.toml'
     source = project / "src"
     if not source.is_dir() or not any(source.rglob("*.py")):
         return False, "no Python source under src/"
     configured = False
-    pyproject = project / "pyproject.toml"
-    if pyproject.is_file() and "[tool.mypy" in pyproject.read_text(encoding="utf-8"):
+    if "[tool.mypy" in text:
         configured = True
     if (project / "mypy.ini").is_file():
         configured = True

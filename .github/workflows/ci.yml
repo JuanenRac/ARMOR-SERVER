@@ -100,7 +100,7 @@ jobs:
           sudo apt-get install --yes mosquitto
           sudo systemctl stop mosquitto || true
 
-      # ruff and mypy at pinned versions, only for a repository that has Python source under src/ and a mypy configuration; "ci_lint": false in armor.project.json skips it.
+      # ruff and mypy at pinned versions, only for a repository that has Python source under src/ and a mypy configuration; "ci_lint = false" under [tool.armor] in pyproject.toml skips it.
       - name: Lint and type-check
         run: python tools/armor_project_tool.py lint .
 
