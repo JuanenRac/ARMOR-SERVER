@@ -358,36 +358,56 @@ def test_hmi(project: Path) -> None:
 
 LINT_PINS = ("ruff==0.17.1", "mypy==2.4.0")   # the same versions everywhere, so a green run here is a green run in every checkout
 LINT_RULES = "F,E9,B"   # real mistakes only: unused or undefined names, syntax errors, bugbear
+# Two host tests of the shared firmware base (firmware_base/tests/ here, tests/ in a node) carry a style finding each (an exception raised inside `except` without `from`, an unused loop variable). The file is
+# copied unchanged into five node repositories, so the fix waits for the next time the base is synchronised; until then these two findings are the only ones tolerated.
+LINT_TOLERATED = "**/check_mosquitto.py:B904,**/check_task_safety.py:B007"
+TOOL_DIRS = ("tools", "scripts")   # the Python that is not the product but keeps it honest: the shared CI tools and each repository's own scripts
+
+
+def _pyproject_flag(text: str, key: str) -> bool:
+    """True when `[tool.armor]` in pyproject.toml sets `key = false`."""
+    return bool(re.search(rf"^\[tool\.armor\][^\[]*?^{key}\s*=\s*false\b", text, re.MULTILINE | re.DOTALL))
+
+
+def tool_dirs(project: Path) -> list[str]:
+    return [name for name in TOOL_DIRS if (project / name).is_dir() and any((project / name).rglob("*.py"))]
 
 
 def lint_plan(project: Path, manifest: dict[str, object]) -> tuple[bool, str]:
     """Whether this repository takes the lint and type-check step, and why not when it does not.
 
-    It runs only for a repository that has Python source under src/ and has opted in to the type check by carrying a mypy configuration
-    (pyproject.toml [tool.mypy], mypy.ini or setup.cfg [mypy]). `ci_lint = false` under `[tool.armor]` in pyproject.toml switches it off for a repository that is not clean yet.
+    Ruff always looks at the whole checkout. mypy type-checks `src/` where the repository carries a mypy configuration (pyproject.toml [tool.mypy], mypy.ini or
+    setup.cfg [mypy]), and `tools/` and `scripts/` wherever they hold Python. `ci_lint = false` under `[tool.armor]` in pyproject.toml switches the whole step off for a
+    repository that is not clean yet; `lint_tools = false` leaves out only `tools/` and `scripts/`.
     """
     pyproject = project / "pyproject.toml"
     text = pyproject.read_text(encoding="utf-8") if pyproject.is_file() else ""
-    if re.search(r"^\[tool\.armor\][^\[]*?^ci_lint\s*=\s*false\b", text, re.MULTILINE | re.DOTALL):
+    if _pyproject_flag(text, "ci_lint"):
         return False, 'switched off by ci_lint = false under [tool.armor] in pyproject.toml'
+    if _typed_source(project, text) or _typed_tools(project, text):
+        return True, ""
+    if _pyproject_flag(text, "lint_tools") and tool_dirs(project):
+        return False, 'tools/ and scripts/ left out by lint_tools = false under [tool.armor] in pyproject.toml, and no typed source under src/'
+    return False, "no mypy configuration and no Python under tools/ or scripts/"
+
+
+def _typed_source(project: Path, text: str) -> bool:
     source = project / "src"
     if not source.is_dir() or not any(source.rglob("*.py")):
-        return False, "no Python source under src/"
-    configured = False
-    if "[tool.mypy" in text:
-        configured = True
-    if (project / "mypy.ini").is_file():
-        configured = True
+        return False
+    if "[tool.mypy" in text or (project / "mypy.ini").is_file():
+        return True
     setup = project / "setup.cfg"
-    if setup.is_file() and "[mypy" in setup.read_text(encoding="utf-8"):
-        configured = True
-    if not configured:
-        return False, "no mypy configuration"
-    return True, ""
+    return setup.is_file() and "[mypy" in setup.read_text(encoding="utf-8")
+
+
+def _typed_tools(project: Path, text: str) -> bool:
+    return not _pyproject_flag(text, "lint_tools") and bool(tool_dirs(project))
 
 
 def uses_pyside(project: Path) -> bool:
-    return any("PySide6" in file.read_text(encoding="utf-8", errors="replace") for file in (project / "src").rglob("*.py"))
+    folders = ["src", *tool_dirs(project)]
+    return any("PySide6" in file.read_text(encoding="utf-8", errors="replace") for folder in folders if (project / folder).is_dir() for file in (project / folder).rglob("*.py"))
 
 
 def lint(project: Path, manifest: dict[str, object]) -> None:
@@ -395,12 +415,18 @@ def lint(project: Path, manifest: dict[str, object]) -> None:
     if not run:
         report(f"ARMOR_LINT=SKIP {reason}")
         return
+    pyproject = project / "pyproject.toml"
+    text = pyproject.read_text(encoding="utf-8") if pyproject.is_file() else ""
     packages = list(LINT_PINS)
     if uses_pyside(project):   # the type check needs the Qt stubs only where the code imports Qt
         packages.append("PySide6-Essentials")
     command(project, [sys.executable, "-m", "pip", "install", "--quiet", *packages])
-    command(project, [sys.executable, "-m", "ruff", "check", "--select", LINT_RULES, "."])
-    command(project, [sys.executable, "-m", "mypy"])
+    command(project, [sys.executable, "-m", "ruff", "check", "--select", LINT_RULES, "--per-file-ignores", LINT_TOLERATED, "."])
+    if _typed_source(project, text):
+        command(project, [sys.executable, "-m", "mypy"])
+    if _typed_tools(project, text):
+        # the tools are checked on their own, with the same settings in every repository (Linux, where CI runs, so a Windows checkout sees what CI sees), whatever the repository's configuration says about src/
+        command(project, [sys.executable, "-m", "mypy", "--config-file=", "--python-version", "3.11", "--platform", "linux", "--ignore-missing-imports", *tool_dirs(project)])
     report("ARMOR_LINT=PASS")
 
 

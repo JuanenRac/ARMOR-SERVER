@@ -25,6 +25,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _armor_readme_parity import check_readme_section_parity, check_readme_tree  # noqa: E402
@@ -32,12 +33,12 @@ from _armor_readme_parity import check_readme_section_parity, check_readme_tree 
 try:   # vendored next to this file by sync_ci_tools.py; a checkout that does not have it yet simply skips the check
     import universal_readme_check  # noqa: E402
 except ImportError:
-    universal_readme_check = None
+    universal_readme_check = None  # type: ignore[assignment]
 
 try:   # the same: the traffic lights of the Project status table against the manifest
     import status_lights  # noqa: E402
 except ImportError:
-    status_lights = None
+    status_lights = None  # type: ignore[assignment]
 
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = ROOT / "armor.project.json"
@@ -87,7 +88,7 @@ MARKDOWN_EXCLUDED_DIRECTORIES = {
 }
 
 
-def fail(message: str) -> None:
+def fail(message: str) -> NoReturn:
     print(f"CI_VALIDATION=FAIL {message}", file=sys.stderr)
     raise SystemExit(1)
 
@@ -110,9 +111,9 @@ def validate_changelog_order() -> None:
             seen_version = True
         elif unreleased.match(line) and seen_version:
             fail(f"CHANGELOG.md line {number}: 'Unreleased' must be at the top, above the versions (merge it into the version that shipped it)")
-    for (newer, _), (older, line) in zip(versions, versions[1:], strict=False):
+    for (newer, _), (older, older_line) in zip(versions, versions[1:], strict=False):
         if key(newer) == key(older):
-            fail(f"CHANGELOG.md line {line}: version {older} has two entries; make it one")
+            fail(f"CHANGELOG.md line {older_line}: version {older} has two entries; make it one")
         if key(newer) < key(older):
             fail(f"CHANGELOG.md line {line}: version {older} is listed after the older {newer}; newest first")
 

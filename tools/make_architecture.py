@@ -163,11 +163,11 @@ def layout(spec: dict) -> dict:
     present = {c for c in (0, 2) if any(n["column"] == c for n in nodes)}
     x_left = MARGIN + (SIDE_W + GAP if 0 in present else 0)
     x_right = W - MARGIN - (SIDE_W + GAP if 2 in present else 0)
-    container = {"x": x_left, "w": x_right - x_left, "y": TOP}
+    container: dict[str, float] = {"x": x_left, "w": x_right - x_left, "y": TOP}
     boxes: dict[str, dict] = {}
 
     for column, x in ((0, MARGIN), (2, W - MARGIN - SIDE_W)):
-        y = TOP
+        y: float = TOP
         for node in (n for n in nodes if n["column"] == column):
             h = node_height(node)
             boxes[node["id"]] = {"x": x, "y": y, "w": SIDE_W, "h": h, "node": node}
@@ -197,11 +197,12 @@ def edge_geometry(spec: dict, lay: dict) -> list[dict]:
     boxes, cont = lay["boxes"], lay["container"]
     edges = spec.get("edges", [])
     # edges that meet at the same side of a box (or at the same row of the frame of the repository) are spread along it
-    groups: dict[tuple, list[int]] = {}
+    groups: dict[tuple, list[tuple[int, str]]] = {}
     for i, e in enumerate(edges):
         for end in ("from", "to"):
             box = boxes[e[end]]
             other = boxes[e["to" if end == "from" else "from"]]
+            key: tuple
             if box["node"]["column"] == 1 and other["node"]["column"] != 1:
                 key = ("frame", other["node"]["column"], box["row"])
             else:
@@ -212,6 +213,7 @@ def edge_geometry(spec: dict, lay: dict) -> list[dict]:
         e = edges[edge_index]
         box = boxes[e[end]]
         other = boxes[e["to" if end == "from" else "from"]]
+        key: tuple
         if box["node"]["column"] == 1 and other["node"]["column"] != 1:
             key = ("frame", other["node"]["column"], box["row"])
         else:
@@ -351,20 +353,21 @@ def build_svg(spec: dict) -> str:
         st = level_style(g["level"], pal_all)
         color = st["stroke"] if g["level"] not in ("external", "untested") else K.MUTED
         try:
-            lines = K.wrap(label, 10.5, g["span"] - 8)
+            label_lines = K.wrap(label, 10.5, g["span"] - 8)
         except ValueError as error:
             raise SpecError(f"edge label {error}") from None
         mx, my = g["mid"]
-        pill_w = max(K.text_width(x, 10.5) for x in lines) + 10
-        pill_h = 6 + 12.5 * len(lines)
+        pill_w = max(K.text_width(x, 10.5) for x in label_lines) + 10
+        pill_h = 6 + 12.5 * len(label_lines)
         add(f'<rect x="{mx - pill_w / 2:g}" y="{my - pill_h / 2:g}" width="{pill_w:g}" height="{pill_h:g}" rx="4" fill="#0D1117" opacity="0.92"/>')
-        for j, ln in enumerate(lines):
+        for j, ln in enumerate(label_lines):
             cv.text(mx, my - pill_h / 2 + 12 + 12.5 * j - 1, ln, 10.5, color, K.SANS, "400", anchor="middle")
 
     # legend and footer
     used = [lv for lv in LEVELS if any(n.get("level", "tested") == lv for n in spec["nodes"])]
     texts = {**DEFAULT_LEGEND, **spec.get("legend", {})}
-    lx, ly = 36, 560
+    lx: float = 36
+    ly = 560
     for lv in used:
         st = level_style(lv, pal_all)
         label = texts[lv]

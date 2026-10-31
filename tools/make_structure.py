@@ -267,7 +267,7 @@ def build_svg(spec: dict, lang: str) -> str:
         rows[-1].append(card)
         used += span
     placed = []
-    y = GRID_TOP
+    y: float = GRID_TOP
     for ri, row in enumerate(rows):
         h = max(card_height(c) for c in row)
         x = GRID_X
@@ -301,7 +301,7 @@ def build_svg(spec: dict, lang: str) -> str:
 
     # connectors from the root (drawn under the cards)
     root_y = (GRID_TOP + grid_bottom) / 2
-    paths = []
+    paths: list[tuple] = []
     row_tops: dict[int, tuple[float, float, list[dict]]] = {}
     for p in placed:
         r = p["row"]
