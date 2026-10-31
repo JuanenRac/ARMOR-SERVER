@@ -356,6 +356,53 @@ def test_hmi(project: Path) -> None:
     check_broker(project)
 
 
+LINT_PINS = ("ruff==0.17.1", "mypy==2.4.0")   # the same versions everywhere, so a green run here is a green run in every checkout
+LINT_RULES = "F,E9,B"   # real mistakes only: unused or undefined names, syntax errors, bugbear
+
+
+def lint_plan(project: Path, manifest: dict[str, object]) -> tuple[bool, str]:
+    """Whether this repository takes the lint and type-check step, and why not when it does not.
+
+    It runs only for a repository that has Python source under src/ and has opted in to the type check by carrying a mypy configuration
+    (pyproject.toml [tool.mypy], mypy.ini or setup.cfg [mypy]). `"ci_lint": false` in armor.project.json switches it off for a repository that is not clean yet.
+    """
+    if manifest.get("ci_lint") is False:
+        return False, 'switched off by "ci_lint": false in armor.project.json'
+    source = project / "src"
+    if not source.is_dir() or not any(source.rglob("*.py")):
+        return False, "no Python source under src/"
+    configured = False
+    pyproject = project / "pyproject.toml"
+    if pyproject.is_file() and "[tool.mypy" in pyproject.read_text(encoding="utf-8"):
+        configured = True
+    if (project / "mypy.ini").is_file():
+        configured = True
+    setup = project / "setup.cfg"
+    if setup.is_file() and "[mypy" in setup.read_text(encoding="utf-8"):
+        configured = True
+    if not configured:
+        return False, "no mypy configuration"
+    return True, ""
+
+
+def uses_pyside(project: Path) -> bool:
+    return any("PySide6" in file.read_text(encoding="utf-8", errors="replace") for file in (project / "src").rglob("*.py"))
+
+
+def lint(project: Path, manifest: dict[str, object]) -> None:
+    run, reason = lint_plan(project, manifest)
+    if not run:
+        report(f"ARMOR_LINT=SKIP {reason}")
+        return
+    packages = list(LINT_PINS)
+    if uses_pyside(project):   # the type check needs the Qt stubs only where the code imports Qt
+        packages.append("PySide6-Essentials")
+    command(project, [sys.executable, "-m", "pip", "install", "--quiet", *packages])
+    command(project, [sys.executable, "-m", "ruff", "check", "--select", LINT_RULES, "."])
+    command(project, [sys.executable, "-m", "mypy"])
+    report("ARMOR_LINT=PASS")
+
+
 def validate_markdown_links(project: Path) -> None:
     missing: list[str] = []
     link = re.compile(r"\[[^]]+\]\(([^)]+)\)")
@@ -489,7 +536,7 @@ def run_project(project: Path, manifest: dict[str, object]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="A.R.M.O.R. standardized project workflow")
-    parser.add_argument("action", choices=("build", "build-test", "test", "run"))
+    parser.add_argument("action", choices=("build", "build-test", "test", "run", "lint"))
     parser.add_argument("project", type=Path)
     args = parser.parse_args()
     project = args.project.resolve()
@@ -503,13 +550,16 @@ def main() -> int:
     PANEL = None   # a run that comes after another one in the same process starts clean
     # the panel is for a person at a terminal (or when ARMOR_PRETTY=1 asks for it); a log, a pipe or a test gets the plain lines
     wanted = os.environ.get("ARMOR_PRETTY") == "1" or (os.environ.get("ARMOR_PRETTY") != "0" and sys.stdout.isatty())
-    if Panel is not None and wanted and args.action != "run":
+    if Panel is not None and wanted and args.action not in ("run", "lint"):
         PANEL = Panel(str(manifest["name"]), args.action, str(manifest["version"]), "A.R.M.O.R.")
         PANEL.banner()
     else:
         print(f"PROJECT={manifest['name']} VERSION={manifest['version']} ACTION={args.action}")
     if args.action == "run":
         run_project(project, manifest)
+        return 0
+    if args.action == "lint":
+        lint(project, manifest)
         return 0
     try:
         test_project(project, manifest)
