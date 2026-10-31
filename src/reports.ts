@@ -51,9 +51,10 @@ export function commandEnv(pythonPath: string): Record<string, string> {
 export class Serial {
   #tail: Promise<unknown> = Promise.resolve();
   #waiting = 0;
-  constructor(private readonly limit = 3) {}
+  /** `limit` is how many may wait; a function is asked at every request, so a change of the setting applies at once. */
+  constructor(private readonly limit: number | (() => number) = 3) {}
   async run<T>(task: () => Promise<T>): Promise<T | "busy"> {
-    if (this.#waiting >= this.limit) return "busy";
+    if (this.#waiting >= (typeof this.limit === "function" ? this.limit() : this.limit)) return "busy";
     this.#waiting++;
     const turn = this.#tail.then(task, task);
     this.#tail = turn.catch(() => undefined);
@@ -96,7 +97,7 @@ export function dailyEvents(alarms: Alarm[], date: string): Array<Record<string,
 
 const REPORT_KEYS = ["findings", "summary", "text"];
 
-export type DailyDeps = { config: ArmorConfig; run: RunReport; alarms: () => Alarm[]; language: SummaryLanguage };
+export type DailyDeps = { config: ArmorConfig; run: RunReport; alarms: () => Alarm[]; language: SummaryLanguage; timeoutMs?: number };
 
 /** The summary of `date` in `language`, or the reason it cannot be made. */
 export async function dailySummary(deps: DailyDeps, date: string, language: SummaryLanguage): Promise<ReportAnswer> {
@@ -107,7 +108,7 @@ export async function dailySummary(deps: DailyDeps, date: string, language: Summ
   try {
     const file = path.join(folder, "day.jsonl");
     fs.writeFileSync(file, dailyEvents(deps.alarms(), date).map(event => JSON.stringify(event)).join("\n"), { encoding: "utf8", mode: 0o600 });
-    const result = await deps.run({ program: python, args: ["-m", "armor_server_ai.cli", "--daily-summary", file, "--summary-config", dailySummaryConfig, "--json", "--lang", language], env: commandEnv(source), cwd: folder, timeoutMs: 20_000, maxBytes: 4 * 1024 * 1024 });
+    const result = await deps.run({ program: python, args: ["-m", "armor_server_ai.cli", "--daily-summary", file, "--summary-config", dailySummaryConfig, "--json", "--lang", language], env: commandEnv(source), cwd: folder, timeoutMs: deps.timeoutMs ?? 20_000, maxBytes: 4 * 1024 * 1024 });
     if (result.code === 2 && /is off/.test(result.stderr)) return fail(503, "daily_summary_off_in_settings");
     if (result.code !== 0) return fail(502, "daily_summary_failed");
     let report: Record<string, unknown>;
@@ -139,7 +140,7 @@ export function heatmapQuery(query: Record<string, unknown>): { camera?: string;
   return { ...(camera !== undefined ? { camera } : {}), format, scale };
 }
 
-export type HeatmapDeps = { config: ArmorConfig; run: RunReport };
+export type HeatmapDeps = { config: ArmorConfig; run: RunReport; timeoutMs?: number };
 
 /** The heat map the query asks for, or the reason it cannot be given. */
 export async function heatmap(deps: HeatmapDeps, query: { camera?: string; format: string; scale: string }): Promise<ReportAnswer> {
@@ -150,7 +151,7 @@ export async function heatmap(deps: HeatmapDeps, query: { camera?: string; forma
   if (!isFile(visionDetections)) return fail(503, "heatmap_no_data");
   const args = ["-m", "armor_vision", "heatmap-route", "--activity-config", visionActivityConfig, "--detections-file", visionDetections, "--format", query.format, "--scale", query.scale,
     ...(query.camera ? ["--camera", query.camera] : []), ...(visionConfig ? ["--config", visionConfig] : [])];
-  const result = await deps.run({ program: python, args, env: commandEnv(source), cwd: os.tmpdir(), timeoutMs: 20_000, maxBytes: 16 * 1024 * 1024 });
+  const result = await deps.run({ program: python, args, env: commandEnv(source), cwd: os.tmpdir(), timeoutMs: deps.timeoutMs ?? 20_000, maxBytes: 16 * 1024 * 1024 });
   if (result.code !== 0) return fail(502, "heatmap_failed");
   let answer: { status?: unknown; content_type?: unknown; body_base64?: unknown };
   try { answer = JSON.parse(result.stdout.toString("utf8")) as typeof answer; } catch { return fail(502, "heatmap_failed"); }

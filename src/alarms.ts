@@ -308,7 +308,21 @@ export class AlarmRules {
   arming: ArmingGate | undefined;
   /** Whether a device is triggered at this moment (set by the context): an entry sensor that sounds after its delay says what it saw even if it is back to normal. */
   deviceTriggered: ((id: string) => boolean) | undefined;
+  /** Whether a node or a camera answers at this moment, and whether a radar node is in intrusion (set by the context): an entry node or camera that sounds after its delay says what it saw even if it has gone back to normal. Unknown (not set): it sounds as a live alarm. */
+  nodeUp: ((id: string) => boolean) | undefined;
+  cameraUp: ((id: string) => boolean) | undefined;
+  nodeIntruding: ((id: string) => boolean) | undefined;
   readonly #guarded = (type: "node" | "camera" | "device", id: string): boolean => this.arming?.guards(type, id) ?? true;
+
+  /**
+   * A node or a camera that is listed in the entry of the mode in force waits its entry delay before it sounds (as an entry sensor does); anything else sounds at once. Fail closed: when the delay
+   * is over it sounds if the system is still armed and still defends it, also when the thing is back to normal (then as an event already ended); a doubt is an alarm at once.
+   */
+  #soundAfterEntry(type: "node" | "camera", key: string, id: string, raise: (instant: boolean) => void, stillBad: () => boolean | undefined, held: () => boolean = () => false): void {
+    const wait = this.arming?.entryDelayMs(type, id) ?? 0;
+    if (!(wait > 0)) { raise(false); return; }
+    this.arming!.later(key, wait, () => { if (this.mode() === "armed" && this.#guarded(type, id) && !held()) raise(stillBad() === false); });
+  }
 
   /** True while the silence of a node must not raise an alarm: it is in maintenance, or a restart that was ordered is under way (see node_control_service.ts). */
   held: ((node: string) => boolean) | undefined;
@@ -351,16 +365,27 @@ export class AlarmRules {
   handleEvent(event: ArmorEvent | ArmorEventBody): void {
     switch (event.type) {
       case "alert":
-        if (event.to === "high") this.centre.raise(`node:${event.node_id}:intrusion`, { source: { type: "node", id: event.node_id }, severity: "high", code: "intrusion" });
+        if (event.to === "high") {
+          const id = event.node_id;
+          this.#soundAfterEntry("node", `node:${id}:intrusion`, id, instant => { this.centre.raise(instant ? `node:${id}:intrusion:ended:${Date.now()}` : `node:${id}:intrusion`, { source: { type: "node", id }, severity: "high", code: "intrusion", ...(instant ? { instant: true } : {}) }); }, () => this.nodeIntruding?.(id));
+        }
         else if (event.from === "high") this.centre.clear(`node:${event.node_id}:intrusion`);
         break;
       case "node":
         if (event.to === "online") this.centre.clear(`node:${event.node_id}:down`);
-        else if (this.mode() === "armed" && this.#guarded("node", event.node_id) && !this.held?.(event.node_id)) this.centre.raise(`node:${event.node_id}:down`, { source: { type: "node", id: event.node_id }, severity: "warning", code: "node_down" });
+        else if (this.mode() === "armed" && this.#guarded("node", event.node_id) && !this.held?.(event.node_id)) {
+          const id = event.node_id;
+          this.#soundAfterEntry("node", `node:${id}:down`, id, instant => { this.centre.raise(instant ? `node:${id}:down:ended:${Date.now()}` : `node:${id}:down`, { source: { type: "node", id }, severity: "warning", code: "node_down", ...(instant ? { instant: true } : {}) }); },
+            () => (this.nodeUp ? !this.nodeUp(id) : undefined), () => this.held?.(id) === true);
+        }
         break;
       case "camera":
         if (event.to === "online") this.centre.clear(`camera:${event.camera_id}:down`);
-        else if (event.to === "offline" && this.mode() === "armed" && this.#guarded("camera", event.camera_id)) this.centre.raise(`camera:${event.camera_id}:down`, { source: { type: "camera", id: event.camera_id }, severity: "warning", code: "camera_down" });
+        else if (event.to === "offline" && this.mode() === "armed" && this.#guarded("camera", event.camera_id)) {
+          const id = event.camera_id;
+          this.#soundAfterEntry("camera", `camera:${id}:down`, id, instant => { this.centre.raise(instant ? `camera:${id}:down:ended:${Date.now()}` : `camera:${id}:down`, { source: { type: "camera", id }, severity: "warning", code: "camera_down", ...(instant ? { instant: true } : {}) }); },
+            () => (this.cameraUp ? !this.cameraUp(id) : undefined));
+        }
         break;
       case "mode":
         if (event.mode === "armed") this.onArmed?.();

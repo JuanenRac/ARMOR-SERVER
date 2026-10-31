@@ -36,6 +36,10 @@ export type ArmorConfig = {
   voiceTurnMaxBytes: number;
   /** ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES: the most spoken answer handed on to the panel in the binary form; a longer one is left out and the text still goes. */
   voiceReplyAudioMaxBytes: number;
+  /** ARMOR_REPORT_TIMEOUT_S, ARMOR_REPORT_QUEUE_MAX, ARMOR_REPORT_REQUESTS_PER_MINUTE: where the limits of the summary of a day and the heat map start (seconds one report may run, reports that may wait, requests a minute); Studio can change them. */
+  reportTimeoutS: number;
+  reportQueueMax: number;
+  reportRequestsPerMinute: number;
   /** ARMOR_ALARM_SOUND_MAX_BYTES: the most samples a sound an administrator uploads for an alarm origin may have; 128000 bytes is 4 seconds of 16 kHz 16-bit mono. */
   alarmSoundMaxBytes: number;
   /**
@@ -384,6 +388,9 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     operatorSessionTtlMs: integer(env, "ARMOR_OPERATOR_SESSION_TTL_MS", 28_800_000, 60_000, 7 * 86_400_000),
     voiceTurnMaxBytes: integer(env, "ARMOR_VOICE_TURN_MAX_BYTES", 480_000, 3_200, 1_920_000),
     voiceReplyAudioMaxBytes: integer(env, "ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES", 200_000, 3_200, 1_000_000),
+    reportTimeoutS: integer(env, "ARMOR_REPORT_TIMEOUT_S", 20, 5, 120),
+    reportQueueMax: integer(env, "ARMOR_REPORT_QUEUE_MAX", 3, 1, 10),
+    reportRequestsPerMinute: integer(env, "ARMOR_REPORT_REQUESTS_PER_MINUTE", 30, 1, 300),
     alarmSoundMaxBytes: integer(env, "ARMOR_ALARM_SOUND_MAX_BYTES", 128_000, 3_200, 256_000),
     reports: {
       python: env.ARMOR_PYTHON?.trim() || (process.platform === "win32" ? "python" : "python3"),

@@ -15,8 +15,9 @@ import { dailySummary, heatmap, heatmapQuery, isSummaryLanguage, Serial, validDa
 
 export function registerReportRoutes(app: Express, context: AppContext): void {
   const { config, securitySettings, alarms, audit, requireOperator, studioUser, runReport } = context;
-  const limit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
-  const queue = new Serial();
+  const limit = rateLimit({ windowMs: 60_000, limit: () => securitySettings.get("reports.requests_per_minute"), standardHeaders: "draft-8", legacyHeaders: false });
+  const queue = new Serial(() => securitySettings.get("reports.queue_max"));
+  const timeoutMs = (): number => securitySettings.get("reports.timeout_s") * 1000;
 
   /** Administrators and operators (a Studio account, or the operator token or session); a viewer is let through GET by the operator rule and is turned away here. */
   const mayAsk = (request: Request, response: Response, what: string): boolean => {
@@ -42,7 +43,7 @@ export function registerReportRoutes(app: Express, context: AppContext): void {
     if (typeof date !== "string" || !validDate(date)) return void response.status(422).json({ error: "invalid_date" });
     if (lang !== undefined && !isSummaryLanguage(lang)) return void response.status(422).json({ error: "invalid_language" });
     const language = lang ?? config.alertLanguage;
-    const answer = await queue.run(() => dailySummary({ config, run: runReport, alarms: () => alarms.kept(), language }, date, language));
+    const answer = await queue.run(() => dailySummary({ config, run: runReport, alarms: () => alarms.kept(), language, timeoutMs: timeoutMs() }, date, language));
     audit.record({ action: "report.summary_daily", outcome: answer !== "busy" && answer.status === 200 ? "allowed" : "denied", actor: studioUser(request)?.username ?? "operator", target: date });
     send(response, answer === "busy" ? { status: 503, json: { error: "report_busy" } } : answer);
   });
@@ -52,7 +53,7 @@ export function registerReportRoutes(app: Express, context: AppContext): void {
     if (!securitySettings.get("vision.heatmap")) return void response.status(404).json({ error: "heatmap_disabled" });
     const query = heatmapQuery(request.query);
     if (!query) return void response.status(400).json({ error: "invalid_query" });
-    const answer = await queue.run(() => heatmap({ config, run: runReport }, query));
+    const answer = await queue.run(() => heatmap({ config, run: runReport, timeoutMs: timeoutMs() }, query));
     audit.record({ action: "report.vision_heatmap", outcome: answer !== "busy" && answer.status === 200 ? "allowed" : "denied", actor: studioUser(request)?.username ?? "operator", target: query.camera ?? "-" });
     send(response, answer === "busy" ? { status: 503, json: { error: "report_busy" } } : answer);
   });

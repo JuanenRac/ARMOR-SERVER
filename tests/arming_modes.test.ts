@@ -568,3 +568,130 @@ test("the parser of the definitions agrees with every shared conformance vector"
     else assert.throws(() => parseArmingModes(vector.payload), `should reject: ${vector.name}`);
   }
 });
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
+// 6. The entry delay of a mode also holds back a node and a camera listed in `entry`
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
+
+type Active = Array<{ code: string; source: { id: string }; cleared_at?: string }>;
+const everything = async (running: Running, cookie: string): Promise<string[]> => ((await call(running, cookie, "GET", "/api/v1/alarms")).body.active as Active).map(alarm => `${alarm.code}:${alarm.source.id}${alarm.cleared_at ? ":ended" : ""}`).sort();
+const nodeDown = (running: Running, id: string) => running.app.context.alarmRules.handleEvent({ type: "node", node_id: id, from: "online", to: "offline" } as never);
+const cameraDown = (running: Running, id: string) => running.app.context.alarmRules.handleEvent({ type: "camera", camera_id: id, from: "online", to: "offline" } as never);
+const ENTRY = ["node:garden", "camera:gate", "device:front-door"];
+const entryModes = (delay: number, entry: string[] = ENTRY) => ({ modes: { away: {}, home: { defends: ["zone:Hall", "node:garden", "camera:gate"], entry, entry_delay_s: delay }, night: { defends: ["zone:Hall", "node:garden", "camera:gate"] } } });
+
+test("characterization: a node and a camera that go silent while armed sound at once, with the modes off and with the modes on when no entry list names them", async () => {
+  const { running, cookie } = await prepared();
+  try {
+    await call(running, cookie, "POST", "/api/v1/mode", { mode: "armed" });
+    nodeDown(running, "garden"); cameraDown(running, "gate");
+    assert.deepEqual(await everything(running, cookie), ["camera_down:gate", "node_down:garden"], "modes off");
+    await call(running, cookie, "POST", "/api/v1/mode", { mode: "disarmed" });
+    await call(running, cookie, "PUT", "/api/v1/alarm/modes", entryModes(30, []));
+    await setting(running, cookie, { "alarm.arming_modes": true });
+    await call(running, cookie, "POST", "/api/v1/mode", { mode: "home" });
+    nodeDown(running, "garden"); cameraDown(running, "gate");
+    assert.deepEqual(await everything(running, cookie), ["camera_down:gate", "node_down:garden"], "modes on, nothing listed in entry: a delay is only for what is listed");
+  } finally { await running.stop(); }
+});
+
+test("a node, a camera and a radar in entry wait the entry delay of the mode; what is not listed sounds at once", async () => {
+  const { running, cookie } = await prepared();
+  try {
+    await call(running, cookie, "PUT", "/api/v1/alarm/modes", entryModes(1, ["node:garden", "camera:gate"]));
+    await setting(running, cookie, { "alarm.arming_modes": true });
+    await call(running, cookie, "POST", "/api/v1/mode", { mode: "home" });
+    running.app.context.alarmRules.nodeUp = () => false; running.app.context.alarmRules.cameraUp = () => false;
+    nodeDown(running, "garden"); cameraDown(running, "gate");
+    await telemetry(running, "garden", 1);
+    assert.deepEqual(await everything(running, cookie), [], "garden and gate wait");
+    await pause(1400);
+    assert.deepEqual(await everything(running, cookie), ["camera_down:gate", "intrusion:garden", "node_down:garden"], "all three sounded when the delay was over");
+  } finally { await running.stop(); }
+});
+
+test("a node or a camera that is back to normal when its delay ends still leaves its alarm in the record, already ended", async () => {
+  const { running, cookie } = await prepared();
+  try {
+    await call(running, cookie, "PUT", "/api/v1/alarm/modes", entryModes(1));
+    await setting(running, cookie, { "alarm.arming_modes": true });
+    await call(running, cookie, "POST", "/api/v1/mode", { mode: "home" });
+    await telemetry(running, "garden", 0);   // the node is known and answers
+    nodeDown(running, "garden");
+    running.app.context.alarmRules.cameraUp = () => true; cameraDown(running, "gate");
+    await pause(1400);
+    assert.deepEqual(await everything(running, cookie), ["camera_down:gate:ended", "node_down:garden:ended"]);
+  } finally { await running.stop(); }
+});
+
+test("fail closed: with nothing to say whether the node is still down, it sounds as a live alarm, and it never waits when the delay is 0", async () => {
+  const { running, cookie } = await prepared();
+  try {
+    await call(running, cookie, "PUT", "/api/v1/alarm/modes", entryModes(1));
+    await setting(running, cookie, { "alarm.arming_modes": true });
+    await call(running, cookie, "POST", "/api/v1/mode", { mode: "home" });
+    running.app.context.alarmRules.nodeUp = undefined;
+    nodeDown(running, "garden");
+    await pause(1400);
+    assert.deepEqual(await everything(running, cookie), ["node_down:garden"]);
+  } finally { await running.stop(); }
+  const zero = await prepared();
+  try {
+    await call(zero.running, zero.cookie, "PUT", "/api/v1/alarm/modes", entryModes(0));
+    await setting(zero.running, zero.cookie, { "alarm.arming_modes": true });
+    await call(zero.running, zero.cookie, "POST", "/api/v1/mode", { mode: "home" });
+    nodeDown(zero.running, "garden"); cameraDown(zero.running, "gate");
+    assert.deepEqual(await everything(zero.running, zero.cookie), ["camera_down:gate", "node_down:garden"]);
+  } finally { await zero.running.stop(); }
+});
+
+test("a disarm or a change of mode in time stops the wait of a node and a camera", async () => {
+  for (const next of ["disarmed", "away"]) {
+    const { running, cookie } = await prepared();
+    try {
+      await call(running, cookie, "PUT", "/api/v1/alarm/modes", entryModes(1));
+      await setting(running, cookie, { "alarm.arming_modes": true });
+      await call(running, cookie, "POST", "/api/v1/mode", { mode: "home" });
+      running.app.context.alarmRules.nodeUp = () => false; running.app.context.alarmRules.cameraUp = () => false;
+      nodeDown(running, "garden"); cameraDown(running, "gate");
+      assert.equal((await call(running, cookie, "POST", "/api/v1/mode", { mode: next })).status, 200);
+      await pause(1400);
+      assert.deepEqual(await everything(running, cookie), [], `stopped by ${next}`);
+    } finally { await running.stop(); }
+  }
+});
+
+test("matrix: the entry delay of a unit is the one of the mode in force when its reference is listed, for a device, a node and a camera alike", () => {
+  const units: Unit[] = [{ type: "device", id: "d" }, { type: "node", id: "n" }, { type: "camera", id: "c" }];
+  for (const listed of [true, false]) for (const mode of ARMED_MODES) for (const unit of units) {
+    const ref = `${unit.type}:${unit.id}`;
+    const timing = { ...(listed ? { entry: [ref] } : {}), entry_delay_s: 7 };
+    const doc: ArmingModesDocument = { modes: { away: mode === "away" ? timing : {}, home: mode === "home" ? { defends: [ref], ...timing } : { defends: [ref] }, night: mode === "night" ? { defends: [ref], ...timing } : { defends: [ref] } }, schedule: [] };
+    const { modes } = engine({ doc, units });
+    modes.apply(mode);
+    assert.equal(modes.entryDelayMs(unit.type, unit.id), listed ? 7000 : 0, `${mode} ${ref} listed=${listed}`);
+    assert.equal(modes.entryDelayMs(unit.type, "other"), 0);
+    assert.equal(engine({ doc, units, enabled: false }).modes.entryDelayMs(unit.type, unit.id), 0, "modes off: nothing waits");
+    modes.apply("disarmed");
+    assert.equal(modes.entryDelayMs(unit.type, unit.id), 0, "disarmed: nothing waits");
+  }
+});
+
+test("property: whatever the lists are, only the listed units wait, by the delay of the mode in force, and never more than the maximum", () => {
+  let seed = 11;
+  const random = (limit: number): number => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % limit; };
+  const pool: Unit[] = [{ type: "device", id: "a" }, { type: "device", id: "b" }, { type: "node", id: "n" }, { type: "camera", id: "c" }];
+  for (let round = 0; round < 200; round += 1) {
+    const entry = pool.filter(() => random(2) === 0).map(unit => `${unit.type}:${unit.id}`);
+    const delay = random(301);
+    const { modes } = engine({ doc: { modes: { away: { entry, entry_delay_s: delay }, home: { defends: ["device:a"], entry, entry_delay_s: delay }, night: { defends: ["device:a"], entry, entry_delay_s: delay } }, schedule: [] }, units: pool });
+    for (const mode of ARMED_MODES) {
+      modes.apply(mode, { confirmUnassigned: true });
+      for (const unit of pool) {
+        const wait = modes.entryDelayMs(unit.type, unit.id);
+        assert.equal(wait, entry.includes(`${unit.type}:${unit.id}`) ? delay * 1000 : 0);
+        assert.ok(wait <= 300_000);
+      }
+    }
+  }
+});

@@ -380,3 +380,24 @@ test("route: disarming by the control API clears the report and sends nothing to
     assert.equal(published.length, sent);
   } finally { await running.stop(); await gateway.close(); }
 });
+
+test("route: the exit delay of away applies to arming by voice, the same as by the control API, and with the modes off nothing waits", async () => {
+  const { running, cookie, gateway } = await prepared();
+  try {
+    const modes = (await call(running, cookie, "GET", "/api/v1/alarm/modes")).body;
+    assert.equal((await call(running, cookie, "PUT", "/api/v1/alarm/modes", { revision: modes.revision, modes: { away: { exit_delay_s: 30 }, home: { defends: ["zone:Hall"] }, night: { defends: ["zone:Hall"] } } })).status, 200);
+    const spoken = await sayArm(running, cookie);
+    assert.deepEqual([spoken.status, spoken.body.executed], [200, true]);
+    assert.ok(running.app.context.armingModes.exitUntil() !== undefined, "inside the exit delay after arming by voice");
+    running.app.context.devices.applyState("front-door", { open: true });
+    assert.deepEqual(running.app.context.alarms.active().filter(alarm => alarm.code === "door_open"), [], "the door opened while leaving does not sound inside the exit delay");
+    assert.equal((await control(running, "disarm")).status, 200);
+    assert.equal(running.app.context.armingModes.exitUntil(), undefined, "a disarm ends the exit delay");
+  } finally { await running.stop(); await gateway.close(); }
+  const off = await prepared({ modes: false, sync: false });
+  try {
+    await sayArm(off.running, off.cookie);
+    assert.equal(off.running.app.context.armingModes.exitUntil(), undefined, "modes off: armed at once");
+    assert.equal(off.running.app.context.store.snapshot().mode, "armed");
+  } finally { await off.running.stop(); await off.gateway.close(); }
+});

@@ -247,7 +247,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const securityChanged: { tell?: (changes: Record<string, unknown>) => void } = {};
   const securitySettings = new SecuritySettings(path.join(config.dataDir, "security-settings.json"), {
     environment: () => ({ "alarm.disarm_pin": config.disarmPinEnv }),
-    initial: { "voice.turn_max_bytes": config.voiceTurnMaxBytes, "voice.reply_audio_max_bytes": config.voiceReplyAudioMaxBytes },
+    initial: { "voice.turn_max_bytes": config.voiceTurnMaxBytes, "voice.reply_audio_max_bytes": config.voiceReplyAudioMaxBytes, "reports.timeout_s": config.reportTimeoutS, "reports.queue_max": config.reportQueueMax, "reports.requests_per_minute": config.reportRequestsPerMinute },
     onChange: changes => securityChanged.tell?.(changes),
   });
   const alarmSounds = new SoundLibrary(path.join(config.dataDir, "alarm-sounds"));
@@ -402,6 +402,8 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   });
   controlHolder.service = nodeControl;
   alarmRules.held = node => nodeControl.isHeld(node);
+  alarmRules.nodeUp = id => { const node = store.snapshot().nodes[id]; return node ? node.online && !node.stale : false; };
+  alarmRules.nodeIntruding = id => store.snapshot().nodes[id]?.alert_level === "high";
   const captureOnDetect = new CaptureOnDetect({ file: path.join(config.dataDir, "capture-on-detect.json"), audit, now: overrides.now, tools: { snapshot: camera => evidence.snapshot(camera), startRecording: camera => evidence.startRecording(camera), stopRecording: id => evidence.stopRecording(id), isRecording: id => evidence.isRecording(id) } });
   const ignoreZones = new IgnoreZones(path.join(config.dataDir, "camera-ignore-zones.json"));
   const zoneFeedSigner = new ZoneFeedSigner(path.join(config.dataDir, "zone-feed.key"));
@@ -439,6 +441,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   });
   const escalator = new Escalator({ afterMin: config.escalateAfterMin, active: () => alarms.active(), send: message => notifier.send(message), mode: () => store.snapshot().mode, now: overrides.now });
   const cameraWatcher = new CameraWatcher({ list: () => vault.list(), onEvent: record, onAnswered: id => alarmRules.cameraAnswered(id) });
+  alarmRules.cameraUp = id => cameraWatcher.snapshot().find(camera => camera.id === id)?.status !== "offline";
   // The nodes that were there before this run and have said nothing since: a node that is dead when the server comes up never goes stale, because it never existed in memory.
   const reportSilentNodes = (): void => {
     for (const node of knownNodes.silent(config.nodeStaleAfterS * 2000)) {

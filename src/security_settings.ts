@@ -26,6 +26,9 @@
  *   login.country_alert          on | off                 a sign-in from outside the house from a country that person never signed in from before is told to the places the alarms go to (on, the default; it only acts when the server has a country database, ARMOR_GEOIP_DB)
  *   summary.daily                on | off                 administrators and operators may ask for the summary of a day (GET /api/v1/summary/daily, made by ARMOR-SERVER-AI from the alarms the server kept; off, the default, answers 404)
  *   vision.heatmap               on | off                 administrators and operators may ask for the activity heat map of a camera (GET /api/v1/vision/heatmap, made by ARMOR-VISION; positions only, never a picture; off, the default, answers 404)
+ *   reports.timeout_s            5 to 120                 the most seconds one summary or heat map may run (ARMOR_REPORT_TIMEOUT_S is where it starts; 20)
+ *   reports.queue_max            1 to 10                  how many reports may wait for their turn before the answer is "busy" (ARMOR_REPORT_QUEUE_MAX; 3)
+ *   reports.requests_per_minute  1 to 300                 how many requests a minute the two report routes answer (ARMOR_REPORT_REQUESTS_PER_MINUTE; 30)
  *   network.login_secure_only    on | off                 a stored device login is handed to a network node only when its request came over TLS or from this machine (off, the default: any request of the node)
  *
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
@@ -44,6 +47,10 @@ export type NvsEncryption = typeof NVS_ENCRYPTION_VALUES[number];
 /** The ceilings of the two sizes of a spoken turn: no value above them is taken, whatever the environment or Studio say. */
 export const VOICE_TURN_BYTES = { min: 3_200, max: 1_920_000, default: 480_000 } as const;
 export const VOICE_REPLY_AUDIO_BYTES = { min: 3_200, max: 1_000_000, default: 200_000 } as const;
+/** The limits of the two reports (the summary of a day and the heat map): how long one may run, how many may wait for their turn, and how many requests a minute are answered. */
+export const REPORT_TIMEOUT_S = { min: 5, max: 120, default: 20 } as const;
+export const REPORT_QUEUE_MAX = { min: 1, max: 10, default: 3 } as const;
+export const REPORT_REQUESTS_PER_MINUTE = { min: 1, max: 300, default: 30 } as const;
 export type DeviceLockPolicy = typeof DEVICE_LOCK_VALUES[number];
 export type DisarmPinMode = typeof DISARM_PIN_VALUES[number];
 export type SilenceConfirmation = typeof SILENCE_VALUES[number];
@@ -73,6 +80,9 @@ export type SecuritySettingsValues = {
   "alarm_audio.custom_sounds": boolean;
   "summary.daily": boolean;
   "vision.heatmap": boolean;
+  "reports.timeout_s": number;
+  "reports.queue_max": number;
+  "reports.requests_per_minute": number;
 };
 export type SecuritySettingKey = keyof SecuritySettingsValues;
 
@@ -101,10 +111,14 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "alarm_audio.custom_sounds": false,
   "summary.daily": false,
   "vision.heatmap": false,
+  "reports.timeout_s": REPORT_TIMEOUT_S.default,
+  "reports.queue_max": REPORT_QUEUE_MAX.default,
+  "reports.requests_per_minute": REPORT_REQUESTS_PER_MINUTE.default,
 });
 
 /** The settings that are whole numbers, with the range each may take. */
-const NUMBER_RANGES: Partial<Record<keyof SecuritySettingsValues, { min: number; max: number }>> = { "voice.turn_max_bytes": VOICE_TURN_BYTES, "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES };
+const NUMBER_RANGES: Partial<Record<keyof SecuritySettingsValues, { min: number; max: number }>> = { "voice.turn_max_bytes": VOICE_TURN_BYTES, "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES,
+  "reports.timeout_s": REPORT_TIMEOUT_S, "reports.queue_max": REPORT_QUEUE_MAX, "reports.requests_per_minute": REPORT_REQUESTS_PER_MINUTE };
 
 export class SecuritySettingsInvalid extends Error {
   constructor(message: string, readonly key?: string) { super(message); }
@@ -197,6 +211,7 @@ export class SecuritySettings {
 /** True when the new value lowers security compared with the old one (the audit trail and Studio say so). */
 export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boolean {
   if (key === "voice.multipart_turn" || key === "panel.live_events" || key === "alarm_audio.spoken" || key === "alarm_audio.custom_sounds") return false;   // a way in that is turned off is not a loss of protection; turning it on is the default way
+  if (key === "reports.timeout_s" || key === "reports.queue_max" || key === "reports.requests_per_minute") return false;   // tuning of how much work the reports may cause, not a protection
   if (key === "summary.daily" || key === "vision.heatmap") return from === false && to === true;   // a report about what happens in the house is a way in for whoever may ask: turning it on is the loss
   if (key === "alarm.arming_modes" || key === "alarm.mode_schedule" || key === "alarm.mode_panel_sync") return false;   // a way of arming that is added or taken away: the protection of what is armed does not drop by it
   if (key === "alarm.mode_schedule_lowers") return from === false && to === true;   // letting a timetable defend less is the loss
