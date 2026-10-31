@@ -10,6 +10,7 @@
  *   - Who may do it is who may change the mode (an arm needs no PIN, as arming never did); the panel commands themselves stay behind their own gates (ARMOR_ALARM_COMMANDS=1, the
  *     node's own `server.commands`, the broker list), so a refusal there is a failed panel, never a bypass.
  *   - Disarming the server does not disarm a panel (that needs a PIN and is a separate decision): the report is cleared and the panel keeps what it has.
+ *   - A report that says `failed` is also an alarm in the alarm centre (mode_panel_sync_failed), open exactly while the report says so; it ends with a new try, a confirmation, a disarm or the setting turned off.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import type { AuditLog } from "./audit.js";
@@ -37,6 +38,10 @@ export type ModePanelSyncOptions = {
   now?: () => number;
   /** The report changed: the state the clients read is sent again. */
   changed?: () => void;
+  /** The report says `failed`: the alarm for it is raised (the alarm centre ignores a second one while the first is open). */
+  raise?: (state: PanelSync) => void;
+  /** The report no longer says `failed` (a new try, a confirmation, a disarm, the setting off): the alarm for it ends. */
+  end?: () => void;
 };
 
 const summarize = (nodes: PanelEntry[]): SyncStatus => {
@@ -63,16 +68,30 @@ export class ModePanelSync {
   }
 
   /** The system was disarmed: the report is over (a panel is not disarmed from here). */
-  clear(): void { if (this.#state) { this.#state = undefined; this.#told(); } }
+  clear(): void { if (this.#state) { this.#state = undefined; this.#told(); } this.#alarm(); }
+
+  /** The setting may have been turned off, or the server may have started: with the setting off there is no report, and so no alarm for it. */
+  reconcile(): void {
+    if (!this.enabled && this.#state) { this.#state = undefined; this.#told(); }
+    this.#alarm();
+  }
 
   #told(): void { try { this.#o.changed?.(); } catch { /* the report stands */ } }
+
+  /** The alarm follows the report: open while it says failed, ended in every other case. A listener never breaks the report. */
+  #alarm(): void {
+    try {
+      const state = this.view();
+      if (state && state.status === "failed") this.#o.raise?.(state); else this.#o.end?.();
+    } catch { /* the report stands */ }
+  }
 
   /**
    * The mode `mode` was chosen. A choice that changes nothing (`noop`) asks again only if the last try did not end well, so that choosing the same mode again is how a failure is retried
    * and a confirmed one is never repeated.
    */
   sync(mode: ArmedMode, by: string, noop = false): void {
-    if (!this.enabled) { this.#state = undefined; return; }
+    if (!this.enabled) { this.#state = undefined; this.#alarm(); return; }
     const last = this.#state;
     if (noop && last && last.mode === mode && (last.status === "confirmed" || last.status === "pending" || last.status === "none")) return;
     const at = new Date(this.#now()).toISOString();
@@ -90,6 +109,7 @@ export class ModePanelSync {
     this.#state = { mode, profile: id, status: summarize(nodes), by: by.slice(0, 60), started_at: at, ...(summarize(nodes) === "pending" ? {} : { settled_at: at }), nodes };
     this.#audit(this.#state, "asked");
     this.#told();
+    this.#alarm();
   }
 
   /** A command to a panel ended (AlarmCommands.onSettled): the entry that waited for it is confirmed, refused or silent. Any other command is none of ours. */
@@ -102,6 +122,7 @@ export class ModePanelSync {
     state.status = summarize(state.nodes);
     if (state.status !== "pending") { state.settled_at = new Date(this.#now()).toISOString(); this.#audit(state, "ended"); }
     this.#told();
+    this.#alarm();
   }
 
   #audit(state: PanelSync, when: "asked" | "ended"): void {

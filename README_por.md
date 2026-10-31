@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 or later">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-811%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-838%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Version-0.8.0.9-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
 ---
 
-**Verificação de honestidade - o que funciona hoje:** Cada rota, sessão, cifra e regra de provas abaixo é real e está coberta por testes (`npm test`: 811 testes, incluindo um conjunto completo de integração HTTP contra um servidor isolado e uma verificação de que cada rota está documentada no ficheiro OpenAPI). Funciona em uso diário na bancada de testes do CM5 com um broker MQTT real, o firmware de um nó radar real numa placa ESP32-S3, câmaras IP reais (vídeo em direto, fotografias, gravações, PTZ nas unidades Hi3510), a consola Studio, a aplicação Android e os serviços de voz e de observação. O que **ainda não** está provado: ONVIF com uma câmara ONVIF real, qualquer hardware Jetson, as rotas solares, elétricas, de centrais de alarme e de painel tátil com nós reais (testam-se com mensagens geradas: só existe a placa radar) e o push por Firebase com um projeto Firebase real.
+**Verificação de honestidade - o que funciona hoje:** Cada rota, sessão, cifra e regra de provas abaixo é real e está coberta por testes (`npm test`: 838 testes, incluindo um conjunto completo de integração HTTP contra um servidor isolado e uma verificação de que cada rota está documentada no ficheiro OpenAPI). Funciona em uso diário na bancada de testes do CM5 com um broker MQTT real, o firmware de um nó radar real numa placa ESP32-S3, câmaras IP reais (vídeo em direto, fotografias, gravações, PTZ nas unidades Hi3510), a consola Studio, a aplicação Android e os serviços de voz e de observação. O que **ainda não** está provado: ONVIF com uma câmara ONVIF real, qualquer hardware Jetson, as rotas solares, elétricas, de centrais de alarme e de painel tátil com nós reais (testam-se com mensagens geradas: só existe a placa radar) e o push por Firebase com um projeto Firebase real.
 
 ---
 
@@ -40,7 +40,7 @@
 | Maturidade | Estabelecido |
 | Função | Coordenador central de segurança da família: nós, alarmes, dispositivos, energia, câmaras, rede |
 | Tecnologia | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| Testes | 811 (`npm test`: unitários e integração HTTP completa) |
+| Testes | 838 (`npm test`: unitários e integração HTTP completa) |
 | Contrato | 196 caminhos HTTP, 255 operações (OpenAPI no ARMOR-COMMON), tabela de rotas em `docs/ROUTES.md` |
 | Escuta em | `127.0.0.1:8080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Funciona em | A bancada do CM5 (como serviço, ver ARMOR-DEVOPS) ou qualquer computador com Node.js |
@@ -58,7 +58,7 @@ Cada linha é uma parte deste repositório e a luz diz até onde chega hoje. É 
 | Área | Estado | O que significa aqui |
 |---|---|---|
 | Software | 🟢 | As rotas, as sessões, a cifragem e as regras de provas funcionam todos os dias na bancada de testes CM5. |
-| Testes | 🟢 | Passam 811 testes (`npm test`), incluindo uma bateria de integração HTTP completa contra um servidor isolado e uma verificação de que cada rota está documentada no ficheiro OpenAPI. |
+| Testes | 🟢 | Passam 838 testes (`npm test`), incluindo uma bateria de integração HTTP completa contra um servidor isolado e uma verificação de que cada rota está documentada no ficheiro OpenAPI. |
 | Protocolos e dados | 🟡 | As mensagens do radar vêm de uma placa real; as rotas solar, elétrica, de painel de alarme e de painel tátil são testadas com mensagens geradas, e o ONVIF não encontrou uma câmara ONVIF real. |
 | Hardware | 🟡 | Funciona na bancada de testes CM5 com um broker MQTT real, câmaras IP reais (vídeo em direto, capturas, gravações, PTZ nas unidades Hi3510) e um nó radar real; nada funcionou num Jetson. |
 | Segurança | 🟡 | As regras de sessões, cifragem, provas e acesso estão cobertas por testes; não houve revisão independente. |
@@ -78,7 +78,7 @@ O **ARMOR-SERVER** é o centro de confiança do A.R.M.O.R. Os nós de campo publ
 * **Utilizadores e papéis:** nomes e palavras-passe (hashes scrypt), um papel `admin` que gere utilizadores, um papel `operator` que opera e um papel `viewer` que só observa; mudar a palavra-passe ou o papel termina as outras sessões desse utilizador.
 * **Dispositivos e automatizações:** fumo, gás, inundação, porta, janela, movimento, clima, tomada, luz, sirene, fechadura, estore, portão ou porta de garagem e esquentador, por MQTT ou push autenticado, com estado normalizado, disponibilidade e comandos; regras que acionam dispositivos quando algo acontece (também por limiares).
 * **Energia:** inversores e pilhas de baterias (com cada célula e as capacidades) e nós elétricos chegam por HTTP ou MQTT, são validados pelo contrato partilhado, guardados com histórico e energia por dia, marcados como desatualizados se calarem, e geram alarmes (avaria do inversor, bateria baixa, rede perdida, tensão, falha de comutação…). O desenho elétrico e as regras para comutar um circuito ficam no servidor.
-* **Modos de armar** (desligados até um administrador ativar `alarm.arming_modes`): fora (tudo defendido, o armar de sempre), em casa e noite (só as zonas e sensores marcados para cada um, nenhum ao início), um atraso de saída e outro de entrada por modo, um calendário opcional, `GET` e `PUT /api/v1/alarm/modes` e os modos de `POST /api/v1/mode`. Um modo sem zonas atribuídas é recusado, a menos que seja confirmado; passar para um modo que defende menos pede o PIN como um desarmar; desarmar funciona sempre. Não altera nenhum firmware nem ecrã de nó. Com `alarm.mode_panel_sync` ativado, ao escolher um modo pede-se também aos painéis de alarme que armem com o perfil correspondente (fora, em casa, noite); o estado diz se o confirmaram.
+* **Modos de armar** (desligados até um administrador ativar `alarm.arming_modes`): fora (tudo defendido, o armar de sempre), em casa e noite (só as zonas e sensores marcados para cada um, nenhum ao início), um atraso de saída e outro de entrada por modo, um calendário opcional, `GET` e `PUT /api/v1/alarm/modes` e os modos de `POST /api/v1/mode`. Um modo sem zonas atribuídas é recusado, a menos que seja confirmado; passar para um modo que defende menos pede o PIN como um desarmar; desarmar funciona sempre. Não altera nenhum firmware nem ecrã de nó. Com `alarm.mode_panel_sync` ativado, ao escolher um modo pede-se também aos painéis de alarme que armem com o perfil correspondente (fora, em casa, noite); o estado diz se o confirmaram, e um painel que não o faça é um alarme do centro de alarmes (`mode_panel_sync_failed`). Armar com o token de controlo e por voz é armar fora, com a mesma sincronização.
 * **Centrais de alarme:** o estado dos nós ARMOR-NODE-ALARM, o **desenho do alarme** com as suas versões, os **dispositivos Zigbee ligados às zonas** (o servidor diz a uma central como está uma zona enquanto tem o rádio) e comandos de armar / desarmar a uma central (desligados salvo `ARMOR_ALARM_COMMANDS=1`).
 * **Rede local:** o que o nó ARMOR-NETWORK comunica (dispositivos, internet, o endereço público e quem o dá), ordens para o nó (varrimento, ping, portas, inspecionar um dispositivo com um acesso que o utilizador dá), nomes, dispositivos ocultos e vigiados, e acessos que viajam **selados só para o nó**.
 * **Voz, observação e manutenção:** comandos escritos e falados (lista fechada, em oito idiomas, com uma confirmação ligada à pessoa), o contexto para o serviço de observação (que radares cobrem que câmara), o firmware dos nós atualizado a partir do Studio um a um com progresso, e as atualizações da própria instalação a partir do GitHub, as do sistema e uma consola root opcional, tudo através do assistente de manutenção.
@@ -210,7 +210,7 @@ Copie `.env.example` para `.env` (ignorado pelo Git), ou deixe `run.bat` / `run.
 ```powershell
 npm install           # dependências
 npm run typecheck     # tsc --noEmit
-npm test              # 811 testes: unitários e integração HTTP completa
+npm test              # 838 testes: unitários e integração HTTP completa
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # servidor de desenvolvimento com recarga a quente
 ```
@@ -268,7 +268,7 @@ ARMOR-SERVER/
 │   ├── cameras/                      cofre, PTZ, RTSP, descoberta, saúde
 │   ├── media/                        relé FFmpeg e biblioteca de provas
 │   └── devices/                      modelo de dispositivos e a sua ponte MQTT
-├── tests/                            811 testes, unitários e integração HTTP
+├── tests/                            838 testes, unitários e integração HTTP
 ├── docs/                             8 guias, tabela de rotas, ambiente
 ├── tools/                            geradores de docs/ROUTES.md e docs/ENVIRONMENT.md, verificações de CI, lançador
 ├── images/                           faixa, ícone e as imagens do README

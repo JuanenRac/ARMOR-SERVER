@@ -60,6 +60,7 @@ export function registerIngestRoutes(app: Express, context: AppContext, startedA
       return response.status(403).json({ error: "disarming with the control token is off while the PIN is required; disarm from Studio, the phone or the wall panel", code: "pin_required" });
     }
     audit.record({ action: `control.${mode}`, outcome: "allowed" });
-    return response.json(store.arm(mode === "arm" ? "armed" : "disarmed"));
+    // Arming is arming away (with the arming modes on: the same panel sync as choosing it); disarming asks no panel.
+    return response.json(mode === "arm" ? context.armAway("control") : context.disarmAll("control"));
   });
 }

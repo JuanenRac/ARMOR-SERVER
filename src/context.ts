@@ -47,6 +47,9 @@ import { AlarmStore } from "./alarm.js";
 import { ArmProfileStore } from "./arm_profiles.js";
 import { ArmingModes } from "./arming_modes.js";
 import { ModePanelSync } from "./mode_panel_sync.js";
+
+/** The key of the alarm for a panel that did not confirm the arming mode: one at a time. */
+const MODE_PANEL_ALARM = "mode_panel_sync";
 import { NodeHealthStore } from "./node_health.js";
 import { NodeControlService } from "./node_control_service.js";
 import { AlarmCommands } from "./alarm_commands.js";
@@ -140,6 +143,10 @@ export type AppContext = {
   armingModes: ArmingModes;
   /** Choosing a mode also arms the alarm panels with its profile; off unless the setting alarm.mode_panel_sync is on (see mode_panel_sync.ts). */
   modePanelSync: ModePanelSync;
+  /** Arm away for a caller that knows no modes (the control token, the voice assistant): with the arming modes on it is the mode away, with its panel sync; off, the armed of always. */
+  armAway: (by: string) => SystemState;
+  /** Disarm for a caller that checked its own access (the control token, the voice assistant): with the arming modes on the report of the panels is cleared (a panel is not disarmed from here). */
+  disarmAll: (by: string) => SystemState;
   /** The latest health report of every node and what is wrong with it (see node_health.ts). */
   nodeHealth: NodeHealthStore;
   /** The read-only diagnostic tokens an administrator issues (see diagnostic_tokens.ts): only their hash is kept. */
@@ -402,7 +409,10 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
       // the environment wins over the setting, as it does for the people who disarm; "if_set" is not sent so that a panel from before the option keeps reading the message it knows
       ...(((): { disarm_pin?: "never" | "always" } => { const mode = config.disarmPinEnv ?? securitySettings.get("alarm.disarm_pin"); return mode === "if_set" ? {} : { disarm_pin: mode }; })()),
       ...(securitySettings.get("nodes.nvs_encryption") === "secrets" ? { nvs_encryption: "secrets" as const } : {}) }) });
-  securityChanged.tell = () => { try { alarmZoneFeed.publishPolicy(); alarmZoneFeed.refresh(); } catch { /* the broker is not connected: the next sweep tells it */ } };
+  securityChanged.tell = () => {
+    try { alarmZoneFeed.publishPolicy(); alarmZoneFeed.refresh(); } catch { /* the broker is not connected: the next sweep tells it */ }
+    try { modePanelSync.reconcile(); } catch { /* the report stands */ }
+  };
   const panelSyncLink: { settled?: (record: import("./alarm_commands.js").AlarmRecord) => void; view?: () => unknown } = {};
   const alarmCommands = new AlarmCommands({
     enabled: config.alarmCommands, nodes: alarmNodes, audit, now: overrides.now, onSettled: record => panelSyncLink.settled?.(record),
@@ -456,7 +466,25 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     enabled: () => securitySettings.get("alarm.arming_modes") && securitySettings.get("alarm.mode_panel_sync"), now: overrides.now, audit, changed: () => { store.reevaluate(); },
     panels: () => alarmNodes.list().map(node => node.node_id), profile: id => armProfiles.find(id),
     arm: (node, base, actor, profile) => alarmCommands.request(node, "arm", base, false, actor, profile),
+    // A panel that did not confirm is an alarm while the report says so; the alarm centre keeps one per key, and the detail is plain facts.
+    raise: state => alarms.raise(MODE_PANEL_ALARM, {
+      source: { type: "alarm", id: "mode_panel" }, severity: "high", code: "mode_panel_sync_failed",
+      detail: { arming_mode: state.mode, panel_profile: state.profile, panels: state.nodes.filter(node => node.status !== "confirmed").length, panel_answers: state.nodes.filter(node => node.status !== "confirmed").map(node => `${node.node_id} ${node.status}${node.reason ? ` (${node.reason})` : ""}`).join("; "), by: state.by },
+    }),
+    end: () => alarms.clear(MODE_PANEL_ALARM),
   });
+  // The report is in memory and starts empty, so an alarm a stopped server left open has nothing behind it any more.
+  alarms.clear(MODE_PANEL_ALARM);
+  const armAway = (by: string): SystemState => {
+    if (!armingModes.enabled) return store.arm("armed");
+    armingModes.apply("away", { by });
+    return store.snapshot();
+  };
+  const disarmAll = (by: string): SystemState => {
+    if (!armingModes.enabled) return store.arm("disarmed");
+    armingModes.apply("disarmed", { by });
+    return store.snapshot();
+  };
   panelSyncLink.settled = record => modePanelSync.settled(record);
   panelSyncLink.view = () => modePanelSync.view();
   alarmRules.arming = { guards: (type, id) => armingModes.guards(type, id), entryDelayMs: (type, id) => armingModes.entryDelayMs(type, id), later: (key, ms, run) => armingModes.later(key, ms, run), cancelLater: () => armingModes.cancelLater() };
@@ -522,7 +550,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, securitySettings, geoip, loginCountries, alarmSounds, spokenAlarms, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, securitySettings, geoip, loginCountries, alarmSounds, spokenAlarms, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

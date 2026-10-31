@@ -118,14 +118,14 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
       let executed = false;
       if (answer.accepted && answer.intent === "arm") {
         audit.record({ action: "control.arm", outcome: "allowed", actor: actor(request), detail: "voice" });
-        store.arm("armed"); executed = true; speech = spokenResult(language, { intent: "arm" }); result = { mode: "armed" };
+        context.armAway(actor(request)); executed = true; speech = spokenResult(language, { intent: "arm" }); result = { mode: "armed" };
       } else if (answer.accepted && answer.intent === "disarm") {
         // A voice that disarms is a disarm like any other: it carries the PIN of the signed-in user (said or typed on the second turn) and gets the same refusals.
         const verdict = checkDisarm(context, studioUser(request), input.pin, actor(request));
         if (!verdict.allow) return response.status(verdict.status).json(verdict.body);
         if (verdict.duress) alarms.raiseDuress(actor(request));
         audit.record({ action: "control.disarm", outcome: "allowed", actor: actor(request), detail: verdict.duress ? "voice, duress" : "voice" });
-        store.arm("disarmed"); executed = true; speech = spokenResult(language, { intent: "disarm" }); result = { mode: "disarmed" };
+        context.disarmAll(actor(request)); executed = true; speech = spokenResult(language, { intent: "disarm" }); result = { mode: "disarmed" };
       } else if (answer.accepted && answer.intent === "status") {
         const state = store.snapshot();
         const nodes = Object.values(state.nodes);
