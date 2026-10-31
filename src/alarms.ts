@@ -267,6 +267,15 @@ const MAINS_LOW = 195, MAINS_LOW_OK = 200, MAINS_HIGH = 253, MAINS_HIGH_OK = 250
 export const SOLAR_FAULTS = new Set(["inverter_fault", "bus_over", "bus_under", "bus_soft_fail", "inverter_voltage_low", "inverter_voltage_high", "over_temperature", "fan_locked",
   "eeprom_fault", "inverter_over_current", "inverter_soft_fail", "self_test_fail", "op_dc_voltage_over", "battery_open", "current_sensor_fail", "battery_short"]);
 
+/** What the arming modes tell the rules (see arming_modes.ts): whether the armed system defends a thing right now, and how long an entry sensor waits before it sounds. */
+export type ArmingGate = {
+  guards(type: "node" | "camera" | "device", id: string): boolean;
+  entryDelayMs(type: "node" | "camera" | "device", id: string): number;
+  /** Run `run` after `ms`, unless the system is disarmed or the mode changes first (then it never runs). One timer per key. */
+  later(key: string, ms: number, run: () => void): void;
+  cancelLater(): void;
+};
+
 /**
  * What raises and clears alarms: the rules that connect the events of the perimeter (a node, a camera, the mode) and the reports of the
  * devices to the alarm centre.
@@ -293,6 +302,12 @@ export class AlarmRules {
    * only while armed), and the changes that would raise them have already happened. Set by the context, which knows the nodes, the cameras and the devices.
    */
   onArmed: (() => void) | undefined;
+  /** The arming modes (arming_modes.ts); absent, or with the modes turned off, every defended thing is defended as always and nothing waits. */
+  arming: ArmingGate | undefined;
+  /** Whether a device is triggered at this moment (set by the context): an entry sensor that sounds after its delay says what it saw even if it is back to normal. */
+  deviceTriggered: ((id: string) => boolean) | undefined;
+  readonly #guarded = (type: "node" | "camera" | "device", id: string): boolean => this.arming?.guards(type, id) ?? true;
+
   /** True while the silence of a node must not raise an alarm: it is in maintenance, or a restart that was ordered is under way (see node_control_service.ts). */
   held: ((node: string) => boolean) | undefined;
 
@@ -301,12 +316,33 @@ export class AlarmRules {
 
   /** A problem that was there before arming, now that it matters. */
   raisePresentProblems(problems: { nodesDown: string[]; camerasDown: string[]; devicesTriggered: Array<{ id: string; kind: string }> }): void {
+    problems = { nodesDown: problems.nodesDown.filter(id => this.#guarded("node", id)), camerasDown: problems.camerasDown.filter(id => this.#guarded("camera", id)),
+      devicesTriggered: problems.devicesTriggered.filter(device => this.#guarded("device", device.id)) };
     for (const id of problems.nodesDown) this.centre.raise(`node:${id}:down`, { source: { type: "node", id }, severity: "warning", code: "node_down" });
     for (const id of problems.camerasDown) this.centre.raise(`camera:${id}:down`, { source: { type: "camera", id }, severity: "warning", code: "camera_down" });
     for (const device of problems.devicesTriggered) {
       const info = kindInfo(device.kind as never);
-      if (info.alarm === "armed") this.centre.raise(`device:${device.id}:trigger`, { source: { type: "device", id: device.id }, severity: info.severity, code: DEVICE_CODE[device.kind] ?? "triggered" });
+      if (info.alarm === "armed") this.#sound(device.id, device.kind, true);
     }
+  }
+
+  /** An intrusion sensor sounds: at once, or after the entry delay of the mode when it is an entry sensor (the system must still be armed, and still defend it, when the delay is over). */
+  #sound(id: string, kind: string, immediate = false): void {
+    const info = kindInfo(kind as never), key = `device:${id}:trigger`;
+    const raise = (instant = false): void => { this.centre.raise(key, { source: { type: "device", id }, severity: info.severity, code: DEVICE_CODE[kind] ?? "triggered", ...(instant ? { instant: true } : {}) }); };
+    const wait = this.arming?.entryDelayMs("device", id) ?? 0;
+    if (wait <= 0 || immediate) { raise(); return; }
+    this.arming!.later(key, wait, () => { if (this.mode() === "armed" && this.#guarded("device", id)) raise(this.deviceTriggered?.(id) === false); });
+  }
+
+  /** The arming mode changed from one armed mode to another: what the new one does not defend stops being an alarm (it goes to the record, as on a disarm), and what it defends now and is wrong is raised. */
+  modeSwitched(): void {
+    this.arming?.cancelLater();
+    const ends = (alarm: Alarm): boolean => (armedOnlyCodes.has(alarm.code) || alarm.code === "node_down" || alarm.code === "camera_down")
+      && (alarm.source.type === "node" || alarm.source.type === "camera" || alarm.source.type === "device") && !this.#guarded(alarm.source.type, alarm.source.id);
+    this.centre.clearMatching(ends);
+    this.centre.acknowledgeMatching(ends, "mode");
+    this.onArmed?.();
   }
 
   /** Node, camera and mode events. */
@@ -318,16 +354,17 @@ export class AlarmRules {
         break;
       case "node":
         if (event.to === "online") this.centre.clear(`node:${event.node_id}:down`);
-        else if (this.mode() === "armed" && !this.held?.(event.node_id)) this.centre.raise(`node:${event.node_id}:down`, { source: { type: "node", id: event.node_id }, severity: "warning", code: "node_down" });
+        else if (this.mode() === "armed" && this.#guarded("node", event.node_id) && !this.held?.(event.node_id)) this.centre.raise(`node:${event.node_id}:down`, { source: { type: "node", id: event.node_id }, severity: "warning", code: "node_down" });
         break;
       case "camera":
         if (event.to === "online") this.centre.clear(`camera:${event.camera_id}:down`);
-        else if (event.to === "offline" && this.mode() === "armed") this.centre.raise(`camera:${event.camera_id}:down`, { source: { type: "camera", id: event.camera_id }, severity: "warning", code: "camera_down" });
+        else if (event.to === "offline" && this.mode() === "armed" && this.#guarded("camera", event.camera_id)) this.centre.raise(`camera:${event.camera_id}:down`, { source: { type: "camera", id: event.camera_id }, severity: "warning", code: "camera_down" });
         break;
       case "mode":
         if (event.mode === "armed") this.onArmed?.();
         // Disarming ends every intrusion alarm: nothing is being defended any more.
         if (event.mode === "disarmed") {
+          this.arming?.cancelLater();
           const ends = (alarm: Alarm) => armedOnlyCodes.has(alarm.code) || alarm.code === "node_down" || alarm.code === "camera_down";
           this.centre.clearMatching(ends);
           // Whoever disarms has dealt with them: they do not wait for a second click to leave the list (they go to the record, with "disarm" as who).
@@ -345,7 +382,8 @@ export class AlarmRules {
     if (change.triggered !== undefined && info.alarm !== "none") {
       const key = `${base}:trigger`;
       if (change.triggered) {
-        if (info.alarm === "always" || this.mode() === "armed") this.centre.raise(key, { source, severity: info.severity, code: DEVICE_CODE[device.kind] ?? "triggered" });
+        if (info.alarm === "always") this.centre.raise(key, { source, severity: info.severity, code: DEVICE_CODE[device.kind] ?? "triggered" });
+        else if (this.mode() === "armed" && this.#guarded("device", device.id)) this.#sound(device.id, device.kind);
       } else this.centre.clear(key);
     }
     if (change.changes.some(item => item.field === "tamper")) {

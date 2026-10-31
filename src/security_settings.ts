@@ -4,6 +4,10 @@
  * through `/api/v1/security/settings`). Lowering one is written in the audit trail.
  *
  *   alarm.disarm_pin             never | if_set | always   the PIN typed to disarm or silence a siren (the duress PIN is never changed by this)
+ *   alarm.arming_modes           on | off                  the arming modes home and night besides away (off, the default: the system only arms and disarms, as it always did)
+ *   alarm.mode_downgrade_pin     required | not_required   going to a mode that defends LESS than the current one asks for the PIN like a disarm (required, the default)
+ *   alarm.mode_schedule          on | off                  the timetable of the arming modes changes the mode by itself (off, the default; it needs alarm.arming_modes)
+ *   alarm.mode_schedule_lowers   on | off                  the timetable may go to a mode that defends less (off, the default: it only keeps or raises the defence, it can never disarm)
  *   voice.silence_confirmation   off | pin | double_turn   what the voice assistant asks before silencing the alarm (sent to the voice service with every turn)
  *   alarm.config_hash            on | off                  the panel binds its saved armed state to its zones and PIN and does not restore it if they changed (panel side)
  *   server.zone_feed             on | off                  the server tells the panels the state of their Zigbee zones
@@ -28,6 +32,8 @@ import path from "node:path";
 import { durableRename } from "./durable.js";
 
 export const DISARM_PIN_VALUES = ["never", "if_set", "always"] as const;
+export const MODE_DOWNGRADE_VALUES = ["required", "not_required"] as const;
+export type ModeDowngradePin = typeof MODE_DOWNGRADE_VALUES[number];
 export const SILENCE_VALUES = ["off", "pin", "double_turn"] as const;
 export const DEVICE_LOCK_VALUES = ["user", "sensitive", "always"] as const;
 export const NVS_ENCRYPTION_VALUES = ["off", "secrets"] as const;
@@ -42,6 +48,10 @@ export type SilenceConfirmation = typeof SILENCE_VALUES[number];
 export type SecuritySettingsValues = {
   "alarm.disarm_pin": DisarmPinMode;
   "voice.silence_confirmation": SilenceConfirmation;
+  "alarm.arming_modes": boolean;
+  "alarm.mode_downgrade_pin": ModeDowngradePin;
+  "alarm.mode_schedule": boolean;
+  "alarm.mode_schedule_lowers": boolean;
   "alarm.config_hash": boolean;
   "server.zone_feed": boolean;
   "server.zone_feed_signature": boolean;
@@ -63,6 +73,10 @@ export type SecuritySettingKey = keyof SecuritySettingsValues;
 export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze({
   "alarm.disarm_pin": "if_set",
   "voice.silence_confirmation": "off",
+  "alarm.arming_modes": false,
+  "alarm.mode_downgrade_pin": "required",
+  "alarm.mode_schedule": false,
+  "alarm.mode_schedule_lowers": false,
   "alarm.config_hash": true,
   "server.zone_feed": true,
   "server.zone_feed_signature": true,
@@ -93,6 +107,7 @@ const isKey = (value: string): value is SecuritySettingKey => (KEYS as string[])
 /** The value if it is a valid one for that setting; undefined otherwise. */
 function clean(key: SecuritySettingKey, value: unknown): SecuritySettingsValues[SecuritySettingKey] | undefined {
   if (key === "alarm.disarm_pin") return (DISARM_PIN_VALUES as readonly unknown[]).includes(value) ? value as DisarmPinMode : undefined;
+  if (key === "alarm.mode_downgrade_pin") return (MODE_DOWNGRADE_VALUES as readonly unknown[]).includes(value) ? value as ModeDowngradePin : undefined;
   if (key === "voice.silence_confirmation") return (SILENCE_VALUES as readonly unknown[]).includes(value) ? value as SilenceConfirmation : undefined;
   if (key === "nodes.nvs_encryption") return (NVS_ENCRYPTION_VALUES as readonly unknown[]).includes(value) ? value as NvsEncryption : undefined;
   if (key === "client.device_lock") return (DEVICE_LOCK_VALUES as readonly unknown[]).includes(value) ? value as DeviceLockPolicy : undefined;
@@ -173,6 +188,9 @@ export class SecuritySettings {
 /** True when the new value lowers security compared with the old one (the audit trail and Studio say so). */
 export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boolean {
   if (key === "voice.multipart_turn" || key === "panel.live_events" || key === "alarm_audio.spoken" || key === "alarm_audio.custom_sounds") return false;   // a way in that is turned off is not a loss of protection; turning it on is the default way
+  if (key === "alarm.arming_modes" || key === "alarm.mode_schedule") return false;   // a way of arming that is added or taken away: the protection of what is armed does not drop by it
+  if (key === "alarm.mode_schedule_lowers") return from === false && to === true;   // letting a timetable defend less is the loss
+  if (key === "alarm.mode_downgrade_pin") return from === "required" && to === "not_required";
   if (key === "voice.turn_max_bytes" || key === "voice.reply_audio_max_bytes") return typeof from === "number" && typeof to === "number" && to > from;   // a larger turn costs the server more memory and time
   if (key === "alarm.disarm_pin") return DISARM_PIN_VALUES.indexOf(to as DisarmPinMode) < DISARM_PIN_VALUES.indexOf(from as DisarmPinMode);
   if (key === "voice.silence_confirmation") return SILENCE_VALUES.indexOf(to as SilenceConfirmation) < SILENCE_VALUES.indexOf(from as SilenceConfirmation);

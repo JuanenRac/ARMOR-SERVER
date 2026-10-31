@@ -7,6 +7,7 @@ import express, { type Express, type Response } from "express";
 import type { AppContext } from "../context.js";
 import { AutomationError } from "../automations.js";
 import { checkDisarm } from "./disarm_gate.js";
+import { ModeChangeError } from "../arming_modes.js";
 import { MAX_SITE_BYTES, SiteConflict, SiteInvalid } from "../site.js";
 
 export function registerAlarmRoutes(app: Express, context: AppContext): void {
@@ -38,18 +39,49 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
   // the right one and raises a critical alarm that tells the other places, in silence. Three wrong PINs lock the user for a minute, then five, then fifteen, then an hour.
   app.post("/api/v1/mode", requireOperator, (request, response) => {
     const input = body(request), mode = input.mode, user = studioUser(request);
-    if (mode !== "armed" && mode !== "disarmed") return response.status(400).json({ error: "the mode is armed or disarmed", code: "invalid_mode" });
-    if (mode === "disarmed") {
+    if (mode !== "armed" && mode !== "disarmed" && mode !== "away" && mode !== "home" && mode !== "night") return response.status(400).json({ error: "the mode is armed, disarmed, away, home or night", code: "invalid_mode" });
+    if ("confirm_unassigned" in input && typeof input.confirm_unassigned !== "boolean") return response.status(400).json({ error: "confirm_unassigned is true or false", code: "invalid_request" });
+    const { armingModes } = context;
+    // Arming "armed" is arming away; the other names are the arming modes, which exist only while an administrator has turned them on.
+    if (!armingModes.enabled && (mode === "home" || mode === "night")) return response.status(400).json({ error: "the arming modes are not turned on in this server: arm away, or disarm", code: "modes_disabled" });
+    const target = mode === "armed" ? "away" : mode;
+    if (target === "disarmed") {
       const verdict = checkDisarm(context, user, input.pin, actor(request));
       if (!verdict.allow) return response.status(verdict.status).json(verdict.body);
       if (verdict.duress) {
         audit.record({ action: "control.disarm", outcome: "allowed", actor: actor(request), detail: "duress" });
         alarms.raiseDuress(actor(request));
-        return response.json(store.arm(mode));
+        armingModes.apply("disarmed");
+        return response.json(store.snapshot());
       }
+      audit.record({ action: "control.disarm", outcome: "allowed", actor: actor(request) });
+      armingModes.apply("disarmed");
+      return response.json(store.snapshot());
     }
-    audit.record({ action: mode === "armed" ? "control.arm" : "control.disarm", outcome: "allowed", actor: actor(request) });
-    return response.json(store.arm(mode));
+    if (!armingModes.enabled) {   // the way it always was
+      audit.record({ action: "control.arm", outcome: "allowed", actor: actor(request) });
+      return response.json(store.arm("armed"));
+    }
+    const plan = armingModes.plan(target);
+    const what = `${plan.from} -> ${plan.to}`;
+    // A mode that would defend nothing is refused, unless the caller says it knows. The system is never armed in silence while defending nothing.
+    if (plan.kind !== "noop" && plan.empty && input.confirm_unassigned !== true) {
+      audit.record({ action: "control.mode", outcome: "denied", actor: actor(request), detail: `${what}: no zones assigned` });
+      return response.status(409).json({ error: `the mode ${plan.to} has no zones or sensors assigned, so it would defend nothing: assign some in the alarm designer, or confirm`, code: "no_zones_assigned" });
+    }
+    // Going to a mode that defends less takes away protection that was in force: it needs what a disarm needs (the PIN, its lockout and its duress PIN), unless the administrator turned that off.
+    if (plan.lowers && context.securitySettings.get("alarm.mode_downgrade_pin") === "required") {
+      const verdict = checkDisarm(context, user, input.pin, actor(request), "mode");
+      if (!verdict.allow) return response.status(verdict.status).json(verdict.body);
+      if (verdict.duress) { audit.record({ action: "control.mode", outcome: "allowed", actor: actor(request), detail: `${what} (duress)` }); alarms.raiseDuress(actor(request)); }
+    }
+    try { armingModes.apply(target, { confirmUnassigned: input.confirm_unassigned === true }); } catch (error) {
+      if (error instanceof ModeChangeError) return response.status(error.status).json({ error: error.message, code: error.code });
+      throw error;
+    }
+    if (plan.kind === "arm") audit.record({ action: "control.arm", outcome: "allowed", actor: actor(request), detail: `${plan.to}${plan.empty ? " (nothing assigned, confirmed)" : ""}` });
+    else if (plan.kind === "switch") audit.record({ action: "control.mode", outcome: "allowed", actor: actor(request), detail: `${what}${plan.lowers ? " (defends less)" : ""}${plan.empty ? " (nothing assigned, confirmed)" : ""}` });
+    return response.json(store.snapshot());
   });
 
   // ---- alarms ----

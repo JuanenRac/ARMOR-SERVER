@@ -30,6 +30,7 @@ import { batteryTopic, parseBatteryResult } from "./battery_ops.js";
 import { registerNetworkRoutes } from "./routes/network.js";
 import { registerAlarmDesignRoutes } from "./routes/alarm_design.js";
 import { registerAlarmProfileRoutes } from "./routes/alarm_profiles.js";
+import { registerAlarmModeRoutes } from "./routes/alarm_modes.js";
 import { registerNodeHealthRoutes } from "./routes/node_health.js";
 import { registerNodeControlRoutes } from "./routes/node_control.js";
 import { registerDiagnosticsRoutes } from "./routes/diagnostics.js";
@@ -149,6 +150,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerNetworkRoutes(app, context);
   registerAlarmDesignRoutes(app, context);
   registerAlarmProfileRoutes(app, context);
+  registerAlarmModeRoutes(app, context);
   registerNodeHealthRoutes(app, context);
   registerNodeControlRoutes(app, context);
   registerDiagnosticsRoutes(app, context);
@@ -352,7 +354,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   let sweepFailing = false;
   const sweeper = setInterval(() => {
     try {
-      context.escalator.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.batteryWrite.sweep(); context.nodeControl.sweep(); context.diagnosticTokens.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.reportSilentNodes(); context.networkNodes.sweep();
+      context.escalator.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.batteryWrite.sweep(); context.nodeControl.sweep(); context.diagnosticTokens.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.armingModes.tick(); context.reportSilentNodes(); context.networkNodes.sweep();
       context.studioSessions.sweep(); context.operatorSessions.sweep(); context.connections.registry.tick(); context.nodeLife.flush();
       sweepFailing = false;
     } catch (error) {

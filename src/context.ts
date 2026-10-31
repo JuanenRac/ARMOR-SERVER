@@ -45,6 +45,7 @@ import { SwitchingService } from "./electrical_switching.js";
 import { BatteryWriteService } from "./battery_write.js";
 import { AlarmStore } from "./alarm.js";
 import { ArmProfileStore } from "./arm_profiles.js";
+import { ArmingModes } from "./arming_modes.js";
 import { NodeHealthStore } from "./node_health.js";
 import { NodeControlService } from "./node_control_service.js";
 import { AlarmCommands } from "./alarm_commands.js";
@@ -134,6 +135,8 @@ export type AppContext = {
   alarmCommands: AlarmCommands;
   /** The named ways of arming a panel (Away, Home, Night, the owner's own), sent inside the arm command (see arm_profiles.ts). */
   armProfiles: ArmProfileStore;
+  /** The arming modes (away, home, night) with their zones, delays and timetable; off unless the setting alarm.arming_modes is on (see arming_modes.ts). */
+  armingModes: ArmingModes;
   /** The latest health report of every node and what is wrong with it (see node_health.ts). */
   nodeHealth: NodeHealthStore;
   /** The read-only diagnostic tokens an administrator issues (see diagnostic_tokens.ts): only their hash is kept. */
@@ -268,6 +271,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const deviceLink: AppContext["deviceLink"] = {};
   const controlHolder: { service?: NodeControlService } = {};
   // Everything that happens goes through one place: written to the history, announced, checked for alarms, offered to the automations.
+  const arming: { modes?: ArmingModes } = {};
   const record = (body: ArmorEventBody): void => {
     // A silent alarm (a duress disarm) is told to the places nobody at the panel can see and is NOT written in the history that every console reads.
     if (body.type === "alarm" && body.silent) { notifier.notify({ ...body, id: 0, at: new Date().toISOString() }, store.snapshot().mode); return; }
@@ -275,6 +279,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     if (event.type === "node") { if (event.to === "online") nodeLife.report(event.node_id); else nodeLife.gone(event.node_id); }
     // A node that is being restarted on purpose, or is in maintenance, is not news to wake anybody for (it stays in the history).
     if (!(event.type === "node" && event.to !== "online" && controlHolder.service?.isHeld(event.node_id))) notifier.notify(event, store.snapshot().mode);
+    if (event.type === "mode") arming.modes?.storeChanged(event.mode === "armed");
     alarmRules.handleEvent(event);
     if (event.type === "mode") automations.handleMode(event.mode);
   };
@@ -410,6 +415,8 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const persistence = new FileStatePersistence(path.join(config.dataDir, "state.json"), { warn });
   const store: ArmorStore = new ArmorStore(overrides.broadcast, {
     staleAfterMs: config.nodeStaleAfterS * 1000, now: overrides.now, persistence, rules: () => rules.get(), minTargets: config.alertMinTargets,
+    guards: id => arming.modes?.guards("node", id) ?? true,
+    armingMode: () => (arming.modes?.enabled ? arming.modes.current() : undefined),
     onEvent: record,
   });
   const escalator = new Escalator({ afterMin: config.escalateAfterMin, active: () => alarms.active(), send: message => notifier.send(message), mode: () => store.snapshot().mode, now: overrides.now });
@@ -429,6 +436,18 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     camerasDown: cameraWatcher.snapshot().filter(camera => camera.status === "offline").map(camera => camera.id),
     devicesTriggered: devices.list().filter(device => isTriggered(device.kind, device.state)).map(device => ({ id: device.id, kind: device.kind })),
   });
+  const armingModes = new ArmingModes({
+    file: path.join(config.dataDir, "arming-modes.json"), now: overrides.now, warn,
+    enabled: () => securitySettings.get("alarm.arming_modes"), scheduleEnabled: () => securitySettings.get("alarm.mode_schedule"), scheduleMayLower: () => securitySettings.get("alarm.mode_schedule_lowers"),
+    universe: () => [...devices.list().map(device => ({ type: "device" as const, id: device.id })), ...Object.keys(store.snapshot().nodes).map(id => ({ type: "node" as const, id })), ...vault.list().map(camera => ({ type: "camera" as const, id: camera.id }))],
+    locationOf: unit => (unit.type === "device" ? devices.get(unit.id)?.location : undefined),
+    isArmed: () => store.armed, setArmed: armed => { store.arm(armed ? "armed" : "disarmed"); },
+    afterSwitch: () => { store.reevaluate(); alarmRules.modeSwitched(); }, afterExit: () => { store.reevaluate(); alarmRules.onArmed?.(); },
+    report: what => audit.record({ action: "control.mode_schedule", outcome: what.applied ? "allowed" : "denied", actor: "schedule", detail: `${what.mode}${what.reason ? `: ${what.reason}` : ""}` }),
+  });
+  arming.modes = armingModes;
+  alarmRules.arming = { guards: (type, id) => armingModes.guards(type, id), entryDelayMs: (type, id) => armingModes.entryDelayMs(type, id), later: (key, ms, run) => armingModes.later(key, ms, run), cancelLater: () => armingModes.cancelLater() };
+  alarmRules.deviceTriggered = id => { const device = devices.get(id); return device ? isTriggered(device.kind, device.state) : false; };
   const users = new UserStore({
     file: path.join(config.dataDir, "users.json"), seed: { username: config.studioUsername, password: config.studioPassword },
     minPasswordLength: config.passwordMinLength, resetSeedPassword: config.resetStudioPassword, warn,
@@ -490,7 +509,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, securitySettings, geoip, loginCountries, alarmSounds, spokenAlarms, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, securitySettings, geoip, loginCountries, alarmSounds, spokenAlarms, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

@@ -29,7 +29,10 @@ export type NodeState = {
   /** The address of the node's web panel, or null until the node has said it. */
   panel: PanelInfo | null;
 };
-export type SystemState = { mode: SecurityMode; revision: number; nodes: Record<string, NodeState>; updated_at: string };
+export type SystemState = {
+  mode: SecurityMode;
+  /** The arming mode in force (disarmed, away, home or night); only present while the arming modes are turned on, so a client that knows none ignores it and reads `mode`. */
+  arming_mode?: string; revision: number; nodes: Record<string, NodeState>; updated_at: string };
 
 type StoredNode = Omit<NodeState, "stale" | "panel"> & { received_at_ms: number; status: NodeStatus; high_since_ms: number | null };
 
@@ -49,6 +52,10 @@ export type StoreOptions = {
   persistence?: StatePersistence;
   /** How many targets at once make an alert high while armed (default 2; the server's setting is ARMOR_ALERT_MIN_TARGETS, 1 by default). */
   minTargets?: number;
+  /** Whether the armed system defends this node right now (the arming modes: a node outside the mode, or still in the exit delay, does not count as armed). Absent: every node is defended while armed. */
+  guards?: (nodeId: string) => boolean;
+  /** The arming mode to show in the state, or undefined while the arming modes are off. */
+  armingMode?: () => string | undefined;
 };
 
 export class ArmorStore {
@@ -60,6 +67,8 @@ export class ArmorStore {
   /** The wall panels (ARMOR-NODE-HMI) that said they are alive: they are not radars, so they are not nodes, do not count and cannot be a node that went down. */
   readonly #wallPanels = new Map<string, { online: boolean; timestamp_ms: number }>();
   readonly #minTargets: number;
+  readonly #guards: (nodeId: string) => boolean;
+  readonly #armingMode: () => string | undefined;
   /** The nodes that have sent telemetry since this server started: for them, silence is judged by the telemetry, not by the heartbeat. */
   readonly #telemetrySeen = new Set<string>();
   readonly #onChange: ((state: SystemState) => void) | undefined;
@@ -77,8 +86,13 @@ export class ArmorStore {
     this.#rules = options.rules ?? (() => defaultRules());
     this.#persistence = options.persistence;
     this.#minTargets = options.minTargets ?? 2;
+    this.#guards = options.guards ?? (() => true);
+    this.#armingMode = options.armingMode ?? (() => undefined);
     this.#restore(this.#persistence?.load());
   }
+
+  /** Whether the system is armed, without building the whole state. */
+  get armed(): boolean { return this.#mode === "armed"; }
 
   snapshot(): SystemState {
     const now = this.#now();
@@ -88,7 +102,8 @@ export class ArmorStore {
       const stale = now - received_at_ms > this.#staleAfterMs;
       nodes[id] = { ...visible, stale, online: visible.online && !stale, panel: this.#panels.get(id) ?? null };
     }
-    return { mode: this.#mode, revision: this.#revision, nodes, updated_at: this.#updatedAt };
+    const arming = this.#armingMode();
+    return { mode: this.#mode, ...(arming ? { arming_mode: arming } : {}), revision: this.#revision, nodes, updated_at: this.#updatedAt };
   }
 
   arm(mode: SecurityMode): SystemState {
@@ -96,13 +111,23 @@ export class ArmorStore {
     this.#mode = mode;
     if (changed) this.#onEvent?.({ type: "mode", mode });
     // A mode change re-evaluates every node: disarming clears "high" at once.
+    this.#reevaluateNodes();
+    return this.#bump(true);
+  }
+
+  /** Look at every node again with the rules of the moment (the arming mode changed between two armed modes, or an exit delay ended): the level of each follows what is defended now. */
+  reevaluate(): SystemState {
+    this.#reevaluateNodes();
+    return this.#bump(true);
+  }
+
+  #reevaluateNodes(): void {
     const now = this.#now();
     for (const [id, node] of this.#nodes) {
       const next = this.#evaluated(node, node.target_count, now);
       if (next.alert_level !== node.alert_level) this.#onEvent?.({ type: "alert", node_id: id, from: node.alert_level, to: next.alert_level, targets: next.target_count });
       this.#nodes.set(id, next);
     }
-    return this.#bump(true);
   }
 
   telemetry(message: Telemetry): SystemState {
@@ -206,7 +231,7 @@ export class ArmorStore {
 
   /** The level a node should have now: "high" needs the condition to have held for the dwell time. */
   #evaluated(node: StoredNode, count: number, now: number): StoredNode {
-    const raw = alertLevelFor(this.#mode, count, this.#minTargets);
+    const raw = alertLevelFor(this.#mode === "armed" && this.#guards(node.node_id) ? "armed" : "disarmed", count, this.#minTargets);
     const highSince = raw === "high" ? node.high_since_ms ?? now : null;
     const level: AlertLevel = raw === "high" && now - (highSince ?? now) < this.#rules().dwell_ms ? "review" : raw;
     return { ...node, target_count: count, alert_level: level, high_since_ms: highSince };

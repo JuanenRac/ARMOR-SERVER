@@ -104,14 +104,14 @@
     {
      "name": "security_settings.ts",
      "desc": {
-      "en": "the 17 switches Studio changes",
-      "es": "los 17 interruptores de Studio",
-      "de": "die 17 Schalter aus Studio",
-      "fr": "les 17 interrupteurs de Studio",
-      "it": "i 17 interruttori di Studio",
-      "ja": "Studio で変える 17 のスイッチ",
-      "zh": "Studio 修改的 17 个开关",
-      "pt": "os 17 interruptores do Studio"
+      "en": "the 21 switches Studio changes",
+      "es": "los 21 interruptores de Studio",
+      "de": "die 21 Schalter aus Studio",
+      "fr": "les 21 interrupteurs de Studio",
+      "it": "i 21 interruttori di Studio",
+      "ja": "Studio で変える 21 のスイッチ",
+      "zh": "Studio 修改的 21 个开关",
+      "pt": "os 21 interruptores do Studio"
      }
     },
     {
@@ -238,27 +238,27 @@
     {
      "name": "tests/",
      "desc": {
-      "en": "755 tests, unit and HTTP integration",
-      "es": "755 pruebas, unitarias e integración HTTP",
-      "de": "755 Tests, Unit und HTTP-Integration",
-      "fr": "755 tests, unitaires et intégration HTTP",
-      "it": "755 test, unitari e integrazione HTTP",
-      "ja": "755 件（単体と HTTP 結合）",
-      "zh": "755 项测试（单元与 HTTP 集成）",
-      "pt": "755 testes, unitários e integração HTTP"
+      "en": "779 tests, unit and HTTP integration",
+      "es": "779 pruebas, unitarias e integración HTTP",
+      "de": "779 Tests, Unit und HTTP-Integration",
+      "fr": "779 tests, unitaires et intégration HTTP",
+      "it": "779 test, unitari e integrazione HTTP",
+      "ja": "779 件（単体と HTTP 結合）",
+      "zh": "779 项测试（单元与 HTTP 集成）",
+      "pt": "779 testes, unitários e integração HTTP"
      }
     },
     {
      "name": "docs/",
      "desc": {
-      "en": "7 guides, route table, environment",
-      "es": "7 guías, tabla de rutas, entorno",
-      "de": "7 Leitfäden, Routentabelle, Umgebung",
-      "fr": "7 guides, table des routes, environnement",
-      "it": "7 guide, tabella delle rotte, ambiente",
-      "ja": "7 つのガイド、ルート表、環境変数",
-      "zh": "7 份指南、路由表、环境变量",
-      "pt": "7 guias, tabela de rotas, ambiente"
+      "en": "8 guides, route table, environment",
+      "es": "8 guías, tabla de rutas, entorno",
+      "de": "8 Leitfäden, Routentabelle, Umgebung",
+      "fr": "8 guides, table des routes, environnement",
+      "it": "8 guide, tabella delle rotte, ambiente",
+      "ja": "8 つのガイド、ルート表、環境変数",
+      "zh": "8 份指南、路由表、环境变量",
+      "pt": "8 guias, tabela de rotas, ambiente"
      }
     },
     {
