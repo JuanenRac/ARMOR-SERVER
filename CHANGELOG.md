@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **Dependencies with known vulnerabilities are updated:** the request-body parser, the query-string parser and the address library move to their patched releases inside the same major version (denial-of-service fixes); the lock file is the only file changed and `npm audit` now reports nothing.
 - **The lights of Project status follow the evidence of the manifest:** the manifest says how far the repository has been shown to work (`evidence`: `host-test`, `simulator`, `bench` or `field`) and the validator fails when a light is above what that evidence and the maturity allow (`tools/status_lights.py`), so a green that never ran on real hardware cannot come back.
 - **The sign-in limit of a node can be read and changed:** `POST /api/v1/admin/nodes/settings` (administrators) signs in to the node's own panel with the login given, which is used once and never kept, and reads or writes `system.login_limit_per_minute` (0 to 120) through the node's own configuration route; the change is written in the audit trail without the login.
 - **A channel whose own reading is old is set aside:** a channel of an electrical node whose `reading_age_ms` is over a minute is left out of the grid figure and the graphs, listed in `stale_channels` of the node and counted in `totals.stale_readings`; the option `electrical.set_aside_old_readings` of the security settings is on by default and turns it off.
