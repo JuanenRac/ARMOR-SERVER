@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.8.1.4] - The daily log, the calls to the vision service and the voice gateway have time and size limits, the summary and the heat map have a queue of their own and the node panel closes its connection when the browser leaves
+
 - **The daily log no longer pays for the whole log on every sample:** the size bound used to serialise every day of the log twice for each reading, and the day and the second of the day built a new date formatter on each call; a full log (14 days at 5000 events) took more than a quarter of a minute to fill and each sample cost milliseconds. The size is now kept per day as events arrive and the formatters are kept per time zone (the same file, the same bounds, a load test pins it).
 - **The call to the live vision service has one time limit for the whole answer:** a service that dripped its answer a few bytes at a time kept the request (and the queue place) for ever, and one that closed in the middle of its answer was waited for until the limit; both now end in the usual `heatmap_failed`. The biggest answer of the vision service and of the summary command are settings of the environment (`ARMOR_VISION_MAX_BYTES`, `ARMOR_SUMMARY_MAX_BYTES`).
 - **The summary and the heat map have a line of their own:** a summary (a Python process) no longer makes a heat map wait behind it.
