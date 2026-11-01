@@ -197,6 +197,8 @@ export type HeatmapDeps = { url: string; remote: boolean; fetch: FetchVision; ti
 export async function heatmap(deps: HeatmapDeps, query: { camera?: string; format: string; scale: string }): Promise<ReportAnswer> {
   const service = parseVisionServiceUrl(deps.url);
   if (!service || (!deps.remote && !isLoopbackHost(service.host))) return fail(503, "heatmap_not_configured");
+  // a token is never sent in clear to another machine: plain http is for this machine only (what was saved before the rule is held back too)
+  if (deps.token && service.origin.startsWith("http:") && !isLoopbackHost(service.host)) return fail(503, "heatmap_not_configured");
   const params = new URLSearchParams({ ...(query.camera ? { camera: query.camera } : {}), format: query.format, scale: query.scale });
   const result = await deps.fetch(`${service.origin}/heatmap?${params.toString()}`, deps.timeoutMs ?? 20_000, 16 * 1024 * 1024, deps.token || undefined);
   if (!result) return fail(502, "heatmap_failed");

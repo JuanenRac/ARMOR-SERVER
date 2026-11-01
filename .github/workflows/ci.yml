@@ -75,6 +75,8 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+          # the Gradle wrapper, its distribution and the dependencies are kept between runs (the key is the build files): the first run fills the cache, the next ones skip the downloads
+          cache: gradle
 
       - name: Make the Gradle wrapper executable
         if: ${{ hashFiles('gradlew') != '' }}

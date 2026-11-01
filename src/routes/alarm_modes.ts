@@ -6,10 +6,10 @@
  */
 import type { Express } from "express";
 import type { AppContext } from "../context.js";
-import { MAX_SCHEDULE, ModesConflict, ModesInvalid } from "../arming_modes.js";
+import { MAX_SCHEDULE, ModesConflict, ModesInvalid, parsePanelSync } from "../arming_modes.js";
 
 export function registerAlarmModeRoutes(app: Express, context: AppContext): void {
-  const { armingModes, modePanelSync, audit, securitySettings, requireOperator, requireAdmin, studioUser } = context;
+  const { armingModes, modePanelSync, armProfiles, audit, securitySettings, requireOperator, requireAdmin, studioUser } = context;
 
   const view = () => {
     const stored = armingModes.get();
@@ -29,6 +29,13 @@ export function registerAlarmModeRoutes(app: Express, context: AppContext): void
     const body = typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {};
     const actor = studioUser(request)?.username ?? "administrator";
     try {
+      // the profile each mode arms must exist when the definition is saved (a name that is not there would only fail later, at the first arming). A panel the list names that does not
+      // exist yet is another matter: panels appear, so it is saved, and the sync treats it as a failed panel, with its alarm, until it is there.
+      if ("panel_map" in body && body.panel_map !== undefined) {
+        for (const [mode, id] of Object.entries(parsePanelSync(body.panel_map).profiles ?? {})) {
+          if (!armProfiles.find(id)) throw new ModesInvalid(`panel_map.profiles.${mode}: the profile ${id.slice(0, 40)} does not exist`);
+        }
+      }
       const saved = armingModes.replace({ modes: body.modes, ...("schedule" in body ? { schedule: body.schedule } : {}), ...("panel_map" in body ? { panel_map: body.panel_map } : {}) }, body.revision, actor);
       audit.record({ action: "arming_modes.save", outcome: "allowed", actor, detail: `revision ${saved.revision}, ${saved.schedule.length} timetable entries` });
       return response.json(view());

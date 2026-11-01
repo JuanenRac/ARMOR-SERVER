@@ -4,6 +4,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The token for the vision service never goes in clear to another machine.** With `vision.service_remote` on and a token held (`ARMOR_VISION_SERVICE_TOKEN`), a plain-http address of a host that is not this machine is refused when it is saved (and when the remote switch is turned on over an address already saved), with the reason; a request to such an address saved before the rule never leaves. Loopback stays plain http, and https is always allowed.
+- **The profile each arming mode asks of the panels is checked when the definition is saved:** `PUT /api/v1/alarm/modes` refuses (400, `invalid_modes`) a `panel_map.profiles` name that does not exist, with the name, and the audit says so. A panel that the list names and that does not exist yet is saved, and at the first arming it is a failed panel with its alarm (`mode_panel_sync_failed`), as before; now there is a test for it.
+- **Every parser of a message or a document from outside is fed seeded garbage in a test** and must answer or refuse with its own error, never with a crash of the language.
+
 ## [0.8.1.2] - The profile each arming mode asks of each panel and the panels it asks can be set, a false alarm can be marked by hand, the live vision service can ask for a token and a daily log feeds the summary
 
 - **The owner chooses how the arming modes reach the alarm panels:** the document of the modes gains the optional `panel_map` (saved by an administrator with `PUT /api/v1/alarm/modes`, returned by `GET`): `profiles` maps a mode to the profile it arms on a panel (default away to away, home to stay, night to night) and `only` limits the panels that are asked (default every panel). Everything stays behind `alarm.mode_panel_sync`; a profile that does not exist or a panel the server does not know is a failed panel (`unknown_profile`, `unknown_panel`), never a silent skip, and the mode of the server is never held back.

@@ -67,6 +67,12 @@ export function parseVisionServiceUrl(value: unknown): { origin: string; host: s
 }
 /** Whether a host is this machine: localhost or a loopback address. */
 export const isLoopbackHost = (host: string): boolean => host === "localhost" || /^127(\.\d{1,3}){3}$/.test(host) || host === "::1";
+/** A token that would go in clear to another machine: the service is allowed to be remote, the server holds a token for it and the address is plain http on a host that is not this machine. */
+export function visionTokenInClear(remote: boolean, tokenHeld: boolean, url: string): boolean {
+  if (!remote || !tokenHeld) return false;
+  const service = parseVisionServiceUrl(url);
+  return service !== undefined && service.origin.startsWith("http:") && !isLoopbackHost(service.host);
+}
 export const SUMMARY_LOG_DAYS = { min: 1, max: 90, default: 14 } as const;
 export const SUMMARY_READING_EVERY_S = { min: 10, max: 3600, default: 300 } as const;
 export const SUMMARY_POWER_EVERY_S = { min: 5, max: 3600, default: 60 } as const;
@@ -232,6 +238,12 @@ export class SecuritySettings {
       if (next[key] !== ok) { next[key] = ok; changes[key] = ok; }
     }
     if (!Object.keys(changes).length) return {};
+    // a token travels with every request to the vision service: away from this machine it must not go in clear
+    const after = { ...next } as Record<string, unknown>;
+    for (const [key, value] of Object.entries(this.#lockedByEnvironment())) if (isKey(key) && value !== undefined) after[key] = value;
+    if (visionTokenInClear(after["vision.service_remote"] === true, after["vision.service_token_set"] === true, String(after["vision.service_url"] ?? ""))) {
+      throw new SecuritySettingsInvalid("vision.service_url must be https when vision.service_remote is on and the server holds a token for the service: the token would travel in clear", "vision.service_url");
+    }
     for (const key of Object.keys(changes)) this.#explicit.add(key);
     this.#save(next as SecuritySettingsValues);
     this.#values = next as SecuritySettingsValues;
