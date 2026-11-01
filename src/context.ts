@@ -489,6 +489,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const modePanelSync = new ModePanelSync({
     enabled: () => securitySettings.get("alarm.arming_modes") && securitySettings.get("alarm.mode_panel_sync"), now: overrides.now, audit, changed: () => { store.reevaluate(); },
     panels: () => alarmNodes.list().map(node => node.node_id), profile: id => armProfiles.find(id),
+    profileFor: mode => armingModes.panelSync().profiles?.[mode], only: () => armingModes.panelSync().only,
     arm: (node, base, actor, profile) => alarmCommands.request(node, "arm", base, false, actor, profile),
     // A panel that did not confirm is an alarm while the report says so; the alarm centre keeps one per key, and the detail is plain facts.
     raise: state => alarms.raise(MODE_PANEL_ALARM, {

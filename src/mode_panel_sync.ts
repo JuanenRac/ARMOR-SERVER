@@ -32,6 +32,10 @@ export type ModePanelSyncOptions = {
   /** The alarm panels the server knows. */
   panels: () => string[];
   profile: (id: string) => ArmProfile | undefined;
+  /** The profile a mode arms on the panels (the owner's mapping); absent: MODE_PROFILE. */
+  profileFor?: (mode: ArmedMode) => string | undefined;
+  /** The panels to ask: undefined is all of them; a list (even an empty one) is exactly those. */
+  only?: () => string[] | undefined;
   /** Ask one panel to arm with a profile (AlarmCommands.request); it throws an AlarmCommandError when the command must not be sent. */
   arm: (node: string, base: "away" | "stay", actor: string, profile: ArmProfile) => { command_id: string };
   audit: AuditLog;
@@ -95,10 +99,14 @@ export class ModePanelSync {
     const last = this.#state;
     if (noop && last && last.mode === mode && (last.status === "confirmed" || last.status === "pending" || last.status === "none")) return;
     const at = new Date(this.#now()).toISOString();
-    const id = MODE_PROFILE[mode];
+    const id = this.#o.profileFor?.(mode) ?? MODE_PROFILE[mode];
     const profile = this.#o.profile(id);
     const nodes: PanelEntry[] = [];
-    for (const node of this.#o.panels()) {
+    const known = this.#o.panels(), only = this.#o.only?.();
+    // a panel named in the list that the server does not know is a failed panel, never a silent skip
+    const targets = only === undefined ? known : only;
+    for (const node of targets) {
+      if (!known.includes(node)) { nodes.push({ node_id: node, status: "unavailable", reason: "unknown_panel" }); continue; }
       if (!profile) { nodes.push({ node_id: node, status: "unavailable", reason: "unknown_profile" }); continue; }
       try {
         nodes.push({ node_id: node, status: "pending", command_id: this.#o.arm(node, profile.base, by, profile).command_id });

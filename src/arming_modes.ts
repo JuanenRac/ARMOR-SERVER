@@ -18,7 +18,9 @@ export type ArmedMode = (typeof ARMED_MODES)[number];
 export type ArmingMode = "disarmed" | ArmedMode;
 export type ModeDefinition = { defends?: string[]; entry?: string[]; exit_delay_s?: number; entry_delay_s?: number };
 export type ScheduleEntry = { mode: ArmedMode; days: number[]; at: string };
-export type ArmingModesDocument = { modes: Record<ArmedMode, ModeDefinition>; schedule: ScheduleEntry[] };
+/** How the modes reach the alarm panels (only while alarm.mode_panel_sync is on): the profile each mode arms (absent: away->away, home->stay, night->night) and the panels asked (absent: all of them; a list, even an empty one, is exactly those). */
+export type PanelSyncConfig = { profiles?: Partial<Record<ArmedMode, string>>; only?: string[] };
+export type ArmingModesDocument = { modes: Record<ArmedMode, ModeDefinition>; schedule: ScheduleEntry[]; panel_map?: PanelSyncConfig };
 export type StoredModes = ArmingModesDocument & { revision: number; updated_at: string; updated_by: string };
 export type Unit = { type: "device" | "node" | "camera"; id: string };
 
@@ -27,6 +29,9 @@ export const MAX_SCHEDULE = 16;
 export const MAX_MODE_DELAY_S = 300;
 const REF = /^(zone|device|node|camera):\S(.{0,62}\S)?$/;
 const TIME = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+const PROFILE_ID = /^[a-z0-9][a-z0-9_-]{0,15}$/;
+const PANEL_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+export const MAX_SYNC_PANELS = 32;
 
 export class ModesInvalid extends Error {}
 export class ModesConflict extends Error {
@@ -71,9 +76,37 @@ export function parseModeDefinition(value: unknown, name: ArmedMode): ModeDefini
 }
 
 /** The editable part: the three modes and the timetable. No two entries may change the mode at the same minute of the same day. */
+/** The way the modes reach the panels: the profile of each mode and the panels asked. Anything not understood refuses the whole document. */
+export function parsePanelSync(value: unknown): PanelSyncConfig {
+  if (!isRecord(value)) throw new ModesInvalid("panel_map is an object");
+  for (const key of Object.keys(value)) if (!["profiles", "only"].includes(key)) throw new ModesInvalid(`panel_map has an unknown field: ${key}`);
+  const out: PanelSyncConfig = {};
+  if ("profiles" in value) {
+    if (!isRecord(value.profiles)) throw new ModesInvalid("panel_map.profiles is an object with away, home and night");
+    const profiles: Partial<Record<ArmedMode, string>> = {};
+    for (const [mode, id] of Object.entries(value.profiles)) {
+      if (!(ARMED_MODES as readonly string[]).includes(mode)) throw new ModesInvalid(`panel_map.profiles: unknown mode ${mode.slice(0, 20)}`);
+      if (typeof id !== "string" || !PROFILE_ID.test(id)) throw new ModesInvalid(`panel_map.profiles.${mode} is the id of a profile (lowercase letters, digits, - and _, at most 16)`);
+      profiles[mode as ArmedMode] = id;
+    }
+    out.profiles = profiles;
+  }
+  if ("only" in value) {
+    if (!Array.isArray(value.only) || value.only.length > MAX_SYNC_PANELS) throw new ModesInvalid(`panel_map.only is a list of at most ${MAX_SYNC_PANELS} panels`);
+    const seen = new Set<string>();
+    for (const item of value.only) {
+      if (typeof item !== "string" || !PANEL_ID.test(item)) throw new ModesInvalid("panel_map.only: each panel is the id of a node");
+      if (seen.has(item)) throw new ModesInvalid(`panel_map.only: ${item} is named twice`);
+      seen.add(item);
+    }
+    out.only = [...value.only] as string[];
+  }
+  return out;
+}
+
 export function parseArmingModes(value: unknown): ArmingModesDocument {
   if (!isRecord(value)) throw new ModesInvalid("the arming modes are an object");
-  for (const key of Object.keys(value)) if (!["modes", "schedule"].includes(key)) throw new ModesInvalid(`unknown field: ${key}`);
+  for (const key of Object.keys(value)) if (!["modes", "schedule", "panel_map"].includes(key)) throw new ModesInvalid(`unknown field: ${key}`);
   const modes = value.modes;
   if (!isRecord(modes)) throw new ModesInvalid("modes is an object with away, home and night");
   for (const key of Object.keys(modes)) if (!(ARMED_MODES as readonly string[]).includes(key)) throw new ModesInvalid(`unknown mode: ${key}`);
@@ -102,7 +135,7 @@ export function parseArmingModes(value: unknown): ArmingModesDocument {
       schedule.push({ mode: item.mode as ArmedMode, days: [...(item.days as number[])], at: item.at });
     });
   }
-  return { modes: parsed, schedule };
+  return { modes: parsed, schedule, ...("panel_map" in value && value.panel_map !== undefined ? { panel_map: parsePanelSync(value.panel_map) } : {}) };
 }
 
 /** What a house has before anybody edits anything: away with no delays, and home and night with nothing marked. */
@@ -157,7 +190,7 @@ export class ArmingModes {
     this.#doc = { ...defaultModes(), revision: 0, updated_at: new Date(0).toISOString(), updated_by: "" };
     try {
       const stored = JSON.parse(fs.readFileSync(options.file, "utf8")) as Partial<StoredModes> & { current?: unknown };
-      const parsed = parseArmingModes({ modes: stored.modes, schedule: stored.schedule ?? [] });
+      const parsed = parseArmingModes({ modes: stored.modes, schedule: stored.schedule ?? [], ...(stored.panel_map !== undefined ? { panel_map: stored.panel_map } : {}) });
       this.#doc = { ...parsed, revision: Number.isInteger(stored.revision) ? Number(stored.revision) : 0, updated_at: typeof stored.updated_at === "string" ? stored.updated_at : this.#doc.updated_at,
         updated_by: typeof stored.updated_by === "string" ? stored.updated_by.slice(0, 60) : "" };
       if (typeof stored.current === "string" && (stored.current === "disarmed" || (ARMED_MODES as readonly string[]).includes(stored.current))) this.#current = stored.current as ArmingMode;
@@ -177,6 +210,9 @@ export class ArmingModes {
   available(): ArmingMode[] { return this.enabled ? ["disarmed", ...ARMED_MODES] : ["disarmed", "away"]; }
 
   get(): StoredModes { return structuredClone(this.#doc); }
+
+  /** How the modes reach the panels, as saved (empty: the defaults). */
+  panelSync(): PanelSyncConfig { return structuredClone(this.#doc.panel_map ?? {}); }
 
   /** The modes that defend nothing at this moment (home and night start like that). */
   unassigned(): ArmedMode[] {

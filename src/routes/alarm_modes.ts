@@ -18,7 +18,7 @@ export function registerAlarmModeRoutes(app: Express, context: AppContext): void
       downgrade_pin_required: securitySettings.get("alarm.mode_downgrade_pin") === "required", schedule_enabled: securitySettings.get("alarm.mode_schedule"),
       schedule_may_lower: securitySettings.get("alarm.mode_schedule_lowers"), max_schedule: MAX_SCHEDULE,
       panel_sync_enabled: modePanelSync.enabled, ...(modePanelSync.view() ? { panel_sync: modePanelSync.view() } : {}),
-      revision: stored.revision, updated_at: stored.updated_at, updated_by: stored.updated_by, modes: stored.modes, schedule: stored.schedule,
+      revision: stored.revision, updated_at: stored.updated_at, updated_by: stored.updated_by, modes: stored.modes, schedule: stored.schedule, panel_map: stored.panel_map ?? {},
     };
   };
 
@@ -29,7 +29,7 @@ export function registerAlarmModeRoutes(app: Express, context: AppContext): void
     const body = typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {};
     const actor = studioUser(request)?.username ?? "administrator";
     try {
-      const saved = armingModes.replace({ modes: body.modes, ...("schedule" in body ? { schedule: body.schedule } : {}) }, body.revision, actor);
+      const saved = armingModes.replace({ modes: body.modes, ...("schedule" in body ? { schedule: body.schedule } : {}), ...("panel_map" in body ? { panel_map: body.panel_map } : {}) }, body.revision, actor);
       audit.record({ action: "arming_modes.save", outcome: "allowed", actor, detail: `revision ${saved.revision}, ${saved.schedule.length} timetable entries` });
       return response.json(view());
     } catch (error) {
