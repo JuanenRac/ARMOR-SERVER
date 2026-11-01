@@ -164,3 +164,63 @@ test("property: any whole number inside the range is accepted and any outside it
     }
   }
 });
+
+test("a slow summary does not hold up the heat map: each report has its own line", async () => {
+  const slow = runner(600);
+  const stand = { ...slow, fetch: (async () => ({ status: 200, type: "application/json", body: Buffer.from(JSON.stringify(MAP)) })) as FetchVision };
+  const { running, cookie } = await started({}, stand);
+  try {
+    const summary = get(running, cookie, ROUTES.summary);
+    await pause(50);
+    const begun = Date.now();
+    assert.equal((await get(running, cookie, ROUTES.heatmap)).status, 200);
+    assert.ok(Date.now() - begun < 400, `the heat map waited ${Date.now() - begun} ms behind the summary`);
+    assert.equal((await summary).status, 200);
+  } finally { await running.stop(); }
+});
+
+test("load: a burst of heat map requests ends in answers, refusals when the line is full or the minute is over, never anything else", async () => {
+  const stand = runner(15);
+  const { running, cookie } = await started({ ARMOR_REPORT_REQUESTS_PER_MINUTE: "60" }, stand);
+  try {
+    const answers = await Promise.all(Array.from({ length: 90 }, () => get(running, cookie, ROUTES.heatmap).then(async reply => ({ status: reply.status, body: await reply.text() }))));
+    const counts = new Map<number, number>();
+    for (const answer of answers) counts.set(answer.status, (counts.get(answer.status) ?? 0) + 1);
+    assert.deepEqual([...counts.keys()].filter(status => ![200, 429, 503].includes(status)), [], `unexpected statuses ${JSON.stringify([...counts])}`);
+    assert.ok((counts.get(200) ?? 0) >= 1, "nothing was answered");
+    assert.ok((counts.get(429) ?? 0) >= 30, "the minute limit did not hold");
+    for (const answer of answers.filter(item => item.status === 503)) assert.match(answer.body, /report_busy/);
+  } finally { await running.stop(); }
+});
+
+test("load: the line of a report takes a burst, refuses what does not fit and is empty again afterwards, even when tasks fail", async () => {
+  const line = new Serial(3);
+  const results = await Promise.all(Array.from({ length: 40 }, (_, n) => line.run(async () => { await pause(2); if (n % 5 === 0) throw new Error("boom"); return n; }).catch(() => "failed")));
+  assert.ok(results.includes("busy"));
+  assert.ok(results.some(result => typeof result === "number"));
+  assert.equal(await line.run(async () => "after"), "after", "the line stayed blocked after a burst with failures");
+});
+
+test("the biggest answer of the vision service and of the summary command start from the environment and are what the two reports are given", async () => {
+  const asked: number[] = [];
+  const stand = runner();
+  const seeing: { run: RunReport; fetch: FetchVision } = {
+    run: async run => { asked.push(run.maxBytes); return stand.run(run); },
+    fetch: async (url, timeoutMs, maxBytes, token) => { asked.push(maxBytes); return stand.fetch(url, timeoutMs, maxBytes, token); },
+  };
+  const { running, cookie } = await started({ ARMOR_VISION_MAX_BYTES: "1000000", ARMOR_SUMMARY_MAX_BYTES: "2000000" }, seeing);
+  try {
+    await get(running, cookie, ROUTES.summary);
+    await get(running, cookie, ROUTES.heatmap);
+    assert.deepEqual(asked, [2_000_000, 1_000_000]);
+  } finally { await running.stop(); }
+  const defaults = await started({}, seeing);
+  try {
+    asked.length = 0;
+    await get(defaults.running, defaults.cookie, ROUTES.summary);
+    await get(defaults.running, defaults.cookie, ROUTES.heatmap);
+    assert.deepEqual(asked, [4 * 1024 * 1024, 16 * 1024 * 1024]);
+  } finally { await defaults.running.stop(); }
+  assert.throws(() => testConfig({ ARMOR_VISION_MAX_BYTES: "10" }), ConfigError);
+  assert.throws(() => testConfig({ ARMOR_SUMMARY_MAX_BYTES: "999999999999" }), ConfigError);
+});

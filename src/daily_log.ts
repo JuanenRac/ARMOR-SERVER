@@ -35,11 +35,15 @@ export type DailyLogOptions = {
   warn?: (message: string) => void;
 };
 
+/** The bytes of one event in the file (its text is plain ASCII: identifiers and numbers) and the comma that follows it. */
+const weigh = (event: LogEvent): number => JSON.stringify(event).length + 1;
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 
 export class DailyLog {
   #days = new Map<string, LogEvent[]>();
   readonly #last = new Map<string, number>();
+  /** The bytes each day takes in the file, kept as events come so that the size bound never serialises the whole log. */
+  readonly #weights = new Map<string, number>();
   readonly #file: JsonFile<LogFile>;
   readonly #o: DailyLogOptions;
   readonly #now: () => number;
@@ -56,7 +60,7 @@ export class DailyLog {
       for (const [day, events] of Object.entries(stored.days)) {
         if (!DAY.test(day) || !Array.isArray(events)) continue;
         const clean = events.filter((event): event is LogEvent => this.#valid(event)).slice(0, options.maxEventsPerDay);
-        if (clean.length) this.#days.set(day, clean);
+        if (clean.length) { this.#days.set(day, clean); this.#weights.set(day, clean.reduce((sum, event) => sum + weigh(event), 0)); }
       }
       this.#trim();
     }
@@ -102,6 +106,7 @@ export class DailyLog {
     if (list.length >= this.#o.maxEventsPerDay) { this.dropped += 1; return; }
     list.push(event);
     this.#days.set(day, list);
+    this.#weights.set(day, (this.#weights.get(day) ?? 0) + weigh(event));
     this.#last.set(key, at);
     this.#trim();
     this.#dirty = true;
@@ -112,11 +117,18 @@ export class DailyLog {
   #trim(): void {
     const limit = Math.max(1, this.#o.days());
     const names = [...this.#days.keys()].sort();
-    while (names.length > limit) this.#days.delete(names.shift()!);
-    while (names.length > 1 && this.#size() > this.#o.maxBytes) this.#days.delete(names.shift()!);
+    const drop = (name: string): void => { this.#days.delete(name); this.#weights.delete(name); };
+    while (names.length > limit) drop(names.shift()!);
+    let size = this.#size();
+    while (names.length > 1 && size > this.#o.maxBytes) { drop(names.shift()!); size = this.#size(); }
   }
 
-  #size(): number { return Buffer.byteLength(JSON.stringify({ schema: 1, days: Object.fromEntries(this.#days) }), "utf8"); }
+  /** The size of the file, from the weights of the days (at most a few dozen): the fixed frame plus, per day, its name, its brackets and its events. */
+  #size(): number {
+    let total = 24;
+    for (const [day, weight] of this.#weights) total += day.length + 6 + weight;
+    return total;
+  }
 
   #schedule(): void {
     if (this.#timer) return;

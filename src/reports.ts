@@ -122,7 +122,7 @@ const linkName = (id: string): string | undefined => { const name = id.replace(/
 
 const REPORT_KEYS = ["findings", "summary", "text"];
 
-export type DailyDeps = { config: ArmorConfig; run: RunReport; alarms: () => Alarm[]; language: SummaryLanguage; timeoutMs?: number; sources?: (date: string) => DailySources };
+export type DailyDeps = { config: ArmorConfig; run: RunReport; alarms: () => Alarm[]; language: SummaryLanguage; timeoutMs?: number; /** The most bytes the command may print (ARMOR_SUMMARY_MAX_BYTES; 4 MiB when not given). */ maxBytes?: number; sources?: (date: string) => DailySources };
 
 /** The summary of `date` in `language`, or the reason it cannot be made. */
 export async function dailySummary(deps: DailyDeps, date: string, language: SummaryLanguage): Promise<ReportAnswer> {
@@ -133,7 +133,7 @@ export async function dailySummary(deps: DailyDeps, date: string, language: Summ
   try {
     const file = path.join(folder, "day.jsonl");
     fs.writeFileSync(file, dailyEvents(deps.alarms(), date, deps.sources?.(date)).map(event => JSON.stringify(event)).join("\n"), { encoding: "utf8", mode: 0o600 });
-    const result = await deps.run({ program: python, args: ["-m", "armor_server_ai.cli", "--daily-summary", file, "--summary-config", dailySummaryConfig, "--json", "--lang", language], env: commandEnv(source), cwd: folder, timeoutMs: deps.timeoutMs ?? 20_000, maxBytes: 4 * 1024 * 1024 });
+    const result = await deps.run({ program: python, args: ["-m", "armor_server_ai.cli", "--daily-summary", file, "--summary-config", dailySummaryConfig, "--json", "--lang", language], env: commandEnv(source), cwd: folder, timeoutMs: deps.timeoutMs ?? 20_000, maxBytes: deps.maxBytes ?? 4 * 1024 * 1024 });
     if (result.code === 2 && /is off/.test(result.stderr)) return fail(503, "daily_summary_off_in_settings");
     if (result.code !== 0) return fail(502, "daily_summary_failed");
     let report: Record<string, unknown>;
@@ -169,26 +169,43 @@ export function heatmapQuery(query: Record<string, unknown>): { camera?: string;
 export type VisionAnswer = { status: number; type: string; body: Buffer } | null;
 export type FetchVision = (url: string, timeoutMs: number, maxBytes: number, token?: string) => Promise<VisionAnswer>;
 
-/** The real call: one GET, no redirect followed, no header of this server sent (no token, no cookie), the answer cut at `maxBytes`. */
+/**
+ * The real call: one GET, no redirect followed, no header of this server sent (no token, no cookie), the answer cut at `maxBytes`. `timeoutMs` is for the whole answer: a service that
+ * drips its bytes (each pause short, the whole never ending) or that closes in the middle of its answer is not waited for longer, and a half answer is never handed on.
+ */
 export const fetchVisionService: FetchVision = (url, timeoutMs, maxBytes, token) => new Promise(resolve => {
-  const parsed = new URL(url);
-  const get = parsed.protocol === "https:" ? https.get : http.get;
-  const request = get(parsed, { timeout: timeoutMs, headers: { Accept: "*/*", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, agent: false }, response => {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    response.on("data", (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > maxBytes) { request.destroy(); resolve(null); return; }
-      chunks.push(chunk);
+  let done = false;
+  let request: http.ClientRequest | undefined;
+  const finish = (answer: VisionAnswer): void => {
+    if (done) return;
+    done = true;
+    clearTimeout(deadline);
+    if (answer === null) request?.destroy();
+    resolve(answer);
+  };
+  const deadline = setTimeout(() => finish(null), timeoutMs);
+  try {
+    const parsed = new URL(url);
+    const get = parsed.protocol === "https:" ? https.get : http.get;
+    request = get(parsed, { timeout: timeoutMs, headers: { Accept: "*/*", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, agent: false }, response => {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      response.on("data", (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > maxBytes) { finish(null); return; }
+        chunks.push(chunk);
+      });
+      response.on("end", () => finish({ status: response.statusCode ?? 0, type: String(response.headers["content-type"] ?? ""), body: Buffer.concat(chunks) }));
+      response.on("error", () => finish(null));
+      response.on("aborted", () => finish(null));
+      response.on("close", () => { if (!response.complete) finish(null); });
     });
-    response.on("end", () => resolve({ status: response.statusCode ?? 0, type: String(response.headers["content-type"] ?? ""), body: Buffer.concat(chunks) }));
-    response.on("error", () => resolve(null));
-  });
-  request.on("timeout", () => { request.destroy(); resolve(null); });
-  request.on("error", () => resolve(null));
+    request.on("timeout", () => finish(null));
+    request.on("error", () => finish(null));
+  } catch { finish(null); }
 });
 
-export type HeatmapDeps = { url: string; remote: boolean; fetch: FetchVision; timeoutMs?: number; token?: string };
+export type HeatmapDeps = { url: string; remote: boolean; fetch: FetchVision; timeoutMs?: number; token?: string; /** The most bytes the service may answer (ARMOR_VISION_MAX_BYTES; 16 MiB when not given). */ maxBytes?: number };
 
 /**
  * The heat map the query asks for, or the reason it cannot be given. It is asked of the live service of ARMOR-VISION (which keeps the activity engine in memory); nothing is replayed per
@@ -200,7 +217,7 @@ export async function heatmap(deps: HeatmapDeps, query: { camera?: string; forma
   // a token is never sent in clear to another machine: plain http is for this machine only (what was saved before the rule is held back too)
   if (deps.token && service.origin.startsWith("http:") && !isLoopbackHost(service.host)) return fail(503, "heatmap_not_configured");
   const params = new URLSearchParams({ ...(query.camera ? { camera: query.camera } : {}), format: query.format, scale: query.scale });
-  const result = await deps.fetch(`${service.origin}/heatmap?${params.toString()}`, deps.timeoutMs ?? 20_000, 16 * 1024 * 1024, deps.token || undefined);
+  const result = await deps.fetch(`${service.origin}/heatmap?${params.toString()}`, deps.timeoutMs ?? 20_000, deps.maxBytes ?? 16 * 1024 * 1024, deps.token || undefined);
   if (!result) return fail(502, "heatmap_failed");
   if (result.status === 401 || result.status === 403) return fail(502, "heatmap_failed");   // a token the service does not accept is a fault of the set-up; what it said is not passed on
   const body = result.body;

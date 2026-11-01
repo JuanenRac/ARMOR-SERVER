@@ -8,7 +8,7 @@ import express, { type Express, type Request } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { checkDisarm } from "./disarm_gate.js";
-import { askVoice, isVoiceLanguage, spokenResult, VoiceError, type VoiceLanguage } from "../voice.js";
+import { askVoice, isVoiceLanguage, readCapped, spokenResult, VoiceError, type VoiceLanguage } from "../voice.js";
 import { ANSWERED_HERE, carryOut } from "../voice_actions.js";
 import { FRAMING_OVERHEAD, isMultipartForm, MAX_META_BYTES, parseVoiceTurnRequest, shapeReply, VoiceTurnError, type ReplyAudio } from "../voice_turn.js";
 import crypto from "node:crypto";
@@ -83,7 +83,8 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
           // The policy of this server for the voice service (JSON): what it asks before silencing the alarm (setting voice.silence_confirmation: off, pin or double_turn). A service that does not know it treats it as off.
           "X-Armor-Policy": JSON.stringify({ silence_confirmation: context.securitySettings.get("voice.silence_confirmation") }) },
       });
-      const text = await reply.text();
+      const text = await readCapped(reply, Math.ceil(context.securitySettings.get("voice.reply_audio_max_bytes") * 4 / 3) + 400_000);
+      if (text === undefined) { audit.record({ action: "voice.turn", outcome: "denied", detail: "reply too long" }); return response.status(502).json({ error: "voice_bad_reply" }); }
       audit.record({ action: "voice.turn", outcome: reply.ok ? "allowed" : "denied", detail: `${reply.status}${multipart ? " multipart" : ""}${panelOf(request.headers["x-armor-panel"]) ? ` ${panelOf(request.headers["x-armor-panel"])}` : ""}` });
       if (multipart && reply.ok && replyAudio !== "base64") {
         const shaped = shapeReply(text, replyAudio, context.securitySettings.get("voice.reply_audio_max_bytes"));

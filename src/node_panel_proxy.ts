@@ -278,6 +278,10 @@ export function registerNodePanelRoutes(app: Express, context: AppContext): void
       if (status >= 300 && status < 400 && typeof location === "string" && /^\/(?!\/)/.test(location)) response.setHeader("Location", `${prefix}${location}`);
       response.status(status);
       if (request.method === "HEAD") return response.end();
+      // A browser that leaves ends the connection to the node, and a node that breaks off ends the answer to the browser: neither is left open on the other.
+      response.on("close", () => { if (!reply.complete) reply.destroy(); });
+      reply.on("error", () => response.destroy());
+      reply.on("aborted", () => response.destroy());
       reply.pipe(response);
       return undefined;
     } catch (error) {

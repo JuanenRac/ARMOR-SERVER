@@ -25,6 +25,28 @@ export class VoiceError extends Error {
   constructor(readonly status: number, readonly code: string) { super(code); }
 }
 
+const parseJson = (text: string | undefined): unknown => { try { return text === undefined ? undefined : JSON.parse(text); } catch { return undefined; } };
+
+/** The text of a gateway's answer, read as it arrives and given up past `maxBytes` (a gateway that does not stop is not held in memory); undefined when it was too long. */
+export async function readCapped(reply: Response, maxBytes: number): Promise<string | undefined> {
+  const declared = Number(reply.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) { void reply.body?.cancel().catch(() => undefined); return undefined; }
+  if (!reply.body) return "";
+  const reader = reply.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > maxBytes) { void reader.cancel().catch(() => undefined); return undefined; }
+      chunks.push(value);
+    }
+  } catch { return undefined; }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 /** Asks the gateway about one phrase; `policy` is the silence rule the gateway applies (it falls back to the strictest value if it does not understand it). Its refusals keep their meaning (a phrase that is not a command is an answer, not an error). */
 export async function askVoice(gateway: VoiceGateway, request: { text: string; language?: string; confirmation?: string; subject?: string; policy?: { silence_confirmation: string }; /** The PIN that silencing by voice asks for in the `pin` mode (not the PIN of the signed-in user). */ pin?: string }): Promise<VoiceAnswer> {
   let reply: Response;
@@ -34,7 +56,7 @@ export async function askVoice(gateway: VoiceGateway, request: { text: string; l
     });
   } catch { throw new VoiceError(503, "voice_not_answering"); }
   if (reply.status === 401) throw new VoiceError(503, "voice_refused_the_token");
-  const answer = await reply.json().catch(() => undefined) as VoiceAnswer | undefined;
+  const answer = parseJson(await readCapped(reply, 256 * 1024)) as VoiceAnswer | undefined;
   if (!answer || typeof answer !== "object") throw new VoiceError(502, "voice_bad_answer");
   if (reply.status === 413) throw new VoiceError(422, "text_too_long");
   if (answer.error === "invalid request fields" || answer.error === "invalid request shape") throw new VoiceError(422, "invalid_request");
@@ -84,7 +106,7 @@ export async function speakVoice(gateway: VoiceGateway, request: { text: string;
   } catch { throw new VoiceError(503, "voice_not_answering"); }
   if (reply.status === 401) throw new VoiceError(503, "voice_refused_the_token");
   if (reply.status === 501) throw new VoiceError(503, "tts_unavailable");
-  const answer = await reply.json().catch(() => undefined) as { audio?: unknown } | undefined;
+  const answer = parseJson(await readCapped(reply, Math.ceil(maxBytes * 4 / 3) + 4096)) as { audio?: unknown } | undefined;
   if (!reply.ok || !answer || typeof answer.audio !== "string") throw new VoiceError(502, "voice_bad_answer");
   const samples = Buffer.from(answer.audio, "base64");
   if (samples.length === 0 || samples.length % 2 !== 0 || samples.length > maxBytes) throw new VoiceError(502, "voice_bad_answer");

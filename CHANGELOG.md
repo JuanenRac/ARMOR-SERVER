@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The daily log no longer pays for the whole log on every sample:** the size bound used to serialise every day of the log twice for each reading, and the day and the second of the day built a new date formatter on each call; a full log (14 days at 5000 events) took more than a quarter of a minute to fill and each sample cost milliseconds. The size is now kept per day as events arrive and the formatters are kept per time zone (the same file, the same bounds, a load test pins it).
+- **The call to the live vision service has one time limit for the whole answer:** a service that dripped its answer a few bytes at a time kept the request (and the queue place) for ever, and one that closed in the middle of its answer was waited for until the limit; both now end in the usual `heatmap_failed`. The biggest answer of the vision service and of the summary command are settings of the environment (`ARMOR_VISION_MAX_BYTES`, `ARMOR_SUMMARY_MAX_BYTES`).
+- **The summary and the heat map have a line of their own:** a summary (a Python process) no longer makes a heat map wait behind it.
+- **The answers of the voice gateway are read up to a limit** (the audio of a reply, a phrase answer, a turn): a gateway that never stops is a bad answer, not a server out of memory.
+- **The panel of a node closes its connection to the node when the browser leaves** in the middle of an answer, and the browser's answer ends when the node breaks off.
+- **Second round of seeded garbage:** the text parsers (system files, certificates, headers, checksums), the camera, rule, node-health and solar parsers and the voice multipart parsers are fed garbage too, and load tests cover the daily log and a burst of heat map requests.
+
 ## [0.8.1.3] - The profile each arming mode asks of the panels is checked when it is saved, the token of the vision service never travels in clear to another machine and every parser of outside input is fed seeded garbage in tests
 
 - **The token for the vision service never goes in clear to another machine.** With `vision.service_remote` on and a token held (`ARMOR_VISION_SERVICE_TOKEN`), a plain-http address of a host that is not this machine is refused when it is saved (and when the remote switch is turned on over an address already saved), with the reason; a request to such an address saved before the rule never leaves. Loopback stays plain http, and https is always allowed.

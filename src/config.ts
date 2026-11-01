@@ -42,6 +42,9 @@ export type ArmorConfig = {
   reportTimeoutS: number;
   reportQueueMax: number;
   reportRequestsPerMinute: number;
+  /** ARMOR_VISION_MAX_BYTES and ARMOR_SUMMARY_MAX_BYTES: the most bytes the live vision service may answer for a heat map, and the most a summary command may print. */
+  visionMaxBytes: number;
+  summaryMaxBytes: number;
   /** ARMOR_VISION_SERVICE_URL: where the live ARMOR-VISION service listens (the heat map is asked of it); empty is "not set up". Studio can change it. */
   visionServiceUrl: string;
   /** ARMOR_VISION_SERVICE_TOKEN or the file named by ARMOR_VISION_SERVICE_TOKEN_FILE: the token sent to the vision service, and only to it. Empty: none. It is never shown, logged or put in the settings. */
@@ -430,6 +433,8 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     reportTimeoutS: integer(env, "ARMOR_REPORT_TIMEOUT_S", 20, 5, 120),
     reportQueueMax: integer(env, "ARMOR_REPORT_QUEUE_MAX", 3, 1, 10),
     reportRequestsPerMinute: integer(env, "ARMOR_REPORT_REQUESTS_PER_MINUTE", 30, 1, 300),
+    visionMaxBytes: integer(env, "ARMOR_VISION_MAX_BYTES", 16 * 1024 * 1024, 65_536, 64 * 1024 * 1024),
+    summaryMaxBytes: integer(env, "ARMOR_SUMMARY_MAX_BYTES", 4 * 1024 * 1024, 65_536, 64 * 1024 * 1024),
     visionServiceUrl: visionServiceUrl(env),
     visionServiceToken: visionServiceToken(env),
     dailyLogDays: integer(env, "ARMOR_DAILY_LOG_DAYS", 14, 1, 90),
