@@ -72,7 +72,8 @@ import { EnergyAlarmStore } from "./energy_alarms.js";
 import { ClientRegistry, ConnectionTracker, identify, NodeLife, systemBody, systemFromAudit, type Sighting, type SystemInput } from "./connections.js";
 import path from "node:path";
 import { SoundLibrary, SpokenCache } from "./alarm_audio.js";
-import { runReportCommand, type RunReport } from "./reports.js";
+import { DailyLog } from "./daily_log.js";
+import { fetchVisionService, runReportCommand, type FetchVision, type RunReport } from "./reports.js";
 
 export type AppContext = {
   config: ArmorConfig;
@@ -170,6 +171,9 @@ export type AppContext = {
   alarmSounds: SoundLibrary;
   /** How the summary of a day and the heat map run their Python command (a test stands in for it). */
   runReport: RunReport;
+  fetchVision: FetchVision;
+  /** The readings and the power the summary of a day uses (daily_log.ts); records only while summary.daily is on. */
+  dailyLog: DailyLog;
   spokenAlarms: SpokenCache;
   /** The Zigbee sensors linked to the zones of the alarm panels, told to the panel while this server holds the radio. */
   alarmZoneFeed: AlarmZoneFeed;
@@ -223,7 +227,15 @@ export type AppContext = {
   viewCamera(camera: CameraConnection): ReturnType<typeof cameraView>;
 };
 
-export type ContextOverrides = Partial<Pick<AppContext, "audit" | "admin" | "maintenance" | "firmware" | "ai" | "runReport">> & { broadcast?: (state: SystemState) => void; now?: () => number };
+export type ContextOverrides = Partial<Pick<AppContext, "audit" | "admin" | "maintenance" | "firmware" | "ai" | "runReport" | "fetchVision">> & { broadcast?: (state: SystemState) => void; now?: () => number };
+
+/** The power of the house for the daily log: the main meter. A channel called main or grid if there is one; otherwise the largest AC channel (the meter that sees all the others). Undefined when no channel says. */
+export function housePower(channels: Array<{ id: string; domain: string; power_w?: number }>): number | undefined {
+  const main = channels.find(channel => (channel.id === "main" || channel.id === "grid") && typeof channel.power_w === "number");
+  if (main) return Math.max(0, main.power_w!);
+  const watts = channels.filter(channel => channel.domain === "ac" && typeof channel.power_w === "number").map(channel => channel.power_w!);
+  return watts.length ? Math.max(0, Math.max(...watts)) : undefined;
+}
 
 export function createContext(config: ArmorConfig, overrides: ContextOverrides = {}): AppContext {
   const baseAudit = overrides.audit ?? createAuditLog(config.dataDir);
@@ -247,8 +259,13 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const securityChanged: { tell?: (changes: Record<string, unknown>) => void } = {};
   const securitySettings = new SecuritySettings(path.join(config.dataDir, "security-settings.json"), {
     environment: () => ({ "alarm.disarm_pin": config.disarmPinEnv }),
-    initial: { "voice.turn_max_bytes": config.voiceTurnMaxBytes, "voice.reply_audio_max_bytes": config.voiceReplyAudioMaxBytes, "reports.timeout_s": config.reportTimeoutS, "reports.queue_max": config.reportQueueMax, "reports.requests_per_minute": config.reportRequestsPerMinute },
+    initial: { "voice.turn_max_bytes": config.voiceTurnMaxBytes, "voice.reply_audio_max_bytes": config.voiceReplyAudioMaxBytes, "summary.log_days": config.dailyLogDays, "summary.reading_every_s": config.dailyLogReadingEveryS, "summary.power_every_s": config.dailyLogPowerEveryS, "summary.false_alarm_s": config.dailyFalseAlarmS, "reports.timeout_s": config.reportTimeoutS, "reports.queue_max": config.reportQueueMax, "reports.requests_per_minute": config.reportRequestsPerMinute, "vision.service_url": config.visionServiceUrl },
     onChange: changes => securityChanged.tell?.(changes),
+  });
+  const dailyLog = new DailyLog({
+    file: path.join(config.dataDir, "daily-log.json"), warn, now: overrides.now,
+    enabled: () => securitySettings.get("summary.daily"), days: () => securitySettings.get("summary.log_days"), readingEveryS: () => securitySettings.get("summary.reading_every_s"),
+    powerEveryS: () => securitySettings.get("summary.power_every_s"), maxEventsPerDay: config.dailyLogMaxEvents, maxBytes: config.dailyLogMaxBytes, sensorFields: config.dailyLogSensors,
   });
   const alarmSounds = new SoundLibrary(path.join(config.dataDir, "alarm-sounds"));
   const spokenAlarms = new SpokenCache();
@@ -305,6 +322,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     onChange: (change: DeviceChange) => {
       if (change.onlineChanged) record({ type: "device", device_id: change.device.id, kind: change.device.kind, field: "online", from: !change.device.online, to: change.device.online });
       for (const item of change.changes) if (typeof item.to === "boolean") record({ type: "device", device_id: change.device.id, kind: change.device.kind, field: item.field, from: item.from, to: item.to });
+      for (const [field, value] of Object.entries(change.device.state)) if (typeof value === "number") dailyLog.reading(change.device.id, field, value);
       alarmRules.handleDevice(change);
       automations.handleDevice(change);
       alarmZoneFeed.handleDevice(change.device);
@@ -326,7 +344,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   });
   const site = new SiteStore(path.join(config.dataDir, "site.json"));
   const electricalEnergy = new ElectricalEnergy();
-  const electricalNodes = new ElectricalStore({ now: overrides.now, setAsideOldReadings: () => securitySettings.get("electrical.set_aside_old_readings"), onMessage: message => { knownNodes.seen("electrical", message.node_id); alarmRules.handleElectrical(message); const at = (overrides.now ?? Date.now)(); for (const channel of message.channels) electricalEnergy.add(message.node_id, channel.id, channel.energy_kwh, at); }, onStale: (node, stale) => { alarmRules.handleElectricalStale(node, stale); if (stale) nodeLife.gone(node); else nodeLife.report(node); } });
+  const electricalNodes = new ElectricalStore({ now: overrides.now, setAsideOldReadings: () => securitySettings.get("electrical.set_aside_old_readings"), onMessage: message => { knownNodes.seen("electrical", message.node_id); alarmRules.handleElectrical(message); const at = (overrides.now ?? Date.now)(); for (const channel of message.channels) electricalEnergy.add(message.node_id, channel.id, channel.energy_kwh, at); dailyLog.power(housePower(message.channels), at); }, onStale: (node, stale) => { alarmRules.handleElectricalStale(node, stale); if (stale) nodeLife.gone(node); else nodeLife.report(node); } });
   const electrical = new SiteStore(path.join(config.dataDir, "electrical.json"), () => new Date(), "electrical design");
   const networkNotes = new DeviceNotes(path.join(config.dataDir, "network-devices.json"));
   const systemMonitor = new SystemMonitor();
@@ -556,7 +574,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, securitySettings, geoip, loginCountries, alarmSounds, runReport: overrides.runReport ?? runReportCommand, spokenAlarms, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, securitySettings, geoip, loginCountries, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

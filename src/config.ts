@@ -10,6 +10,8 @@ import path from "node:path";
 import { originsWithStudioPort, readConnection } from "./connection.js";
 import { isTlsUrl, readCaFile, type MqttCa } from "./mqtt_tls.js";
 import { DEFAULT_LOCAL_NETWORKS, parseRanges } from "./origin.js";
+import { DEFAULT_SENSOR_FIELDS } from "./daily_log.js";
+import { parseVisionServiceUrl } from "./security_settings.js";
 
 export const MIN_SECRET_LENGTH = 24;
 
@@ -40,14 +42,24 @@ export type ArmorConfig = {
   reportTimeoutS: number;
   reportQueueMax: number;
   reportRequestsPerMinute: number;
+  /** ARMOR_VISION_SERVICE_URL: where the live ARMOR-VISION service listens (the heat map is asked of it); empty is "not set up". Studio can change it. */
+  visionServiceUrl: string;
+  /** The daily log (see daily_log.ts): where the days kept, the two sampling intervals and the false-alarm window start (Studio can change them), and the bounds only the environment sets. */
+  dailyLogDays: number;
+  dailyLogReadingEveryS: number;
+  dailyLogPowerEveryS: number;
+  dailyFalseAlarmS: number;
+  dailyLogMaxEvents: number;
+  dailyLogMaxBytes: number;
+  dailyLogSensors: string[];
   /** ARMOR_ALARM_SOUND_MAX_BYTES: the most samples a sound an administrator uploads for an alarm origin may have; 128000 bytes is 4 seconds of 16 kHz 16-bit mono. */
   alarmSoundMaxBytes: number;
   /**
    * The two reports made by the Python projects of the family, run as a command (see reports.ts) only when an administrator turns on the option summary.daily or vision.heatmap:
-   * ARMOR_PYTHON (the interpreter), ARMOR_DAILY_SUMMARY_AI_DIR (the checkout or install of ARMOR-SERVER-AI) and ARMOR_DAILY_SUMMARY_CONFIG (its settings file for the summary), and
-   * ARMOR_VISION_DIR (ARMOR-VISION), ARMOR_VISION_ACTIVITY_CONFIG (its activity settings), ARMOR_VISION_CONFIG (its zones, optional) and ARMOR_VISION_DETECTIONS (the recorded detections). An empty one is "not set up".
+   * ARMOR_PYTHON (the interpreter), ARMOR_DAILY_SUMMARY_AI_DIR (the checkout or install of ARMOR-SERVER-AI) and ARMOR_DAILY_SUMMARY_CONFIG (its settings file for the summary). The heat map is not
+   * a command: it is asked of the live service of ARMOR-VISION (visionServiceUrl). An empty one is "not set up".
    */
-  reports: { python: string; dailySummaryAiDir: string; dailySummaryConfig: string; visionDir: string; visionActivityConfig: string; visionConfig: string; visionDetections: string };
+  reports: { python: string; dailySummaryAiDir: string; dailySummaryConfig: string; };
   /** Where a request comes from (see origin.ts): the house and its VPN are local, the rest is remote. */
   localNetworks: ReturnType<typeof parseRanges>;
   vpnNetworks: ReturnType<typeof parseRanges>;
@@ -178,6 +190,20 @@ const oneOf = <T extends string>(env: Env, key: string, allowed: readonly T[], f
   if (!(allowed as readonly string[]).includes(value)) throw new ConfigError(`${key} must be one of ${allowed.join(", ")}`);
   return value as T;
 };
+const visionServiceUrl = (env: Env): string => {
+  const raw = env.ARMOR_VISION_SERVICE_URL?.trim() ?? "";
+  if (raw !== "" && parseVisionServiceUrl(raw) === undefined) throw new ConfigError("ARMOR_VISION_SERVICE_URL must be an http or https address such as http://127.0.0.1:8765 (no sign-in, path or query in it)");
+  return raw;
+};
+
+const dailyLogSensors = (env: Env): string[] => {
+  const raw = env.ARMOR_DAILY_LOG_SENSORS?.trim();
+  if (!raw) return [...DEFAULT_SENSOR_FIELDS];
+  const names = raw.split(",").map(name => name.trim()).filter(Boolean);
+  if (!names.length || names.length > 32 || names.some(name => !/^[a-z][a-z0-9_]{0,31}$/.test(name))) throw new ConfigError("ARMOR_DAILY_LOG_SENSORS must be a list of up to 32 field names (lower case letters, digits and _), separated by commas");
+  return names;
+};
+
 const integer = (env: Env, key: string, fallback: number, min: number, max: number): number => {
   const raw = env[key]?.trim();
   if (raw === undefined || raw === "") return fallback;
@@ -391,11 +417,18 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     reportTimeoutS: integer(env, "ARMOR_REPORT_TIMEOUT_S", 20, 5, 120),
     reportQueueMax: integer(env, "ARMOR_REPORT_QUEUE_MAX", 3, 1, 10),
     reportRequestsPerMinute: integer(env, "ARMOR_REPORT_REQUESTS_PER_MINUTE", 30, 1, 300),
+    visionServiceUrl: visionServiceUrl(env),
+    dailyLogDays: integer(env, "ARMOR_DAILY_LOG_DAYS", 14, 1, 90),
+    dailyLogReadingEveryS: integer(env, "ARMOR_DAILY_LOG_READING_EVERY_S", 300, 10, 3600),
+    dailyLogPowerEveryS: integer(env, "ARMOR_DAILY_LOG_POWER_EVERY_S", 60, 5, 3600),
+    dailyFalseAlarmS: integer(env, "ARMOR_DAILY_FALSE_ALARM_S", 60, 0, 600),
+    dailyLogMaxEvents: integer(env, "ARMOR_DAILY_LOG_MAX_EVENTS", 5000, 100, 50_000),
+    dailyLogMaxBytes: integer(env, "ARMOR_DAILY_LOG_MAX_BYTES", 4 * 1024 * 1024, 65_536, 64 * 1024 * 1024),
+    dailyLogSensors: dailyLogSensors(env),
     alarmSoundMaxBytes: integer(env, "ARMOR_ALARM_SOUND_MAX_BYTES", 128_000, 3_200, 256_000),
     reports: {
       python: env.ARMOR_PYTHON?.trim() || (process.platform === "win32" ? "python" : "python3"),
       dailySummaryAiDir: pathOf(env.ARMOR_DAILY_SUMMARY_AI_DIR), dailySummaryConfig: pathOf(env.ARMOR_DAILY_SUMMARY_CONFIG),
-      visionDir: pathOf(env.ARMOR_VISION_DIR), visionActivityConfig: pathOf(env.ARMOR_VISION_ACTIVITY_CONFIG), visionConfig: pathOf(env.ARMOR_VISION_CONFIG), visionDetections: pathOf(env.ARMOR_VISION_DETECTIONS),
     },
     localNetworks: ranges(env, "ARMOR_LOCAL_NETWORKS", DEFAULT_LOCAL_NETWORKS), vpnNetworks: ranges(env, "ARMOR_VPN_NETWORKS", ""),
     totpPolicy: oneOf(env, "ARMOR_TOTP_REQUIRED", ["off", "remote", "always"] as const, "off"),

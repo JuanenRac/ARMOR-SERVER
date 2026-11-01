@@ -1,13 +1,14 @@
 // The summary of a day and the activity heat map: off by default, only for administrators and operators, nothing of the server's secrets given to the Python commands and nothing of what they
 // say on their error output given back, and the answer checked before it leaves. The matrix is role x switch x whether the data exists.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { dayOf } from "../src/day.js";
-import { commandEnv, dailyEvents, heatmapQuery, Serial, validDate, type ReportRun, type RunReport } from "../src/reports.js";
-import { SECURITY_DEFAULTS } from "../src/security_settings.js";
+import { commandEnv, dailyEvents, heatmap, heatmapQuery, Serial, validDate, type FetchVision, type ReportRun, type RunReport, type VisionAnswer } from "../src/reports.js";
+import { isLoopbackHost, lowers, parseVisionServiceUrl, SECURITY_DEFAULTS } from "../src/security_settings.js";
 import type { Alarm } from "../src/alarms.js";
 import { SECRETS, startServer, studioCookie, tempDir, type Running } from "./helpers.js";
 
@@ -75,14 +76,12 @@ test("reports run one at a time and a burst is turned away", async () => {
 /** Folders that look like the two projects (enough for the server to see them) and settings files; the command itself is a stand-in. */
 function projects() {
   const root = tempDir();
-  const ai = path.join(root, "ARMOR-SERVER-AI"), vision = path.join(root, "ARMOR-VISION");
+  const ai = path.join(root, "ARMOR-SERVER-AI");
   fs.mkdirSync(path.join(ai, "src", "armor_server_ai"), { recursive: true });
-  fs.mkdirSync(path.join(vision, "src", "armor_vision"), { recursive: true });
   fs.writeFileSync(path.join(ai, "src", "armor_server_ai", "cli.py"), "");
-  fs.writeFileSync(path.join(vision, "src", "armor_vision", "heatmap_service.py"), "");
-  const files = { summaryConfig: path.join(root, "summary.json"), activity: path.join(root, "activity.json"), detections: path.join(root, "detections.jsonl") };
+  const files = { summaryConfig: path.join(root, "summary.json") };
   for (const file of Object.values(files)) fs.writeFileSync(file, "{}");
-  const env = { ARMOR_DAILY_SUMMARY_AI_DIR: ai, ARMOR_DAILY_SUMMARY_CONFIG: files.summaryConfig, ARMOR_VISION_DIR: vision, ARMOR_VISION_ACTIVITY_CONFIG: files.activity, ARMOR_VISION_DETECTIONS: files.detections };
+  const env = { ARMOR_DAILY_SUMMARY_AI_DIR: ai, ARMOR_DAILY_SUMMARY_CONFIG: files.summaryConfig, ARMOR_VISION_SERVICE_URL: "http://127.0.0.1:8765" };
   return { root, env, files };
 }
 
@@ -97,6 +96,12 @@ function runner(answer: (run: ReportRun) => { code: number; stdout?: Buffer | st
   const calls: Calls = [];
   return { calls, run: async run => { calls.push(run); const result = answer(run); return { code: result.code, stdout: Buffer.from(result.stdout ?? ""), stderr: result.stderr ?? "" }; } };
 }
+type VisionCalls = string[];
+/** A stand-in for the live service of ARMOR-VISION: it answers what the test says and remembers the addresses it was asked for. */
+function vision(answer: (url: string) => VisionAnswer = () => ({ status: 200, type: "application/json", body: Buffer.from(JSON.stringify(MAP)) })): { fetch: FetchVision; calls: VisionCalls } {
+  const calls: VisionCalls = [];
+  return { calls, fetch: async url => { calls.push(url); return answer(url); } };
+}
 const good = runner(run => run.args.includes("heatmap-route") ? { code: 0, stdout: envelope(200, "application/json", JSON.stringify(MAP)) } : { code: 0, stdout: JSON.stringify(REPORT) });
 
 async function accounts(running: Running, admin: string): Promise<Record<string, string>> {
@@ -109,7 +114,7 @@ async function accounts(running: Running, admin: string): Promise<Record<string,
   }
   return out;
 }
-const turn = (running: Running, admin: string, settings: Record<string, boolean>) => fetch(`${running.base}/api/v1/security/settings`, { method: "PUT", headers: { ...json, cookie: admin }, body: JSON.stringify(settings) });
+const turn = (running: Running, admin: string, settings: Record<string, unknown>) => fetch(`${running.base}/api/v1/security/settings`, { method: "PUT", headers: { ...json, cookie: admin }, body: JSON.stringify(settings) });
 const ask = (running: Running, route: string, headers: Record<string, string> = {}) => fetch(`${running.base}${route}`, { headers });
 
 const ROUTES = { summary: "/api/v1/summary/daily", heatmap: "/api/v1/vision/heatmap" } as const;
@@ -151,8 +156,9 @@ test("only an administrator can turn either option on, and it is written in the 
 
 for (const kind of ["summary", "heatmap"] as const) {
   test(`${kind}: with the switch on, administrators and operators are answered and everybody else is still refused`, async () => {
-    const stand = runner(run => run.args.includes("heatmap-route") ? { code: 0, stdout: envelope(200, "application/json", JSON.stringify(MAP)) } : { code: 0, stdout: JSON.stringify(REPORT) });
-    const running = await startServer(projects().env, { runReport: stand.run });
+    const stand = runner(() => ({ code: 0, stdout: JSON.stringify(REPORT) }));
+    const service = vision();
+    const running = await startServer(projects().env, { runReport: stand.run, fetchVision: service.fetch });
     try {
       const admin = await studioCookie(running.base);
       const who = await accounts(running, admin);
@@ -164,9 +170,9 @@ for (const kind of ["summary", "heatmap"] as const) {
         assert.equal(answer.headers.get("cache-control"), "private, no-store");
         assert.equal(answer.headers.get("x-content-type-options"), "nosniff");
       }
-      const calls = stand.calls.length;
+      const calls = stand.calls.length + service.calls.length;
       for (const [name, headers, status] of [["viewer", { cookie: who.viewer }, 403], ["panel", { cookie: who.panel }, 403], ["nobody", {}, 401]] as const) assert.equal((await ask(running, route, headers)).status, status, name);
-      assert.equal(stand.calls.length, calls, "a refused account never starts a command");
+      assert.equal(stand.calls.length + service.calls.length, calls, "a refused account never starts a command or asks the service");
       // the other switch is still off
       const other = kind === "summary" ? ROUTES.heatmap : ROUTES.summary;
       assert.equal((await ask(running, other, { cookie: admin })).status, 404);
@@ -240,107 +246,189 @@ test("the summary: what is not set up, what fails and what is not a report are n
   }
 });
 
-test("the heat map: the query is checked, the command gets a fixed set of arguments, and each format comes back as what it is", async () => {
-  const project = projects();
-  const stand = runner(run => {
-    const format = run.args[run.args.indexOf("--format") + 1];
-    if (format === "png") return { code: 0, stdout: envelope(200, "image/png", PNG) };
-    if (format === "svg") return { code: 0, stdout: envelope(200, "image/svg+xml", '<svg xmlns="http://www.w3.org/2000/svg"></svg>') };
-    return { code: 0, stdout: envelope(200, "application/json", JSON.stringify(MAP)) };
+test("the heat map: the query is checked, the service is asked a fixed address, and each format comes back as what it is", async () => {
+  const service = vision(url => {
+    const format = new URL(url).searchParams.get("format");
+    if (format === "png") return { status: 200, type: "image/png", body: PNG };
+    if (format === "svg") return { status: 200, type: "image/svg+xml", body: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>') };
+    return { status: 200, type: "application/json; charset=utf-8", body: Buffer.from(JSON.stringify(MAP)) };
   });
-  const running = await startServer({ ...project.env, ARMOR_VISION_CONFIG: project.files.summaryConfig }, { runReport: stand.run });
+  const running = await startServer(projects().env, { fetchVision: service.fetch });
   try {
     const admin = await studioCookie(running.base);
     await turn(running, admin, { "vision.heatmap": true });
     const map = await ask(running, `${ROUTES.heatmap}?camera=cam-front`, { cookie: admin });
     assert.equal(map.status, 200);
     assert.deepEqual(await map.json(), MAP);
-    const args = stand.calls[0].args;
-    assert.deepEqual(args.slice(0, 3), ["-m", "armor_vision", "heatmap-route"]);
-    assert.ok(args.includes("--camera") && args.includes("--config") && args[args.indexOf("--scale") + 1] === "16");
-    assert.deepEqual(Object.keys(stand.calls[0].env).filter(name => name.startsWith("ARMOR")), []);
+    assert.equal(service.calls[0], "http://127.0.0.1:8765/heatmap?camera=cam-front&format=json&scale=16");
     const png = await ask(running, `${ROUTES.heatmap}?format=png&scale=4`, { cookie: admin });
     assert.equal(png.headers.get("content-type"), "image/png");
     assert.ok(Buffer.from(await png.arrayBuffer()).equals(PNG));
+    assert.equal(service.calls[1], "http://127.0.0.1:8765/heatmap?format=png&scale=4");
     const svg = await ask(running, `${ROUTES.heatmap}?format=svg`, { cookie: admin });
     assert.equal(svg.headers.get("content-type"), "image/svg+xml");
     assert.match(svg.headers.get("content-security-policy") ?? "", /default-src 'none'/);
-    const calls = stand.calls.length;
+    const calls = service.calls.length;
     for (const query of ["format=gif", "scale=0", "scale=65", "extra=1", "camera=a/b", "camera=a&camera=b"]) assert.equal((await ask(running, `${ROUTES.heatmap}?${query}`, { cookie: admin })).status, 400, query);
-    assert.equal(stand.calls.length, calls, "a bad query never reaches the command");
+    assert.equal(service.calls.length, calls, "a bad query never reaches the service");
   } finally { await running.stop(); }
 });
 
-test("the heat map: what is not set up, what has no data and what is not a map are never passed on", async () => {
-  const cases: Array<{ name: string; env?: (project: ReturnType<typeof projects>) => Record<string, string>; answer?: Parameters<typeof runner>[0]; status: number; error: string }> = [
-    { name: "nothing set up", env: () => ({ ARMOR_VISION_DIR: "", ARMOR_VISION_ACTIVITY_CONFIG: "", ARMOR_VISION_DETECTIONS: "" }), status: 503, error: "heatmap_not_configured" },
-    { name: "no file of detections is named", env: project => ({ ARMOR_VISION_DETECTIONS: "", ARMOR_VISION_DIR: project.env.ARMOR_VISION_DIR }), status: 503, error: "heatmap_not_configured" },
-    { name: "the file of detections does not exist yet", env: project => ({ ARMOR_VISION_DETECTIONS: path.join(project.root, "later.jsonl") }), status: 503, error: "heatmap_no_data" },
-    { name: "the activity settings do not exist", env: project => ({ ARMOR_VISION_ACTIVITY_CONFIG: path.join(project.root, "none.json") }), status: 503, error: "heatmap_not_configured" },
-    { name: "the camera is unknown", answer: () => ({ code: 0, stdout: envelope(404, "text/plain; charset=utf-8", "unknown camera\n") }), status: 404, error: "unknown_camera" },
-    { name: "the pipeline is off in its own settings", answer: () => ({ code: 0, stdout: envelope(404, "text/plain; charset=utf-8", "not found\n") }), status: 404, error: "heatmap_pipeline_off" },
-    { name: "the project calls the query bad", answer: () => ({ code: 0, stdout: envelope(400, "text/plain; charset=utf-8", "scale must be a whole number\n") }), status: 400, error: "invalid_query" },
-    { name: "a configuration that is wrong", answer: () => ({ code: 1, stderr: "error: /home/ana/activity.json: unknown field" }), status: 502, error: "heatmap_failed" },
-    { name: "a file that cannot be read", answer: () => ({ code: 2, stderr: "error: cannot read /home/ana/detections.jsonl" }), status: 502, error: "heatmap_failed" },
-    { name: "a map that says it holds pictures", answer: () => ({ code: 0, stdout: envelope(200, "application/json", JSON.stringify({ ...MAP, contains_images: true })) }), status: 502, error: "heatmap_failed" },
-    { name: "a map of another schema", answer: () => ({ code: 0, stdout: envelope(200, "application/json", JSON.stringify({ ...MAP, schema: "other" })) }), status: 502, error: "heatmap_failed" },
-    { name: "a map that is not JSON", answer: () => ({ code: 0, stdout: envelope(200, "application/json", "<html>") }), status: 502, error: "heatmap_failed" },
-    { name: "a picture that is not a PNG", answer: () => ({ code: 0, stdout: envelope(200, "image/png", "GIF89a") }), status: 502, error: "heatmap_failed", },
-    { name: "an answer that is not the envelope", answer: () => ({ code: 0, stdout: "hello" }), status: 502, error: "heatmap_failed" },
+test("the heat map: what is not set up, not this machine, unreachable, or not a map is never passed on", async () => {
+  const MAPOK = (extra: object) => ({ status: 200, type: "application/json", body: Buffer.from(JSON.stringify({ ...MAP, ...extra })) });
+  const cases: Array<{ name: string; env?: Record<string, string>; settings?: Record<string, unknown>; answer?: (url: string) => VisionAnswer; status: number; error: string; asked?: boolean; query?: string }> = [
+    { name: "nothing set up", env: { ARMOR_VISION_SERVICE_URL: "" }, status: 503, error: "heatmap_not_configured", asked: false },
+    { name: "an address on another machine while the remote switch is off", env: { ARMOR_VISION_SERVICE_URL: "http://192.168.0.50:8765" }, status: 503, error: "heatmap_not_configured", asked: false },
+    { name: "the name of a machine that is not this one", env: { ARMOR_VISION_SERVICE_URL: "http://vision.example.org" }, status: 503, error: "heatmap_not_configured", asked: false },
+    { name: "the service cannot be reached", answer: () => null, status: 502, error: "heatmap_failed" },
+    { name: "the camera is unknown", answer: () => ({ status: 404, type: "text/plain", body: Buffer.from("unknown camera\n") }), status: 404, error: "unknown_camera" },
+    { name: "the pipeline is off in its own settings", answer: () => ({ status: 404, type: "text/plain", body: Buffer.from("not found\n") }), status: 404, error: "heatmap_pipeline_off" },
+    { name: "the service calls the query bad", answer: () => ({ status: 400, type: "text/plain", body: Buffer.from("scale must be a whole number\n") }), status: 400, error: "invalid_query" },
+    { name: "the service fails", answer: () => ({ status: 500, type: "text/plain", body: Buffer.from("Traceback /home/ana/x.py") }), status: 502, error: "heatmap_failed" },
+    { name: "a redirect is not followed", answer: () => ({ status: 302, type: "text/html", body: Buffer.from("") }), status: 502, error: "heatmap_failed" },
+    { name: "a map that says it holds pictures", answer: () => MAPOK({ contains_images: true }), status: 502, error: "heatmap_failed" },
+    { name: "a map of another schema", answer: () => MAPOK({ schema: "other" }), status: 502, error: "heatmap_failed" },
+    { name: "a map that is not JSON", answer: () => ({ status: 200, type: "application/json", body: Buffer.from("<html>") }), status: 502, error: "heatmap_failed" },
+    { name: "a map with the wrong type", answer: () => ({ status: 200, type: "text/html", body: Buffer.from(JSON.stringify(MAP)) }), status: 502, error: "heatmap_failed" },
+    { name: "a picture that is not a PNG", answer: () => ({ status: 200, type: "image/png", body: Buffer.from("GIF89a") }), status: 502, error: "heatmap_failed", query: "?format=png" },
+    { name: "a picture that is not an SVG", answer: () => ({ status: 200, type: "image/svg+xml", body: Buffer.from("<html></html>") }), status: 502, error: "heatmap_failed", query: "?format=svg" },
   ];
   for (const item of cases) {
-    const project = projects();
-    const png = item.name === "a picture that is not a PNG";
-    const stand = runner(item.answer ?? (() => ({ code: 0, stdout: envelope(200, "application/json", JSON.stringify(MAP)) })));
-    const running = await startServer({ ...project.env, ...(item.env ? item.env(project) : {}) }, { runReport: stand.run });
+    const service = vision(item.answer);
+    const running = await startServer({ ...projects().env, ...(item.env ?? {}) }, { fetchVision: service.fetch });
     try {
       const admin = await studioCookie(running.base);
       await turn(running, admin, { "vision.heatmap": true });
-      const answer = await ask(running, `${ROUTES.heatmap}${png ? "?format=png" : ""}`, { cookie: admin });
+      const answer = await ask(running, `${ROUTES.heatmap}${item.query ?? ""}`, { cookie: admin });
       assert.equal(answer.status, item.status, item.name);
       const text = await answer.text();
       assert.deepEqual(JSON.parse(text), { error: item.error }, item.name);
       assert.doesNotMatch(text, /\/home|ana/, item.name);
+      if (item.asked === false) assert.deepEqual(service.calls, [], `${item.name}: the request never left`);
     } finally { await running.stop(); }
   }
+});
+
+test("the address of the live service is a setting: validated, local unless the remote switch is on, and pointing elsewhere is written as a loss", async () => {
+  for (const good of ["http://127.0.0.1:8765", "http://localhost:9000", "https://127.0.0.1", "http://[::1]:8765", "http://vision.local:8765"]) assert.ok(parseVisionServiceUrl(good), good);
+  for (const bad of ["", " ", "ftp://127.0.0.1", "http://user:pass@127.0.0.1", "http://127.0.0.1/heatmap", "http://127.0.0.1?x=1", "http://127.0.0.1#x", "127.0.0.1:8765", "http://", `http://${"a".repeat(100)}`, "http://127.0.0.1 :8765", 5, null]) assert.equal(parseVisionServiceUrl(bad), undefined, String(bad));
+  assert.equal(parseVisionServiceUrl("http://127.0.0.1:8765/")?.origin, "http://127.0.0.1:8765");
+  for (const local of ["127.0.0.1", "127.0.5.9", "localhost", "::1"]) assert.equal(isLoopbackHost(local), true, local);
+  for (const away of ["192.168.0.5", "10.0.0.1", "vision.local", "0.0.0.0", "127.0.0.1.evil.org"]) assert.equal(isLoopbackHost(away), false, away);
+  assert.equal(SECURITY_DEFAULTS["vision.service_url"], "");
+  assert.equal(SECURITY_DEFAULTS["vision.service_remote"], false);
+  assert.equal(lowers("vision.service_remote", false, true), true);
+  assert.equal(lowers("vision.service_remote", true, false), false);
+  assert.equal(lowers("vision.service_url", "http://127.0.0.1:8765", "http://192.168.0.5:8765"), true);
+  assert.equal(lowers("vision.service_url", "http://192.168.0.5:8765", "http://127.0.0.1:8765"), false);
+  assert.equal(lowers("vision.service_url", "", "http://localhost:8765"), false);
+  const service = vision();
+  const running = await startServer({ ...projects().env, ARMOR_VISION_SERVICE_URL: "" }, { fetchVision: service.fetch });
+  try {
+    const admin = await studioCookie(running.base);
+    const who = await accounts(running, admin);
+    for (const role of ["operator", "viewer", "panel"]) assert.ok((await turn(running, who[role], { "vision.service_url": "http://127.0.0.1:8765" })).status >= 401, role);
+    for (const bad of ["ftp://x", "http://u:p@127.0.0.1", "http://127.0.0.1/x", 5, true]) assert.equal((await turn(running, admin, { "vision.service_url": bad })).status, 400, String(bad));
+    assert.equal((await turn(running, admin, { "vision.service_remote": "yes" })).status, 400);
+    await turn(running, admin, { "vision.heatmap": true });
+    assert.equal((await ask(running, ROUTES.heatmap, { cookie: admin })).status, 503, "not set up");
+    assert.equal((await turn(running, admin, { "vision.service_url": "http://192.168.0.50:8765" })).status, 200);
+    assert.equal((await ask(running, ROUTES.heatmap, { cookie: admin })).status, 503, "another machine and the remote switch is off");
+    assert.deepEqual(service.calls, []);
+    assert.equal((await turn(running, admin, { "vision.service_remote": true })).status, 200);
+    assert.equal((await ask(running, ROUTES.heatmap, { cookie: admin })).status, 200, "the switch lets it go to another machine");
+    assert.equal(service.calls[0], "http://192.168.0.50:8765/heatmap?format=json&scale=16");
+    assert.equal((await turn(running, admin, { "vision.service_url": "http://127.0.0.1:8765", "vision.service_remote": false })).status, 200);
+    assert.equal((await ask(running, ROUTES.heatmap, { cookie: admin })).status, 200);
+    const audit = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8");
+    assert.match(audit, /"target":"vision.service_remote"[^\n]*false -> true/);
+    assert.match(audit, /"target":"vision.service_url"/);
+    const stored = JSON.parse(fs.readFileSync(path.join(running.config.dataDir, "security-settings.json"), "utf8")).settings;
+    assert.equal(stored["vision.service_url"], "http://127.0.0.1:8765");
+  } finally { await running.stop(); }
+  await assert.rejects(startServer({ ...projects().env, ARMOR_VISION_SERVICE_URL: "gopher://x" }), /ARMOR_VISION_SERVICE_URL/);
+});
+
+test("the request to the live service carries nothing of this server: no header, no cookie, no token", async () => {
+  const seen: Array<{ headers: Record<string, string | string[] | undefined>; url: string | undefined }> = [];
+  const fake = http.createServer((request, response) => {
+    seen.push({ headers: request.headers, url: request.url });
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify(MAP));
+  });
+  await new Promise<void>(resolve => fake.listen(0, "127.0.0.1", resolve));
+  const port = (fake.address() as { port: number }).port;
+  const running = await startServer({ ...projects().env, ARMOR_VISION_SERVICE_URL: `http://127.0.0.1:${port}` });
+  try {
+    const admin = await studioCookie(running.base);
+    await turn(running, admin, { "vision.heatmap": true });
+    const answer = await ask(running, `${ROUTES.heatmap}?camera=cam-front`, { cookie: admin });
+    assert.equal(answer.status, 200);
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0]!.url, "/heatmap?camera=cam-front&format=json&scale=16");
+    assert.deepEqual(Object.keys(seen[0]!.headers).filter(name => /authorization|cookie|token|armor/i.test(name)), []);
+    // a service that never answers ends in a 502 inside the time limit
+    fake.removeAllListeners("request");
+    fake.on("request", () => undefined);
+    await turn(running, admin, { "reports.timeout_s": 5 });
+    const direct = await heatmap({ url: `http://127.0.0.1:${port}`, remote: false, fetch: (await import("../src/reports.js")).fetchVisionService, timeoutMs: 300 }, { format: "json", scale: "16" });
+    assert.deepEqual(direct, { status: 502, json: { error: "heatmap_failed" } });
+  } finally { await running.stop(); fake.closeAllConnections(); await new Promise<void>(resolve => fake.close(() => resolve())); }
 });
 
 // ------------------------------------------------------------------ with the real projects, when they are next to this one
 
 const python = process.platform === "win32" ? "python" : "python3";
-const ready = fs.existsSync(path.join(SIBLINGS, "ARMOR-SERVER-AI", "src", "armor_server_ai", "daily.py")) && fs.existsSync(path.join(SIBLINGS, "ARMOR-VISION", "src", "armor_vision", "heatmap_service.py")) && spawnSync(python, ["--version"]).status === 0;
+const ready = fs.existsSync(path.join(SIBLINGS, "ARMOR-SERVER-AI", "src", "armor_server_ai", "daily.py")) && fs.existsSync(path.join(SIBLINGS, "ARMOR-VISION", "src", "armor_vision", "service.py")) && spawnSync(python, ["--version"]).status === 0;
 
-test("with the real ARMOR-SERVER-AI and ARMOR-VISION the two reports come out", { skip: ready ? false : "the Python projects are not checked out next to this repository (or there is no Python)" }, async () => {
+test("with the real ARMOR-SERVER-AI and the live ARMOR-VISION service the two reports come out", { skip: ready ? false : "the Python projects are not checked out next to this repository (or there is no Python)" }, async () => {
   const dir = tempDir(), root = tempDir();
   const day = "2026-03-05";
   fs.writeFileSync(path.join(dir, "alarms.json"), JSON.stringify({ schema: 1, counter: 3, alarms: [
     { id: "1", key: "k1", source: { type: "node", id: "radar-1" }, severity: "critical", code: "intrusion", raised_at: `${day}T10:00:00.000Z`, detail: { zone: "garden" } },
     { id: "2", key: "k2", source: { type: "node", id: "radar-1" }, severity: "warning", code: "low_battery", raised_at: `${day}T11:00:00.000Z` },
   ] }));
-  const summaryConfig = path.join(root, "summary.json"), activity = path.join(root, "activity.json"), detections = path.join(root, "detections.jsonl");
+  const summaryConfig = path.join(root, "summary.json"), activity = path.join(root, "activity.json"), serviceConfig = path.join(root, "service.json");
   fs.writeFileSync(summaryConfig, JSON.stringify({ enabled: true, language: "en" }));
   fs.writeFileSync(activity, JSON.stringify({ enabled: true, heatmap: { cols: 4, rows: 3 } }));
-  fs.writeFileSync(detections, [0, 1, 2].map(i => JSON.stringify({ camera_id: "cam-front", timestamp: i, detections: [{ label: "person", confidence: 0.9, box: [0.4, 0.6, 0.5, 0.8] }] })).join("\n"));
-  const running = await startServer({ ARMOR_DATA_DIR: dir, ARMOR_PYTHON: python, ARMOR_DAILY_SUMMARY_AI_DIR: path.join(SIBLINGS, "ARMOR-SERVER-AI"), ARMOR_DAILY_SUMMARY_CONFIG: summaryConfig,
-    ARMOR_VISION_DIR: path.join(SIBLINGS, "ARMOR-VISION"), ARMOR_VISION_ACTIVITY_CONFIG: activity, ARMOR_VISION_DETECTIONS: detections });
+  // a free port for the live service
+  const probe = http.createServer();
+  await new Promise<void>(resolve => probe.listen(0, "127.0.0.1", resolve));
+  const port = (probe.address() as { port: number }).port;
+  await new Promise<void>(resolve => probe.close(() => resolve()));
+  fs.writeFileSync(serviceConfig, JSON.stringify({ port }));
+  const child = spawn(python, ["-m", "armor_vision", "serve", "--activity-config", activity, "--service-config", serviceConfig], { env: { ...commandEnv(path.join(SIBLINGS, "ARMOR-VISION", "src")) }, stdio: ["ignore", "pipe", "pipe"] });
   try {
-    const admin = await studioCookie(running.base);
-    assert.equal((await ask(running, `${ROUTES.summary}?date=${day}`, { cookie: admin })).status, 404, "off until it is turned on");
-    await turn(running, admin, { "summary.daily": true, "vision.heatmap": true });
-    const summary = await ask(running, `${ROUTES.summary}?date=${day}&lang=es`, { cookie: admin });
-    assert.equal(summary.status, 200);
-    const report = (await summary.json()) as { date: string; language: string; summary: { totals: { events: number; serious_alarms: number }; by_hour: number[] }; text: string };
-    assert.equal(report.language, "es");
-    assert.deepEqual([report.summary.totals.events, report.summary.totals.serious_alarms, report.summary.by_hour[10]], [2, 1, 1]);
-    assert.ok(report.text.length > 10);
-    const map = await ask(running, `${ROUTES.heatmap}?camera=cam-front`, { cookie: admin });
-    assert.equal(map.status, 200);
-    const grid = (await map.json()) as { cols: number; rows: number; accepted_positions: number; contains_images: boolean };
-    assert.deepEqual([grid.cols, grid.rows, grid.accepted_positions, grid.contains_images], [4, 3, 3, false]);
-    const png = await ask(running, `${ROUTES.heatmap}?camera=cam-front&format=png`, { cookie: admin });
-    assert.equal(png.headers.get("content-type"), "image/png");
-    assert.equal((await ask(running, `${ROUTES.heatmap}?camera=nobody`, { cookie: admin })).status, 404);
-    fs.rmSync(detections);
-    assert.equal((await ask(running, ROUTES.heatmap, { cookie: admin })).status, 503, "no detections yet");
-  } finally { await running.stop(); }
+    for (let tries = 0; tries < 100; tries += 1) {
+      const up = await fetch(`http://127.0.0.1:${port}/health`).then(r => r.ok, () => false);
+      if (up) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    for (const i of [0, 1, 2]) {
+      const posted = await fetch(`http://127.0.0.1:${port}/ingest`, { method: "POST", headers: json, body: JSON.stringify({ camera_id: "cam-front", timestamp: i, detections: [{ label: "person", confidence: 0.9, box: [0.4, 0.6, 0.5, 0.8] }] }) });
+      assert.equal(posted.status, 200);
+    }
+    const running = await startServer({ ARMOR_DATA_DIR: dir, ARMOR_PYTHON: python, ARMOR_DAILY_SUMMARY_AI_DIR: path.join(SIBLINGS, "ARMOR-SERVER-AI"), ARMOR_DAILY_SUMMARY_CONFIG: summaryConfig, ARMOR_VISION_SERVICE_URL: `http://127.0.0.1:${port}` });
+    try {
+      const admin = await studioCookie(running.base);
+      assert.equal((await ask(running, `${ROUTES.summary}?date=${day}`, { cookie: admin })).status, 404, "off until it is turned on");
+      await turn(running, admin, { "summary.daily": true, "vision.heatmap": true });
+      const summary = await ask(running, `${ROUTES.summary}?date=${day}&lang=es`, { cookie: admin });
+      assert.equal(summary.status, 200);
+      const report = (await summary.json()) as { date: string; language: string; summary: { totals: { events: number; serious_alarms: number }; by_hour: number[] }; text: string };
+      assert.equal(report.language, "es");
+      assert.deepEqual([report.summary.totals.events, report.summary.totals.serious_alarms, report.summary.by_hour[10]], [2, 1, 1]);
+      assert.ok(report.text.length > 10);
+      const map = await ask(running, `${ROUTES.heatmap}?camera=cam-front`, { cookie: admin });
+      assert.equal(map.status, 200);
+      const grid = (await map.json()) as { cols: number; rows: number; accepted_positions: number; contains_images: boolean };
+      assert.deepEqual([grid.cols, grid.rows, grid.accepted_positions, grid.contains_images], [4, 3, 3, false]);
+      const png = await ask(running, `${ROUTES.heatmap}?camera=cam-front&format=png`, { cookie: admin });
+      assert.equal(png.headers.get("content-type"), "image/png");
+      assert.equal((await ask(running, `${ROUTES.heatmap}?camera=nobody`, { cookie: admin })).status, 404);
+      await fetch(`http://127.0.0.1:${port}/ingest`, { method: "POST", headers: json, body: JSON.stringify({ camera_id: "cam-front", timestamp: 9, detections: [{ label: "person", confidence: 0.9, box: [0.1, 0.5, 0.2, 0.9] }] }) });
+      const later = (await (await ask(running, `${ROUTES.heatmap}?camera=cam-front`, { cookie: admin })).json()) as { accepted_positions: number };
+      assert.equal(later.accepted_positions, 4, "the service keeps counting: nothing is replayed");
+    } finally { await running.stop(); }
+  } finally { child.kill(); }
 });

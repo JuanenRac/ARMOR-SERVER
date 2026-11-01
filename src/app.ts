@@ -343,7 +343,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   const nodeHealthFile = new JsonFile<ReturnType<typeof context.nodeHealth.export>>(path.join(config.dataDir, "node-health.json"));
   context.nodeHealth.import(nodeHealthFile.read());
   const saveHistory = (): void => {
-    try { solarHistoryFile.write(context.solar.exportHistory()); electricalHistoryFile.write(context.electricalNodes.exportHistory()); electricalEnergyFile.write(context.electricalEnergy.export()); nodeHealthFile.write(context.nodeHealth.export()); }
+    try { solarHistoryFile.write(context.solar.exportHistory()); electricalHistoryFile.write(context.electricalNodes.exportHistory()); electricalEnergyFile.write(context.electricalEnergy.export()); nodeHealthFile.write(context.nodeHealth.export()); context.dailyLog.flush(); }
     catch (error) { console.warn("ARMOR_HISTORY=NOT_SAVED", error instanceof Error ? error.message : "unknown error"); }
   };
   const historySaver = setInterval(saveHistory, 60_000);

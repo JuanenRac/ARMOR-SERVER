@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { ConfigError } from "../src/config.js";
-import type { ReportRun, RunReport } from "../src/reports.js";
+import type { FetchVision, ReportRun, RunReport } from "../src/reports.js";
 import { Serial } from "../src/reports.js";
 import { lowers, REPORT_QUEUE_MAX, REPORT_REQUESTS_PER_MINUTE, REPORT_TIMEOUT_S, SecuritySettings, SECURITY_DEFAULTS } from "../src/security_settings.js";
 import { startServer, studioCookie, testConfig, tempDir, type Running } from "./helpers.js";
@@ -15,34 +15,39 @@ const json = { "Content-Type": "application/json" };
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const REPORT = { summary: { schema: "armor-daily-summary/1", totals: { events: 0, alarms: 0, serious_alarms: 0, false_alarms: 0 }, by_type: {}, by_zone: {}, by_hour: new Array(24).fill(0) }, findings: [], text: "Daily summary" };
 const MAP = { schema: "armor.vision.heatmap/v1", camera_id: "cam-front", cols: 2, rows: 1, accepted_positions: 1, rejected_positions: 0, total: 1, max: 1, weights: [[1, 0]], normalized: [[1, 0]], contains_images: false };
-const envelope = (body: string) => JSON.stringify({ status: 200, content_type: "application/json", body_base64: Buffer.from(body).toString("base64") });
 const ROUTES = { summary: "/api/v1/summary/daily", heatmap: "/api/v1/vision/heatmap" } as const;
 
 function projects(): Record<string, string> {
   const root = tempDir();
-  const ai = path.join(root, "ARMOR-SERVER-AI"), vision = path.join(root, "ARMOR-VISION");
+  const ai = path.join(root, "ARMOR-SERVER-AI");
   fs.mkdirSync(path.join(ai, "src", "armor_server_ai"), { recursive: true });
-  fs.mkdirSync(path.join(vision, "src", "armor_vision"), { recursive: true });
   fs.writeFileSync(path.join(ai, "src", "armor_server_ai", "cli.py"), "");
-  fs.writeFileSync(path.join(vision, "src", "armor_vision", "heatmap_service.py"), "");
-  const files = { summaryConfig: path.join(root, "summary.json"), activity: path.join(root, "activity.json"), detections: path.join(root, "detections.jsonl") };
-  for (const file of Object.values(files)) fs.writeFileSync(file, "{}");
-  return { ARMOR_DAILY_SUMMARY_AI_DIR: ai, ARMOR_DAILY_SUMMARY_CONFIG: files.summaryConfig, ARMOR_VISION_DIR: vision, ARMOR_VISION_ACTIVITY_CONFIG: files.activity, ARMOR_VISION_DETECTIONS: files.detections };
+  const summaryConfig = path.join(root, "summary.json");
+  fs.writeFileSync(summaryConfig, "{}");
+  return { ARMOR_DAILY_SUMMARY_AI_DIR: ai, ARMOR_DAILY_SUMMARY_CONFIG: summaryConfig, ARMOR_VISION_SERVICE_URL: "http://127.0.0.1:8765" };
 }
 
 /** A stand-in for the Python commands that remembers what it was asked and answers after `delayMs`. */
-function runner(delayMs = 0): { run: RunReport; calls: ReportRun[] } {
-  const calls: ReportRun[] = [];
-  return { calls, run: async run => {
-    calls.push(run);
-    if (delayMs > 0) await pause(delayMs);
-    return { code: 0, stdout: Buffer.from(run.args.includes("heatmap-route") ? envelope(JSON.stringify(MAP)) : JSON.stringify(REPORT)), stderr: "" };
-  } };
+function runner(delayMs = 0): { run: RunReport; fetch: FetchVision; calls: ReportRun[]; timeouts: number[] } {
+  const calls: ReportRun[] = [], timeouts: number[] = [];
+  return {
+    calls, timeouts,
+    run: async run => {
+      calls.push(run);
+      if (delayMs > 0) await pause(delayMs);
+      return { code: 0, stdout: Buffer.from(JSON.stringify(REPORT)), stderr: "" };
+    },
+    fetch: async (_url, timeoutMs) => {
+      timeouts.push(timeoutMs);
+      if (delayMs > 0) await pause(delayMs);
+      return { status: 200, type: "application/json", body: Buffer.from(JSON.stringify(MAP)) };
+    },
+  };
 }
 const put = (running: Running, cookie: string, body: Record<string, unknown>) => fetch(`${running.base}/api/v1/security/settings`, { method: "PUT", headers: { ...json, cookie }, body: JSON.stringify(body) });
 const get = (running: Running, cookie: string, route: string) => fetch(`${running.base}${route}`, { headers: { cookie } });
-async function started(env: Record<string, string>, stand: { run: RunReport }): Promise<{ running: Running; cookie: string }> {
-  const running = await startServer({ ...projects(), ...env }, { runReport: stand.run });
+async function started(env: Record<string, string>, stand: { run: RunReport; fetch: FetchVision }): Promise<{ running: Running; cookie: string }> {
+  const running = await startServer({ ...projects(), ...env }, { runReport: stand.run, fetchVision: stand.fetch });
   const cookie = await studioCookie(running.base);
   assert.equal((await put(running, cookie, { "summary.daily": true, "vision.heatmap": true })).status, 200);
   return { running, cookie };
@@ -54,7 +59,7 @@ test("characterization: the limits are what the constants were (20 seconds, 3 wa
   const { running, cookie } = await started({}, stand);
   try {
     for (const route of Object.values(ROUTES)) assert.equal((await get(running, cookie, route)).status, 200, route);
-    assert.deepEqual(stand.calls.map(call => call.timeoutMs), [20_000, 20_000]);
+    assert.deepEqual([...stand.calls.map(call => call.timeoutMs), ...stand.timeouts], [20_000, 20_000]);
     const one = new Serial();
     const four = await Promise.all([1, 2, 3, 4].map(n => one.run(async () => { await pause(10); return n; })));
     assert.deepEqual(four, [1, 2, 3, "busy"]);
@@ -71,7 +76,7 @@ test("the three limits start from the environment, can be changed in the setting
     assert.equal(stand.calls.at(-1)!.timeoutMs, 9_000);
     assert.equal((await put(running, cookie, { "reports.timeout_s": 45 })).status, 200);
     await get(running, cookie, ROUTES.heatmap);
-    assert.equal(stand.calls.at(-1)!.timeoutMs, 45_000, "the heat map uses it too");
+    assert.equal(stand.timeouts.at(-1), 45_000, "the heat map uses it too");
     await get(running, cookie, ROUTES.summary);
     assert.equal(stand.calls.at(-1)!.timeoutMs, 45_000);
     const stored = JSON.parse(fs.readFileSync(path.join(running.config.dataDir, "security-settings.json"), "utf8")).settings;

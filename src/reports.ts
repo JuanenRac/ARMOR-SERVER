@@ -4,19 +4,23 @@
  *   summary.daily   GET /api/v1/summary/daily   the events of one day turned into counts, serious alarms, patterns and a text in one of the eight languages (ARMOR-SERVER-AI)
  *   vision.heatmap  GET /api/v1/vision/heatmap  the count of activity per cell of a grid laid over a camera's scene (ARMOR-VISION)
  *
- * Neither project listens on a port: each is run as a command (`python -m armor_server_ai.cli --daily-summary ...`, `python -m armor_vision heatmap-route ...`), one at a time, with a time limit,
- * a size limit, an environment that holds nothing but what Python needs (never the tokens, keys or passwords of this server) and arguments that are never read by a shell. What a command
- * says on its error output is never passed on (it can name a path), and what it prints is checked before it leaves: the summary must have exactly the keys of a report, and a map that says it
- * holds a picture is refused. Anything that is not understood is a 502, never a partial answer.
+ * The summary is run as a command (`python -m armor_server_ai.cli --daily-summary ...`), one at a time, with a time limit, a size limit, an environment that holds nothing but what Python needs (never the tokens, keys or passwords of this server) and arguments that are never read by a shell. What a command
+ * says on its error output is never passed on (it can name a path), and what it prints is checked before it leaves: the summary must have exactly the keys of a report. The heat map is asked of
+ * the live service of ARMOR-VISION, which keeps the activity engine in memory (a GET with nothing of this server in it, to the loopback address unless `vision.service_remote` is on), and a map
+ * that says it holds a picture is refused. Anything that is not understood is a 502, never a partial answer.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import { execFile } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
+import https from "node:https";
 import os from "node:os";
 import path from "node:path";
 import type { Alarm } from "./alarms.js";
 import type { ArmorConfig } from "./config.js";
 import { dayOf, secondOfDay } from "./day.js";
+import type { LogEvent } from "./daily_log.js";
+import { isLoopbackHost, parseVisionServiceUrl } from "./security_settings.js";
 
 export const SUMMARY_LANGUAGES = ["en", "es", "de", "fr", "it", "ja", "zh", "pt"] as const;
 export type SummaryLanguage = typeof SUMMARY_LANGUAGES[number];
@@ -81,7 +85,7 @@ export function validDate(value: string): boolean {
  * The events of one day for the summary, from the alarms the server kept: one `alarm` event for each alarm raised that day (in the time zone of the installation) whose code is a plain
  * identifier. The silent alarms are not here, and neither is the free text or the detail of an alarm: only its code, severity, zone and node. Oldest first.
  */
-export function dailyEvents(alarms: Alarm[], date: string): Array<Record<string, unknown>> {
+export function dailyEvents(alarms: Alarm[], date: string, sources: DailySources = {}): Array<Record<string, unknown>> {
   const events: Array<Record<string, unknown>> = [];
   for (const alarm of alarms) {
     if (alarm.silent) continue;
@@ -90,14 +94,35 @@ export function dailyEvents(alarms: Alarm[], date: string): Array<Record<string,
     const detail = alarm.detail ?? {};
     const zone = typeof detail.zone === "string" && IDENTIFIER.test(detail.zone) ? detail.zone : undefined;
     const node = typeof detail.node === "string" && IDENTIFIER.test(detail.node) ? detail.node : alarm.source.type === "node" && IDENTIFIER.test(alarm.source.id) ? alarm.source.id : undefined;
-    events.push({ t_s: secondOfDay(at), type: "alarm", code: alarm.code, severity: SEVERITY[alarm.severity] ?? "medium", ...(zone ? { zone } : {}), ...(node ? { node } : {}) });
+    // a link that was lost: the thing that went silent, and for how long (until it came back or, if it never did, until the end of the day)
+    if (LINK_CODES.has(alarm.code)) {
+      const who = linkName(alarm.source.id);
+      if (who) {
+        const ended = alarm.cleared_at ? Date.parse(alarm.cleared_at) : Number.NaN;
+        const seconds = Number.isFinite(ended) ? Math.max(0, (ended - at) / 1000) : 86_400 - secondOfDay(at);
+        events.push({ t_s: secondOfDay(at), type: "node_link_lost", node: who, duration_s: Math.min(86_400, Math.round(seconds)) });
+        continue;
+      }
+    }
+    // a false alarm: an intrusion alarm that whoever came in ended with the disarm within a few seconds
+    const closed = alarm.cleared_at ? Date.parse(alarm.cleared_at) : Number.NaN;
+    const falseAlarm = (sources.falseAlarmS ?? 0) > 0 && INTRUSION_CODES.has(alarm.code) && alarm.acknowledged_by === "disarm" && Number.isFinite(closed) && (closed - at) / 1000 <= (sources.falseAlarmS ?? 0);
+    events.push({ t_s: secondOfDay(at), type: "alarm", code: alarm.code, severity: SEVERITY[alarm.severity] ?? "medium", ...(zone ? { zone } : {}), ...(node ? { node } : {}), ...(falseAlarm ? { false_alarm: true } : {}) });
   }
+  for (const item of sources.logged ?? []) events.push(item.type === "reading" ? { t_s: item.t_s, type: "reading", node: item.node, sensor: item.sensor, value: item.value } : { t_s: item.t_s, type: "power", watts: item.watts });
   return events.sort((a, b) => (a.t_s as number) - (b.t_s as number));
 }
 
+/** What else the summary of a day is made from besides the alarms: the samples of the daily log of that day, and how soon a disarm makes an intrusion alarm a false one (0: never inferred). */
+export type DailySources = { logged?: LogEvent[]; falseAlarmS?: number };
+/** The alarms that say a link was lost: a node, a camera, a device, a solar, alarm, network or electrical node went silent. */
+const LINK_CODES = new Set(["node_down", "camera_down", "device_offline", "solar_offline", "alarm_offline", "network_offline", "electrical_offline"]);
+const INTRUSION_CODES = new Set(["intrusion", "door_open", "window_open", "motion", "glass_break", "vibration"]);
+const linkName = (id: string): string | undefined => { const name = id.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 64); return IDENTIFIER.test(name) ? name : undefined; };
+
 const REPORT_KEYS = ["findings", "summary", "text"];
 
-export type DailyDeps = { config: ArmorConfig; run: RunReport; alarms: () => Alarm[]; language: SummaryLanguage; timeoutMs?: number };
+export type DailyDeps = { config: ArmorConfig; run: RunReport; alarms: () => Alarm[]; language: SummaryLanguage; timeoutMs?: number; sources?: (date: string) => DailySources };
 
 /** The summary of `date` in `language`, or the reason it cannot be made. */
 export async function dailySummary(deps: DailyDeps, date: string, language: SummaryLanguage): Promise<ReportAnswer> {
@@ -107,7 +132,7 @@ export async function dailySummary(deps: DailyDeps, date: string, language: Summ
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), "armor-summary-"));
   try {
     const file = path.join(folder, "day.jsonl");
-    fs.writeFileSync(file, dailyEvents(deps.alarms(), date).map(event => JSON.stringify(event)).join("\n"), { encoding: "utf8", mode: 0o600 });
+    fs.writeFileSync(file, dailyEvents(deps.alarms(), date, deps.sources?.(date)).map(event => JSON.stringify(event)).join("\n"), { encoding: "utf8", mode: 0o600 });
     const result = await deps.run({ program: python, args: ["-m", "armor_server_ai.cli", "--daily-summary", file, "--summary-config", dailySummaryConfig, "--json", "--lang", language], env: commandEnv(source), cwd: folder, timeoutMs: deps.timeoutMs ?? 20_000, maxBytes: 4 * 1024 * 1024 });
     if (result.code === 2 && /is off/.test(result.stderr)) return fail(503, "daily_summary_off_in_settings");
     if (result.code !== 0) return fail(502, "daily_summary_failed");
@@ -140,26 +165,45 @@ export function heatmapQuery(query: Record<string, unknown>): { camera?: string;
   return { ...(camera !== undefined ? { camera } : {}), format, scale };
 }
 
-export type HeatmapDeps = { config: ArmorConfig; run: RunReport; timeoutMs?: number };
+/** What the live service of ARMOR-VISION answered, or null when it could not be reached in time. */
+export type VisionAnswer = { status: number; type: string; body: Buffer } | null;
+export type FetchVision = (url: string, timeoutMs: number, maxBytes: number) => Promise<VisionAnswer>;
 
-/** The heat map the query asks for, or the reason it cannot be given. */
+/** The real call: one GET, no redirect followed, no header of this server sent (no token, no cookie), the answer cut at `maxBytes`. */
+export const fetchVisionService: FetchVision = (url, timeoutMs, maxBytes) => new Promise(resolve => {
+  const parsed = new URL(url);
+  const get = parsed.protocol === "https:" ? https.get : http.get;
+  const request = get(parsed, { timeout: timeoutMs, headers: { Accept: "*/*" }, agent: false }, response => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    response.on("data", (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > maxBytes) { request.destroy(); resolve(null); return; }
+      chunks.push(chunk);
+    });
+    response.on("end", () => resolve({ status: response.statusCode ?? 0, type: String(response.headers["content-type"] ?? ""), body: Buffer.concat(chunks) }));
+    response.on("error", () => resolve(null));
+  });
+  request.on("timeout", () => { request.destroy(); resolve(null); });
+  request.on("error", () => resolve(null));
+});
+
+export type HeatmapDeps = { url: string; remote: boolean; fetch: FetchVision; timeoutMs?: number };
+
+/**
+ * The heat map the query asks for, or the reason it cannot be given. It is asked of the live service of ARMOR-VISION (which keeps the activity engine in memory); nothing is replayed per
+ * request. An address that is not set up, not valid, or not this machine while `vision.service_remote` is off is "not configured": the request never leaves.
+ */
 export async function heatmap(deps: HeatmapDeps, query: { camera?: string; format: string; scale: string }): Promise<ReportAnswer> {
-  const { python, visionDir, visionActivityConfig, visionConfig, visionDetections } = deps.config.reports;
-  const source = visionDir ? path.join(visionDir, "src") : "";
-  const isFile = (file: string): boolean => Boolean(file) && Boolean(fs.statSync(file, { throwIfNoEntry: false })?.isFile());
-  if (!visionDir || !fs.existsSync(path.join(source, "armor_vision", "heatmap_service.py")) || !isFile(visionActivityConfig) || !visionDetections || (visionConfig && !isFile(visionConfig))) return fail(503, "heatmap_not_configured");
-  if (!isFile(visionDetections)) return fail(503, "heatmap_no_data");
-  const args = ["-m", "armor_vision", "heatmap-route", "--activity-config", visionActivityConfig, "--detections-file", visionDetections, "--format", query.format, "--scale", query.scale,
-    ...(query.camera ? ["--camera", query.camera] : []), ...(visionConfig ? ["--config", visionConfig] : [])];
-  const result = await deps.run({ program: python, args, env: commandEnv(source), cwd: os.tmpdir(), timeoutMs: deps.timeoutMs ?? 20_000, maxBytes: 16 * 1024 * 1024 });
-  if (result.code !== 0) return fail(502, "heatmap_failed");
-  let answer: { status?: unknown; content_type?: unknown; body_base64?: unknown };
-  try { answer = JSON.parse(result.stdout.toString("utf8")) as typeof answer; } catch { return fail(502, "heatmap_failed"); }
-  if (typeof answer.status !== "number" || typeof answer.body_base64 !== "string" || typeof answer.content_type !== "string") return fail(502, "heatmap_failed");
-  const body = Buffer.from(answer.body_base64, "base64");
-  if (answer.status === 400) return fail(400, "invalid_query");
-  if (answer.status === 404) return fail(404, body.toString("utf8").startsWith("unknown camera") ? "unknown_camera" : "heatmap_pipeline_off");
-  if (answer.status !== 200 || answer.content_type !== TYPES[query.format]) return fail(502, "heatmap_failed");
+  const service = parseVisionServiceUrl(deps.url);
+  if (!service || (!deps.remote && !isLoopbackHost(service.host))) return fail(503, "heatmap_not_configured");
+  const params = new URLSearchParams({ ...(query.camera ? { camera: query.camera } : {}), format: query.format, scale: query.scale });
+  const result = await deps.fetch(`${service.origin}/heatmap?${params.toString()}`, deps.timeoutMs ?? 20_000, 16 * 1024 * 1024);
+  if (!result) return fail(502, "heatmap_failed");
+  const body = result.body;
+  if (result.status === 400) return fail(400, "invalid_query");
+  if (result.status === 404) return fail(404, body.toString("utf8").startsWith("unknown camera") ? "unknown_camera" : "heatmap_pipeline_off");
+  if (result.status !== 200 || result.type.split(";")[0]!.trim().toLowerCase() !== TYPES[query.format]) return fail(502, "heatmap_failed");
   if (query.format === "json") {
     // positions only: a map that does not say so, or that is not the shape of a map, is not passed on
     try {
@@ -170,5 +214,5 @@ export async function heatmap(deps: HeatmapDeps, query: { camera?: string; forma
   }
   if (query.format === "png" && !body.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return fail(502, "heatmap_failed");
   if (query.format === "svg" && !body.subarray(0, 512).toString("utf8").includes("<svg")) return fail(502, "heatmap_failed");
-  return { status: 200, type: TYPES[query.format], bytes: body };
+  return { status: 200, type: TYPES[query.format]!, bytes: body };
 }
