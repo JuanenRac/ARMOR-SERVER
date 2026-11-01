@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.8.1.3] - The profile each arming mode asks of the panels is checked when it is saved, the token of the vision service never travels in clear to another machine and every parser of outside input is fed seeded garbage in tests
+
 - **The token for the vision service never goes in clear to another machine.** With `vision.service_remote` on and a token held (`ARMOR_VISION_SERVICE_TOKEN`), a plain-http address of a host that is not this machine is refused when it is saved (and when the remote switch is turned on over an address already saved), with the reason; a request to such an address saved before the rule never leaves. Loopback stays plain http, and https is always allowed.
 - **The profile each arming mode asks of the panels is checked when the definition is saved:** `PUT /api/v1/alarm/modes` refuses (400, `invalid_modes`) a `panel_map.profiles` name that does not exist, with the name, and the audit says so. A panel that the list names and that does not exist yet is saved, and at the first arming it is a failed panel with its alarm (`mode_panel_sync_failed`), as before; now there is a test for it.
 - **Every parser of a message or a document from outside is fed seeded garbage in a test** and must answer or refuse with its own error, never with a crash of the language.
