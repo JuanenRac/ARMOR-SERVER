@@ -6,7 +6,7 @@
  *
  * The summary is run as a command (`python -m armor_server_ai.cli --daily-summary ...`), one at a time, with a time limit, a size limit, an environment that holds nothing but what Python needs (never the tokens, keys or passwords of this server) and arguments that are never read by a shell. What a command
  * says on its error output is never passed on (it can name a path), and what it prints is checked before it leaves: the summary must have exactly the keys of a report. The heat map is asked of
- * the live service of ARMOR-VISION, which keeps the activity engine in memory (a GET with nothing of this server in it, to the loopback address unless `vision.service_remote` is on), and a map
+ * the live service of ARMOR-VISION, which keeps the activity engine in memory (a GET with nothing of this server in it, to the loopback address unless `vision.service_remote` is on; with a token, ARMOR_VISION_SERVICE_TOKEN or its file, sent to that service and to nobody else), and a map
  * that says it holds a picture is refused. Anything that is not understood is a 502, never a partial answer.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
@@ -104,10 +104,10 @@ export function dailyEvents(alarms: Alarm[], date: string, sources: DailySources
         continue;
       }
     }
-    // a false alarm: an intrusion alarm that whoever came in ended with the disarm within a few seconds
+    // a false alarm: a person said so (or said it was not one), or, if nobody said, an intrusion alarm that whoever came in ended with the disarm within a few seconds
     const closed = alarm.cleared_at ? Date.parse(alarm.cleared_at) : Number.NaN;
-    const falseAlarm = (sources.falseAlarmS ?? 0) > 0 && INTRUSION_CODES.has(alarm.code) && alarm.acknowledged_by === "disarm" && Number.isFinite(closed) && (closed - at) / 1000 <= (sources.falseAlarmS ?? 0);
-    events.push({ t_s: secondOfDay(at), type: "alarm", code: alarm.code, severity: SEVERITY[alarm.severity] ?? "medium", ...(zone ? { zone } : {}), ...(node ? { node } : {}), ...(falseAlarm ? { false_alarm: true } : {}) });
+    const inferred = (sources.falseAlarmS ?? 0) > 0 && INTRUSION_CODES.has(alarm.code) && alarm.acknowledged_by === "disarm" && Number.isFinite(closed) && (closed - at) / 1000 <= (sources.falseAlarmS ?? 0);
+    events.push({ t_s: secondOfDay(at), type: "alarm", code: alarm.code, severity: SEVERITY[alarm.severity] ?? "medium", ...(zone ? { zone } : {}), ...(node ? { node } : {}), ...(alarm.false_alarm ?? inferred ? { false_alarm: true } : {}) });
   }
   for (const item of sources.logged ?? []) events.push(item.type === "reading" ? { t_s: item.t_s, type: "reading", node: item.node, sensor: item.sensor, value: item.value } : { t_s: item.t_s, type: "power", watts: item.watts });
   return events.sort((a, b) => (a.t_s as number) - (b.t_s as number));
@@ -167,13 +167,13 @@ export function heatmapQuery(query: Record<string, unknown>): { camera?: string;
 
 /** What the live service of ARMOR-VISION answered, or null when it could not be reached in time. */
 export type VisionAnswer = { status: number; type: string; body: Buffer } | null;
-export type FetchVision = (url: string, timeoutMs: number, maxBytes: number) => Promise<VisionAnswer>;
+export type FetchVision = (url: string, timeoutMs: number, maxBytes: number, token?: string) => Promise<VisionAnswer>;
 
 /** The real call: one GET, no redirect followed, no header of this server sent (no token, no cookie), the answer cut at `maxBytes`. */
-export const fetchVisionService: FetchVision = (url, timeoutMs, maxBytes) => new Promise(resolve => {
+export const fetchVisionService: FetchVision = (url, timeoutMs, maxBytes, token) => new Promise(resolve => {
   const parsed = new URL(url);
   const get = parsed.protocol === "https:" ? https.get : http.get;
-  const request = get(parsed, { timeout: timeoutMs, headers: { Accept: "*/*" }, agent: false }, response => {
+  const request = get(parsed, { timeout: timeoutMs, headers: { Accept: "*/*", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, agent: false }, response => {
     const chunks: Buffer[] = [];
     let size = 0;
     response.on("data", (chunk: Buffer) => {
@@ -188,7 +188,7 @@ export const fetchVisionService: FetchVision = (url, timeoutMs, maxBytes) => new
   request.on("error", () => resolve(null));
 });
 
-export type HeatmapDeps = { url: string; remote: boolean; fetch: FetchVision; timeoutMs?: number };
+export type HeatmapDeps = { url: string; remote: boolean; fetch: FetchVision; timeoutMs?: number; token?: string };
 
 /**
  * The heat map the query asks for, or the reason it cannot be given. It is asked of the live service of ARMOR-VISION (which keeps the activity engine in memory); nothing is replayed per
@@ -198,8 +198,9 @@ export async function heatmap(deps: HeatmapDeps, query: { camera?: string; forma
   const service = parseVisionServiceUrl(deps.url);
   if (!service || (!deps.remote && !isLoopbackHost(service.host))) return fail(503, "heatmap_not_configured");
   const params = new URLSearchParams({ ...(query.camera ? { camera: query.camera } : {}), format: query.format, scale: query.scale });
-  const result = await deps.fetch(`${service.origin}/heatmap?${params.toString()}`, deps.timeoutMs ?? 20_000, 16 * 1024 * 1024);
+  const result = await deps.fetch(`${service.origin}/heatmap?${params.toString()}`, deps.timeoutMs ?? 20_000, 16 * 1024 * 1024, deps.token || undefined);
   if (!result) return fail(502, "heatmap_failed");
+  if (result.status === 401 || result.status === 403) return fail(502, "heatmap_failed");   // a token the service does not accept is a fault of the set-up; what it said is not passed on
   const body = result.body;
   if (result.status === 400) return fail(400, "invalid_query");
   if (result.status === 404) return fail(404, body.toString("utf8").startsWith("unknown camera") ? "unknown_camera" : "heatmap_pipeline_off");

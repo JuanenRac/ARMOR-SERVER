@@ -53,7 +53,7 @@ export function registerReportRoutes(app: Express, context: AppContext): void {
     if (!securitySettings.get("vision.heatmap")) return void response.status(404).json({ error: "heatmap_disabled" });
     const query = heatmapQuery(request.query);
     if (!query) return void response.status(400).json({ error: "invalid_query" });
-    const answer = await queue.run(() => heatmap({ url: securitySettings.get("vision.service_url"), remote: securitySettings.get("vision.service_remote"), fetch: fetchVision, timeoutMs: timeoutMs() }, query));
+    const answer = await queue.run(() => heatmap({ url: securitySettings.get("vision.service_url"), remote: securitySettings.get("vision.service_remote"), fetch: fetchVision, timeoutMs: timeoutMs(), token: config.visionServiceToken }, query));
     audit.record({ action: "report.vision_heatmap", outcome: answer !== "busy" && answer.status === 200 ? "allowed" : "denied", actor: studioUser(request)?.username ?? "operator", target: query.camera ?? "-" });
     send(response, answer === "busy" ? { status: 503, json: { error: "report_busy" } } : answer);
   });

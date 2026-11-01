@@ -27,6 +27,7 @@
  *   summary.daily                on | off                 administrators and operators may ask for the summary of a day (GET /api/v1/summary/daily, made by ARMOR-SERVER-AI from the alarms the server kept; off, the default, answers 404)
  *   vision.heatmap               on | off                 administrators and operators may ask for the activity heat map of a camera (GET /api/v1/vision/heatmap, made by ARMOR-VISION; positions only, never a picture; off, the default, answers 404)
  *   vision.service_url           an http address            where the live ARMOR-VISION service listens (http://127.0.0.1:8765): the heat map is asked of it (ARMOR_VISION_SERVICE_URL is where it starts; empty: not set up)
+ *   vision.service_token_set     on | off (read only)     whether the server holds a token for the vision service (ARMOR_VISION_SERVICE_TOKEN or ARMOR_VISION_SERVICE_TOKEN_FILE); the token itself is never shown or stored here
  *   vision.service_remote        on | off                   the service may be on another machine (off, the default: only a loopback address is used)
  *   summary.log_days             1 to 90                  the days the daily log keeps (the readings and the power the summary of a day uses; ARMOR_DAILY_LOG_DAYS is where it starts; 14)
  *   summary.reading_every_s      10 to 3600               the most often a reading of one sensor is logged (ARMOR_DAILY_LOG_READING_EVERY_S; 300)
@@ -104,6 +105,7 @@ export type SecuritySettingsValues = {
   "vision.heatmap": boolean;
   "vision.service_url": string;
   "vision.service_remote": boolean;
+  "vision.service_token_set": boolean;
   "summary.log_days": number;
   "summary.reading_every_s": number;
   "summary.power_every_s": number;
@@ -141,6 +143,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "vision.heatmap": false,
   "vision.service_url": "",
   "vision.service_remote": false,
+  "vision.service_token_set": false,
   "summary.log_days": SUMMARY_LOG_DAYS.default,
   "summary.reading_every_s": SUMMARY_READING_EVERY_S.default,
   "summary.power_every_s": SUMMARY_POWER_EVERY_S.default,
@@ -224,6 +227,7 @@ export class SecuritySettings {
       if (!isKey(key)) throw new SecuritySettingsInvalid(`unknown setting ${key.slice(0, 60)}`, key.slice(0, 60));
       const ok = clean(key, value);
       if (ok === undefined) throw new SecuritySettingsInvalid(`invalid value for ${key}`, key);
+      if (key === "vision.service_token_set" && ok !== this.effective[key]) throw new SecuritySettingsInvalid(`${key} is read only: the token is given in the environment of the server`, key);
       if (locked.has(key) && ok !== this.effective[key]) throw new SecuritySettingsInvalid(`${key} is fixed by the environment of the server`, key);
       if (next[key] !== ok) { next[key] = ok; changes[key] = ok; }
     }

@@ -38,6 +38,8 @@ export type Alarm = {
    * one keeps being escalated until somebody who signed in acknowledges it.
    */
   acknowledged_unverified?: true;
+  /** A person marked it a false alarm (true) or said it was not one (false), and who; absent: nobody said, and the summary of a day infers it from the disarm that ended an intrusion. */
+  false_alarm?: boolean; false_alarm_by?: string;
 };
 export type AlarmDetail = Record<string, string | number | boolean>;
 const MAX_DETAIL_FIELDS = 24, MAX_DETAIL_VALUE = 200;
@@ -180,6 +182,15 @@ export class AlarmCentre {
 
   clearMatching(test: (alarm: Alarm) => boolean): void {
     for (const alarm of this.#alarms) if (!alarm.cleared_at && test(alarm)) this.clear(alarm.key);
+  }
+
+  /** A person says an alarm was a false alarm (true), was not (false), or takes the mark back (undefined). A silent alarm is for an administrator only. */
+  markFalse(id: string, value: boolean | undefined, by: string, options: { silent?: boolean } = {}): Alarm | undefined {
+    const alarm = this.#alarms.find(item => item.id === id);
+    if (!alarm || (alarm.silent && options.silent !== true)) return undefined;
+    if (value === undefined) { delete alarm.false_alarm; delete alarm.false_alarm_by; } else { alarm.false_alarm = value; alarm.false_alarm_by = by.slice(0, 60); }
+    this.#save();
+    return alarm;
   }
 
   /** A silent alarm is acknowledged only when `silent` is allowed (an administrator's request): for anybody else it is as if it did not exist. */

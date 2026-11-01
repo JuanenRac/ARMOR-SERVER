@@ -119,6 +119,21 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
     audit.record({ action: "alarm.acknowledge", outcome: "allowed", actor: actor(request), target: alarm.id });
     return response.json(alarm);
   });
+  // A person who dealt with an alarm says it was a false alarm (or that it was not, or takes the mark back): the summary of a day counts it. Administrators and operators only; a wall panel's account and a viewer cannot.
+  app.post("/api/v1/alarms/:id/false-alarm", requireOperator, (request, response) => {
+    const user = studioUser(request);
+    if (user && user.role !== "admin" && user.role !== "operator") {
+      audit.record({ action: "alarm.false_alarm", outcome: "denied", actor: user.username, target: String(request.params.id), detail: user.role });
+      return response.status(403).json({ error: "only an administrator or an operator can mark a false alarm", code: "forbidden" });
+    }
+    const input = body(request), wanted = input.false_alarm;
+    if (wanted !== undefined && wanted !== null && typeof wanted !== "boolean") return response.status(400).json({ error: "false_alarm is true, false or null", code: "invalid_request" });
+    const value = wanted === null ? undefined : (wanted ?? true);
+    const alarm = alarms.markFalse(String(request.params.id), value, actor(request), sees(request));
+    if (!alarm) return response.status(404).json({ error: "no such alarm", code: "not_found" });
+    audit.record({ action: "alarm.false_alarm", outcome: "allowed", actor: actor(request), target: alarm.id, detail: value === undefined ? "mark taken back" : value ? "marked as a false alarm" : "marked as not a false alarm" });
+    return response.json(alarm);
+  });
   // Clearing the record is the operator's too: it takes away every alarm
   // somebody has acknowledged - ended or not, since what is being lived with is not news - and leaves the ones nobody has seen.
   app.delete("/api/v1/alarms", requireOperator, (request, response) => {

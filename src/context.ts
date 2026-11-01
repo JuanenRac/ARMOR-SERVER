@@ -258,7 +258,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   });
   const securityChanged: { tell?: (changes: Record<string, unknown>) => void } = {};
   const securitySettings = new SecuritySettings(path.join(config.dataDir, "security-settings.json"), {
-    environment: () => ({ "alarm.disarm_pin": config.disarmPinEnv }),
+    environment: () => ({ "alarm.disarm_pin": config.disarmPinEnv, ...(config.visionServiceToken !== "" ? { "vision.service_token_set": true } : {}) }),
     initial: { "voice.turn_max_bytes": config.voiceTurnMaxBytes, "voice.reply_audio_max_bytes": config.voiceReplyAudioMaxBytes, "summary.log_days": config.dailyLogDays, "summary.reading_every_s": config.dailyLogReadingEveryS, "summary.power_every_s": config.dailyLogPowerEveryS, "summary.false_alarm_s": config.dailyFalseAlarmS, "reports.timeout_s": config.reportTimeoutS, "reports.queue_max": config.reportQueueMax, "reports.requests_per_minute": config.reportRequestsPerMinute, "vision.service_url": config.visionServiceUrl },
     onChange: changes => securityChanged.tell?.(changes),
   });

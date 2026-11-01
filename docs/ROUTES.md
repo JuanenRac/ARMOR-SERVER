@@ -81,6 +81,7 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/alarms` | operator | `routes/alarms.ts` |
 | DELETE | `/api/v1/alarms/:id` | operator | `routes/alarms.ts` |
 | POST | `/api/v1/alarms/:id/acknowledge` | operator | `routes/alarms.ts` |
+| POST | `/api/v1/alarms/:id/false-alarm` | operator | `routes/alarms.ts` |
 | POST | `/api/v1/alarms/acknowledge` | operator | `routes/alarms.ts` |
 | GET | `/api/v1/audit` | administrator | `routes/system.ts` |
 | GET | `/api/v1/automations` | operator | `routes/alarms.ts` |

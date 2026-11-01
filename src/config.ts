@@ -44,6 +44,8 @@ export type ArmorConfig = {
   reportRequestsPerMinute: number;
   /** ARMOR_VISION_SERVICE_URL: where the live ARMOR-VISION service listens (the heat map is asked of it); empty is "not set up". Studio can change it. */
   visionServiceUrl: string;
+  /** ARMOR_VISION_SERVICE_TOKEN or the file named by ARMOR_VISION_SERVICE_TOKEN_FILE: the token sent to the vision service, and only to it. Empty: none. It is never shown, logged or put in the settings. */
+  visionServiceToken: string;
   /** The daily log (see daily_log.ts): where the days kept, the two sampling intervals and the false-alarm window start (Studio can change them), and the bounds only the environment sets. */
   dailyLogDays: number;
   dailyLogReadingEveryS: number;
@@ -194,6 +196,17 @@ const visionServiceUrl = (env: Env): string => {
   const raw = env.ARMOR_VISION_SERVICE_URL?.trim() ?? "";
   if (raw !== "" && parseVisionServiceUrl(raw) === undefined) throw new ConfigError("ARMOR_VISION_SERVICE_URL must be an http or https address such as http://127.0.0.1:8765 (no sign-in, path or query in it)");
   return raw;
+};
+
+const visionServiceToken = (env: Env): string => {
+  const direct = env.ARMOR_VISION_SERVICE_TOKEN?.trim() ?? "", file = env.ARMOR_VISION_SERVICE_TOKEN_FILE?.trim() ?? "";
+  if (direct && file) throw new ConfigError("give the vision service token once: ARMOR_VISION_SERVICE_TOKEN or ARMOR_VISION_SERVICE_TOKEN_FILE, not both");
+  let token = direct;
+  if (file) {
+    try { token = fs.readFileSync(file, "utf8").trim(); } catch { throw new ConfigError("ARMOR_VISION_SERVICE_TOKEN_FILE cannot be read"); }
+  }
+  if (token && !/^[A-Za-z0-9._~+/=-]{24,200}$/.test(token)) throw new ConfigError("the vision service token must be 24 to 200 characters of letters, digits and . _ ~ + / = -");
+  return token;
 };
 
 const dailyLogSensors = (env: Env): string[] => {
@@ -418,6 +431,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     reportQueueMax: integer(env, "ARMOR_REPORT_QUEUE_MAX", 3, 1, 10),
     reportRequestsPerMinute: integer(env, "ARMOR_REPORT_REQUESTS_PER_MINUTE", 30, 1, 300),
     visionServiceUrl: visionServiceUrl(env),
+    visionServiceToken: visionServiceToken(env),
     dailyLogDays: integer(env, "ARMOR_DAILY_LOG_DAYS", 14, 1, 90),
     dailyLogReadingEveryS: integer(env, "ARMOR_DAILY_LOG_READING_EVERY_S", 300, 10, 3600),
     dailyLogPowerEveryS: integer(env, "ARMOR_DAILY_LOG_POWER_EVERY_S", 60, 5, 3600),
