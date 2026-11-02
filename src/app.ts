@@ -319,6 +319,8 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       { subscribe: ["armor/alarm/+/result"], named: (topic: string) => alarmTopic(topic, "result"), parse: parseAlarmResult, fallback: "invalid alarm result",
         matches: (message: ReturnType<typeof parseAlarmResult>, named: string) => message.node_id === named, apply: (message, named) => context.alarmCommands.handleResult(message, named) },
       { subscribe: ["armor/alarm/+/state"], named: (topic: string) => alarmTopic(topic), parse: parseAlarmMessage, fallback: "invalid alarm payload",
+        // the signed copy this server published itself, heard again: the original was already taken, the copy must not overwrite a newer state
+        intercept: (body: unknown) => context.alarmStateSigner.isOwn(body),
         matches: (message: ReturnType<typeof parseAlarmMessage>, named: string) => message.node_id === named, apply: message => context.alarmNodes.ingest(message) },
       // The events of the perimeter engine of a radar node (a zone taken or left, a line crossed, a covered sensor, a sensor whose own Bluetooth is open ...): armor/radar/{node}/events, QoS 1. A
       // repeat of an event (the same start and sequence number) is kept once.

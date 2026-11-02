@@ -39,6 +39,9 @@ export type AlarmMessage = {
   siren_loop?: SirenLoopState;
   /** true when siren_loop is open, short or unreadable: the siren may not sound when the alarm needs it. */
   siren_fault?: boolean;
+  /** Only in a signed state (server.alarm_state_signature): a number that only goes up, and the HMAC-SHA256 in hex over the state with the key of the installation. They come together. */
+  seq?: number;
+  sig?: string;
 };
 export type AlarmCommand = { kind: "alarm_command"; node_id: string; timestamp_ms: number; command_id: string; action: AlarmAction; mode?: "away" | "stay"; force?: boolean; profile?: ArmProfile };
 export type AlarmResult = { kind: "alarm_result"; node_id: string; timestamp_ms: number; command_id: string; action: AlarmAction; accepted: boolean; refusal: AlarmRefusal; phase: Phase };
@@ -72,7 +75,7 @@ function parseEvent(value: unknown, index: number): AlarmEvent {
 /** The state of a node, with the rules that join fields: a zone named once, an open zone is a zone of the message, a disarmed panel has the mode disarmed and an armed one does not, a siren only in the alarm phase. */
 export function parseAlarmMessage(value: unknown): AlarmMessage {
   const body = record(value, "alarm message");
-  onlyKnown(body, ["kind", "node_id", "timestamp_ms", "phase", "mode", "siren", "locked_out", "commands_enabled", "zones", "open_zones", "events", "arm_profiles", "profile", "siren_loop", "siren_fault"], "alarm message");
+  onlyKnown(body, ["kind", "node_id", "timestamp_ms", "phase", "mode", "siren", "locked_out", "commands_enabled", "zones", "open_zones", "events", "arm_profiles", "profile", "siren_loop", "siren_fault", "seq", "sig"], "alarm message");
   for (const key of ["kind", "node_id", "timestamp_ms", "phase", "mode", "siren", "locked_out", "commands_enabled", "zones", "open_zones", "events"]) if (!(key in body)) throw new Error(`the alarm message is missing ${key}`);
   if (body.kind !== "alarm") throw new Error("invalid kind");
   const node = readNodeId(body), timestamp = readTimestamp(body);
@@ -102,6 +105,9 @@ export function parseAlarmMessage(value: unknown): AlarmMessage {
     if (typeof body.siren_fault !== "boolean") throw new Error("invalid siren_fault");
     if (body.siren_fault !== (body.siren_loop === "open" || body.siren_loop === "short" || body.siren_loop === "unreadable")) throw new Error("siren_fault is true exactly when siren_loop is open, short or unreadable");
   }
+  if (("seq" in body) !== ("sig" in body)) throw new Error("seq and sig come together");
+  if ("seq" in body && (!integer(body.seq) || body.seq < 0 || body.seq > Number.MAX_SAFE_INTEGER)) throw new Error("invalid seq");
+  if ("sig" in body && (typeof body.sig !== "string" || !/^[0-9a-f]{64}$/.test(body.sig))) throw new Error("invalid sig");
   if ("profile" in body) {
     if (typeof body.profile !== "string" || !/^[a-z0-9][a-z0-9_-]{0,15}$/.test(body.profile)) throw new Error("invalid profile");
     if (body.mode === "disarmed") throw new Error("a panel that is not armed has no arming profile");

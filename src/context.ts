@@ -32,6 +32,7 @@ import { DeviceRegistry, type DeviceChange } from "./devices/registry.js";
 import { sendCommand, type Command } from "./devices/commands.js";
 import { isTriggered } from "./devices/catalog.js";
 import { AlarmZoneFeed, ZoneFeedSigner } from "./alarm_zone_feed.js";
+import { AlarmStateSigner } from "./alarm_state_signature.js";
 import { CaptureOnDetect } from "./capture_on_detect.js";
 import { IgnoreZones } from "./ignore_zones.js";
 import { FcmDevices, fcmChannel, parseServiceAccount } from "./push_fcm.js";
@@ -43,7 +44,7 @@ import { SolarStore } from "./solar.js";
 import { ElectricalStore } from "./electrical.js";
 import { SwitchingService } from "./electrical_switching.js";
 import { BatteryWriteService } from "./battery_write.js";
-import { AlarmStore } from "./alarm.js";
+import { AlarmStore, type AlarmMessage } from "./alarm.js";
 import { ArmProfileStore } from "./arm_profiles.js";
 import { ArmingModes } from "./arming_modes.js";
 import { ModePanelSync } from "./mode_panel_sync.js";
@@ -168,6 +169,8 @@ export type AppContext = {
   alarmLink: { publish?: (topic: string, payload: string) => void };
   /** Signs the zone messages and gives each panel its key. */
   zoneFeedSigner: ZoneFeedSigner;
+  /** Signs the copy of each alarm state the server publishes while server.alarm_state_signature is on, and recognises its own copy when it hears it again. */
+  alarmStateSigner: AlarmStateSigner;
   /** The security options an administrator turns on and off from Studio (see security_settings.ts). */
   securitySettings: SecuritySettings;
   /** The sounds an administrator uploaded for the origins of an alarm, and the spoken sentences already made. */
@@ -383,8 +386,17 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     enabled: config.electricalSwitching, nodes: electricalNodes, audit, now: overrides.now,
     publish: (topic, payload) => { if (!switchLink.publish) throw new Error("the MQTT broker is not connected"); switchLink.publish(topic, payload); },
   });
-  const alarmNodes = new AlarmStore({ now: overrides.now, onMessage: (message, previous) => { knownNodes.seen("alarm", message.node_id, message.phase); alarmRules.handleAlarmNode(message, previous); }, onStale: (node, stale, phase) => { alarmRules.handleAlarmNodeStale(node, stale, phase); if (stale) nodeLife.gone(node); else nodeLife.report(node); } });
+  const alarmStateSigner = new AlarmStateSigner(config.alarmStateKeyFile, overrides.now);
   const alarmLink: AppContext["alarmLink"] = {};
+  // While server.alarm_state_signature is on, a state heard from a panel is published again, signed, on the same topic (a copy that is already signed is never copied again). A broker that is not connected only costs the copy.
+  const relaySignedAlarmState = (message: AlarmMessage): void => {
+    if (message.sig !== undefined || !securitySettings.get("server.alarm_state_signature")) return;
+    try {
+      if (!alarmLink.publish) throw new Error("the MQTT broker is not connected");
+      alarmLink.publish(`armor/alarm/${message.node_id}/state`, JSON.stringify(alarmStateSigner.sign(message)));
+    } catch (error) { warn(`alarm state signature: ${error instanceof Error ? error.message : String(error)}`); }
+  };
+  const alarmNodes = new AlarmStore({ now: overrides.now, onMessage: (message, previous) => { knownNodes.seen("alarm", message.node_id, message.phase); alarmRules.handleAlarmNode(message, previous); relaySignedAlarmState(message); }, onStale: (node, stale, phase) => { alarmRules.handleAlarmNodeStale(node, stale, phase); if (stale) nodeLife.gone(node); else nodeLife.report(node); } });
   const armProfiles = new ArmProfileStore(path.join(config.dataDir, "arm-profiles.json"), overrides.now ? () => new Date(overrides.now!()) : undefined, warn);
   alarmRules.batteryProfileOf = id => { const registration = solarRegistry.list().find(item => `${item.node_id}/${item.device}` === id); return registration ? batteryProfile(registration.model) : undefined; };
   alarmRules.profileNotify = id => armProfiles.find(id)?.notify ?? (armProfiles.find(id) ? "urgent" : undefined);
@@ -579,7 +591,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, securitySettings, geoip, loginCountries, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The server can publish a signed copy of each alarm state it hears:** the new setting `server.alarm_state_signature` (off by default; Studio shows it with the other protections, and turning it off is written in the audit) makes the server publish the state again on `armor/alarm/{node}/state` with `seq` and `sig` (HMAC-SHA256 with a key of the installation kept in a file outside the repository, `alarm-state.key` in the data directory or `ARMOR_ALARM_STATE_KEY_FILE`, made the first time it is needed and never shown), so that a reader that must know who sent a state can require the signature; the server ignores its own copy, the parser takes `seq` and `sig` only together, and the bytes are checked against the shared vectors.
 - **The tunnel to a camera closes when its local server fails:** a later error of the local RTSP tunnel server (running out of file descriptors, for instance) closes the tunnel and its sessions instead of leaving an error nobody listens to.
 
 ## [0.8.1.5] - Prometheus metrics, a dead-man ping to an outside service, a signed record of an incident, a dry run for the installation import and the wiring of the siren in the node state

@@ -13,6 +13,7 @@
  *   alarm.config_hash            on | off                  the panel binds its saved armed state to its zones and PIN and does not restore it if they changed (panel side)
  *   server.zone_feed             on | off                  the server tells the panels the state of their Zigbee zones
  *   server.zone_feed_signature   on | off                  every zone message is signed, so a panel can tell it came from this server
+ *   server.alarm_state_signature on | off                  the server publishes a signed copy of each alarm state it hears, so a reader on the broker (the safety zones of a HYDRA-UMC cell) can tell who sent it (off, the default)
  *   media.rtsp_proxy             on | off                  FFmpeg reads the cameras through the local tunnel (off: the camera login goes in its command line, visible to every user of the machine)
  *   voice.multipart_turn         on | off                  the wall panel may send a spoken turn as multipart/form-data with the audio as raw bytes (off: only the older raw request is taken, a multipart one is answered 415)
  *   panel.live_events            on | off                  the wall panel may listen to the live channel (a WebSocket that carries the same small summary it can ask for; off: it asks every few seconds)
@@ -97,6 +98,7 @@ export type SecuritySettingsValues = {
   "alarm.config_hash": boolean;
   "server.zone_feed": boolean;
   "server.zone_feed_signature": boolean;
+  "server.alarm_state_signature": boolean;
   "media.rtsp_proxy": boolean;
   "network.login_secure_only": boolean;
   "metrics.prometheus": boolean;
@@ -137,6 +139,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "alarm.config_hash": true,
   "server.zone_feed": true,
   "server.zone_feed_signature": true,
+  "server.alarm_state_signature": false,
   "media.rtsp_proxy": true,
   "network.login_secure_only": false,
   "metrics.prometheus": false,

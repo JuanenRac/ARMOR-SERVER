@@ -55,6 +55,8 @@ export type ArmorConfig = {
   /** ARMOR_HEARTBEAT_URL: the address the dead-man ping asks while the option heartbeat.enabled is on; empty: none. ARMOR_HEARTBEAT_INTERVAL_S: seconds between pings. */
   heartbeatUrl: string;
   heartbeatIntervalS: number;
+  /** ARMOR_ALARM_STATE_KEY_FILE: the file with the key of the installation (64 hex characters) that signs the alarm states while server.alarm_state_signature is on; default alarm-state.key in the data directory, made the first time it is needed. */
+  alarmStateKeyFile: string;
   /** The daily log (see daily_log.ts): where the days kept, the two sampling intervals and the false-alarm window start (Studio can change them), and the bounds only the environment sets. */
   dailyLogDays: number;
   dailyLogReadingEveryS: number;
@@ -463,6 +465,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     metricsToken: metricsToken(env),
     heartbeatUrl: heartbeatUrl(env),
     heartbeatIntervalS: integer(env, "ARMOR_HEARTBEAT_INTERVAL_S", 60, 10, 3600),
+    alarmStateKeyFile: path.resolve(env.ARMOR_ALARM_STATE_KEY_FILE?.trim() || path.join(dataDir, "alarm-state.key")),
     dailyLogDays: integer(env, "ARMOR_DAILY_LOG_DAYS", 14, 1, 90),
     dailyLogReadingEveryS: integer(env, "ARMOR_DAILY_LOG_READING_EVERY_S", 300, 10, 3600),
     dailyLogPowerEveryS: integer(env, "ARMOR_DAILY_LOG_POWER_EVERY_S", 60, 5, 3600),
