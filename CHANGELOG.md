@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The state of an alarm node may carry the wiring of its siren:** `siren_loop` (`unknown`, `ok`, `open`, `short`, `unreadable`) and `siren_fault` are accepted and checked (together, and the fault exactly for `open`, `short` and `unreadable`) and kept with the node's state; a node that supervises its siren is no longer refused as having an unknown field. The server does not raise an alarm for it yet.
+
 ## [0.8.1.4] - The daily log, the calls to the vision service and the voice gateway have time and size limits, the summary and the heat map have a queue of their own and the node panel closes its connection when the browser leaves
 
 - **The daily log no longer pays for the whole log on every sample:** the size bound used to serialise every day of the log twice for each reading, and the day and the second of the day built a new date formatter on each call; a full log (14 days at 5000 events) took more than a quarter of a minute to fill and each sample cost milliseconds. The size is now kept per day as events arrive and the formatters are kept per time zone (the same file, the same bounds, a load test pins it).

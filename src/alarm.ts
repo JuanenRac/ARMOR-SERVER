@@ -18,6 +18,9 @@ export const ZONE_STATES = ["normal", "triggered", "tamper", "trouble"] as const
 export type ZoneState = (typeof ZONE_STATES)[number];
 export const EVENT_KINDS = ["armed", "exit_delay_started", "entry_delay_started", "alarm", "siren_timed_out", "disarmed", "bad_pin", "locked_out", "zone_bypassed", "siren_silenced"] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
+/** The state of the siren's wiring on a node that supervises it: ok the siren is there, open the wire is cut or the siren is gone, short the wire is shorted, unreadable the node cannot read the return line. */
+export const SIREN_LOOP_STATES = ["unknown", "ok", "open", "short", "unreadable"] as const;
+export type SirenLoopState = (typeof SIREN_LOOP_STATES)[number];
 export const ACTIONS = ["arm", "disarm", "silence"] as const;
 export type AlarmAction = (typeof ACTIONS)[number];
 export const REFUSALS = ["none", "not_disarmed", "zones_open", "not_armed", "bad_pin", "locked_out"] as const;
@@ -32,6 +35,10 @@ export type AlarmMessage = {
   arm_profiles?: boolean;
   /** The id of the arming profile the panel is armed (or arming) with. */
   profile?: string;
+  /** The siren's wiring, only on a node that supervises it; always together with siren_fault. */
+  siren_loop?: SirenLoopState;
+  /** true when siren_loop is open, short or unreadable: the siren may not sound when the alarm needs it. */
+  siren_fault?: boolean;
 };
 export type AlarmCommand = { kind: "alarm_command"; node_id: string; timestamp_ms: number; command_id: string; action: AlarmAction; mode?: "away" | "stay"; force?: boolean; profile?: ArmProfile };
 export type AlarmResult = { kind: "alarm_result"; node_id: string; timestamp_ms: number; command_id: string; action: AlarmAction; accepted: boolean; refusal: AlarmRefusal; phase: Phase };
@@ -65,7 +72,7 @@ function parseEvent(value: unknown, index: number): AlarmEvent {
 /** The state of a node, with the rules that join fields: a zone named once, an open zone is a zone of the message, a disarmed panel has the mode disarmed and an armed one does not, a siren only in the alarm phase. */
 export function parseAlarmMessage(value: unknown): AlarmMessage {
   const body = record(value, "alarm message");
-  onlyKnown(body, ["kind", "node_id", "timestamp_ms", "phase", "mode", "siren", "locked_out", "commands_enabled", "zones", "open_zones", "events", "arm_profiles", "profile"], "alarm message");
+  onlyKnown(body, ["kind", "node_id", "timestamp_ms", "phase", "mode", "siren", "locked_out", "commands_enabled", "zones", "open_zones", "events", "arm_profiles", "profile", "siren_loop", "siren_fault"], "alarm message");
   for (const key of ["kind", "node_id", "timestamp_ms", "phase", "mode", "siren", "locked_out", "commands_enabled", "zones", "open_zones", "events"]) if (!(key in body)) throw new Error(`the alarm message is missing ${key}`);
   if (body.kind !== "alarm") throw new Error("invalid kind");
   const node = readNodeId(body), timestamp = readTimestamp(body);
@@ -88,6 +95,13 @@ export function parseAlarmMessage(value: unknown): AlarmMessage {
   if ((body.phase === "exit_delay" || body.phase === "armed" || body.phase === "entry_delay") && body.mode === "disarmed") throw new Error("an arming or armed panel has a mode other than disarmed");
   if (body.siren === true && body.phase !== "alarm") throw new Error("the siren sounds only in the alarm phase");
   if ("arm_profiles" in body && typeof body.arm_profiles !== "boolean") throw new Error("invalid arm_profiles");
+  // the siren's wiring: the state and the fault are sent together, and the fault is exactly the states that leave the siren cut, shorted or unsupervised
+  if (("siren_loop" in body) !== ("siren_fault" in body)) throw new Error("siren_loop and siren_fault are sent together");
+  if ("siren_loop" in body) {
+    if (!oneOf(SIREN_LOOP_STATES, body.siren_loop)) throw new Error("invalid siren_loop");
+    if (typeof body.siren_fault !== "boolean") throw new Error("invalid siren_fault");
+    if (body.siren_fault !== (body.siren_loop === "open" || body.siren_loop === "short" || body.siren_loop === "unreadable")) throw new Error("siren_fault is true exactly when siren_loop is open, short or unreadable");
+  }
   if ("profile" in body) {
     if (typeof body.profile !== "string" || !/^[a-z0-9][a-z0-9_-]{0,15}$/.test(body.profile)) throw new Error("invalid profile");
     if (body.mode === "disarmed") throw new Error("a panel that is not armed has no arming profile");

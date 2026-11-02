@@ -44,6 +44,16 @@ test("a state must be the contract's: unknown fields and joined rules are refuse
   assert.throws(() => parseAlarmMessage({ ...state(), pin: "1234" }), /unknown field/);
   assert.throws(() => parseAlarmMessage(state({ phase: "disarmed" })), /a disarmed panel has the mode disarmed/);
   assert.throws(() => parseAlarmMessage(state({ siren: true })), /only in the alarm phase/);
+  // the siren's wiring is told by a node that supervises it: a state and a fault that agree, or nothing
+  assert.doesNotThrow(() => parseAlarmMessage(state({ siren_loop: "ok", siren_fault: false })));
+  assert.doesNotThrow(() => parseAlarmMessage(state({ siren_loop: "unknown", siren_fault: false })));
+  for (const loop of ["open", "short", "unreadable"]) assert.equal(parseAlarmMessage(state({ siren_loop: loop as "open", siren_fault: true })).siren_fault, true);
+  assert.throws(() => parseAlarmMessage(state({ siren_loop: "ok" })), /sent together/);
+  assert.throws(() => parseAlarmMessage(state({ siren_fault: false })), /sent together/);
+  assert.throws(() => parseAlarmMessage(state({ siren_loop: "open", siren_fault: false })), /exactly when/);
+  assert.throws(() => parseAlarmMessage(state({ siren_loop: "ok", siren_fault: true })), /exactly when/);
+  assert.throws(() => parseAlarmMessage(state({ siren_loop: "broken" as never, siren_fault: true })), /invalid siren_loop/);
+  assert.throws(() => parseAlarmMessage(state({ siren_loop: "open", siren_fault: "yes" as never })), /invalid siren_fault/);
   assert.throws(() => parseAlarmMessage(state({ open_zones: ["garage"] })), /zone of the message/);
   assert.throws(() => parseAlarmMessage(state({ zones: [state().zones[0], state().zones[0]] })), /once/);
 });
