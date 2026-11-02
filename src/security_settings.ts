@@ -36,6 +36,8 @@
  *   reports.timeout_s            5 to 120                 the most seconds one summary or heat map may run (ARMOR_REPORT_TIMEOUT_S is where it starts; 20)
  *   reports.queue_max            1 to 10                  how many reports may wait for their turn before the answer is "busy" (ARMOR_REPORT_QUEUE_MAX; 3)
  *   reports.requests_per_minute  1 to 300                 how many requests a minute the two report routes answer (ARMOR_REPORT_REQUESTS_PER_MINUTE; 30)
+ *   metrics.prometheus           on | off                 GET /metrics answers the numbers of the server in the Prometheus text form to the bearer token ARMOR_METRICS_TOKEN (off, the default, answers 404; with no token set it answers 404 too)
+ *   heartbeat.enabled            on | off                 the server asks the address ARMOR_HEARTBEAT_URL every ARMOR_HEARTBEAT_INTERVAL_S seconds, so a service outside the house can tell the owner when the pings stop (off, the default)
  *   network.login_secure_only    on | off                 a stored device login is handed to a network node only when its request came over TLS or from this machine (off, the default: any request of the node)
  *
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
@@ -97,6 +99,8 @@ export type SecuritySettingsValues = {
   "server.zone_feed_signature": boolean;
   "media.rtsp_proxy": boolean;
   "network.login_secure_only": boolean;
+  "metrics.prometheus": boolean;
+  "heartbeat.enabled": boolean;
   "login.country_alert": boolean;
   "electrical.set_aside_old_readings": boolean;
   "voice.multipart_turn": boolean;
@@ -135,6 +139,8 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "server.zone_feed_signature": true,
   "media.rtsp_proxy": true,
   "network.login_secure_only": false,
+  "metrics.prometheus": false,
+  "heartbeat.enabled": false,
   "login.country_alert": true,
   "electrical.set_aside_old_readings": true,
   "voice.multipart_turn": true,
@@ -267,7 +273,7 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "reports.timeout_s" || key === "reports.queue_max" || key === "reports.requests_per_minute") return false;   // tuning of how much work the reports may cause, not a protection
   if (key === "vision.service_remote") return from === false && to === true;   // a service on another machine: the positions of the house travel over a network
   if (key === "vision.service_url") { const host = parseVisionServiceUrl(to)?.host; return host !== undefined && !isLoopbackHost(host) && to !== from; }   // pointing at another machine is the loss
-  if (key === "summary.daily" || key === "vision.heatmap") return from === false && to === true;   // a report about what happens in the house is a way in for whoever may ask: turning it on is the loss
+  if (key === "summary.daily" || key === "vision.heatmap" || key === "metrics.prometheus") return from === false && to === true;   // a report about what happens in the house is a way in for whoever may ask: turning it on is the loss
   if (key === "alarm.arming_modes" || key === "alarm.mode_schedule" || key === "alarm.mode_panel_sync") return false;   // a way of arming that is added or taken away: the protection of what is armed does not drop by it
   if (key === "alarm.mode_schedule_lowers") return from === false && to === true;   // letting a timetable defend less is the loss
   if (key === "alarm.mode_downgrade_pin") return from === "required" && to === "not_required";

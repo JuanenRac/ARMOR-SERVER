@@ -367,6 +367,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   sweeper.unref();
   // The camera watchdog: a first pass shortly after start, then on a fixed interval.
   const watchdogs: NodeJS.Timeout[] = [];
+  context.heartbeat.start();
   if (config.cameraCheckS > 0) {
     const first = setTimeout(() => void context.cameraWatcher.check(), 3_000);
     const every = setInterval(() => void context.cameraWatcher.check(), config.cameraCheckS * 1000);
@@ -381,6 +382,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       clearInterval(historySaver);
       stateFeed.close();
       context.systemMonitor.stop();
+      context.heartbeat.stop();
       saveHistory();
       for (const timer of watchdogs) clearTimeout(timer);
       context.store.flush(); context.knownNodes.flush();

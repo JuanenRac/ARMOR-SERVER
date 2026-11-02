@@ -116,3 +116,26 @@ test("an installation file bigger than the 64 KB of the other routes is read (up
     assert.equal(huge.status, 413);
   } finally { await origin.stop(); }
 });
+
+test("a dry run reports what an import would do and changes nothing", async () => {
+  const origin = await startServer();
+  let bundle: Record<string, unknown> = {};
+  try {
+    const cookie = await studioCookie(origin.base);
+    await furnish(origin.base, cookie);
+    bundle = (await call(origin.base, cookie, "GET", "/api/v1/admin/installation")).body;
+  } finally { await origin.stop(); }
+  const target = await startServer();
+  try {
+    const cookie = await studioCookie(target.base);
+    const preview = await call(target.base, cookie, "POST", "/api/v1/admin/installation", { bundle, dry_run: true });
+    assert.equal(preview.status, 200);
+    assert.equal(preview.body.dry_run, true);
+    assert.match(String(preview.body.applied.devices), /would add 2/);
+    assert.match(String(preview.body.applied.cameras), /would add 1/);
+    assert.equal((await call(target.base, cookie, "GET", "/api/v1/devices")).body.devices?.length ?? (await call(target.base, cookie, "GET", "/api/v1/devices")).body.length ?? 0, 0, "nothing was added");
+    const real = await call(target.base, cookie, "POST", "/api/v1/admin/installation", { bundle });
+    assert.equal(real.body.dry_run, undefined);
+    assert.match(String(real.body.applied.devices), /2 added/);
+  } finally { await target.stop(); }
+});

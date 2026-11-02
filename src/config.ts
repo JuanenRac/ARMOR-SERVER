@@ -12,6 +12,7 @@ import { isTlsUrl, readCaFile, type MqttCa } from "./mqtt_tls.js";
 import { DEFAULT_LOCAL_NETWORKS, parseRanges } from "./origin.js";
 import { DEFAULT_SENSOR_FIELDS } from "./daily_log.js";
 import { parseVisionServiceUrl } from "./security_settings.js";
+import { parseHeartbeatUrl } from "./heartbeat.js";
 
 export const MIN_SECRET_LENGTH = 24;
 
@@ -49,6 +50,11 @@ export type ArmorConfig = {
   visionServiceUrl: string;
   /** ARMOR_VISION_SERVICE_TOKEN or the file named by ARMOR_VISION_SERVICE_TOKEN_FILE: the token sent to the vision service, and only to it. Empty: none. It is never shown, logged or put in the settings. */
   visionServiceToken: string;
+  /** ARMOR_METRICS_TOKEN or the file named by ARMOR_METRICS_TOKEN_FILE: the bearer token GET /metrics asks for. Empty: the page is never served. Never shown or logged. */
+  metricsToken: string;
+  /** ARMOR_HEARTBEAT_URL: the address the dead-man ping asks while the option heartbeat.enabled is on; empty: none. ARMOR_HEARTBEAT_INTERVAL_S: seconds between pings. */
+  heartbeatUrl: string;
+  heartbeatIntervalS: number;
   /** The daily log (see daily_log.ts): where the days kept, the two sampling intervals and the false-alarm window start (Studio can change them), and the bounds only the environment sets. */
   dailyLogDays: number;
   dailyLogReadingEveryS: number;
@@ -210,6 +216,23 @@ const visionServiceToken = (env: Env): string => {
   }
   if (token && !/^[A-Za-z0-9._~+/=-]{24,200}$/.test(token)) throw new ConfigError("the vision service token must be 24 to 200 characters of letters, digits and . _ ~ + / = -");
   return token;
+};
+
+const metricsToken = (env: Env): string => {
+  const direct = env.ARMOR_METRICS_TOKEN?.trim() ?? "", file = env.ARMOR_METRICS_TOKEN_FILE?.trim() ?? "";
+  if (direct && file) throw new ConfigError("give the metrics token once: ARMOR_METRICS_TOKEN or ARMOR_METRICS_TOKEN_FILE, not both");
+  let token = direct;
+  if (file) {
+    try { token = fs.readFileSync(file, "utf8").trim(); } catch { throw new ConfigError("ARMOR_METRICS_TOKEN_FILE cannot be read"); }
+  }
+  if (token && !/^[A-Za-z0-9._~+/=-]{24,200}$/.test(token)) throw new ConfigError("the metrics token must be 24 to 200 characters of letters, digits and . _ ~ + / = -");
+  return token;
+};
+
+const heartbeatUrl = (env: Env): string => {
+  const raw = env.ARMOR_HEARTBEAT_URL?.trim() ?? "";
+  if (raw !== "" && parseHeartbeatUrl(raw) === undefined) throw new ConfigError("ARMOR_HEARTBEAT_URL must be an http or https address with no sign-in in it (at most 300 characters)");
+  return raw;
 };
 
 const dailyLogSensors = (env: Env): string[] => {
@@ -437,6 +460,9 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     summaryMaxBytes: integer(env, "ARMOR_SUMMARY_MAX_BYTES", 4 * 1024 * 1024, 65_536, 64 * 1024 * 1024),
     visionServiceUrl: visionServiceUrl(env),
     visionServiceToken: visionServiceToken(env),
+    metricsToken: metricsToken(env),
+    heartbeatUrl: heartbeatUrl(env),
+    heartbeatIntervalS: integer(env, "ARMOR_HEARTBEAT_INTERVAL_S", 60, 10, 3600),
     dailyLogDays: integer(env, "ARMOR_DAILY_LOG_DAYS", 14, 1, 90),
     dailyLogReadingEveryS: integer(env, "ARMOR_DAILY_LOG_READING_EVERY_S", 300, 10, 3600),
     dailyLogPowerEveryS: integer(env, "ARMOR_DAILY_LOG_POWER_EVERY_S", 60, 5, 3600),

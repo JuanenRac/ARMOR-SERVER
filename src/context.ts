@@ -57,6 +57,7 @@ import { DeviceNotes, NetworkStore } from "./network.js";
 import { NetworkCommands } from "./network_commands.js";
 import { DeviceCredentials } from "./device_credentials.js";
 import { SystemMonitor } from "./system_metrics.js";
+import { Heartbeat } from "./heartbeat.js";
 import { SolarRegistry, batteryProfile } from "./solar_registry.js";
 import { AlertNotifier } from "./notify.js";
 import { homeAssistantChannel, ntfyChannel, telegramChannel, type NotifyChannel } from "./channels.js";
@@ -124,6 +125,8 @@ export type AppContext = {
   deviceCredentials: DeviceCredentials;
   /** How the machine is doing (processor, memory, temperatures, disks, network cards): sampled while the server runs, see system_metrics.ts. */
   systemMonitor: SystemMonitor;
+  /** The dead-man ping (heartbeat.ts): sends only while the option heartbeat.enabled is on and ARMOR_HEARTBEAT_URL is set. */
+  heartbeat: Heartbeat;
   network: SiteStore;
   /** The alarm drawn in Studio's Alarm Designer (panels, sensors, sirens and how they are joined). */
   alarmDesign: SiteStore;
@@ -348,6 +351,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const electrical = new SiteStore(path.join(config.dataDir, "electrical.json"), () => new Date(), "electrical design");
   const networkNotes = new DeviceNotes(path.join(config.dataDir, "network-devices.json"));
   const systemMonitor = new SystemMonitor();
+  const heartbeat = new Heartbeat({ url: config.heartbeatUrl, everyS: config.heartbeatIntervalS, enabled: () => securitySettings.get("heartbeat.enabled"), now: overrides.now });
   const deviceCredentials = new DeviceCredentials({ file: path.join(config.dataDir, "network-logins.json"), secret: config.cameraConfigKey });
   const networkCommands = new NetworkCommands(overrides.now ? () => new Date(overrides.now!()) : undefined);
   // What a person needs to know about the device an alarm is about: the name they gave it (or the one it announces), where it is and who made it.
@@ -575,7 +579,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, securitySettings, geoip, loginCountries, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, securitySettings, geoip, loginCountries, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

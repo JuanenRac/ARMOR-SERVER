@@ -178,3 +178,65 @@ export function applyBundle(context: AppContext, bundle: InstallationBundle, wan
   }
   return report;
 }
+
+/**
+ * What applying `bundle` would do, changing nothing: the same report as applyBundle, in the future tense, so that a person sees it before anything is replaced. Where a part is only
+ * fully checked when it is saved (a design, the alarm levels, the items of a list that has more than an identifier to check), the line says so.
+ */
+export function previewBundle(context: AppContext, bundle: InstallationBundle, wanted: readonly string[]): ImportReport & { dry_run: true } {
+  const report: ImportReport & { dry_run: true } = { dry_run: true, applied: {}, skipped: {}, failed: {}, cameras_need_credentials: [] };
+  const chosen = new Set<Part>(wanted.length > 0 ? PARTS.filter(part => wanted.includes(part)) : PARTS);
+  const listLine = (items: unknown[], have: Set<string>, idOf: (item: Record<string, unknown>) => string | undefined, valid?: (item: Record<string, unknown>) => boolean): string => {
+    let added = 0, kept = 0, invalid = 0;
+    for (const item of items) {
+      const id = isRecord(item) ? idOf(item) : undefined;
+      if (!isRecord(item) || id === undefined) { invalid += 1; continue; }
+      if (have.has(id)) { kept += 1; continue; }
+      if (valid && !valid(item)) { invalid += 1; continue; }
+      added += 1;
+    }
+    return `would add ${added}, ${kept} already there${invalid ? `, ${invalid} would be refused` : ""}`;
+  };
+  const text = (value: unknown): string | undefined => (typeof value === "string" && value !== "" ? value : undefined);
+  for (const part of PARTS) {
+    if (!chosen.has(part)) continue;
+    const content = bundle.parts[part];
+    if (content === undefined || content === null) { if (wanted.length > 0 || part !== "site") report.skipped[part] = "the file holds none"; continue; }
+    try {
+      switch (part) {
+        case "cameras":
+          if (!Array.isArray(content)) throw new Error("not a list");
+          report.applied.cameras = listLine(content, new Set(context.vault.list().map(camera => camera.id)), item => text(item.id), item => parseCameraInput({ ...item, username: "", password: "" }) !== null);
+          break;
+        case "site": case "electrical": case "network": case "alarm_design":
+          if (!isRecord(content)) throw new Error("not a design");
+          report.applied[part] = "would be replaced (the previous one is kept as a version; the design is checked when it is saved)";
+          break;
+        case "rules": {
+          const parsed = parseRules(content);
+          if (!parsed) throw new Error("not valid rules");
+          report.applied.rules = `would be replaced (${parsed.zones.length} zones)`;
+          break;
+        }
+        case "automations":
+          if (!Array.isArray(content)) throw new Error("not a list");
+          report.applied.automations = listLine(content, new Set(context.automations.list().map(item => item.id)), item => text(item.id));
+          break;
+        case "devices":
+          if (!Array.isArray(content)) throw new Error("not a list");
+          report.applied.devices = listLine(content, new Set(context.devices.list().map(item => item.id)), item => text(item.id));
+          break;
+        case "solar_devices":
+          if (!Array.isArray(content)) throw new Error("not a list");
+          report.applied.solar_devices = listLine(content, new Set(context.solarRegistry.list().map(item => `${item.node_id}/${item.device}`)), item => (text(item.node_id) && text(item.device) ? `${String(item.node_id)}/${String(item.device)}` : undefined));
+          break;
+        case "energy_alarms": report.applied.energy_alarms = "would be replaced (checked when it is saved)"; break;
+        case "users": report.skipped.users = "kept for the record: users are not imported (an administrator makes them again, with their own passwords)"; break;
+      }
+    } catch (error) {
+      report.failed[part] = error instanceof Error ? error.message : "it could not be read";
+    }
+  }
+  if (report.applied.cameras) report.cameras_need_credentials = [];
+  return report;
+}

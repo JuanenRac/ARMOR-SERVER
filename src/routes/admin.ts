@@ -8,7 +8,7 @@ import express, { type Express, type Request, type Response } from "express";
 import type { AppContext } from "../context.js";
 import { maskEnv, unmaskEnv, type AdminReply } from "../admin.js";
 import { nodeTokenFor } from "../http/node_token.js";
-import { applyBundle, buildBundle, parseBundle, PARTS } from "../installation.js";
+import { applyBundle, buildBundle, parseBundle, PARTS, previewBundle } from "../installation.js";
 
 const NODE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const PRIVATE_V4 = /^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})$/;
@@ -243,6 +243,10 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
     }
     const wanted = Array.isArray(input.parts) ? input.parts.filter((part): part is string => typeof part === "string" && (PARTS as readonly string[]).includes(part)) : [];
     if (Array.isArray(input.parts) && input.parts.length > 0 && wanted.length === 0) return response.status(400).json({ error: "no_known_part" });
+    if (input.dry_run === true) {   // the same question, answered without changing anything
+      audit.record({ action: "admin.installation.preview", outcome: "allowed", actor: actor(request), detail: wanted.join(", ") || "all parts" });
+      return response.json(previewBundle(context, bundle, wanted));
+    }
     const report = applyBundle(context, bundle, wanted, actor(request) ?? "an administrator");
     audit.record({ action: "admin.installation.import", outcome: Object.keys(report.failed).length > 0 ? "failed" : "allowed", actor: actor(request), detail: `${Object.keys(report.applied).join(", ") || "nothing"}` });
     return response.json(report);
