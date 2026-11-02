@@ -6,7 +6,7 @@ import test from "node:test";
 import { AiGateway } from "../src/ai.js";
 import { digestAuthorization, parseDigestChallenge } from "../src/cameras/digest.js";
 import type { CameraConnection } from "../src/cameras/model.js";
-import { openRtspTunnel, RtspFramer } from "../src/cameras/rtsp_tunnel.js";
+import { closeOnServerError, openRtspTunnel, RtspFramer } from "../src/cameras/rtsp_tunnel.js";
 import { EvidenceLibrary } from "../src/media/evidence.js";
 import { RelayManager, StreamTickets } from "../src/media/relay.js";
 import { tempDir } from "./helpers.js";
@@ -197,4 +197,12 @@ test("the lighter live picture is its own relay with fewer and narrower pictures
   assert.equal(tickets.qualityOf(plain.ticket, "cam-1"), "normal");
   assert.equal(tickets.qualityOf(light.ticket, "cam-2"), undefined, "a ticket of another camera says nothing");
   assert.equal(tickets.qualityOf("forged", "cam-1"), undefined);
+});
+
+test("a later error of the local tunnel server closes the tunnel instead of going unheard", () => {
+  const server = new EventEmitter();
+  let closed = 0;
+  closeOnServerError(server as never, () => { closed += 1; });
+  assert.doesNotThrow(() => server.emit("error", new Error("EMFILE")));
+  assert.equal(closed, 1);
 });

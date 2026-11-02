@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The tunnel to a camera closes when its local server fails:** a later error of the local RTSP tunnel server (running out of file descriptors, for instance) closes the tunnel and its sessions instead of leaving an error nobody listens to.
+
 ## [0.8.1.5] - Prometheus metrics, a dead-man ping to an outside service, a signed record of an incident, a dry run for the installation import and the wiring of the siren in the node state
 
 - **The numbers of the server can be scraped by Prometheus:** `GET /metrics` answers the machine, the nodes online and offline, the active alarms and the messages taken and refused per topic in the Prometheus text form, with no name, address or message text in it. It is off until the new setting `metrics.prometheus` is turned on in Studio (turning it on is written in the audit trail as lowering the security), and it answers only to the bearer token `ARMOR_METRICS_TOKEN` (or the file `ARMOR_METRICS_TOKEN_FILE`); with no token set it answers 404 as when off.

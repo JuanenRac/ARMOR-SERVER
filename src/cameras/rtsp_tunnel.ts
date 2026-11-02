@@ -145,6 +145,11 @@ export type RtspTunnel = {
 export type TunnelOptions = { preview?: boolean; maxSessions?: number; idleCloseMs?: number; direct?: boolean };
 
 /** A tunnel to a camera's stream, or null when the camera has no stream path or no complete login. */
+/** Once listening, a later error of the local server (running out of descriptors, for instance) must close the tunnel, not leave the process with an error nobody listens to. */
+export function closeOnServerError(server: Pick<Server, "on">, close: () => void): void {
+  server.on("error", () => close());
+}
+
 export async function openRtspTunnel(camera: CameraConnection, options: TunnelOptions = {}): Promise<RtspTunnel | null> {
   if (options.direct) { const url = rtspUrl(camera, options.preview); return url ? { url, close: () => undefined } : null; }
   const path = (options.preview && camera.previewPath ? camera.previewPath : camera.rtspPath).replace(/^\/+/, "");
@@ -167,6 +172,7 @@ export async function openRtspTunnel(camera: CameraConnection, options: TunnelOp
   const idle = setTimeout(() => { if (!admitted) close(); }, options.idleCloseMs ?? 20_000);
   idle.unref();
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", () => resolve()); });
+  closeOnServerError(server, close);
   const port = (server.address() as AddressInfo).port;
   const proxyBase = `rtsp://127.0.0.1:${port}/${word}`;
   const realBase = `rtsp://${camera.host.includes(":") ? `[${camera.host}]` : camera.host}:${camera.rtspPort}/${path}`;
