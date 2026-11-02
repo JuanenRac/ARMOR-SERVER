@@ -3,13 +3,14 @@
  * deletion. All of them need an operator.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
-import type { Express, Request } from "express";
+import express, { type Express, type Request } from "express";
 import fs from "node:fs";
 import type { AppContext } from "../context.js";
 import path from "node:path";
 import { mediaKindFrom, type MediaKind } from "../media/evidence.js";
 import { buildProof, custodyOf, verifyProof } from "../evidence_proof.js";
 import { auditLinesAbout } from "./system.js";
+import { auditBetween, buildIncident, MAX_AUDIT, MAX_EVENTS, MAX_FILES, parseWindow, verifyIncident, type IncidentFile } from "../incident_export.js";
 
 const param = (request: Request, name: string): string => {
   const value = request.params[name];
@@ -57,6 +58,45 @@ export function registerMediaRoutes(app: Express, context: AppContext): void {
     const trail = auditLinesAbout(context.config.dataDir, target);
     audit.record({ actor: who(request), action: "evidence.proof", outcome: "allowed", target });
     return response.json(buildProof(proofKey, { camera: cameraId, kind, name: file, bytes: item.bytes, created_at: item.createdAt, sha256: digest, protected: item.protected }, custodyOf(trail.lines, target), new Date(), { auditFrom: trail.from }));
+  });
+
+  // The record of one incident as a single signed document (see incident_export.ts): the events, the audit lines and the evidence files of a window of time (at most a week), for an
+  // insurer or the police. An administrator asks for it; it is written in the audit trail. A file bigger than 512 MB is listed without its digest.
+  app.get("/api/v1/admin/incident", requireAdmin, async (request, response) => {
+    const window = parseWindow(request.query.from, request.query.to);
+    if (!window) return response.status(400).json({ error: "invalid_window" });
+    const events: Array<Record<string, unknown>> = [];
+    let after: number | undefined, eventsTruncated = false;
+    for (;;) {
+      const page = context.events.list({ since: window.fromMs, until: window.toMs, order: "asc", limit: 200, ...(after === undefined ? {} : { before: after }), everything: true });
+      for (const event of page) { if (events.length >= MAX_EVENTS) { eventsTruncated = true; break; } events.push(event as unknown as Record<string, unknown>); }
+      if (eventsTruncated || page.length < 200) break;
+      after = page[page.length - 1]!.id;
+    }
+    const catalogue = (await evidence.list()).filter(item => Date.parse(item.createdAt) >= window.fromMs && Date.parse(item.createdAt) <= window.toMs).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const files: IncidentFile[] = [];
+    for (const item of catalogue.slice(0, MAX_FILES)) {
+      const kind = mediaKindFrom(`${item.kind}s`);   // the catalogue says "snapshot" and "recording"
+      const sha256 = kind && item.bytes <= 512 * 1024 * 1024 ? await evidence.sha256(item.cameraId, kind, item.file) : null;
+      files.push({ camera: item.cameraId, kind: item.kind, name: item.file, bytes: item.bytes, created_at: item.createdAt, sha256, protected: item.protected });
+    }
+    const trail = auditBetween(context.config.dataDir, window.fromMs, window.toMs, MAX_AUDIT);
+    audit.record({ actor: who(request), action: "incident.export", outcome: "allowed", detail: `${events.length} events, ${trail.lines.length} audit lines, ${files.length} files` });
+    response.set({ "Cache-Control": "no-store", "Content-Disposition": 'attachment; filename="armor-incident.json"' });
+    return response.json(buildIncident(proofKey, { fromMs: window.fromMs, toMs: window.toMs, events, eventsTruncated, audit: trail, files, filesTruncated: catalogue.length > MAX_FILES }));
+  });
+
+  const incidentJson = express.json({ limit: 12 * 1024 * 1024, type: "application/json" });
+  app.post("/api/v1/admin/incident/verify", requireAdmin, incidentJson, async (request, response) => {
+    const incident = request.body;
+    if (!verifyIncident(proofKeys, incident)) return response.json({ genuine: false, files_match: false });
+    let matches = true;
+    for (const file of incident.files.slice(0, MAX_FILES)) {
+      const kind = mediaKindFrom(`${file.kind}s`);
+      const digest = kind ? await evidence.sha256(file.camera, kind, file.name) : null;
+      if (file.sha256 !== null && digest !== file.sha256) matches = false;
+    }
+    return response.json({ genuine: true, files_match: matches, issued_at: incident.issued_at });
   });
 
   app.post("/api/v1/media/proof/verify", requireOperator, async (request, response) => {

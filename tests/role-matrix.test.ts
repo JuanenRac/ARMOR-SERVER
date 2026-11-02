@@ -29,6 +29,7 @@ const MATRIX: Array<{ method: string; path: string; body?: unknown; allow: Recor
   { method: "GET", path: "/api/v1/system/ingest", allow: { admin: true, operator: true, viewer: false, panel: false } },
   { method: "GET", path: "/api/v1/users", allow: { admin: true, operator: false, viewer: false, panel: false } },
   { method: "GET", path: "/api/v1/admin/status", allow: { admin: true, operator: false, viewer: false, panel: false } },
+  { method: "GET", path: "/api/v1/admin/incident?from=2030-01-01T10:00:00Z&to=2030-01-01T12:00:00Z", allow: { admin: true, operator: false, viewer: false, panel: false } },
 ];
 
 test("every role reaches what its role says and nothing else", async () => {
