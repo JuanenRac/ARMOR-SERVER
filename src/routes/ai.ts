@@ -28,7 +28,8 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
       cameras: vault.list().filter(camera => Boolean(camera.rtspPath && camera.secrets?.username && camera.secrets.password)).map(camera => {
         const nodes = coveringNodes(site.get().site, camera.id);
         const ignore = context.ignoreZones.get(camera.id);
-        return { id: camera.id, name: camera.name, ...(nodes ? { nodes } : {}), ...(ignore.length ? { ignore } : {}) };
+        const lines = context.countLines.get(camera.id);
+        return { id: camera.id, name: camera.name, ...(nodes ? { nodes } : {}), ...(ignore.length ? { ignore } : {}), ...(lines.length ? { lines } : {}) };
       }),
     });
   });

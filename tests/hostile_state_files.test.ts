@@ -9,7 +9,7 @@ import { readConfig } from "../src/config.js";
 import { SECRETS, tempDir } from "./helpers.js";
 
 const FILES = [
-  "alarm-zone-links.json", "alarm_design.json", "alarms.json", "arm-profiles.json", "automations.json", "camera-ignore-zones.json", "cameras.json", "capture-on-detect.json",
+  "alarm-zone-links.json", "alarm_design.json", "alarms.json", "arm-profiles.json", "automations.json", "camera-count-lines.json", "camera-ignore-zones.json", "cameras.json", "capture-on-detect.json",
   "connections.json", "devices.json", "electrical.json", "energy-alarms.json", "fcm-devices.json", "known-nodes.json", "network-devices.json", "network-logins.json",
   "network-outages.json", "network.json", "node-life.json", "preferences.json", "rules.json", "sessions.json", "site.json", "solar-devices.json", "state.json", "totp.json", "users.json",
 ];

@@ -311,7 +311,7 @@ export class NodeLife {
 
 const SETTINGS: Record<string, { action: SystemAction; area: string }> = {
   "rules.update": { action: "changed", area: "rules" }, "camera.configure": { action: "changed", area: "camera" }, "camera.remove": { action: "removed", area: "camera" },
-  "camera.ignore_zones": { action: "changed", area: "ignore_zones" }, "device.create": { action: "created", area: "device" }, "device.update": { action: "changed", area: "device" }, "device.delete": { action: "removed", area: "device" },
+  "camera.ignore_zones": { action: "changed", area: "ignore_zones" }, "camera.count_lines": { action: "changed", area: "count_lines" }, "device.create": { action: "created", area: "device" }, "device.update": { action: "changed", area: "device" }, "device.delete": { action: "removed", area: "device" },
   "automation.create": { action: "created", area: "automation" }, "automation.update": { action: "changed", area: "automation" }, "automation.delete": { action: "removed", area: "automation" },
   "network.save": { action: "changed", area: "network_design" }, "electrical.save": { action: "changed", area: "electrical_design" }, "alarm_design.save": { action: "changed", area: "alarm_design" },
   "alarm_profiles.save": { action: "changed", area: "arming_profiles" }, "admin.mqtt.add": { action: "created", area: "mqtt_account" }, "admin.mqtt.remove": { action: "removed", area: "mqtt_account" },
