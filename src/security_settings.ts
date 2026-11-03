@@ -11,6 +11,7 @@
  *   alarm.mode_panel_sync        on | off                  choosing away, home or night also arms the alarm panels with the profile that goes with it (off, the default: the modes decide only what the server defends; it needs alarm.arming_modes)
  *   voice.silence_confirmation   off | pin | double_turn   what the voice assistant asks before silencing the alarm (sent to the voice service with every turn)
  *   alarm.config_hash            on | off                  the panel binds its saved armed state to its zones and PIN and does not restore it if they changed (panel side)
+ *   alarm.siren_fault_notice     on | off                  a warning in the alarm centre while a panel reports that the wiring of its siren is open, shorted or unreadable (on, the default; off: nothing is raised)
  *   server.zone_feed             on | off                  the server tells the panels the state of their Zigbee zones
  *   server.zone_feed_signature   on | off                  every zone message is signed, so a panel can tell it came from this server
  *   server.alarm_state_signature on | off                  the server publishes a signed copy of each alarm state it hears, so a reader on the broker (the safety zones of a HYDRA-UMC cell) can tell who sent it (off, the default)
@@ -100,6 +101,7 @@ export type SecuritySettingsValues = {
   "alarm.mode_schedule_lowers": boolean;
   "alarm.mode_panel_sync": boolean;
   "alarm.config_hash": boolean;
+  "alarm.siren_fault_notice": boolean;
   "server.zone_feed": boolean;
   "server.zone_feed_signature": boolean;
   "server.alarm_state_signature": boolean;
@@ -143,6 +145,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "alarm.mode_schedule_lowers": false,
   "alarm.mode_panel_sync": false,
   "alarm.config_hash": true,
+  "alarm.siren_fault_notice": true,
   "server.zone_feed": true,
   "server.zone_feed_signature": true,
   "server.alarm_state_signature": false,

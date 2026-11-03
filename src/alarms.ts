@@ -341,6 +341,9 @@ export class AlarmRules {
   /** How loudly the profile a panel is armed with wants the server to tell people when it sounds ("urgent" is a critical alarm, "normal" a high one); undefined when the profile is not known. Set by the context. */
   profileNotify: ((profile: string) => "urgent" | "normal" | undefined) | undefined;
 
+  /** The setting alarm.siren_fault_notice: while it is on (and when nothing is wired, it is) a panel whose siren wiring is faulty raises a warning. */
+  sirenNotice: (() => boolean) | undefined;
+
   /** A problem that was there before arming, now that it matters. */
   raisePresentProblems(problems: { nodesDown: string[]; camerasDown: string[]; devicesTriggered: Array<{ id: string; kind: string }> }): void {
     problems = { nodesDown: problems.nodesDown.filter(id => this.#guarded("node", id)), camerasDown: problems.camerasDown.filter(id => this.#guarded("camera", id)),
@@ -576,6 +579,9 @@ export class AlarmRules {
       if (item.state === "trouble") this.centre.raise(troubleKey, { source: { type: "alarm", id: `${message.node_id}/${item.id}` }, severity: "warning", code: "alarm_zone_trouble", detail: { node: message.node_id, zone: item.id } });
       else this.centre.clear(troubleKey);
     }
+    // the siren may not sound when the alarm needs it: a warning that lasts as long as the report says so (it never sounds the siren itself)
+    if (message.siren_fault === true && (this.sirenNotice?.() ?? true)) this.centre.raise(`${base}:siren_fault`, { source, severity: "warning", code: "alarm_siren_fault", detail: { node: message.node_id } });
+    else this.centre.clear(`${base}:siren_fault`);
     if (message.locked_out) this.centre.raise(`${base}:locked_out`, { source, severity: "warning", code: "alarm_locked_out", detail: { node: message.node_id } });
     else this.centre.clear(`${base}:locked_out`);
   }

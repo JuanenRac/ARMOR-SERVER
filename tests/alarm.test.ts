@@ -214,6 +214,34 @@ test("a zone that cannot be read is a warning for as long as it lasts, and never
   assert.deepEqual(active(), []);
 });
 
+test("a siren whose wiring is faulty is a warning for as long as the report says so, and only while the option allows it", async () => {
+  const { AlarmCentre, AlarmRules } = await import("../src/alarms.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "armor-alarm-siren-"));
+  const centre = new AlarmCentre({ file: path.join(dir, "alarms.json") });
+  const rules = new AlarmRules(centre, () => "disarmed");
+  const active = () => centre.active().filter(alarm => !alarm.cleared_at).map(alarm => `${alarm.code}:${alarm.severity}:${alarm.source.id}`).sort();
+  rules.handleAlarmNode(state({ siren_loop: "ok", siren_fault: false }), undefined);
+  assert.deepEqual(active(), [], "a siren that answers raises nothing");
+  rules.handleAlarmNode(state({ siren_loop: "open", siren_fault: true }), undefined);
+  assert.deepEqual(active(), ["alarm_siren_fault:warning:alarm-1"], "with nothing wired the option is on");
+  rules.handleAlarmNode(state({ siren_loop: "short", siren_fault: true }), undefined);
+  assert.equal(active().length, 1, "a second report of the same fault is the same warning");
+  rules.handleAlarmNode(state({ siren_loop: "ok", siren_fault: false }), undefined);
+  assert.deepEqual(active(), [], "it ends when the siren answers again");
+  let on = false;
+  rules.sirenNotice = () => on;
+  rules.handleAlarmNode(state({ siren_loop: "unreadable", siren_fault: true }), undefined);
+  assert.deepEqual(active(), [], "with the option off nothing is raised");
+  on = true;
+  rules.handleAlarmNode(state({ siren_loop: "unreadable", siren_fault: true }), undefined);
+  assert.deepEqual(active(), ["alarm_siren_fault:warning:alarm-1"]);
+  on = false;
+  rules.handleAlarmNode(state({ siren_loop: "unreadable", siren_fault: true }), undefined);
+  assert.deepEqual(active(), [], "turning the option off ends the warning at the next report");
+  rules.handleAlarmNode(state(), undefined);
+  assert.deepEqual(active(), [], "a panel that does not supervise its siren raises nothing");
+});
+
 test("a siren silenced with the PIN leaves the alarm open and unacknowledged until the disarm", async () => {
   const { AlarmCentre, AlarmRules } = await import("../src/alarms.js");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "armor-alarm-silenced-"));

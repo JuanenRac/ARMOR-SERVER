@@ -399,6 +399,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const alarmNodes = new AlarmStore({ now: overrides.now, onMessage: (message, previous) => { knownNodes.seen("alarm", message.node_id, message.phase); alarmRules.handleAlarmNode(message, previous); relaySignedAlarmState(message); }, onStale: (node, stale, phase) => { alarmRules.handleAlarmNodeStale(node, stale, phase); if (stale) nodeLife.gone(node); else nodeLife.report(node); } });
   const armProfiles = new ArmProfileStore(path.join(config.dataDir, "arm-profiles.json"), overrides.now ? () => new Date(overrides.now!()) : undefined, warn);
   alarmRules.batteryProfileOf = id => { const registration = solarRegistry.list().find(item => `${item.node_id}/${item.device}` === id); return registration ? batteryProfile(registration.model) : undefined; };
+  alarmRules.sirenNotice = () => securitySettings.get("alarm.siren_fault_notice");
   alarmRules.profileNotify = id => armProfiles.find(id)?.notify ?? (armProfiles.find(id) ? "urgent" : undefined);
   const diagnosticTokens = new DiagnosticTokens({ file: path.join(config.dataDir, "diagnostic_tokens.json"), now: overrides.now, audit });
   const nodeDiagnostics = new NodeDiagnosticsStore({ now: overrides.now });

@@ -291,3 +291,13 @@ test("keeping the stored secrets of the nodes encrypted is a choice of two value
     assert.match(fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8"), /nodes\.nvs_encryption.*secrets -> off \(lowers the security\)/);
   } finally { await running.stop(); }
 });
+
+test("the notice of a faulty siren is on by default, and turning it off is told as a loss of protection", () => {
+  assert.equal(SECURITY_DEFAULTS["alarm.siren_fault_notice"], true);
+  assert.equal(lowers("alarm.siren_fault_notice", true, false), true);
+  assert.equal(lowers("alarm.siren_fault_notice", false, true), false);
+  const settings = new SecuritySettings(path.join(tempDir(), "security-settings.json"));
+  assert.throws(() => settings.update({ "alarm.siren_fault_notice": "no" }), SecuritySettingsInvalid);
+  assert.deepEqual(settings.update({ "alarm.siren_fault_notice": false }), { "alarm.siren_fault_notice": false });
+  assert.equal(settings.get("alarm.siren_fault_notice"), false);
+});
