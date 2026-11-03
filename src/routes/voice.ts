@@ -27,6 +27,32 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
   const actor = (request: Request): string => studioUser(request)?.username ?? (panelBehind(request) ? `operator via ${panelBehind(request)}` : "operator");
   const limit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
 
+  /** Raises the silent duress alarm for a user's panic phrase unless that user's quiet time is still running; only the fact is written to the trail, never the words. */
+  const raisePanic = (id: string, username: string, via?: string): void => {
+    const now = Date.now(), last = panicLast.get(id) ?? 0, quiet = context.securitySettings.get("voice.panic_cooldown_s") * 1000;
+    if (now - last >= quiet) { panicLast.set(id, now); alarms.raiseDuress(username); audit.record({ action: "voice.panic", outcome: "allowed", actor: username, detail: via ? `duress raised, ${via}` : "duress raised" }); }
+    else audit.record({ action: "voice.panic", outcome: "denied", actor: username, detail: via ? `quiet time, ${via}` : "quiet time" });
+  };
+  const panicCheckLimit = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false });
+
+  /**
+   * The voice gateway asks here, with the text it has just transcribed and BEFORE it interprets the order, whether it is somebody's panic phrase (the spoken turn of the wall panel has no session
+   * and the server has no speech engine, so the words reach this server only through the gateway). Only the gateway's operator token is accepted, not a person's session. The answer is always the
+   * same `{ ok: true }`: it never says whether the phrase matched, so neither the gateway nor a listener learns it; a match only raises the silent duress alarm (when the option voice.panic_phrase
+   * is on, and not again inside voice.panic_cooldown_s of that user). The trail says `voice.panic` and which panel, never the words.
+   */
+  app.post("/api/v1/voice/panic-check", requireOperator, panicCheckLimit, (request, response) => {
+    if (studioUser(request)) return response.status(403).json({ error: "gateway_only" });
+    const input = (typeof request.body === "object" && request.body !== null ? request.body : {}) as Record<string, unknown>;
+    if (typeof input.text !== "string" || input.text.trim() === "") return response.status(422).json({ error: "no_text" });
+    if (input.text.length > 240) return response.status(422).json({ error: "text_too_long" });
+    if (context.securitySettings.get("voice.panic_phrase")) {
+      const owner = users.panicPhraseOwner(input.text);
+      if (owner) raisePanic(owner.id, owner.username, panelBehind(request) ? `via ${panelBehind(request)}` : "via gateway");
+    }
+    return response.json({ ok: true });
+  });
+
   /** Whether written and spoken commands are available on this install (the phone asks before it shows the microphone). */
   app.get("/api/v1/voice/status", requireOperator, (_request, response) => response.json({ available: config.voice !== null }));
 
@@ -116,9 +142,7 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
     // is the one of a command that was not understood, so whoever stands beside cannot tell. Inside the quiet time of the option nothing more is raised. Only the words are secret: the trail holds the fact.
     const me = studioUser(request);
     if (me && context.securitySettings.get("voice.panic_phrase") && users.matchesPanicPhrase(me.id, text)) {
-      const now = Date.now(), last = panicLast.get(me.id) ?? 0, quiet = context.securitySettings.get("voice.panic_cooldown_s") * 1000;
-      if (now - last >= quiet) { panicLast.set(me.id, now); alarms.raiseDuress(me.username); audit.record({ action: "voice.panic", outcome: "allowed", actor: me.username, detail: "duress raised" }); }
-      else audit.record({ action: "voice.panic", outcome: "denied", actor: me.username, detail: "quiet time" });
+      raisePanic(me.id, me.username);
       return response.json({ accepted: false, executed: false, intent: null, outcome: "", speech: "" });
     }
 

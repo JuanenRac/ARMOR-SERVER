@@ -254,6 +254,7 @@ Every route the code registers, with who may call it and the file that registers
 | DELETE | `/api/v1/users/:id/totp` | administrator, fresh proof of identity | `routes/sessions.ts` |
 | GET | `/api/v1/vision/heatmap` | operator | `routes/reports.ts` |
 | POST | `/api/v1/voice/command` | operator | `routes/voice.ts` |
+| POST | `/api/v1/voice/panic-check` | operator | `routes/voice.ts` |
 | GET | `/api/v1/voice/status` | operator | `routes/voice.ts` |
 | POST | `/api/v1/voice/turn` | none here | `routes/voice.ts` |
 | POST | `/api/v1/voice/v1/turn` | none here | `routes/voice.ts` |

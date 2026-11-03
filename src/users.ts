@@ -329,6 +329,23 @@ export class UserStore {
     return user?.panic !== undefined && normal !== "" && expected.length === actual.length && timingSafeEqual(expected, actual);
   }
 
+  /**
+   * The user whose panic phrase this is, when the speaker is not known (the wall panel and its voice gateway have no session): every user that has a phrase is compared, without stopping at the
+   * first, so the work does not tell which one matched. A text longer than a phrase can be never matches.
+   */
+  panicPhraseOwner(said: unknown): { id: string; username: string } | undefined {
+    const normal = typeof said === "string" && said.length <= 240 ? normalisePhrase(said) : "";
+    if (normal === "") return undefined;
+    let found: { id: string; username: string } | undefined;
+    for (const user of this.#users) {
+      if (user.panic === undefined) continue;
+      const expected = Buffer.from(user.panic.hash, "base64");
+      const actual = hash(normal, Buffer.from(user.panic.salt, "base64"));
+      if (expected.length === actual.length && timingSafeEqual(expected, actual) && found === undefined) found = { id: user.id, username: user.username };
+    }
+    return found;
+  }
+
   /** Seconds left of a lock (0 when there is none). */
   pinLockedFor(id: string, nowMs: number = Date.now()): number { return Math.max(0, Math.ceil(((this.#pinTries.get(id)?.until ?? 0) - nowMs) / 1000)); }
 
