@@ -10,6 +10,15 @@ const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry =
 // Read only by the tests, to point the server at a local stand-in.
 const TEST_ONLY = new Set(["ARMOR_ADMIN_NODE_PORT", "ARMOR_TELEGRAM_API", "ARMOR_FIRMWARE_RELEASE_API"]);
 
+// A backslash is doubled first, so the one added before a pipe is never taken for part of the text.
+export const escapeCell = text => text.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
+
+// An example sits in a code span, where a backslash is literal and a pipe cannot be escaped reliably: refuse a pipe or a backtick instead of rewriting it.
+export const exampleCell = text => {
+  if (/[|`\r\n]/.test(text)) throw new Error(`the example "${text}" in .env.example cannot be shown in a table cell: write it without a pipe, a backtick or a line break`);
+  return text ? `\`${text}\`` : "";
+};
+
 export function render() {
   const read = new Set();
   const limits = new Map();
@@ -35,12 +44,12 @@ export function render() {
     if (line.startsWith("#") && !line.startsWith("# ---")) { if (fresh) { fresh = false; previous = ""; } comment.push(line.replace(/^#\s?/, "")); } else { comment = []; fresh = false; previous = ""; }
   }
   const names = [...new Set([...read].filter(name => !TEST_ONLY.has(name)).concat([...described.keys()]))].sort();
-  const cell = text => text.replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
+  const cell = escapeCell;
   const rows = names.map(name => {
     const info = described.get(name) ?? { example: "", text: "" };
     const limit = limits.get(name);
     const range = limit ? `integer ${limit.min.replace(/_/g, "")} to ${limit.max.replace(/_/g, "")}, default ${limit.fallback.replace(/_/g, "")}` : "";
-    return `| \`${name}\` | ${cell(range)} | ${cell(info.example ? `\`${info.example}\`` : "")} | ${cell(info.text)} |`;
+    return `| \`${name}\` | ${cell(range)} | ${exampleCell(info.example)} | ${cell(info.text)} |`;
   });
   return ["# Settings of the server", "", "Every setting is an environment variable (a `.env` file next to the server is read too). This table is generated from the code and from `.env.example`: change those, not this file.", "",
     "| Variable | Allowed values | Example | What it does |", "| --- | --- | --- | --- |", ...rows, ""].join("\n");

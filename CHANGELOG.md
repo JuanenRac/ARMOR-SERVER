@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The generated settings table escapes backslashes:** a backslash in a description is doubled before a pipe is escaped, so a description cannot break out of its cell, and an example with a pipe or a backtick is refused instead of rewritten; tests cover both.
+
 - **The launchers find the shared repository through `ARMOR_COMMON_DIR`:** `build`, `build-test`, `test` and `run` (`.sh` and `.bat`) use the folder named by that variable when it is set and the sibling `ARMOR-COMMON` folder otherwise, so a checkout with another layout builds without changing a file.
 - **Automatic security updates from Studio:** `GET` and `PUT /api/v1/admin/system/auto-updates` (an administrator; written in the audit trail) pass the switch, the reboot policy and its window to the maintenance helper, and `GET /api/v1/maintenance/armed` (with the helper's own token) tells it whether the system or any alarm panel is armed before it reboots after a security update.
 - **A siren whose wiring is faulty is told as a warning:** while a panel reports `siren_fault` (the wiring of its siren open, shorted or unreadable) the alarm centre holds the warning `alarm_siren_fault` for that panel, which ends when the siren answers again and is never a siren itself. The new option `alarm.siren_fault_notice` (on by default; turning it off is written in the audit as a lowered protection) switches it; Studio shows it with the other protections, and the words of the code are in the eight languages.
