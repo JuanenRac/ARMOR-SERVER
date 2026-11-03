@@ -92,3 +92,20 @@ test("the routes the server registers are the operations the OpenAPI contract de
 test("every answer in the OpenAPI contract says what its body is", { skip: fs.existsSync(openapi) ? false : "ARMOR-COMMON OpenAPI is not available" }, () => {
   assert.deepEqual(described(fs.readFileSync(openapi, "utf8")).untyped, []);
 });
+
+// The observation a service sends and the server reads is one contract: the same vectors, and the same refusal codes in the sources and in the list the clients share.
+test("the observation parsing agrees with every shared conformance vector", { skip: available ? false : "ARMOR-COMMON is not checked out next to this repository" }, async () => {
+  const { parseObservation } = await import("../src/ai.js");
+  for (const vector of load("ai_observation")) {
+    if (vector.valid) assert.ok(parseObservation(vector.payload), `should accept: ${vector.name}`);
+    else assert.equal(parseObservation(vector.payload), undefined, `should reject: ${vector.name}`);
+  }
+});
+
+test("every refusal code that the clients share is one the server can answer", { skip: available ? false : "ARMOR-COMMON is not checked out next to this repository" }, () => {
+  const text = fs.readFileSync(path.resolve(directory, "..", "generated", "armor_error_codes.hpp"), "utf8");
+  const codes = [...(/kApiErrorCodes = \{([^}]*)\}/.exec(text)?.[1] ?? "").matchAll(/"([a-z_]+)"/g)].map(item => item[1]);
+  assert.ok(codes.length > 20 && codes.includes("wrong_pin"), "the list was read");
+  const sources = fs.readdirSync(path.resolve(import.meta.dirname, "..", "src"), { recursive: true, encoding: "utf8" }).filter(name => name.endsWith(".ts")).map(name => fs.readFileSync(path.resolve(import.meta.dirname, "..", "src", name), "utf8")).join("\n");
+  for (const code of codes) assert.ok(sources.includes(`"${code}"`), `the server never answers ${code}`);
+});

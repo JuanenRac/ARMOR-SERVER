@@ -58,17 +58,21 @@ export class AiGateway {
 
 export type AiObservation = { camera_id: string; severity: "review" | "high"; reasons: string[]; profile: string; motion: number; motion_ratio?: number; radar_tracks: number };
 
+const OBSERVATION_FIELDS = ["camera_id", "severity", "reasons", "profile", "motion", "motion_ratio", "radar_tracks"];
+
 /** The observation a service sent, checked; undefined when it is not what it should be. */
 export function parseObservation(input: unknown): AiObservation | undefined {
   if (typeof input !== "object" || input === null) return undefined;
   const item = input as Record<string, unknown>;
+  if (!Object.keys(item).every(key => OBSERVATION_FIELDS.includes(key))) return undefined;   // the contract names every field (ARMOR-COMMON ai_observation.schema.json)
   const reasons = Array.isArray(item.reasons) ? item.reasons : [];
   if (typeof item.camera_id !== "string" || !/^[A-Za-z0-9._-]{3,80}$/.test(item.camera_id)) return undefined;
   if (item.severity !== "review" && item.severity !== "high") return undefined;
   if (reasons.length > 5 || !reasons.every(reason => typeof reason === "string" && reason.length <= 200)) return undefined;
-  const motion = Number(item.motion), tracks = Number(item.radar_tracks);
+  if (typeof item.motion !== "number" || typeof item.radar_tracks !== "number" || (item.motion_ratio !== undefined && typeof item.motion_ratio !== "number")) return undefined;   // numbers, as the contract says, never a text that reads as one
+  const motion = item.motion, tracks = item.radar_tracks;
   // `motion` is how sure the service is that something moved (0..1); `motion_ratio` is the share of the picture that changed, when the service says it.
-  const ratio = item.motion_ratio === undefined ? undefined : Number(item.motion_ratio);
+  const ratio = item.motion_ratio === undefined ? undefined : item.motion_ratio;
   if (ratio !== undefined && (!Number.isFinite(ratio) || ratio < 0 || ratio > 1)) return undefined;
   if (!Number.isFinite(motion) || motion < 0 || motion > 1 || !Number.isInteger(tracks) || tracks < 0 || tracks > 1000) return undefined;
   if (typeof item.profile !== "string" || !["daylight", "low-light"].includes(item.profile)) return undefined;

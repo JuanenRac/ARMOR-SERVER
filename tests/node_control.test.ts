@@ -43,7 +43,7 @@ test("the list of operations is closed: nothing erases a node, sleeps it or sets
   assert.deepEqual([...CONTROL_OPERATIONS], ["restart", "pause", "resume", "standby", "identify", "diagnostics", "maintenance_on", "maintenance_off"]);
   for (const word of ["factory_reset", "reset", "erase", "wipe", "wipe_wifi", "erase_flash", "deep_sleep", "sleep", "radio_sleep", "wake", "wake_timer", "reboot"]) {
     assert.throws(() => readControlRequest({ operation: word, confirm: "x" }, "node", ["x"]), /operation must be one of/, word);
-    assert.throws(() => parseControlCommand({ kind: "node_control_command", node_id: "radar-1", timestamp_ms: 1, command_id: "abcdefgh1234", action: "arm", operation: word, mode: "now", requested_by: "ana" }), /invalid operation/, word);
+    assert.throws(() => parseControlCommand({ kind: "node_control_command", node_id: "radar-1", timestamp_ms: 1, command_id: "abcdef0123456789", action: "arm", operation: word, mode: "now", requested_by: "ana" }), /invalid operation/, word);
   }
   for (const field of ["wake_s", "sleep_s", "wake_timer_s", "factory"]) assert.throws(() => readControlRequest({ operation: "pause", confirm: "x", [field]: 5 }, "node", ["x"]), /not a field/, field);
   assert.ok(!(CONTROL_REFUSALS as readonly string[]).includes("sleeping"));
@@ -316,7 +316,7 @@ test("an answer is used once, only for the order it answers, the node it came fr
   const armedAnswer = { node_id: "radar-1", command_id: arm.command_id, action: "arm", operation: "pause", stage: "armed", token: SECRET_TOKEN, token_ttl_s: 30 };
   // an answer for another operation, for an order never sent, or from another node, is dropped
   b.answer({ ...armedAnswer, operation: "restart" });
-  b.answer({ ...armedAnswer, command_id: "zzzzzzzz9999" });
+  b.answer({ ...armedAnswer, command_id: "00000000deadbeef" });
   b.service.handleResult(parseControlResult({ kind: "node_control_result", timestamp_ms: 9, accepted: true, refusal: "none", ...armedAnswer }), "solar-1");
   assert.equal(b.sent.length, 1, "nothing was executed");
   assert.equal(b.service.get(started.id)!.nodes[0].stage, "pending");

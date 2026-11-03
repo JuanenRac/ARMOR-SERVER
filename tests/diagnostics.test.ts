@@ -485,7 +485,7 @@ test("an administrator asks a node for its package or its log; the answer is kep
     assert.equal((await b.send("GET", "/api/v1/nodes/radar-1/diagnostics", undefined, {})).status, 401);
     assert.equal((await b.send("GET", "/api/v1/nodes/radar-9/diagnostics")).status, 404);
     // a node that answers with a member of its own, or with a secret-looking setting, is not believed
-    assert.throws(() => parseControlResult({ kind: "node_control_result", node_id: "radar-1", timestamp_ms: 9, command_id: "abcdefgh1234", action: "execute", operation: "diagnostics", stage: "diagnostics", accepted: true, refusal: "none",
+    assert.throws(() => parseControlResult({ kind: "node_control_result", node_id: "radar-1", timestamp_ms: 9, command_id: "abcdef0123456789", action: "execute", operation: "diagnostics", stage: "diagnostics", accepted: true, refusal: "none",
       diagnostics: { firmware: "0.7.9", uptime_s: 1, reset_reason: "power_on", heap_free: 1, heap_min: 1, mqtt_connected: true, state: "running", maintenance: false, package: { ...delivered, wifi_password: "x" } } }));
     // the log alone
     const logStart = await b.send("POST", "/api/v1/nodes/solar-1/control", { operation: "diagnostics", detail: "log" });

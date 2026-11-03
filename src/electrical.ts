@@ -89,15 +89,17 @@ export const SWITCH_ACTIONS = ["arm", "close_a", "close_b", "open", "acknowledge
 export type SwitchAction = (typeof SWITCH_ACTIONS)[number];
 export const REFUSALS = ["none", "disabled", "fault", "not_armed", "not_confirmed_open", "unknown_switch", "bad_token", "not_supported"] as const;
 export type Refusal = (typeof REFUSALS)[number];
-/** A command id or a token: lowercase letters and digits, eight to thirty-two. */
+/** A token: lowercase letters and digits, eight to thirty-two. */
 export const codePattern = /^[a-z0-9]{8,32}$/;
+/** The id of a command: sixteen lowercase hexadecimal digits, the one format of every command in the family. */
+export const commandIdPattern = /^[0-9a-f]{16}$/;
 
 export type ElectricalCommand = { kind: "electrical_command"; node_id: string; timestamp_ms: number; command_id: string; switch: string; action: SwitchAction; token?: string };
 export type ElectricalResult = { kind: "electrical_result"; node_id: string; timestamp_ms: number; command_id: string; switch: string; action: SwitchAction; accepted: boolean; refusal: Refusal; token?: string };
 
 function readCommonSwitchFields(body: Record<string, unknown>, kind: string): void {
   for (const key of ["kind", "node_id", "timestamp_ms", "command_id", "switch", "action"]) if (!(key in body)) throw new Error(`the ${kind} is missing ${key}`);
-  if (typeof body.command_id !== "string" || !codePattern.test(body.command_id)) throw new Error("invalid command_id");
+  if (typeof body.command_id !== "string" || !commandIdPattern.test(body.command_id)) throw new Error("invalid command_id");
   if (typeof body.switch !== "string" || !channelId.test(body.switch)) throw new Error("invalid switch");
   if (typeof body.action !== "string" || !(SWITCH_ACTIONS as readonly string[]).includes(body.action)) throw new Error("invalid action");
   if ("token" in body && (typeof body.token !== "string" || !codePattern.test(body.token))) throw new Error("invalid token");

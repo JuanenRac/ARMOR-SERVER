@@ -12,7 +12,8 @@ export const BATTERY_REFUSALS: readonly string[] = BATTERY_CATALOG.refusals;
 export const NO_SERIAL = BATTERY_CATALOG.limits.no_serial;
 const SERIAL = new RegExp(BATTERY_CATALOG.limits.serial_pattern);
 const NODE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
-const COMMAND_ID = /^[a-z0-9]{8,32}$/;
+/** The id of a command: sixteen lowercase hexadecimal digits, the one format of every command in the family. */
+const COMMAND_ID = /^[0-9a-f]{16}$/;
 
 export class BatteryOpsError extends Error {
   constructor(readonly code: string, message: string, readonly status = 400) { super(message); }

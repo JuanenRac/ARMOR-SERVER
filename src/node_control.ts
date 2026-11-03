@@ -37,7 +37,8 @@ export const MAX_DELAY_S = 600;
 export const TOKEN_TTL_S = 30;
 
 export const NODE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
-export const COMMAND_ID = /^[a-z0-9]{8,32}$/;
+/** The id of a command: sixteen lowercase hexadecimal digits, the one format of every command in the family. */
+export const COMMAND_ID = /^[0-9a-f]{16}$/;
 const TOKEN = /^[a-z0-9]{16,32}$/;
 export const PERSON = /^[A-Za-z0-9._@ -]{1,64}$/;
 const FIRMWARE = /^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$/;
