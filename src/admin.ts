@@ -47,7 +47,7 @@ const restoreLogin = (edited: string, before: string): string => {
   const password = /:\/\/[^\/\s:@]+:([^@\/\s]+)@/.exec(before)?.[1];
   let out = password !== undefined ? edited.replace(/(:\/\/[^\/\s:@]+:)\*\*\*@/, (_m, head: string) => `${head}${password}@`) : edited;
   out = out.replace(/([?&])(token|key|secret|password|pass)=\*\*\*/gi, (whole, lead: string, name: string) => {
-    const original = new RegExp(`[?&]${name}=([^&\s]+)`, "i").exec(before)?.[1];
+    const original = new RegExp(`[?&]${name}=([^&\\s]+)`, "i").exec(before)?.[1];
     return original === undefined ? whole : `${lead}${name}=${original}`;
   });
   return out;

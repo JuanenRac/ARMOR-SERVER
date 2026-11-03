@@ -35,7 +35,7 @@ export function render() {
     if (line.startsWith("#") && !line.startsWith("# ---")) { if (fresh) { fresh = false; previous = ""; } comment.push(line.replace(/^#\s?/, "")); } else { comment = []; fresh = false; previous = ""; }
   }
   const names = [...new Set([...read].filter(name => !TEST_ONLY.has(name)).concat([...described.keys()]))].sort();
-  const cell = text => text.replace(/\|/g, "\|").replace(/\s+/g, " ").trim();
+  const cell = text => text.replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
   const rows = names.map(name => {
     const info = described.get(name) ?? { example: "", text: "" };
     const limit = limits.get(name);
