@@ -1,0 +1,477 @@
+# =============================================================================
+# ARMOR-SERVER - Manual package build (build here, sign locally)
+# Copyright (C) 2026 JuanenRac (Electro Hobby 3D)
+# GPL-3.0-or-later - see LICENSE
+# =============================================================================
+# Started by hand only (workflow_dispatch): it never runs on a push or a pull request. It builds the program of the exact commit it pins and packs it as the
+# package armor-server-<version>.tgz that the maintenance helper of the machine installs, builds it TWICE on two runners and stops unless both give the same
+# bytes, and uploads it with SHA256SUMS and a build manifest as one artifact with a build-provenance attestation.
+#
+# It holds no key and signs nothing: the package is UNSIGNED. The signature of the package (armor-pkg/1) is made on the maintainer's machine, from this artifact, with the
+# key of the releases that never leaves it. With dry_run on (the default) nothing but the artifact is made; with it off a DRAFT release v<version> with the unsigned
+# package is also prepared by a separate job that waits for the approval of the owner (it is never published from here, and the build stops if the tag already exists).
+# A failed or stuck build writes the Job Summary and opens (or updates) the issue "build-failed"; a later good build closes it. build-watch.yml finds a build that never ends.
+
+name: Package build (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: build and check only, no draft release"
+        type: boolean
+        required: true
+        default: true
+      ref:
+        description: "Branch, tag or commit of this repository"
+        type: string
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+# One build per ref at a time, and a running build is never cancelled by a newer one.
+concurrency:
+  group: package-build-${{ inputs.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan the build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      sha: ${{ steps.plan.outputs.sha }}
+      epoch: ${{ steps.plan.outputs.epoch }}
+    steps:
+      - name: Only the owner starts a build
+        shell: bash
+        env:
+          ACTOR: ${{ github.actor }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          [ "$ACTOR" = "$OWNER" ] || { echo "::error::only the owner of the repository starts a build"; exit 1; }
+
+      - name: Check the inputs
+        shell: bash
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$REF" =~ ^[A-Za-z0-9._/-]{1,100}$ ]] || { echo "::error::the ref has characters that a branch, tag or commit does not have"; exit 1; }
+
+      - name: Check out this repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Make sure the commit belongs to the main branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          # only code that is already in main is built: a branch or a fork commit that is not in main is refused
+          git merge-base --is-ancestor HEAD refs/remotes/origin/main || { echo "::error::the commit $(git rev-parse --short HEAD) is not part of the main branch; merge it first"; exit 1; }
+
+      - name: Work out the version and pin the commit
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 -c "import json; print(json.load(open('armor.project.json', encoding='utf-8'))['version'])")"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "::error::the version $version is not one of the family"; exit 1; }
+          grep -q "^## \[$version\]" CHANGELOG.md || { echo "::error::CHANGELOG.md has no section for $version (raise the version BEFORE the build)"; exit 1; }
+          node_version="$(python3 -c "import json; print(json.load(open('package.json', encoding='utf-8'))['version'])")"
+          [ "$node_version" = "$version" ] || { echo "::error::package.json says $node_version and armor.project.json $version"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "epoch=$(git log -1 --format=%ct HEAD)" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build and pack (${{ matrix.id }})
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: build-1
+            runner: ubuntu-latest
+          - id: build-2
+            runner: ubuntu-latest
+    steps:
+      - name: Check out the exact commit that was planned
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+
+      - name: Install the locked dependencies and build
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm run build
+
+      - name: Pack the program like the maintenance helper expects it
+        shell: bash
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          EPOCH: ${{ needs.plan.outputs.epoch }}
+          PARTS: '[["dist", "server/dist"], ["package.json", "server/package.json"], ["package-lock.json", "server/package-lock.json"]]'
+          REQUIRED: '["server/dist/server.mjs", "server/package.json", "server/package-lock.json"]'
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          python3 - "out/armor-server-$VERSION.tgz" <<'PY'
+          import gzip, json, os, sys, tarfile
+          from pathlib import Path
+
+          SKIP = {"__pycache__", ".pytest_cache", ".git", "node_modules"}
+          epoch = int(os.environ["EPOCH"])
+          parts = json.loads(os.environ["PARTS"])
+          required = json.loads(os.environ["REQUIRED"])
+          entries = []
+
+
+          def under(root):
+              for path in sorted(root.rglob("*")):
+                  if path.is_file() and not (set(path.relative_to(root).parts) & SKIP) and not path.name.endswith((".pyc", ".map")):
+                      yield path
+
+
+          for source, target in parts:
+              path = Path(source)
+              if path.is_dir():
+                  for item in under(path):
+                      entries.append((item, target + "/" + item.relative_to(path).as_posix()))
+              elif path.is_file():
+                  entries.append((path, target))
+              else:
+                  raise SystemExit("::error::missing " + source)
+          names = {name for _, name in entries}
+          missing = [name for name in required if name not in names]
+          if missing:
+              raise SystemExit("::error::the package would lack " + ", ".join(missing))
+          with open(sys.argv[1], "wb") as raw:
+              with gzip.GzipFile(filename="", mode="wb", fileobj=raw, compresslevel=9, mtime=0) as zipped:
+                  with tarfile.open(fileobj=zipped, mode="w", format=tarfile.GNU_FORMAT) as tar:
+                      for path, name in entries:
+                          info = tarfile.TarInfo(name)
+                          info.size = path.stat().st_size
+                          info.mode = 0o755 if path.stat().st_mode & 0o111 else 0o644
+                          info.uid = info.gid = 0
+                          info.uname = info.gname = ""
+                          info.mtime = epoch
+                          with open(path, "rb") as handle:
+                              tar.addfile(info, handle)
+          print(len(entries), "files packed")
+          PY
+          ls -l out
+
+      - name: Upload the package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: parts-${{ matrix.id }}
+          path: out/armor-server-${{ needs.plan.outputs.version }}.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  collect:
+    name: Compare, attest and prepare the files
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      SHA: ${{ needs.plan.outputs.sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download both packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: parts-*
+          path: parts
+
+      - name: Check that both builds are the same bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="armor-server-$VERSION.tgz"
+          test "$(ls -d parts/parts-* | wc -l)" -eq 2 || { echo "::error::expected two builds"; ls parts; exit 1; }
+          first=""
+          for dir in parts/parts-*; do
+            digest="$(sha256sum "$dir/$name" | cut -d' ' -f1)"
+            echo "$dir $digest"
+            if [ -z "$first" ]; then first="$digest"; elif [ "$first" != "$digest" ]; then
+              echo "::error::the two builds differ: the package is not reproducible"
+              exit 1
+            fi
+          done
+          mkdir files
+          cp "$(ls -d parts/parts-* | head -n 1)/$name" files/
+          echo "### Reproducible: two builds, same sha256 \`$first\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write SHA256SUMS and the build manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd files
+          test "$(ls | wc -l)" -eq 1 || { echo "::error::expected one package"; ls; exit 1; }
+          sha256sum * > SHA256SUMS
+          python3 - <<'PY'
+          import json, os
+          files = []
+          for line in open("SHA256SUMS", encoding="utf-8"):
+              digest, name = line.strip().split("  ", 1)
+              files.append({"name": name, "sha256": digest, "bytes": os.path.getsize(name)})
+          json.dump({
+              "schema": "armor-build/1", "repository": os.environ["GITHUB_REPOSITORY"], "project": "server", "version": os.environ["VERSION"],
+              "commit": os.environ["SHA"], "built_on": "github-actions", "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_url": f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              "toolchain": "Node 22, npm ci --ignore-scripts, esbuild bundle; gzip level 9 without a time stamp, entries dated at the commit; built twice with the same bytes",
+              "package_format": "armor-pkg/1 (unsigned)", "reproducible": True, "signed": False, "files": files,
+          }, open("build-manifest.json", "w", encoding="utf-8"), indent=2)
+          PY
+          cat SHA256SUMS
+          { echo "### ARMOR-SERVER $VERSION (unsigned package)"; sed 's/^/- /' SHA256SUMS; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attest the provenance of the files
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        with:
+          subject-path: |
+            files/*.tgz
+            files/SHA256SUMS
+
+      - name: Upload the build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: package-server-${{ needs.plan.outputs.version }}
+          path: files/*
+          if-no-files-found: error
+          retention-days: 30
+
+  verify:
+    name: Verify the artifact as a stranger would
+    needs: [plan, collect]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      attestations: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SIGNER: ${{ github.repository }}/.github/workflows/package-build.yml
+      REQUIRED: '["server/dist/server.mjs", "server/package.json", "server/package-lock.json"]'
+      INNER_VERSION: '{"member": "server/package.json", "key": "version"}'
+    steps:
+      - name: Download the build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: package-server-${{ needs.plan.outputs.version }}
+          path: build
+
+      - name: Check hashes, manifest, contents and attestation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd build
+          sha256sum -c SHA256SUMS
+          python3 - <<'PY'
+          import json, os, tarfile
+          manifest = json.load(open("build-manifest.json", encoding="utf-8"))
+          assert manifest["signed"] is False and manifest["reproducible"] is True and len(manifest["files"]) == 1, "unexpected manifest"
+          assert manifest["repository"] == os.environ["GITHUB_REPOSITORY"] and str(manifest["run_id"]) == os.environ["GITHUB_RUN_ID"], "the manifest is not of this run"
+          name = manifest["files"][0]["name"]
+          assert name == "armor-server-" + manifest["version"] + ".tgz", "unexpected package name"
+          with tarfile.open(name, "r:gz") as archive:
+              members = archive.getmembers()
+              assert all(m.isfile() for m in members), "the package has something that is not a regular file"
+              assert all(not m.name.startswith(("/", "..")) and ".." not in m.name.split("/") for m in members), "a path leaves the package"
+              names = {m.name for m in members}
+              missing = [n for n in json.loads(os.environ["REQUIRED"]) if n not in names]
+              assert not missing, "the package lacks " + ", ".join(missing)
+              inner = json.loads(os.environ["INNER_VERSION"])
+              if inner:
+                  found = json.load(archive.extractfile(inner["member"]))[inner["key"]]
+                  assert found == manifest["version"], "the version inside the package (" + str(found) + ") is not the one of the manifest"
+          print("manifest ok:", manifest["project"], manifest["version"], len(members), "files")
+          PY
+          for file in *.tgz SHA256SUMS; do
+            gh attestation verify "$file" --repo "$GITHUB_REPOSITORY" --signer-workflow "$SIGNER" --source-digest "$GITHUB_SHA" >/dev/null
+            echo "attestation ok: $file"
+          done
+
+  draft:
+    name: Prepare the draft release (owner approval)
+    needs: [plan, collect, verify]
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      SHA: ${{ needs.plan.outputs.sha }}
+      GH_TOKEN: ${{ github.token }}
+      ACTOR: ${{ github.actor }}
+      OWNER: ${{ github.repository_owner }}
+    steps:
+      - name: Only the owner prepares a draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$ACTOR" = "$OWNER" ] || { echo "::error::only the owner of the repository prepares a draft"; exit 1; }
+
+      - name: Download the verified build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: package-server-${{ needs.plan.outputs.version }}
+          path: files
+
+      - name: Prepare the draft release with the unsigned package
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "::error::the release $tag already exists: raise the version before a new build"
+            exit 1
+          fi
+          gh release create "$tag" files/* --draft --target "$SHA" --title "ARMOR-SERVER $VERSION (unsigned package)" \
+            --notes "Unsigned package made by GitHub Actions. The signed package of the release replaces it."
+          echo "- draft release \`$tag\` prepared with the unsigned package" >> "$GITHUB_STEP_SUMMARY"
+
+  notify:
+    name: Tell the owner (issue build-failed)
+    if: ${{ always() }}
+    needs: [plan, build, collect, draft, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      actions: read
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NEEDS: ${{ toJSON(needs) }}
+      REF: ${{ inputs.ref }}
+      DRY_RUN: ${{ inputs.dry_run }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Open, update or close the issue build-failed
+        id: report
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, subprocess, sys
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          run_id = os.environ["GITHUB_RUN_ID"]
+          run_url = os.environ["RUN_URL"]
+          summary = os.environ["GITHUB_STEP_SUMMARY"]
+          order = ["plan", "build", "collect", "draft", "verify"]
+
+
+          def gh(*args, check=True):
+              result = subprocess.run(["gh", *args], capture_output=True, text=True)
+              if check and result.returncode != 0:
+                  raise RuntimeError("gh " + " ".join(args[:3]) + " failed: " + result.stderr.strip()[:300])
+              return result.stdout
+
+
+          def write_summary(text):
+              with open(summary, "a", encoding="utf-8") as handle:
+                  handle.write(text + "\n")
+
+
+          try:
+              needs = json.loads(os.environ["NEEDS"])
+              results = {name: needs.get(name, {}).get("result", "missing") for name in order}
+              if os.environ.get("DRY_RUN") == "true" and results.get("draft") == "skipped":
+                  results["draft"] = "success"  # a dry run makes no draft on purpose
+              bad = {name: result for name, result in results.items() if result != "success"}
+              number = gh("issue", "list", "--repo", repo, "--label", "build-failed", "--state", "open", "--json", "number", "--jq", ".[0].number // empty").strip()
+              if bad:
+                  # what the API knows about each job: conclusion (failure, cancelled, timed_out, skipped), failed step, reason
+                  jobs = json.loads(gh("api", f"repos/{repo}/actions/runs/{run_id}/jobs?per_page=100"))["jobs"]
+                  lines = []
+                  causes = 0
+                  for job in jobs:
+                      if job["name"].startswith("Tell the owner"):
+                          continue
+                      conclusion = job.get("conclusion") or job.get("status")
+                      if conclusion in ("success", "skipped") and not any(s.get("conclusion") in ("failure", "cancelled", "timed_out") for s in job.get("steps", [])):
+                          continue
+                      step = next((s["name"] for s in job.get("steps", []) if s.get("conclusion") in ("failure", "cancelled", "timed_out")), None)
+                      reason = ""
+                      if conclusion != "skipped":
+                          causes += 1
+                          annotations = gh("api", f"repos/{repo}/check-runs/{job['id']}/annotations", check=False)
+                          try:
+                              messages = [a["message"] for a in json.loads(annotations or "[]") if a.get("annotation_level") in ("failure", "error")]
+                          except ValueError:
+                              messages = []
+                          if messages:
+                              reason = messages[0].strip().splitlines()[0][:300]
+                      what = {"failure": "failed", "cancelled": "was cancelled", "timed_out": "ran out of time", "skipped": "was skipped because an earlier job did not pass"}.get(conclusion, "ended as " + str(conclusion))
+                      line = f"- **{job['name']}** {what}"
+                      if step:
+                          line += f" (step: {step})"
+                      if reason:
+                          line += f": {reason}"
+                      line += f" - {job['html_url']}"
+                      lines.append(line)
+                  if causes == 0:
+                      lines.append("- no job reports a failure, but these ended without success: " + ", ".join(f"{n}={r}" for n, r in bad.items()) + " (a job was skipped without an earlier failure)")
+                  body = "\n".join([
+                      "The build did not finish correctly.",
+                      "",
+                      f"Run: {run_url}",
+                      f"Ref: `{os.environ.get('REF', '')}`, dry run: {os.environ.get('DRY_RUN', '')}",
+                      "Results: " + ", ".join(f"{n}={r}" for n, r in results.items()),
+                      "",
+                      *lines,
+                      "",
+                      "Open the run, read the log of the job above, fix the cause and start the workflow again; a later good build closes this issue.",
+                  ])
+                  write_summary("### The build did not finish correctly\n" + "\n".join(lines))
+                  if number:
+                      gh("issue", "comment", number, "--repo", repo, "--body", body)
+                  else:
+                      gh("label", "create", "build-failed", "--repo", repo, "--color", "B60205", "--description", "A build in GitHub Actions failed", check=False)
+                      gh("issue", "create", "--repo", repo, "--label", "build-failed", "--title", "Build failed", "--body", body)
+                  print("::error::the build did not finish correctly: " + ", ".join(f"{n}={r}" for n, r in bad.items()) + " - " + run_url)
+              else:
+                  write_summary("### The build passed")
+                  if number:
+                      gh("issue", "close", number, "--repo", repo, "--comment", f"A later build passed: {run_url}")
+          except Exception as error:  # the report itself failed: say so loudly, with the cause
+              text = f"{type(error).__name__}: {error}"
+              print(f"::error::the notify job could not report the state of the build ({text}). Check the run by hand: {run_url}")
+              write_summary(f"### The notify job failed\n\nIt could not open, update or close the issue build-failed.\n\nCause: `{text}`\n\nRun: {run_url}")
+              sys.exit(1)
+          PY
+
+      - name: Say it if this notify job itself failed
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          echo "::error::the notify job failed before it could report the build; open the run and read its summary: $RUN_URL"
+          echo "### The notify job failed, so the issue build-failed may be missing. Read the log above. Run: $RUN_URL" >> "$GITHUB_STEP_SUMMARY"
