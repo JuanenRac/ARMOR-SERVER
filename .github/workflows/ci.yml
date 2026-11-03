@@ -49,7 +49,7 @@ jobs:
         if: ${{ github.event.repository.name != 'ARMOR-COMMON' }}
         run: |
           git clone --depth 1 https://github.com/JuanenRac/ARMOR-COMMON.git ../ARMOR-COMMON
-          if [ "${{ github.event.repository.name }}" = "ARMOR-SERVER" ]; then
+          if [ "${GITHUB_REPOSITORY#*/}" = "ARMOR-SERVER" ]; then
             git clone --depth 1 https://github.com/JuanenRac/ARMOR-SIMULATOR.git ../ARMOR-SIMULATOR
           fi
 

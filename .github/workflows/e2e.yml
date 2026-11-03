@@ -33,24 +33,26 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
       - name: Fetch the other repository it runs with
         run: |
-          if [ "${{ github.event.repository.name }}" = "ARMOR-STUDIO" ]; then
+          if [ "${GITHUB_REPOSITORY#*/}" = "ARMOR-STUDIO" ]; then
             git clone --depth 1 https://github.com/JuanenRac/ARMOR-SERVER.git ../ARMOR-SERVER
           else
             git clone --depth 1 https://github.com/JuanenRac/ARMOR-STUDIO.git ../ARMOR-STUDIO
           fi
 
       - name: Set up Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "22"
           cache: npm
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
 
@@ -79,7 +81,7 @@ jobs:
           npx playwright install --with-deps chromium
 
       - name: Run the tests
-        run: python ${{ env.STUDIO_DIR }}/e2e/ci_stack.py
+        run: python "$STUDIO_DIR/e2e/ci_stack.py"
         env:
           ARMOR_SERVER_DIR: ${{ github.workspace }}/${{ env.SERVER_DIR }}
           NGINX_BIN: /usr/sbin/nginx
@@ -88,7 +90,7 @@ jobs:
 
       - name: Keep the traces of a failure
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: e2e-test-results
           path: ${{ env.STUDIO_DIR }}/e2e/test-results
