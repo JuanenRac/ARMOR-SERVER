@@ -66,9 +66,15 @@ function parseTrack(value: unknown, index: number): RadarTrack {
   return { sensor_id: sensorId, track_id: trackId, x_mm: track.x_mm as number, y_mm: track.y_mm as number, speed_mm_s: track.speed_mm_s as number };
 }
 
+/** A message may say its own kind (the contract allows it since 0.8.0.6 of ARMOR-COMMON), and then it has to be the kind of the topic it came on. */
+function ownKind(body: Record<string, unknown>, expected: string): void {
+  if ("kind" in body && body.kind !== expected) throw new Error("invalid kind");
+}
+
 export function parseTelemetry(value: unknown): Telemetry {
   const body = record(value, "telemetry");
-  onlyKnown(body, ["node_id", "timestamp_ms", "lux", "targets"], "telemetry");
+  onlyKnown(body, ["node_id", "timestamp_ms", "lux", "targets", "kind"], "telemetry");
+  ownKind(body, "telemetry");
   const node = readNodeId(body);
   const timestamp = readTimestamp(body);
   if (!finite(body.lux) || body.lux < 0 || body.lux > MAX_LUX) throw new Error("invalid lux");
@@ -93,7 +99,8 @@ export const MAX_NAME = 48;
 
 export function parseInfo(value: unknown): Info {
   const body = record(value, "info");
-  onlyKnown(body, ["node_id", "timestamp_ms", "name", "firmware", "ip", "port"], "info");
+  onlyKnown(body, ["node_id", "timestamp_ms", "name", "firmware", "ip", "port", "kind"], "info");
+  ownKind(body, "info");
   const node = readNodeId(body);
   const timestamp = readTimestamp(body);
   // The schema counts characters, not UTF-16 units: an emoji is one.
