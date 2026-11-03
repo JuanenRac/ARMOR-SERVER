@@ -6,7 +6,7 @@ import { SECRETS } from "./helpers.js";
 test("a complete environment produces a typed configuration with safe defaults", () => {
   const config = readConfig({ ...SECRETS });
   assert.equal(config.host, "127.0.0.1");
-  assert.equal(config.port, 8080);
+  assert.equal(config.port, 18080);
   assert.equal(config.cookieSecure, false);
   assert.equal(config.maxMjpegRelays, 8);
   assert.ok(config.studioOrigins.includes("http://127.0.0.1:5178"));

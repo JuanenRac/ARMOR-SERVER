@@ -42,7 +42,7 @@
 | Stack | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | Tests | 1013 (`npm test`: unit and full HTTP integration) |
 | Contract | 196 HTTP paths, 255 operations (OpenAPI in ARMOR-COMMON), route table in `docs/ROUTES.md` |
-| Listens on | `127.0.0.1:8080` (`ARMOR_HOST`, `ARMOR_PORT`) |
+| Listens on | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Runs on | The CM5 test bench (as a service, see ARMOR-DEVOPS) or any computer with Node.js |
 | On real hardware | The CM5 test bench, in daily use: a real MQTT broker, real IP cameras, a real radar node on an ESP32-S3 board, Studio, the Android app and the voice and observation services against it |
 | License | GPL-3.0-or-later |
@@ -186,7 +186,7 @@ Copy `.env.example` to `.env` (ignored by Git), or let `run.bat` / `run.sh` gene
 |---|---|---|
 | `ARMOR_INGEST_TOKEN`  `ARMOR_CONTROL_TOKEN` | yes (24+ characters, all different) | what the nodes post with; what arms, disarms and reads events |
 | `ARMOR_STUDIO_USERNAME`  `ARMOR_STUDIO_PASSWORD` | yes | the first administrator |
-| `ARMOR_HOST`  `ARMOR_PORT` | 127.0.0.1  8080 | where it listens; a Studio password under 12 characters is refused when it is not loopback |
+| `ARMOR_HOST`  `ARMOR_PORT` | 127.0.0.1  18080 | where it listens; a Studio password under 12 characters is refused when it is not loopback |
 | `ARMOR_DATA_DIR`  `ARMOR_FFMPEG_PATH` | data/ | state folder; FFmpeg for live video and capture |
 | `ARMOR_MQTT_URL`  `ARMOR_MQTT_CA_FILE` | optional | the broker; the installation's own authority for `mqtts://` (the server then trusts only it, checks the broker's name and refuses to start with a bad file) |
 | `ARMOR_NODE_STALE_AFTER_S` | 30 (5-3600) | seconds of silence before a node is stale |

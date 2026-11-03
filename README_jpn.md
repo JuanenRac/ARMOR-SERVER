@@ -42,7 +42,7 @@
 | 技術 | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | テスト | 1013 件（`npm test`：単体と完全な HTTP 結合） |
 | 契約 | HTTP パス 196 本、255 操作（OpenAPI は ARMOR-COMMON）、ルート表は `docs/ROUTES.md` |
-| 待ち受け | `127.0.0.1:8080`（`ARMOR_HOST`、`ARMOR_PORT`） |
+| 待ち受け | `127.0.0.1:18080`（`ARMOR_HOST`、`ARMOR_PORT`） |
 | 動作環境 | CM5 テストベンチ（サービスとして。ARMOR-DEVOPS 参照）または Node.js のある任意のコンピューター |
 | 実機での確認 | CM5 テストベンチでの日常使用：実際の MQTT ブローカー、実際の IP カメラ、ESP32-S3 基板上の実際のレーダーノード、これに接続する Studio、Android アプリ、音声・観察サービス |
 | ライセンス | GPL-3.0-or-later |
@@ -186,7 +186,7 @@ flowchart LR
 |---|---|---|
 | `ARMOR_INGEST_TOKEN`  `ARMOR_CONTROL_TOKEN` | 必須（24 文字以上、すべて別） | ノードの送信用と、警戒・解除・イベント読み取り用 |
 | `ARMOR_STUDIO_USERNAME`  `ARMOR_STUDIO_PASSWORD` | 必須 | 最初の管理者 |
-| `ARMOR_HOST`  `ARMOR_PORT` | 127.0.0.1  8080 | 待ち受け先。ループバック以外では 12 文字未満の Studio パスワードを拒否 |
+| `ARMOR_HOST`  `ARMOR_PORT` | 127.0.0.1  18080 | 待ち受け先。ループバック以外では 12 文字未満の Studio パスワードを拒否 |
 | `ARMOR_DATA_DIR`  `ARMOR_FFMPEG_PATH` | data/ | 状態フォルダと、ライブ映像・撮影用の FFmpeg |
 | `ARMOR_MQTT_URL`  `ARMOR_MQTT_CA_FILE` | 任意 | ブローカー、および `mqtts://` 用の自前の認証局（サーバーはそれだけを信頼し、ブローカー名を確認し、不正なファイルでは起動しない） |
 | `ARMOR_NODE_STALE_AFTER_S` | 30 (5-3600) | ノードが古い扱いになるまでの無通信秒数 |

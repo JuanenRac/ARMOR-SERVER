@@ -6,6 +6,7 @@
 import { ALERT_LANGUAGES, isAlertLanguage, type AlertLanguage } from "./alert_text.js";
 import { validTelegramChat, validTelegramToken, validWebhookId } from "./channels.js";
 import fs from "node:fs";
+import { ARMOR_PORTS } from "./armor-ports.js";
 import path from "node:path";
 import { originsWithStudioPort, readConnection } from "./connection.js";
 import { isTlsUrl, readCaFile, type MqttCa } from "./mqtt_tls.js";
@@ -447,7 +448,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
   const effectiveHost = saved.host && (isLoopbackHost(saved.host) || studioPassword.length >= 12) ? saved.host : host;
   return {
     host: effectiveHost,
-    port: saved.port ?? integer(env, "ARMOR_PORT", 8080, 1, 65535),
+    port: saved.port ?? integer(env, "ARMOR_PORT", ARMOR_PORTS.server, 1, 65535),
     ingestToken, ingestStrict: env.ARMOR_INGEST_STRICT === "1", controlToken, operatorToken, cameraConfigKey,
     cameraKeyIsFallback: !configuredKey,
     studioUsername, studioPassword, passwordMinLength: isLoopbackHost(effectiveHost) ? 8 : 12, resetStudioPassword: env.ARMOR_STUDIO_RESET_PASSWORD === "1",

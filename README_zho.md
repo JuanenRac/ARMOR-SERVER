@@ -42,7 +42,7 @@
 | 技术栈 | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | 测试 | 1013 项（`npm test`：单元与完整 HTTP 集成） |
 | 契约 | 196 条 HTTP 路径、255 个操作（OpenAPI 在 ARMOR-COMMON 中），路由表见 `docs/ROUTES.md` |
-| 监听地址 | `127.0.0.1:8080`（`ARMOR_HOST`、`ARMOR_PORT`） |
+| 监听地址 | `127.0.0.1:18080`（`ARMOR_HOST`、`ARMOR_PORT`） |
 | 运行位置 | CM5 测试台（作为服务，见 ARMOR-DEVOPS）或任何装有 Node.js 的计算机 |
 | 真实硬件 | CM5 测试台的日常使用：真实的 MQTT 代理、真实的 IP 摄像头、ESP32-S3 板上的真实雷达节点，以及与之配合的 Studio、Android 应用和语音、观察服务 |
 | 许可证 | GPL-3.0-or-later |
@@ -186,7 +186,7 @@ flowchart LR
 |---|---|---|
 | `ARMOR_INGEST_TOKEN`  `ARMOR_CONTROL_TOKEN` | 是（24 个以上字符，互不相同） | 节点上报所用；布防、撤防和读取事件所用 |
 | `ARMOR_STUDIO_USERNAME`  `ARMOR_STUDIO_PASSWORD` | 是 | 第一个管理员 |
-| `ARMOR_HOST`  `ARMOR_PORT` | 127.0.0.1  8080 | 监听位置；非回环地址时拒绝少于 12 个字符的 Studio 密码 |
+| `ARMOR_HOST`  `ARMOR_PORT` | 127.0.0.1  18080 | 监听位置；非回环地址时拒绝少于 12 个字符的 Studio 密码 |
 | `ARMOR_DATA_DIR`  `ARMOR_FFMPEG_PATH` | data/ | 状态文件夹；用于实时视频和抓取的 FFmpeg |
 | `ARMOR_MQTT_URL`  `ARMOR_MQTT_CA_FILE` | 可选 | 代理地址；`mqtts://` 使用的安装自有机构（服务器只信任它，检查代理名称，文件有误则拒绝启动） |
 | `ARMOR_NODE_STALE_AFTER_S` | 30 (5-3600) | 节点被视为过期前的静默秒数 |

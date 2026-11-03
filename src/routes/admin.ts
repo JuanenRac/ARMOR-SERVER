@@ -6,6 +6,7 @@
  */
 import express, { type Express, type Request, type Response } from "express";
 import type { AppContext } from "../context.js";
+import { ARMOR_PORTS } from "../armor-ports.js";
 import { maskEnv, unmaskEnv, type AdminReply } from "../admin.js";
 import { nodeTokenFor } from "../http/node_token.js";
 import { applyBundle, buildBundle, parseBundle, PARTS, previewBundle } from "../installation.js";
@@ -134,7 +135,7 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
     if (!PRIVATE_V4.test(address) && !(testPort > 0 && address === "127.0.0.1")) return response.status(422).json({ error: "invalid_address" });
     if (!BROKER_HOST.test(brokerHost)) return response.status(422).json({ error: "invalid_broker_host" });
     const user = typeof input.panel_user === "string" ? input.panel_user : "", password = typeof input.panel_password === "string" ? input.panel_password : "";
-    const brokerPort = typeof input.broker_port === "number" && input.broker_port >= 1024 && input.broker_port <= 65535 ? input.broker_port : 18883;
+    const brokerPort = typeof input.broker_port === "number" && input.broker_port >= 1024 && input.broker_port <= 65535 ? input.broker_port : ARMOR_PORTS.mqtt;
 
     const accounts = await ask(response, "GET", "/v1/mqtt/accounts");
     if (!accounts) return;

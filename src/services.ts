@@ -8,6 +8,7 @@
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { ARMOR_PORTS } from "./armor-ports.js";
 
 export type ServiceState = "running" | "paused" | "stopped" | "failed" | "starting" | "not_installed" | "online" | "offline" | "unknown";
 export type ServiceView = {
@@ -36,12 +37,12 @@ export type CatalogEntry = { id: string; name: string; family: string; descripti
 
 /** What the system is made of on its core machine. A program that is not installed is listed as such, so the list shows the whole system. */
 export const CATALOG: readonly CatalogEntry[] = [
-  { id: "server", name: "ARMOR-SERVER", family: "Core", description: "Central state, alarms, users, cameras, evidence and the API", unit: "armor-server.service", port: 18080 },
-  { id: "studio", name: "ARMOR-STUDIO", family: "Core", description: "The web console", unit: "armor-studio.service", port: 18081 },
-  { id: "broker", name: "MQTT broker", family: "Core", description: "Where the field nodes publish what they read", unit: "armor-mosquitto.service", port: 18883 },
+  { id: "server", name: "ARMOR-SERVER", family: "Core", description: "Central state, alarms, users, cameras, evidence and the API", unit: "armor-server.service", port: ARMOR_PORTS.server },
+  { id: "studio", name: "ARMOR-STUDIO", family: "Core", description: "The web console", unit: "armor-studio.service", port: ARMOR_PORTS.studio },
+  { id: "broker", name: "MQTT broker", family: "Core", description: "Where the field nodes publish what they read", unit: "armor-mosquitto.service", port: ARMOR_PORTS.mqtt },
   { id: "network", name: "ARMOR-NETWORK", family: "Network", description: "Watches the local network: devices, internet and what changes", unit: "armor-network.service" },
   { id: "server-ai", name: "ARMOR-SERVER-AI", family: "AI and voice", description: "Decides what a camera detection means (day and night, movement first)", unit: "armor-server-ai.service" },
-  { id: "voice-ai", name: "ARMOR-VOICE-AI", family: "AI and voice", description: "Written and spoken commands (a closed list of fifteen commands, arm and disarm confirmed in two turns)", unit: "armor-voice.service", port: 18090 },
+  { id: "voice-ai", name: "ARMOR-VOICE-AI", family: "AI and voice", description: "Written and spoken commands (a closed list of fifteen commands, arm and disarm confirmed in two turns)", unit: "armor-voice.service", port: ARMOR_PORTS.voice },
 ];
 
 const PROPERTIES = ["Id", "Description", "LoadState", "ActiveState", "SubState", "UnitFileState", "MainPID", "ActiveEnterTimestampMonotonic", "ExecMainStartTimestamp", "MemoryCurrent", "NRestarts", "ExecStart", "WorkingDirectory", "Environment"] as const;

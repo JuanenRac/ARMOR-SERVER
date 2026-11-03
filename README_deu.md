@@ -42,7 +42,7 @@
 | Technik | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | Tests | 1013 (`npm test`: Unit und volle HTTP-Integration) |
 | Vertrag | 196 HTTP-Pfade, 255 Operationen (OpenAPI in ARMOR-COMMON), Routentabelle in `docs/ROUTES.md` |
-| Lauscht auf | `127.0.0.1:8080` (`ARMOR_HOST`, `ARMOR_PORT`) |
+| Lauscht auf | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Läuft auf | Der CM5-Prüfstand (als Dienst, siehe ARMOR-DEVOPS) oder jeder Computer mit Node.js |
 | Auf echter Hardware | Der CM5-Testaufbau im täglichen Einsatz: ein echter MQTT-Broker, echte IP-Kameras, ein echter Radarknoten auf einer ESP32-S3-Platine, Studio, die Android-App und die Sprach- und Beobachtungsdienste daran |
 | Lizenz | GPL-3.0-or-later |
@@ -186,7 +186,7 @@ Die Routentabelle (`docs/ROUTES.md`, aus dem Code erzeugt) listet jede Route mit
 |---|---|---|
 | `ARMOR_INGEST_TOKEN`  `ARMOR_CONTROL_TOKEN` | ja (24+ Zeichen, alle verschieden) | womit die Knoten senden; was schärft, entschärft und Ereignisse liest |
 | `ARMOR_STUDIO_USERNAME`  `ARMOR_STUDIO_PASSWORD` | ja | der erste Administrator |
-| `ARMOR_HOST`  `ARMOR_PORT` | 127.0.0.1  8080 | wo er lauscht; ein Studio-Passwort unter 12 Zeichen wird abgelehnt, wenn es nicht Loopback ist |
+| `ARMOR_HOST`  `ARMOR_PORT` | 127.0.0.1  18080 | wo er lauscht; ein Studio-Passwort unter 12 Zeichen wird abgelehnt, wenn es nicht Loopback ist |
 | `ARMOR_DATA_DIR`  `ARMOR_FFMPEG_PATH` | data/ | Zustandsordner; FFmpeg für Live-Video und Aufnahme |
 | `ARMOR_MQTT_URL`  `ARMOR_MQTT_CA_FILE` | optional | der Broker; die eigene Stelle der Installation für `mqtts://` (der Server vertraut nur ihr, prüft den Brokernamen und startet bei falscher Datei nicht) |
 | `ARMOR_NODE_STALE_AFTER_S` | 30 (5-3600) | Sekunden Stille, bis ein Knoten veraltet ist |
