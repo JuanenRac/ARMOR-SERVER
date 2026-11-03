@@ -5,6 +5,7 @@
  * has it off unless it was turned on in its environment, and here an administrator must give the password again before the first command and every ten minutes of use.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
+import { timingSafeEqual } from "node:crypto";
 import type { Express, Request, Response } from "express";
 import type { AppContext } from "../context.js";
 import type { AdminReply } from "../admin.js";
@@ -16,7 +17,7 @@ const JOB_ID = /^[A-Za-z0-9-]{1,40}$/;
 const relay = (response: Response, reply: AdminReply) => response.status(reply.status).json(reply.body);
 
 export function registerMaintenanceRoutes(app: Express, context: AppContext): void {
-  const { maintenance, audit, requireAdmin, studioUser, users } = context;
+  const { maintenance, audit, requireAdmin, studioUser, users, config, store, alarmNodes } = context;
   const actor = (request: Request) => studioUser(request)?.username;
   const body = (request: Request): Record<string, unknown> => (typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {});
   const unlocked = new Map<string, number>();
@@ -81,6 +82,40 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
       relay(response, reply);
     });
   }
+
+  // ---- automatic security updates of the system (the agent keeps the settings and does the work; this is the switch of Studio) ----
+  const AUTO_KEYS = ["enabled", "reboot", "window_start", "window_end"] as const;
+  app.get("/api/v1/admin/system/auto-updates", requireAdmin, async (_request, response) => {
+    const reply = await ask(response, "GET", "/v1/system/auto-updates");
+    if (reply) relay(response, reply);
+  });
+  app.put("/api/v1/admin/system/auto-updates", requireAdmin, async (request, response) => {
+    const input = body(request);
+    const change: Record<string, unknown> = {};
+    for (const key of Object.keys(input)) {
+      if (!(AUTO_KEYS as readonly string[]).includes(key)) return response.status(422).json({ error: "unknown_setting" });
+      change[key] = input[key];
+    }
+    if (Object.keys(change).length === 0) return response.status(422).json({ error: "nothing_to_change" });
+    if ("enabled" in change && typeof change.enabled !== "boolean") return response.status(422).json({ error: "bad_enabled" });
+    if ("reboot" in change && change.reboot !== "never" && change.reboot !== "disarmed") return response.status(422).json({ error: "bad_reboot" });
+    const timeOfDay = (value: unknown) => typeof value === "string" && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(value);
+    if (("window_start" in change && !timeOfDay(change.window_start)) || ("window_end" in change && !timeOfDay(change.window_end))) return response.status(422).json({ error: "bad_window" });
+    const reply = await ask(response, "POST", "/v1/system/auto-updates", change);
+    if (!reply) return;
+    audit.record({ action: "maintenance.auto_updates", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), detail: Object.entries(change).map(([key, value]) => `${key}=${String(value)}`).join(" ") });
+    relay(response, reply);
+  });
+
+  // The agent asks, before it reboots the machine after a security update, whether anything is armed: with its own token (the one this server uses to ask it), not a session.
+  // Armed is the system mode or any panel that is not disarmed; the answer carries nothing else.
+  app.get("/api/v1/maintenance/armed", (request, response) => {
+    const wanted = config.maintenance?.token ?? "";
+    const given = String(request.headers["x-armor-maint-token"] ?? "");
+    const a = Buffer.from(wanted), b = Buffer.from(given);
+    if (wanted === "" || a.length !== b.length || !timingSafeEqual(a, b)) return response.status(401).json({ error: "unauthorized" });
+    response.json({ armed: store.armed || alarmNodes.list().some(node => node.state.phase !== "disarmed") });
+  });
 
   app.get("/api/v1/admin/maintenance/jobs/:id", requireAdmin, async (request, response) => {
     const id = String(request.params.id);

@@ -51,6 +51,8 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/admin/services/:id/:action` | administrator | `routes/admin.ts` |
 | GET | `/api/v1/admin/status` | administrator | `routes/admin.ts` |
 | POST | `/api/v1/admin/system/${action}` | administrator | `routes/maintenance.ts` |
+| GET | `/api/v1/admin/system/auto-updates` | administrator | `routes/maintenance.ts` |
+| PUT | `/api/v1/admin/system/auto-updates` | administrator | `routes/maintenance.ts` |
 | GET | `/api/v1/admin/updates` | administrator | `routes/maintenance.ts` |
 | POST | `/api/v1/admin/updates` | administrator | `routes/maintenance.ts` |
 | POST | `/api/v1/admin/updates/:id/rollback` | administrator | `routes/maintenance.ts` |
@@ -145,6 +147,7 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/history/connections` | operator | `routes/history.ts` |
 | GET | `/api/v1/history/summary` | operator | `routes/history.ts` |
 | GET | `/api/v1/info` | none here | `routes/ingest.ts` |
+| GET | `/api/v1/maintenance/armed` | none here | `routes/maintenance.ts` |
 | DELETE | `/api/v1/media` | administrator | `routes/media.ts` |
 | GET | `/api/v1/media` | operator | `routes/media.ts` |
 | DELETE | `/api/v1/media/:cameraId/:kind/:file` | operator | `routes/media.ts` |

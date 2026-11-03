@@ -29,6 +29,7 @@ async function fakeAgent(consoleEnabled = true): Promise<{ socket: string; seen:
       if (request.method === "GET" && url.startsWith("/v1/overview")) return send(200, { agent: "0.1.0", components: [{ id: "server", installed: "0.5.4", latest: "0.5.5", status: "update_available" }], os: { packages: [] }, console: consoleEnabled, running: [], history: [] });
       if (request.method === "POST" && url === "/v1/updates") return send(202, { id: "job-1", kind: "update", state: "running", percent: 0, steps: [], log: [] });
       if (request.method === "POST" && url.endsWith("/rollback")) return send(202, { id: "job-2", state: "running" });
+      if (url === "/v1/system/auto-updates") return send(200, { settings: { enabled: true, reboot: "disarmed", window_start: "03:00", window_end: "05:00", ...(request.method === "POST" ? body : {}) }, package: true, applied: [], reboot_required: false });
       if (request.method === "POST" && url.startsWith("/v1/system/")) return send(202, { id: "job-3", state: "running" });
       if (request.method === "GET" && url.startsWith("/v1/jobs/")) return send(200, { id: "job-1", state: "done", percent: 100, log: ["x"], log_total: 1 });
       if (request.method === "POST" && url === "/v1/history/clear") return send(200, { ok: true, cleared: 3 });
@@ -197,4 +198,35 @@ test("an administrator is given the pin of the installation's authority and the 
     assert.equal(bad.body.text, `armor-pin:${pin}`, "a host that is not a host name is not put in the text");
     assert.equal((await fetch(`${running.base}/api/v1/admin/remote/tls`)).status, 401);
   } finally { await running.stop(); await agent.close(); }
+});
+
+test("an administrator switches the automatic security updates and the agent can ask whether the system is armed", async () => {
+  const agent = await fakeAgent();
+  const running = await startServer({ ARMOR_MAINT_SOCKET: agent.socket, ARMOR_MAINT_TOKEN: TOKEN });
+  try {
+    const cookie = await studioCookie(running.base);
+    const read = await call(running, cookie, "GET", "/api/v1/admin/system/auto-updates");
+    assert.equal(read.status, 200);
+    assert.equal(read.body.settings.enabled, true);
+    const put = await call(running, cookie, "PUT", "/api/v1/admin/system/auto-updates", { enabled: false, reboot: "never", window_start: "22:30" });
+    assert.equal(put.status, 200);
+    assert.deepEqual(agent.seen.at(-1)?.body, { enabled: false, reboot: "never", window_start: "22:30" });
+    for (const bad of [{}, { enabled: "yes" }, { reboot: "always" }, { window_end: "5:00" }, { window_start: "24:00" }, { other: 1 }]) assert.equal((await call(running, cookie, "PUT", "/api/v1/admin/system/auto-updates", bad)).status, 422, JSON.stringify(bad));
+    const audit = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8");
+    assert.match(audit, /maintenance\.auto_updates/);
+    assert.match(audit, /enabled=false/);
+    // the agent's question: only with its own token, and it says nothing but whether something is armed
+    assert.equal((await fetch(`${running.base}/api/v1/maintenance/armed`)).status, 401);
+    assert.equal((await fetch(`${running.base}/api/v1/maintenance/armed`, { headers: { "X-Armor-Maint-Token": "x".repeat(32) } })).status, 401);
+    const asked = await fetch(`${running.base}/api/v1/maintenance/armed`, { headers: { "X-Armor-Maint-Token": TOKEN } });
+    assert.equal(asked.status, 200);
+    assert.deepEqual(await asked.json(), { armed: false });
+  } finally { await running.stop(); await agent.close(); }
+});
+
+test("without the maintenance agent nobody can ask whether the system is armed", async () => {
+  const running = await startServer();
+  try {
+    assert.equal((await fetch(`${running.base}/api/v1/maintenance/armed`, { headers: { "X-Armor-Maint-Token": TOKEN } })).status, 401);
+  } finally { await running.stop(); }
 });
