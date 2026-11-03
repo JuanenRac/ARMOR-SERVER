@@ -15,6 +15,8 @@
  *   server.zone_feed_signature   on | off                  every zone message is signed, so a panel can tell it came from this server
  *   server.alarm_state_signature on | off                  the server publishes a signed copy of each alarm state it hears, so a reader on the broker (the safety zones of a HYDRA-UMC cell) can tell who sent it (off, the default)
  *   media.rtsp_proxy             on | off                  FFmpeg reads the cameras through the local tunnel (off: the camera login goes in its command line, visible to every user of the machine)
+ *   voice.panic_phrase           on | off                  a user's secret panic phrase, said to the voice assistant, raises the silent duress alarm (off, the default: nobody's phrase is looked for)
+ *   voice.panic_cooldown_s      10 to 3600               after a panic phrase, the seconds in which the same user's phrase raises nothing more (60)
  *   voice.multipart_turn         on | off                  the wall panel may send a spoken turn as multipart/form-data with the audio as raw bytes (off: only the older raw request is taken, a multipart one is answered 415)
  *   panel.live_events            on | off                  the wall panel may listen to the live channel (a WebSocket that carries the same small summary it can ask for; off: it asks every few seconds)
  *   client.device_lock           user | sensitive | always   what the phone app asks of the person with the lock of the phone itself (fingerprint, face or the phone's PIN): user = the phone's own switches decide, sensitive = also before arming, disarming and unlocking, always = also to open the app (it can only raise what a person chose, never lower it, and a phone with no lock at all is never shut out)
@@ -56,6 +58,8 @@ export const NVS_ENCRYPTION_VALUES = ["off", "secrets"] as const;
 export type NvsEncryption = typeof NVS_ENCRYPTION_VALUES[number];
 /** The ceilings of the two sizes of a spoken turn: no value above them is taken, whatever the environment or Studio say. */
 export const VOICE_TURN_BYTES = { min: 3_200, max: 1_920_000, default: 480_000 } as const;
+/** The quiet time after a panic phrase: the same user's phrase raises nothing more inside it, so a repeated or looped phrase cannot flood the people it warns. */
+export const VOICE_PANIC_COOLDOWN_S = { min: 10, max: 3600, default: 60 } as const;
 export const VOICE_REPLY_AUDIO_BYTES = { min: 3_200, max: 1_000_000, default: 200_000 } as const;
 /** The limits of the two reports (the summary of a day and the heat map): how long one may run, how many may wait for their turn, and how many requests a minute are answered. */
 /** The address of the live service of ARMOR-VISION: an origin (scheme, host, optional port) and nothing else, at most 100 characters, no sign-in in it. "" is "not set up". */
@@ -106,6 +110,8 @@ export type SecuritySettingsValues = {
   "login.country_alert": boolean;
   "electrical.set_aside_old_readings": boolean;
   "voice.multipart_turn": boolean;
+  "voice.panic_phrase": boolean;
+  "voice.panic_cooldown_s": number;
   "panel.live_events": boolean;
   "client.device_lock": DeviceLockPolicy;
   "nodes.nvs_encryption": NvsEncryption;
@@ -147,6 +153,8 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "login.country_alert": true,
   "electrical.set_aside_old_readings": true,
   "voice.multipart_turn": true,
+  "voice.panic_phrase": false,
+  "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S.default,
   "panel.live_events": true,
   "client.device_lock": "user",
   "nodes.nvs_encryption": "off",
@@ -169,7 +177,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
 });
 
 /** The settings that are whole numbers, with the range each may take. */
-const NUMBER_RANGES: Partial<Record<keyof SecuritySettingsValues, { min: number; max: number }>> = { "voice.turn_max_bytes": VOICE_TURN_BYTES, "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES,
+const NUMBER_RANGES: Partial<Record<keyof SecuritySettingsValues, { min: number; max: number }>> = { "voice.turn_max_bytes": VOICE_TURN_BYTES, "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES, "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S,
   "summary.log_days": SUMMARY_LOG_DAYS, "summary.reading_every_s": SUMMARY_READING_EVERY_S, "summary.power_every_s": SUMMARY_POWER_EVERY_S, "summary.false_alarm_s": SUMMARY_FALSE_ALARM_S,
   "reports.timeout_s": REPORT_TIMEOUT_S, "reports.queue_max": REPORT_QUEUE_MAX, "reports.requests_per_minute": REPORT_REQUESTS_PER_MINUTE };
 
@@ -273,6 +281,7 @@ export class SecuritySettings {
 export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boolean {
   if (key === "voice.multipart_turn" || key === "panel.live_events" || key === "alarm_audio.spoken" || key === "alarm_audio.custom_sounds") return false;   // a way in that is turned off is not a loss of protection; turning it on is the default way
   if (key === "summary.log_days" || key === "summary.reading_every_s" || key === "summary.power_every_s" || key === "summary.false_alarm_s") return false;   // what the summary of a day is made from: tuning, not a protection
+  if (key === "voice.panic_cooldown_s") return false;   // how long one trigger keeps quiet: tuning, not a protection
   if (key === "reports.timeout_s" || key === "reports.queue_max" || key === "reports.requests_per_minute") return false;   // tuning of how much work the reports may cause, not a protection
   if (key === "vision.service_remote") return from === false && to === true;   // a service on another machine: the positions of the house travel over a network
   if (key === "vision.service_url") { const host = parseVisionServiceUrl(to)?.host; return host !== undefined && !isLoopbackHost(host) && to !== from; }   // pointing at another machine is the loss

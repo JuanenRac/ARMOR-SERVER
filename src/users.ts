@@ -8,14 +8,15 @@ import { randomBytes, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { durableRename, keepBackup } from "./durable.js";
+import { normalisePhrase, phraseProblem } from "./panic_phrase.js";
 
 /** An administrator manages users as well as operating; an operator only operates. */
 /** `panel` is the account of a wall panel (ARMOR-NODE-HMI): it may read the small summary, arm and disarm the system and acknowledge alarms, and nothing else (see context.ts). */
 export type Role = "admin" | "operator" | "panel" | "viewer";
 export const ROLES: readonly Role[] = ["admin", "operator", "panel", "viewer"];
 /** `hasPin` / `hasDuress` say that a PIN to disarm (and a second one that disarms but warns in silence) is set; the PINs themselves are never shown. */
-export type PublicUser = { id: string; username: string; role: Role; createdAt: string; updatedAt: string; hasPin: boolean; hasDuress: boolean };
-type UserRecord = Omit<PublicUser, "hasPin" | "hasDuress"> & { salt: string; hash: string; pin?: { salt: string; hash: string }; duress?: { salt: string; hash: string } };
+export type PublicUser = { id: string; username: string; role: Role; createdAt: string; updatedAt: string; hasPin: boolean; hasDuress: boolean; hasPanicPhrase: boolean };
+type UserRecord = Omit<PublicUser, "hasPin" | "hasDuress" | "hasPanicPhrase"> & { salt: string; hash: string; pin?: { salt: string; hash: string }; duress?: { salt: string; hash: string }; panic?: { salt: string; hash: string } };
 /** What a PIN typed to disarm came to. `none`: the user has no PIN. `duress`: the duress PIN, which disarms and warns in silence. */
 export type PinResult = "ok" | "duress" | "bad" | "locked" | "none";
 
@@ -32,7 +33,7 @@ export class UserError extends Error {
   constructor(readonly code: string, message: string, readonly status: 400 | 404 | 409) { super(message); }
 }
 
-const secretOf = (key: "pin" | "duress", user: Partial<UserRecord>): Partial<Pick<UserRecord, "pin" | "duress">> => {
+const secretOf = (key: "pin" | "duress" | "panic", user: Partial<UserRecord>): Partial<Pick<UserRecord, "pin" | "duress" | "panic">> => {
   const value = user[key];
   return value && typeof value.salt === "string" && typeof value.hash === "string" ? { [key]: { salt: value.salt, hash: value.hash } } : {};
 };
@@ -90,7 +91,7 @@ export class UserStore {
       const user = item as Partial<UserRecord>;
       if (typeof user?.id === "string" && typeof user.username === "string" && USERNAME_PATTERN.test(user.username) && ROLES.includes(user.role as Role)
         && typeof user.salt === "string" && typeof user.hash === "string" && !this.#users.some(other => same(other.username, user.username!))) {
-        this.#users.push({ id: user.id, username: user.username, role: user.role as Role, salt: user.salt, hash: user.hash, createdAt: String(user.createdAt ?? this.#now()), updatedAt: String(user.updatedAt ?? this.#now()), ...secretOf("pin", user), ...secretOf("duress", user) });
+        this.#users.push({ id: user.id, username: user.username, role: user.role as Role, salt: user.salt, hash: user.hash, createdAt: String(user.createdAt ?? this.#now()), updatedAt: String(user.updatedAt ?? this.#now()), ...secretOf("pin", user), ...secretOf("duress", user), ...secretOf("panic", user) });
       }
     }
   }
@@ -160,7 +161,7 @@ export class UserStore {
     }
   }
 
-  static #view(user: UserRecord): PublicUser { return { id: user.id, username: user.username, role: user.role, createdAt: user.createdAt, updatedAt: user.updatedAt, hasPin: user.pin !== undefined, hasDuress: user.duress !== undefined }; }
+  static #view(user: UserRecord): PublicUser { return { id: user.id, username: user.username, role: user.role, createdAt: user.createdAt, updatedAt: user.updatedAt, hasPin: user.pin !== undefined, hasDuress: user.duress !== undefined, hasPanicPhrase: user.panic !== undefined }; }
 
   #checkUsername(username: unknown, except?: string): string {
     if (typeof username !== "string" || !USERNAME_PATTERN.test(username.trim())) throw new UserError("invalid_username", "a user name has 3 to 40 letters, digits, dots, dashes, underscores or @", 400);
@@ -291,6 +292,41 @@ export class UserStore {
     this.#pinTries.set(id, tries);
     this.#savePinTries();
     return tries.until > nowMs ? "locked" : "bad";
+  }
+
+  /** Sets the silent panic phrase of a user (see panic_phrase.ts): only its salted hash is kept. It must pass the rules of the phrase and differ from nothing else here (a PIN is digits). */
+  setPanicPhrase(id: string, phrase: unknown): PublicUser {
+    const user = this.#users.find(item => item.id === id);
+    if (!user) throw new UserError("not_found", "no such user", 404);
+    const problem = phraseProblem(phrase);
+    if (problem) throw new UserError(problem, "the phrase is not acceptable", 400);
+    const keep = { panic: user.panic, updatedAt: user.updatedAt };
+    try {
+      const salt = randomBytes(16);
+      user.panic = { salt: salt.toString("base64"), hash: hash(normalisePhrase(phrase as string), salt).toString("base64") };
+      user.updatedAt = this.#now();
+      this.#save();
+    } catch (error) { Object.assign(user, keep); if (keep.panic === undefined) delete user.panic; throw error; }
+    return UserStore.#view(user);
+  }
+
+  clearPanicPhrase(id: string): PublicUser {
+    const user = this.#users.find(item => item.id === id);
+    if (!user) throw new UserError("not_found", "no such user", 404);
+    delete user.panic;
+    user.updatedAt = this.#now();
+    this.#save();
+    return UserStore.#view(user);
+  }
+
+  /** Whether what was said is the panic phrase of that user. Takes the same work whether or not the user has one; a text longer than a phrase can be never matches. */
+  matchesPanicPhrase(id: string, said: unknown): boolean {
+    const user = this.#users.find(item => item.id === id);
+    const normal = typeof said === "string" && said.length <= 240 ? normalisePhrase(said) : "";
+    const salt = Buffer.from(user?.panic?.salt ?? "AAAAAAAAAAAAAAAAAAAAAA==", "base64");
+    const expected = Buffer.from(user?.panic?.hash ?? Buffer.alloc(64).toString("base64"), "base64");
+    const actual = hash(normal, salt);
+    return user?.panic !== undefined && normal !== "" && expected.length === actual.length && timingSafeEqual(expected, actual);
   }
 
   /** Seconds left of a lock (0 when there is none). */

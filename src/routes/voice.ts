@@ -19,7 +19,9 @@ const PANEL = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const panelOf = (value: unknown): string | undefined => (typeof value === "string" && PANEL.test(value) ? value : undefined);
 
 export function registerVoiceRoutes(app: Express, context: AppContext): void {
-  const { config, store, alarms, audit, requireOperator, studioUser } = context;
+  const { config, store, alarms, audit, requireOperator, studioUser, users } = context;
+  /** When each user's panic phrase last raised the alarm (memory only: a restart forgets it, which can only allow one more alarm). */
+  const panicLast = new Map<string, number>();
   /** The panel behind a command that came with the operator token of the voice gateway (a person with a session of their own is never replaced by the panel). */
   const panelBehind = (request: Request): string | undefined => (studioUser(request) ? undefined : panelOf(request.headers["x-armor-panel"]));
   const actor = (request: Request): string => studioUser(request)?.username ?? (panelBehind(request) ? `operator via ${panelBehind(request)}` : "operator");
@@ -109,6 +111,16 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
     const silencePin = typeof input.silence_pin === "string" && input.silence_pin ? input.silence_pin : undefined;
     if (silencePin !== undefined && silencePin.length > 32) return response.status(422).json({ error: "invalid_pin" });
     if (!config.voice) return response.status(503).json({ error: "voice_unavailable" });
+
+    // The silent panic phrase (option voice.panic_phrase, off by default): looked for BEFORE the gateway, so it never reaches it. It raises the silent duress alarm and nothing else, and the answer
+    // is the one of a command that was not understood, so whoever stands beside cannot tell. Inside the quiet time of the option nothing more is raised. Only the words are secret: the trail holds the fact.
+    const me = studioUser(request);
+    if (me && context.securitySettings.get("voice.panic_phrase") && users.matchesPanicPhrase(me.id, text)) {
+      const now = Date.now(), last = panicLast.get(me.id) ?? 0, quiet = context.securitySettings.get("voice.panic_cooldown_s") * 1000;
+      if (now - last >= quiet) { panicLast.set(me.id, now); alarms.raiseDuress(me.username); audit.record({ action: "voice.panic", outcome: "allowed", actor: me.username, detail: "duress raised" }); }
+      else audit.record({ action: "voice.panic", outcome: "denied", actor: me.username, detail: "quiet time" });
+      return response.json({ accepted: false, executed: false, intent: null, outcome: "", speech: "" });
+    }
 
     try {
       // The confirmation token the gateway issues is bound to the person who asked: another session cannot use it.

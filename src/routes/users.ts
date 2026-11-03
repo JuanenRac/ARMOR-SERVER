@@ -111,6 +111,26 @@ export function registerUserRoutes(app: Express, context: AppContext): void {
     }
   });
 
+  // The silent panic phrase (see ../panic_phrase.ts): only the person themselves sets, replaces or clears theirs, after confirming the password. Not even an administrator can read or set
+  // another one's, and the phrase is never shown again nor written to the audit trail. It does nothing until the option voice.panic_phrase is on.
+  app.put("/api/v1/account/panic-phrase", accountLimit, (request, response) => {
+    const me = studioUser(request);
+    if (!me) return response.status(401).json({ error: "sign in first" });
+    const input = body(request);
+    if (typeof input.currentPassword !== "string" || !users.authenticate(me.username, input.currentPassword)) {
+      audit.record({ action: "account.panic_phrase", outcome: "denied", actor: me.username, detail: "current password" });
+      return response.status(403).json({ error: "the current password is not right", code: "wrong_password" });
+    }
+    try {
+      const user = input.clear === true ? users.clearPanicPhrase(me.id) : users.setPanicPhrase(me.id, input.phrase);
+      audit.record({ action: "account.panic_phrase", outcome: "allowed", actor: me.username, detail: input.clear === true ? "cleared" : "set" });
+      return response.json(user);
+    } catch (error) {
+      audit.record({ action: "account.panic_phrase", outcome: "failed", actor: me.username, detail: error instanceof UserError ? error.code : "error" });
+      return fail(response, error);
+    }
+  });
+
   // Your own account: rename and change the password, whatever your role, after confirming the current password.
   app.patch("/api/v1/account", accountLimit, (request, response) => {
     const me = studioUser(request);
