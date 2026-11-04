@@ -123,6 +123,11 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/devices/:id/command` | operator | `routes/devices.ts` |
 | POST | `/api/v1/devices/:id/state` | operator | `routes/devices.ts` |
 | POST | `/api/v1/devices/state` | none here | `routes/devices.ts` |
+| GET | `/api/v1/devices/trust` | none here | `routes/trusted_devices.ts` |
+| POST | `/api/v1/devices/trust` | none here, fresh proof of identity | `routes/trusted_devices.ts` |
+| DELETE | `/api/v1/devices/trust/:id` | none here, fresh proof of identity | `routes/trusted_devices.ts` |
+| POST | `/api/v1/devices/trust/challenge` | none here | `routes/trusted_devices.ts` |
+| POST | `/api/v1/devices/trust/session` | none here | `routes/trusted_devices.ts` |
 | GET | `/api/v1/diagnostics/nodes` | none here | `routes/diagnostics.ts` |
 | GET | `/api/v1/diagnostics/nodes/:id` | none here | `routes/diagnostics.ts` |
 | GET | `/api/v1/diagnostics/nodes/:id/log` | none here | `routes/diagnostics.ts` |

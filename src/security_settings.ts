@@ -21,6 +21,8 @@
  *   voice.multipart_turn         on | off                  the wall panel may send a spoken turn as multipart/form-data with the audio as raw bytes (off: only the older raw request is taken, a multipart one is answered 415)
  *   panel.live_events            on | off                  the wall panel may listen to the live channel (a WebSocket that carries the same small summary it can ask for; off: it asks every few seconds)
  *   client.device_lock           user | sensitive | always   what the phone app asks of the person with the lock of the phone itself (fingerprint, face or the phone's PIN): user = the phone's own switches decide, sensitive = also before arming, disarming and unlocking, always = also to open the app (it can only raise what a person chose, never lower it, and a phone with no lock at all is never shut out)
+ *   client.trusted_devices       on | off                  a phone may be registered as a trusted device (a key pair that stays in the phone) and renew its session by signing a one-time challenge instead of typing the password and the code again (off, the default: nothing is registered or accepted)
+ *   client.trusted_session_h     1 to 720                 how long the session handed to a trusted phone lasts, in hours (72)
  *   nodes.nvs_encryption         off | secrets            the alarm nodes keep only the secrets they store (passwords, token, keys) encrypted in their flash (told in the policy message; off, the default, tells nothing)
  *   voice.turn_max_bytes         3200 to 1920000          the most audio one spoken turn of the wall panel may carry (the environment's ARMOR_VOICE_TURN_MAX_BYTES is where it starts)
  *   voice.reply_audio_max_bytes  3200 to 1000000          the most spoken answer handed on to the panel in the binary form (ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES is where it starts)
@@ -81,6 +83,8 @@ export function visionTokenInClear(remote: boolean, tokenHeld: boolean, url: str
   const service = parseVisionServiceUrl(url);
   return service !== undefined && service.origin.startsWith("http:") && !isLoopbackHost(service.host);
 }
+/** How long the session of a trusted phone lasts, in hours. */
+export const TRUSTED_SESSION_H = { min: 1, max: 720, default: 72 } as const;
 export const SUMMARY_LOG_DAYS = { min: 1, max: 90, default: 14 } as const;
 export const SUMMARY_READING_EVERY_S = { min: 10, max: 3600, default: 300 } as const;
 export const SUMMARY_POWER_EVERY_S = { min: 5, max: 3600, default: 60 } as const;
@@ -116,6 +120,8 @@ export type SecuritySettingsValues = {
   "voice.panic_cooldown_s": number;
   "panel.live_events": boolean;
   "client.device_lock": DeviceLockPolicy;
+  "client.trusted_devices": boolean;
+  "client.trusted_session_h": number;
   "nodes.nvs_encryption": NvsEncryption;
   "voice.turn_max_bytes": number;
   "voice.reply_audio_max_bytes": number;
@@ -160,6 +166,8 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S.default,
   "panel.live_events": true,
   "client.device_lock": "user",
+  "client.trusted_devices": false,
+  "client.trusted_session_h": TRUSTED_SESSION_H.default,
   "nodes.nvs_encryption": "off",
   "voice.turn_max_bytes": VOICE_TURN_BYTES.default,
   "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES.default,
@@ -180,7 +188,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
 });
 
 /** The settings that are whole numbers, with the range each may take. */
-const NUMBER_RANGES: Partial<Record<keyof SecuritySettingsValues, { min: number; max: number }>> = { "voice.turn_max_bytes": VOICE_TURN_BYTES, "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES, "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S,
+const NUMBER_RANGES: Partial<Record<keyof SecuritySettingsValues, { min: number; max: number }>> = { "voice.turn_max_bytes": VOICE_TURN_BYTES, "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES, "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S, "client.trusted_session_h": TRUSTED_SESSION_H,
   "summary.log_days": SUMMARY_LOG_DAYS, "summary.reading_every_s": SUMMARY_READING_EVERY_S, "summary.power_every_s": SUMMARY_POWER_EVERY_S, "summary.false_alarm_s": SUMMARY_FALSE_ALARM_S,
   "reports.timeout_s": REPORT_TIMEOUT_S, "reports.queue_max": REPORT_QUEUE_MAX, "reports.requests_per_minute": REPORT_REQUESTS_PER_MINUTE };
 

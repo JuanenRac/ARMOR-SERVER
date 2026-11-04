@@ -19,6 +19,7 @@ import { hasBearer, SessionStore, type EndedSession, type HeaderSource } from ".
 import { UserStore, type PublicUser } from "./users.js";
 import { classify, type Origin } from "./origin.js";
 import { TotpStore } from "./totp.js";
+import { TrustedDevices } from "./trusted_devices.js";
 import { EvidenceLibrary } from "./media/evidence.js";
 import { RelayManager, StreamTickets } from "./media/relay.js";
 import { CameraWatcher } from "./cameras/health.js";
@@ -100,6 +101,8 @@ export type AppContext = {
   operatorSessions: SessionStore;
   /** The second factor of the sign-in, and the proof of identity that critical actions ask for when the session came from outside the house. */
   totp: TotpStore;
+  /** The phones that hold a key pair registered with the server and may renew their session by signing a challenge (see trusted_devices.ts). */
+  trustedDevices: TrustedDevices;
   /** Where a request comes from, by the address the server sees (behind a proxy: the one ARMOR_TRUST_PROXY names). */
   originOfRequest: (request: { ip?: string }) => Origin;
   requireElevated: RequestHandler;
@@ -578,6 +581,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(studioUser(request) ? 403 : 401).json({ error: "an administrator is required" });
   };
   const totp = new TotpStore({ file: path.join(config.dataDir, "totp.json"), secret: config.cameraConfigKey });
+  const trustedDevices = new TrustedDevices(path.join(config.dataDir, "trusted-devices.json"), overrides.now);
   const originOfRequest = (request: { ip?: string }): Origin => classify(request.ip, config.localNetworks, config.vpnNetworks);
   // The critical actions (users, firmware, importing the installation) ask a session that came from outside the house for a new proof of identity, good for a few minutes
   // (POST /api/v1/studio/elevate). From inside the house nothing changes.
@@ -596,7 +600,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

@@ -26,3 +26,7 @@ The server can be reached from the Internet only through ONE door: a reverse pro
 ## Checking the set-up
 
 `GET /api/v1/remote/check` (administrator) says what the server sees of the request: the address, local or remote, the protocol, whether the cookie is Secure, the proxy setting and the policy. Open it from a phone on mobile data before relying on any of this.
+
+## Trusted phones
+
+With `client.trusted_devices` on (Studio, Security; off by default) a phone can hold a key pair that never leaves it and renew its session without the password and the code: it registers the public half (`POST /api/v1/devices/trust`, once, signed in and, from outside the house, after proving itself again), and later asks `POST /api/v1/devices/trust/challenge` for a one-time value and answers `POST /api/v1/devices/trust/session` with its signature. The session lasts `client.trusted_session_h` hours (72 by default). A stolen phone is ended with `DELETE /api/v1/devices/trust/{id}` (the person, or an administrator) and removing the user ends all of theirs; ending a phone does not end the sessions it already opened, which follow the normal limits.
