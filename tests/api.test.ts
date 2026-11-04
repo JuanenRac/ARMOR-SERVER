@@ -3,6 +3,7 @@ import { connect } from "node:net";
 import path from "node:path";
 import fs from "node:fs";
 import test, { after, before } from "node:test";
+import { CONTRACT_VERSION } from "../src/contract_version.js";
 import { SECRETS, startServer, studioCookie, type Running } from "./helpers.js";
 
 let server: Running;
@@ -36,6 +37,9 @@ test("health is public and status is readable", async () => {
   assert.equal(info.mode, "disarmed");
   assert.equal(info.version, "test");
   assert.equal(info.live_video, false);
+  assert.equal((info as unknown as { contract: string }).contract, CONTRACT_VERSION, "a signed-in client learns the contracts the server was checked against");
+  assert.match(CONTRACT_VERSION, /^\d+\.\d+\.\d+(\.\d+)?$/);
+  assert.equal("contract" in anonymous, false, "a stranger does not learn the contracts either");
 });
 
 test("responses carry security headers and never advertise Express", async () => {

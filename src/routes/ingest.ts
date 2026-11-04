@@ -7,6 +7,7 @@ import type { Express } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { forwardCompatible, parseHealth, parseTelemetry } from "../contracts.js";
+import { CONTRACT_VERSION } from "../contract_version.js";
 import { stampOf } from "../mqtt.js";
 import { hasBearer } from "../http/auth.js";
 import { ingestCaller } from "../http/node_token.js";
@@ -24,7 +25,7 @@ export function registerIngestRoutes(app: Express, context: AppContext, startedA
   // The exact version and how long the server has been up tell a stranger which known flaws to try and when it last restarted (after a power cut): they are for a signed-in client.
   app.get("/api/v1/info", (request, response) => response.json({
     service: "armor-server",
-    ...(operatorAuthorized(request) || context.studioUser(request) ? { version, uptime_s: Math.round((Date.now() - startedAt) / 1000) } : {}),
+    ...(operatorAuthorized(request) || context.studioUser(request) ? { version, uptime_s: Math.round((Date.now() - startedAt) / 1000), contract: CONTRACT_VERSION } : {}),
     ...(operatorAuthorized(request) ? { mode: store.snapshot().mode, live_video: Boolean(config.ffmpegPath), mqtt: Boolean(config.mqtt) } : {}),
   }));
 

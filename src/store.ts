@@ -13,7 +13,7 @@ export type AlertLevel = "normal" | "review" | "high";
 /** A target as the radar last reported it (in the radar's own frame, millimetres); `counted` is false when an ignore zone covers it. */
 export type TargetView = RadarTrack & { counted: boolean };
 /** Where a node's own web panel is, as the node said itself (kept in the state file, and the node repeats it). */
-export type PanelInfo = { name: string; firmware: string; ip: string; port: number };
+export type PanelInfo = { name: string; firmware: string; ip: string; port: number; /** The version of the contracts the firmware says it was checked against; absent for a node that does not say it. */ contract?: string };
 export type NodeState = {
   node_id: string;
   /** Reported online AND heard from recently: a silent node is never shown as online. */
@@ -209,8 +209,8 @@ export class ArmorStore {
   info(message: Info): SystemState {
     const known = this.#panels.get(message.node_id);
     if (!known && this.#panels.size >= MAX_NODES) throw new Error("too many nodes");
-    const next: PanelInfo = { name: message.name, firmware: message.firmware, ip: message.ip, port: message.port };
-    if (known && known.name === next.name && known.firmware === next.firmware && known.ip === next.ip && known.port === next.port) return this.snapshot();
+    const next: PanelInfo = { name: message.name, firmware: message.firmware, ip: message.ip, port: message.port, ...(message.contract === undefined ? {} : { contract: message.contract }) };
+    if (known && known.name === next.name && known.firmware === next.firmware && known.ip === next.ip && known.port === next.port && known.contract === next.contract) return this.snapshot();
     this.#panels.set(message.node_id, next);
     if (this.#nodes.has(message.node_id)) return this.#bump(false);
     this.#persistence?.save(this.#persisted(), false);   // no node to show yet: the address is still worth keeping

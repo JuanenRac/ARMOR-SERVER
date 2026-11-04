@@ -124,6 +124,11 @@ test("a node's own panel address is kept beside its state, and repeating it does
   store.info({ ...info, ip: "192.168.0.190" });
   assert.equal(store.snapshot().nodes["north-1"].panel?.ip, "192.168.0.190");
   assert.equal(store.snapshot().revision, before + 2);
+  store.info({ ...info, ip: "192.168.0.190", contract: "0.8.0.7" });
+  assert.equal(store.snapshot().nodes["north-1"].panel?.contract, "0.8.0.7", "the contracts the firmware says it was checked against reach the console");
+  assert.equal(store.snapshot().revision, before + 3);
+  store.info({ ...info, ip: "192.168.0.190", contract: "0.8.0.7", timestamp_ms: 99 });
+  assert.equal(store.snapshot().revision, before + 3, "the same words again change nothing");
 });
 
 test("a node that only sent its info does not appear, and forgetting a node forgets its panel", () => {

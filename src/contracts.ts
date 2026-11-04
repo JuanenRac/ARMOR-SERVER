@@ -8,7 +8,7 @@ export type RadarTrack = { sensor_id: number; track_id: number; x_mm: number; y_
 export type Telemetry = { node_id: string; timestamp_ms: number; lux: number; targets: RadarTrack[] };
 export type Health = { node_id: string; timestamp_ms: number; online: boolean; /** A wall panel (ARMOR-NODE-HMI) says "panel": the server keeps it apart from the radars. */ kind?: "radar" | "panel" };
 /** What a node says about itself so that a console can offer its web panel (see ARMOR-COMMON's info schema). */
-export type Info = { node_id: string; timestamp_ms: number; name: string; firmware: string; ip: string; port: number };
+export type Info = { node_id: string; timestamp_ms: number; name: string; firmware: string; ip: string; port: number; /** The version of the contracts the firmware was checked against (optional: an older node does not say it). */ contract?: string };
 
 export const MAX_TARGETS = 15;
 export const MAX_LUX = 200_000;
@@ -99,7 +99,7 @@ export const MAX_NAME = 48;
 
 export function parseInfo(value: unknown): Info {
   const body = record(value, "info");
-  onlyKnown(body, ["node_id", "timestamp_ms", "name", "firmware", "ip", "port", "kind"], "info");
+  onlyKnown(body, ["node_id", "timestamp_ms", "name", "firmware", "ip", "port", "kind", "contract"], "info");
   ownKind(body, "info");
   const node = readNodeId(body);
   const timestamp = readTimestamp(body);
@@ -108,5 +108,6 @@ export function parseInfo(value: unknown): Info {
   if (typeof body.firmware !== "string" || !FIRMWARE.test(body.firmware)) throw new Error("invalid firmware");
   if (typeof body.ip !== "string" || !IPV4.test(body.ip)) throw new Error("invalid ip");
   if (!integer(body.port) || body.port < 1 || body.port > 65535) throw new Error("invalid port");
-  return { node_id: node, timestamp_ms: timestamp, name: body.name, firmware: body.firmware, ip: body.ip, port: body.port };
+  if (body.contract !== undefined && (typeof body.contract !== "string" || !FIRMWARE.test(body.contract))) throw new Error("invalid contract");
+  return { node_id: node, timestamp_ms: timestamp, name: body.name, firmware: body.firmware, ip: body.ip, port: body.port, ...(body.contract === undefined ? {} : { contract: body.contract }) };
 }
