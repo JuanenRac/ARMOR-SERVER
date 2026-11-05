@@ -57,6 +57,14 @@ test("a healthy node is ok, and the view tells what the node said", () => {
   assert.equal(b.store.get("nobody"), undefined);
 });
 
+test("the contracts a node was checked against are kept in its report and shown by its view, and a node that does not say them is an older one", () => {
+  const b = bench();
+  assert.equal(b.say(0, { contract: "0.8.0.7" }).report.contract, "0.8.0.7");
+  assert.equal(b.say(1, {}).report.contract, undefined);
+  assert.doesNotThrow(() => parseNodeHealth({ ...report(), contract: "0.8.0" }));
+  for (const bad of ["v0.8.0.7", "0.8", "", 8, null]) assert.throws(() => parseNodeHealth({ ...report(), contract: bad }), /invalid contract/);
+});
+
 test("low memory warns below the line and clears only above the higher one, and a task short of stack warns at once", () => {
   const b = bench();
   b.say(0, { uptime_s: 100_000 });

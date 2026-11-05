@@ -27,7 +27,7 @@ export const HEALTH_LINKS = ["wifi", "ethernet", "none"] as const;
 export const ABNORMAL_RESETS: readonly ResetReason[] = ["panic", "int_wdt", "task_wdt", "other_wdt", "brownout", "power_glitch", "cpu_lockup"];
 
 export type NodeHealthMessage = {
-  kind: "node_health"; node_id: string; timestamp_ms: number; family: HealthFamily; firmware: string; board?: string; uptime_s: number; reset_reason: ResetReason;
+  kind: "node_health"; node_id: string; timestamp_ms: number; family: HealthFamily; firmware: string; board?: string; /** The version of the contracts the firmware was checked against (optional: an older node does not say it). */ contract?: string; uptime_s: number; reset_reason: ResetReason;
   heap_free: number; heap_min: number;
   /** The internal memory on its own (heap_free counts the external RAM too, so it never looks short on a board that has 8 MB of it); the three come together. */
   heap_internal_free?: number; heap_internal_min?: number; heap_internal_largest?: number; psram_free?: number;
@@ -67,12 +67,13 @@ const REQUIRED = ["kind", "node_id", "timestamp_ms", "family", "firmware", "upti
 /** A report as the contract has it, with the rules that join fields: the least heap is never more than the heap free, a signal strength goes only with a Wi-Fi link that is up, no link is a link that is down. */
 export function parseNodeHealth(value: unknown): NodeHealthMessage {
   const body = record(value, "node health");
-  onlyKnown(body, [...REQUIRED, "board", "rssi_dbm", "low_stack_tasks", "last_error", ...INTERNAL, "psram_free", "control_state", "control_since_ms", "control_by", "control_until_s", "maintenance", "maintenance_until_s", "boot", "memory_gate", "coredump", "config_check", "sensors", "radar"], "node health");
+  onlyKnown(body, [...REQUIRED, "board", "contract", "rssi_dbm", "low_stack_tasks", "last_error", ...INTERNAL, "psram_free", "control_state", "control_since_ms", "control_by", "control_until_s", "maintenance", "maintenance_until_s", "boot", "memory_gate", "coredump", "config_check", "sensors", "radar"], "node health");
   for (const key of REQUIRED) if (!(key in body)) throw new Error(`the node health is missing ${key}`);
   if (body.kind !== "node_health") throw new Error("invalid kind");
   const node = readNodeId(body), timestamp = readTimestamp(body);
   if (!oneOf(HEALTH_FAMILIES, body.family)) throw new Error("invalid family");
   if (typeof body.firmware !== "string" || !FIRMWARE.test(body.firmware)) throw new Error("invalid firmware");
+  if ("contract" in body && (typeof body.contract !== "string" || !FIRMWARE.test(body.contract))) throw new Error("invalid contract");
   if ("board" in body && (typeof body.board !== "string" || chars(body.board) < 1 || chars(body.board) > 32)) throw new Error("invalid board");
   for (const key of ["uptime_s", "heap_free", "heap_min", "broker_reconnects"] as const) if (!integer(body[key]) || (body[key] as number) < 0) throw new Error(`invalid ${key}`);
   if (!oneOf(RESET_REASONS, body.reset_reason)) throw new Error("invalid reset_reason");
