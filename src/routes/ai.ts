@@ -58,7 +58,7 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
     if (store.snapshot().mode !== "armed") return response.json({ raised: false, reason: "disarmed" });
     const alarm = alarms.raise(`ai:camera:${observation.camera_id}:motion:${Math.floor(Date.now() / MOTION_WINDOW_MS)}`, {
       source: { type: "camera", id: observation.camera_id }, severity: observation.severity === "high" ? "high" : "warning", code: "camera_motion",
-      detail: { reasons: observation.reasons.join("; "), motion: Math.round(observation.motion * 100), ...(observation.motion_ratio !== undefined ? { motion_ratio: Math.round(observation.motion_ratio * 1000) / 10 } : {}), radar_tracks: observation.radar_tracks, profile: observation.profile }, instant: true,
+      detail: { reasons: observation.reasons.join("; "), motion: Math.round(observation.motion * 100), ...(observation.motion_ratio !== undefined ? { motion_ratio: Math.round(observation.motion_ratio * 1000) / 10 } : {}), ...(observation.regions?.length ? { regions: observation.regions.length } : {}), radar_tracks: observation.radar_tracks, profile: observation.profile }, instant: true,
     });
     // The perimeter is armed and a camera saw something: the evidence is taken now, without waiting for anybody (it has its own cooldown and settings).
     const watched = vault.get(observation.camera_id);

@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **An observation of a camera can say where the picture moved:** the optional `regions` (at most 16 rectangles `{x, y, w, h}` in fractions of the picture, checked against the shared schema and its conformance vectors) is read, and the alarm it raises notes how many there were.
 - **The server and the nodes say which contracts they were checked against:** `/api/v1/info` carries `contract` (the version of the shared contracts this server was last checked against; only for a signed-in client, like the version), the information message of a node may carry the same field and the panel of each node in the system state returns it, so a console can warn about a node built against other contracts. The number sits in `src/contract_version.ts`; a test of the shared repository compares it with the pin of the reverse-dependency run.
 
 ## [0.8.1.6] - Trusted phones, off by default: the option client.trusteddevices lets a phone register a key pair that never leaves it (POST /api/v1/devices/trust) and renew its session by signing a one-time challenge (POST... (and 13 more changes)

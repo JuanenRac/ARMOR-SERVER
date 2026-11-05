@@ -56,9 +56,29 @@ export class AiGateway {
   }
 }
 
-export type AiObservation = { camera_id: string; severity: "review" | "high"; reasons: string[]; profile: string; motion: number; motion_ratio?: number; radar_tracks: number };
+export type AiObservation = { camera_id: string; severity: "review" | "high"; reasons: string[]; profile: string; motion: number; motion_ratio?: number; regions?: AiRegion[]; radar_tracks: number };
 
-const OBSERVATION_FIELDS = ["camera_id", "severity", "reasons", "profile", "motion", "motion_ratio", "radar_tracks"];
+/** A rectangle where the picture moved, in fractions of the picture: the top left corner and the size. */
+export type AiRegion = { x: number; y: number; w: number; h: number };
+
+const OBSERVATION_FIELDS = ["camera_id", "severity", "reasons", "profile", "motion", "motion_ratio", "regions", "radar_tracks"];
+const MAX_REGIONS = 16;
+
+/** The regions of an observation, checked; undefined when they are not what the contract says (at most 16 objects with exactly x, y, w, h as numbers inside the picture). */
+function parseRegions(value: unknown): AiRegion[] | undefined {
+  if (!Array.isArray(value) || value.length > MAX_REGIONS) return undefined;
+  const out: AiRegion[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return undefined;
+    const item = entry as Record<string, unknown>;
+    if (!Object.keys(item).every(key => ["x", "y", "w", "h"].includes(key))) return undefined;
+    const { x, y, w, h } = item;
+    if (typeof x !== "number" || typeof y !== "number" || typeof w !== "number" || typeof h !== "number") return undefined;
+    if (!(x >= 0 && x <= 1 && y >= 0 && y <= 1 && w >= 0.0001 && w <= 1 && h >= 0.0001 && h <= 1)) return undefined;
+    out.push({ x, y, w, h });
+  }
+  return out;
+}
 
 /** The observation a service sent, checked; undefined when it is not what it should be. */
 export function parseObservation(input: unknown): AiObservation | undefined {
@@ -76,5 +96,7 @@ export function parseObservation(input: unknown): AiObservation | undefined {
   if (ratio !== undefined && (!Number.isFinite(ratio) || ratio < 0 || ratio > 1)) return undefined;
   if (!Number.isFinite(motion) || motion < 0 || motion > 1 || !Number.isInteger(tracks) || tracks < 0 || tracks > 1000) return undefined;
   if (typeof item.profile !== "string" || !["daylight", "low-light"].includes(item.profile)) return undefined;
-  return { camera_id: item.camera_id, severity: item.severity, reasons: reasons as string[], profile: item.profile, motion, ...(ratio !== undefined ? { motion_ratio: ratio } : {}), radar_tracks: tracks };
+  const regions = item.regions === undefined ? undefined : parseRegions(item.regions);
+  if (item.regions !== undefined && regions === undefined) return undefined;
+  return { camera_id: item.camera_id, severity: item.severity, reasons: reasons as string[], profile: item.profile, motion, ...(ratio !== undefined ? { motion_ratio: ratio } : {}), ...(regions !== undefined ? { regions } : {}), radar_tracks: tracks };
 }

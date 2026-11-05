@@ -99,7 +99,7 @@ test("an observation raises an alarm only while the system is armed, once until 
     assert.deepEqual(again.body, { raised: false, reason: "already_open" });
     assert.equal(running.app.context.alarms.active().length, 1);
 
-    for (const bad of [{ ...observation, camera_id: "x" }, { ...observation, severity: "ignore" }, { ...observation, motion: 2 }, { ...observation, profile: "dusk" }, { ...observation, reasons: ["x".repeat(201)] }, { camera_id: 5 }]) {
+    for (const bad of [{ ...observation, camera_id: "x" }, { ...observation, severity: "ignore" }, { ...observation, motion: 2 }, { ...observation, profile: "dusk" }, { ...observation, reasons: ["x".repeat(201)] }, { ...observation, regions: [{ x: 2, y: 0, w: 0.5, h: 0.5 }] }, { ...observation, regions: Array(17).fill({ x: 0, y: 0, w: 1, h: 1 }) }, { ...observation, regions: [{ x: 0, y: 0, w: 0.5, h: 0.5, label: "person" }] }, { camera_id: 5 }]) {
       assert.equal((await call(running, "POST", "/api/v1/ai/observations", { bearer: AI_TOKEN, body: bad })).status, 422);
     }
     assert.equal((await call(running, "POST", "/api/v1/ai/observations", { bearer: AI_TOKEN, body: { ...observation, camera_id: "cam-nope" } })).status, 404);
