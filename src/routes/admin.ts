@@ -17,7 +17,7 @@ const BROKER_HOST = /^[A-Za-z0-9.-]{1,253}$/;
 
 /** What the agent said, handed on to the console; a refusal keeps its own status and code. */
 const relay = (response: Response, reply: AdminReply, shape?: (body: Record<string, unknown>) => Record<string, unknown>) =>
-  response.status(reply.status).json(reply.status < 300 && shape ? shape(reply.body) : reply.body);
+  response.status(reply.status === 401 ? 403 : reply.status).json(reply.status < 300 && shape ? shape(reply.body) : reply.body);
 
 export function registerAdminRoutes(app: Express, context: AppContext): void {
   const { admin, audit, requireAdmin, studioUser, config } = context;
@@ -25,7 +25,13 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
   /** The second secret of the admin agent, when its owner locked the broker rules and the env files with one: the person gives it at the console with each such change, and it is only handed on. */
   const sensitive = (request: Request): Record<string, string> | undefined => {
     const given = request.headers["x-armor-admin-sensitive-token"];
-    return typeof given === "string" && given.length > 0 && given.length <= 200 ? { "X-Armor-Admin-Sensitive-Token": given } : undefined;
+    const headers = { ...(typeof given === "string" && given.length > 0 && given.length <= 200 ? { "X-Armor-Admin-Sensitive-Token": given } : {}), ...approval(request) };
+    return Object.keys(headers).length > 0 ? headers : undefined;
+  };
+  /** The one-time code of the administrator's authenticator, when the agent asks for one: it is only handed on, and never written down. */
+  const approval = (request: Request): Record<string, string> => {
+    const given = request.headers["x-armor-maint-totp"];
+    return typeof given === "string" && /^\d{6}$/.test(given) ? { "X-Armor-Maint-Totp": given } : {};
   };
   const body = (request: Request): Record<string, unknown> => (typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {});
 
@@ -52,7 +58,8 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
       // Whether the agent locks the broker rules and the env files (open, second_token or read_only); an older agent does not say, and then it is unknown
       const state = await admin.request("GET", "/v1/status").catch(() => undefined);
       const locked = state && state.status === 200 && typeof state.body.sensitive_writes === "object" && state.body.sensitive_writes !== null ? state.body.sensitive_writes as Record<string, unknown> : undefined;
-      return response.json({ available: true, reason: "", sensitive_writes: locked && typeof locked.mode === "string" ? { mode: locked.mode, protected: locked.protected === true } : null });
+      return response.json({ available: true, reason: "", sensitive_writes: locked && typeof locked.mode === "string" ? { mode: locked.mode, protected: locked.protected === true } : null,
+        ...(state && state.status === 200 && (state.body.approval === "totp" || state.body.approval === "not_enrolled") ? { approval: state.body.approval } : {}) });
     }
     catch { return response.json({ available: false, reason: "not_answering" }); }
   });
@@ -89,13 +96,50 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
       // A masked secret stays as it was: put the real value back before the file goes to the agent.
       const current = await ask(response, "GET", `/v1/files/${encodeURIComponent(id)}`);
       if (!current) return;
-      const given = unmaskEnv(content, typeof current.body.content === "string" ? current.body.content : "");
-      if ("missing" in given) return response.status(422).json({ error: "masked_value_without_original", key: given.missing });
-      content = given.content;
+      // An agent that hides the secrets itself (`masked: true`) keeps the originals and puts them back on its own side, so the text goes on as it is;
+      // it never has to hand them to this server. An older agent still returns them, and then this server puts them back.
+      if (current.body.masked !== true) {
+        const given = unmaskEnv(content, typeof current.body.content === "string" ? current.body.content : "");
+        if ("missing" in given) return response.status(422).json({ error: "masked_value_without_original", key: given.missing });
+        content = given.content;
+      }
     }
     const reply = await ask(response, "PUT", `/v1/files/${encodeURIComponent(id)}`, { content, restart: input.restart === true, expect_mtime: typeof input.expect_mtime === "number" ? input.expect_mtime : undefined }, sensitive(request));
     if (!reply) return;
     audit.record({ action: "admin.file", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: id, detail: input.restart === true ? "restart" : "saved" });
+    relay(response, reply);
+  });
+
+  /**
+   * The two switches of the broker rules that no install turns on: the writing to the batteries of one solar node (`battery-write`, per node) and the signed copy of the alarm states
+   * (`alarm-state-relay`). Off until an administrator turns on the setting `admin.acl_relays`; each change then needs two confirmations (`confirm: true` and the name of what is
+   * changed typed again in `confirm_text`) and the one-time code of the authenticator, which the agent checks. Every attempt is in the audit trail, the code never is.
+   */
+  app.get("/api/v1/admin/mqtt/relays", requireAdmin, async (_request, response) => {
+    const enabled = context.securitySettings.get("admin.acl_relays");
+    if (!enabled) return response.json({ enabled: false });
+    const reply = await ask(response, "GET", "/v1/mqtt/relays");
+    if (reply) relay(response, reply, data => ({ ...data, enabled: true }));
+  });
+
+  app.post("/api/v1/admin/mqtt/relays/:kind", requireAdmin, async (request, response) => {
+    const kind = String(request.params.kind), input = body(request);
+    if (kind !== "battery-write" && kind !== "alarm-state-relay") return response.status(404).json({ error: "unknown_relay" });
+    const node = typeof input.node === "string" ? input.node : "";
+    const target = kind === "battery-write" ? node : "alarm-state-relay";
+    const refuse = (status: number, error: string) => {
+      audit.record({ action: "admin.acl_relay", outcome: "denied", actor: actor(request), target: target || kind, detail: `${kind} ${error}` });
+      return response.status(status).json({ error });
+    };
+    if (!context.securitySettings.get("admin.acl_relays")) return refuse(403, "acl_relays_disabled");
+    if (input.state !== "on" && input.state !== "off") return refuse(422, "invalid_state");
+    if (kind === "battery-write" && !NODE_ID.test(node)) return refuse(422, "invalid_node_id");
+    if (input.confirm !== true) return refuse(422, "confirmation_required");
+    if (input.confirm_text !== target) return refuse(422, "confirmation_mismatch");
+    const reply = await ask(response, "POST", `/v1/mqtt/relays/${kind}`, { node: kind === "battery-write" ? node : undefined, state: input.state }, sensitive(request));
+    if (!reply) return;
+    audit.record({ action: "admin.acl_relay", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target, detail: `${kind} ${String(input.state)}${reply.status < 300 ? "" : ` ${String(reply.body.error ?? reply.status)}`}` });
+    response.setHeader("Cache-Control", "no-store");
     relay(response, reply);
   });
 

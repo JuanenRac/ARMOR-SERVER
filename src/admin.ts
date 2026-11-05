@@ -53,33 +53,36 @@ const restoreLogin = (edited: string, before: string): string => {
   return out;
 };
 
-/** The text of an environment file with the value of every secret replaced by a mask: an administrator sees which exist, never what they are. */
+/** One `KEY=value` line (a Windows line end is kept apart, so it can neither hide a secret from the rule nor be lost). The rules and the vectors are ARMOR-COMMON's env_masking.json, which the maintenance agent follows too. */
+const ENV_LINE = /^(\s*)([A-Za-z_][A-Za-z0-9_]*)=(.*?)(\r?)$/;
+
+/** The text of an environment file with the value of every secret replaced by a mask: an administrator sees which exist, never what they are. The agent hides them first; this pass changes nothing on what it already hid. */
 export function maskEnv(content: string): string {
   return content.split("\n").map(line => {
-    const match = /^(\s*)([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line);
+    const match = ENV_LINE.exec(line);
     if (!match || match[3] === "") return line;
-    if (SECRET_KEY.test(match[2])) return `${match[1]}${match[2]}=${MASK}`;
+    if (SECRET_KEY.test(match[2])) return `${match[1]}${match[2]}=${MASK}${match[4]}`;
     // an address that carries a login (mqtt://user:secret@host, https://host/hook?token=...) keeps its shape without the secret
     const hidden = hideLogin(match[3]);
-    return hidden === match[3] ? line : `${match[1]}${match[2]}=${hidden}`;
+    return hidden === match[3] ? line : `${match[1]}${match[2]}=${hidden}${match[4]}`;
   }).join("\n");
 }
 
 /** What was edited, with every masked line given back the value it had; a mask for a key that is not in the file any more is refused. */
 export function unmaskEnv(edited: string, current: string): { content: string } | { missing: string } {
   const known = new Map<string, string>();
-  for (const line of current.split("\n")) { const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line); if (match) known.set(match[1], match[2]); }
+  for (const line of current.split("\n")) { const match = ENV_LINE.exec(line); if (match) known.set(match[2], match[3]); }
   let missing = "";
   const content = edited.split("\n").map(line => {
-    const match = /^(\s*)([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line);
+    const match = ENV_LINE.exec(line);
     if (!match) return line;
     // an address whose login was hidden and was not touched goes back as it was
     const before = known.get(match[2]);
-    if (match[3] !== MASK && before !== undefined && hideLogin(before) !== before && match[3].includes("***")) return `${match[1]}${match[2]}=${restoreLogin(match[3], before)}`;
+    if (match[3] !== MASK && before !== undefined && hideLogin(before) !== before && match[3].includes("***")) return `${match[1]}${match[2]}=${restoreLogin(match[3], before)}${match[4]}`;
     if (match[3] !== MASK) return line;
     const value = known.get(match[2]);
     if (value === undefined) { missing = match[2]; return line; }
-    return `${match[1]}${match[2]}=${value}`;
+    return `${match[1]}${match[2]}=${value}${match[4]}`;
   }).join("\n");
   return missing ? { missing } : { content };
 }

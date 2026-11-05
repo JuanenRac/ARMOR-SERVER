@@ -11,10 +11,10 @@ const json = { "Content-Type": "application/json" };
 const TOKEN = "a".repeat(32);
 const socketName = () => (process.platform === "win32" ? `\\\\.\\pipe\\armor-admin-test-${process.pid}-${Date.now()}` : path.join(fs.mkdtempSync(path.join(os.tmpdir(), "armor-sock-")), "agent.sock"));
 
-type Seen = { method: string; url: string; body: Record<string, unknown>; token: string; sensitive: string };
+type Seen = { method: string; url: string; body: Record<string, unknown>; token: string; sensitive: string; totp: string };
 
 /** A stand-in for the admin agent: the same paths and answers, recording what it was asked. */
-async function fakeAgent(options: { status?: boolean; rotation?: boolean } = {}): Promise<{ socket: string; seen: Seen[]; files: Record<string, string>; accounts: string[]; close: () => Promise<void> }> {
+async function fakeAgent(options: { status?: boolean; rotation?: boolean; hides?: boolean } = {}): Promise<{ socket: string; seen: Seen[]; files: Record<string, string>; accounts: string[]; close: () => Promise<void> }> {
   const socket = socketName(), seen: Seen[] = [], accounts = ["field-node-north-1"];
   const files: Record<string, string> = { "server.env": "ARMOR_PORT=18080\nARMOR_STUDIO_PASSWORD=hunter2-hunter2\nARMOR_INGEST_TOKEN=\n", "mosquitto.conf": "listener 18883\n" };
   const server = http.createServer((request, response) => {
@@ -24,16 +24,21 @@ async function fakeAgent(options: { status?: boolean; rotation?: boolean } = {})
       const raw = Buffer.concat(chunks).toString("utf8");
       const body = raw ? JSON.parse(raw) as Record<string, unknown> : {};
       const token = String(request.headers["x-armor-admin-token"] ?? "");
-      seen.push({ method: request.method ?? "", url: request.url ?? "", body, token, sensitive: String(request.headers["x-armor-admin-sensitive-token"] ?? "") });
+      seen.push({ method: request.method ?? "", url: request.url ?? "", body, token, sensitive: String(request.headers["x-armor-admin-sensitive-token"] ?? ""), totp: String(request.headers["x-armor-maint-totp"] ?? "") });
       const send = (status: number, payload: unknown) => { response.writeHead(status, json); response.end(JSON.stringify(payload)); };
       if (token !== TOKEN) return send(401, { error: "unauthorized" });
       const url = request.url ?? "";
-      if (request.method === "GET" && url === "/v1/status" && options.status !== false) return send(200, { sensitive_writes: { mode: "second_token", protected: true, files: ["server.env"], warning: "" } });
+      if (request.method === "GET" && url === "/v1/status" && options.status !== false) return send(200, { approval: "totp", sensitive_writes: { mode: "second_token", protected: true, files: ["server.env"], warning: "" } });
       if (request.method === "GET" && url === "/v1/services") return send(200, { services: [{ id: "mosquitto", unit: "armor-mosquitto", active: "active" }] });
       if (request.method === "POST" && url.startsWith("/v1/services/")) return send(url.includes("sshd") ? 404 : 200, url.includes("sshd") ? { error: "unknown_service" } : { ok: true });
       if (request.method === "GET" && url === "/v1/files") return send(200, { files: Object.keys(files).map(id => ({ id })) });
-      if (request.method === "GET" && url.startsWith("/v1/files/")) { const id = url.slice(10); return files[id] === undefined ? send(404, { error: "unknown_file" }) : send(200, { id, format: id.endsWith(".env") ? "env" : "conf", content: files[id], mtime: 5 }); }
-      if (request.method === "PUT" && url.startsWith("/v1/files/")) { files[url.slice(10)] = String(body.content); return send(200, { ok: true, restarted: body.restart ? ["server"] : [] }); }
+      if (request.method === "GET" && url.startsWith("/v1/files/")) { const id = url.slice(10); if (files[id] === undefined) return send(404, { error: "unknown_file" }); const env = id.endsWith(".env"); return send(200, { id, format: env ? "env" : "conf", content: options.hides && env ? maskEnv(files[id]) : files[id], mtime: 5, ...(options.hides && env ? { masked: true } : {}) }); }
+      if (request.method === "PUT" && url.startsWith("/v1/files/")) { const id = url.slice(10); let text = String(body.content); if (options.hides && text.includes(MASK)) { const given = unmaskEnv(text, files[id] ?? ""); if ("missing" in given) return send(422, { error: "masked_value_without_original", key: given.missing }); text = given.content; } files[id] = text; return send(200, { ok: true, restarted: body.restart ? ["server"] : [] }); }
+      if (request.method === "GET" && url === "/v1/mqtt/relays") return send(200, { installed: true, battery_write: ["bat-1"], alarm_state_relay: false, approval: "totp" });
+      if (request.method === "POST" && url.startsWith("/v1/mqtt/relays/")) {
+        if (!String(request.headers["x-armor-maint-totp"] ?? "")) return send(401, { error: "totp_required" });
+        return send(200, { ok: true, relay: url.slice(16), node: String(body.node ?? ""), state: body.state, installed: true, battery_write: body.node ? [String(body.node)] : [], alarm_state_relay: url.endsWith("alarm-state-relay") && body.state === "on", approval: "totp" });
+      }
       if (request.method === "GET" && url === "/v1/mqtt/accounts") return send(200, { accounts: accounts.map(user => ({ user, role: "field-node", manageable: true, topics: [] })) });
       if (request.method === "POST" && url === "/v1/mqtt/accounts") {
         const user = `${body.role === "node" ? "field-node" : String(body.role)}-${String(body.name)}`;
@@ -79,7 +84,7 @@ test("an administrator lists and controls the services, edits files without seei
   const running = await startServer({ ARMOR_ADMIN_SOCKET: agent.socket, ARMOR_ADMIN_TOKEN: TOKEN });
   try {
     const cookie = await studioCookie(running.base);
-    assert.equal((await call(running, cookie, "GET", "/api/v1/admin/status")).body.available, true);
+    { const state = (await call(running, cookie, "GET", "/api/v1/admin/status")).body; assert.deepEqual([state.available, state.approval], [true, "totp"]); }
     assert.equal((await call(running, cookie, "GET", "/api/v1/admin/services")).body.services[0].id, "mosquitto");
     assert.equal((await call(running, cookie, "POST", "/api/v1/admin/services/mosquitto/restart")).status, 200);
     assert.equal((await call(running, cookie, "POST", "/api/v1/admin/services/sshd/stop")).status, 404);
@@ -280,4 +285,68 @@ test("the login limit of a node is read and written through the node's own panel
     delete process.env.ARMOR_ADMIN_NODE_PORT;
     assert.equal((await call(running, cookie, "POST", "/api/v1/admin/nodes/settings", { ...login, address: "8.8.8.8" })).status, 422);
   } finally { delete process.env.ARMOR_ADMIN_NODE_PORT; await running.stop(); await new Promise<void>(resolve => panel.close(() => resolve())); }
+});
+
+test("the vectors of the shared masking rules hold for the server", { skip: fs.existsSync(path.resolve(import.meta.dirname, "..", "..", "ARMOR-COMMON", "src", "armor_common", "env_masking.json")) ? false : "ARMOR-COMMON is not checked out next to this repository" }, () => {
+  const rules = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "..", "..", "ARMOR-COMMON", "src", "armor_common", "env_masking.json"), "utf8"));
+  assert.equal(rules.mask, MASK);
+  for (const item of rules.mask_vectors) assert.equal(maskEnv(item.input), item.output, item.name);
+  for (const item of rules.unmask_vectors) {
+    const got = unmaskEnv(item.edited, item.current);
+    assert.deepEqual(got, item.missing === undefined ? { content: item.content } : { missing: item.missing }, item.name);
+  }
+});
+
+test("an agent that hides the secrets itself: the server forwards the masked text and never has the originals", async () => {
+  const agent = await fakeAgent({ hides: true });
+  const running = await startServer({ ARMOR_ADMIN_SOCKET: agent.socket, ARMOR_ADMIN_TOKEN: TOKEN });
+  try {
+    const cookie = await studioCookie(running.base);
+    const read = await call(running, cookie, "GET", "/api/v1/admin/files/server.env");
+    assert.equal(read.body.masked, true);
+    assert.doesNotMatch(String(read.body.content), /hunter2/);
+    const saved = await call(running, cookie, "PUT", "/api/v1/admin/files/server.env", { content: String(read.body.content).replace("18080", "19090") });
+    assert.equal(saved.status, 200);
+    const put = agent.seen.find(item => item.method === "PUT");
+    assert.ok(String(put?.body.content).includes(`ARMOR_STUDIO_PASSWORD=${MASK}`), "the mask goes to the agent as it is");
+    assert.equal(agent.files["server.env"], "ARMOR_PORT=19090\nARMOR_STUDIO_PASSWORD=hunter2-hunter2\nARMOR_INGEST_TOKEN=\n", "the agent put the original back");
+    assert.equal((await call(running, cookie, "PUT", "/api/v1/admin/files/server.env", { content: `BRAND_NEW_TOKEN=${MASK}\n` })).status, 422);
+  } finally { await running.stop(); await agent.close(); }
+});
+
+test("the two switches of the broker rules are off until an administrator turns the setting on, then need two confirmations and the code, and are in the audit trail", async () => {
+  const agent = await fakeAgent();
+  const running = await startServer({ ARMOR_ADMIN_SOCKET: agent.socket, ARMOR_ADMIN_TOKEN: TOKEN });
+  try {
+    const cookie = await studioCookie(running.base);
+    const relays = (kind: string, input: Record<string, unknown>, code?: string) => fetch(`${running.base}/api/v1/admin/mqtt/relays/${kind}`, { method: "POST", headers: { ...json, cookie, ...(code ? { "X-Armor-Maint-Totp": code } : {}) }, body: JSON.stringify(input) }).then(async answer => ({ status: answer.status, body: await answer.json() as Record<string, any> }));
+    assert.deepEqual((await call(running, cookie, "GET", "/api/v1/admin/mqtt/relays")).body, { enabled: false });
+    assert.deepEqual([(await relays("alarm-state-relay", { state: "on", confirm: true, confirm_text: "alarm-state-relay" }, "123456")).status, agent.seen.length > 0 && agent.seen.some(item => item.url.includes("relays/"))], [403, false], "off: the agent is not even asked");
+    assert.equal((await call(running, cookie, "PUT", "/api/v1/security/settings", { "admin.acl_relays": true })).status, 200);
+
+    assert.equal((await relays("bogus", { state: "on" })).status, 404);
+    assert.deepEqual((await relays("battery-write", { node: "bat-1", state: "maybe", confirm: true, confirm_text: "bat-1" }, "123456")).body, { error: "invalid_state" });
+    assert.deepEqual((await relays("battery-write", { node: "Bad Node", state: "on", confirm: true, confirm_text: "Bad Node" }, "123456")).body, { error: "invalid_node_id" });
+    assert.deepEqual((await relays("battery-write", { node: "bat-1", state: "on" }, "123456")).body, { error: "confirmation_required" });
+    assert.deepEqual((await relays("battery-write", { node: "bat-1", state: "on", confirm: true, confirm_text: "bat-2" }, "123456")).body, { error: "confirmation_mismatch" });
+    assert.deepEqual((await relays("alarm-state-relay", { state: "on", confirm: true, confirm_text: "bat-1" }, "123456")).body, { error: "confirmation_mismatch" });
+    assert.equal(agent.seen.some(item => item.url.includes("relays/")), false, "no refusal here reaches the agent");
+
+    const status = await call(running, cookie, "GET", "/api/v1/admin/mqtt/relays");
+    assert.deepEqual([status.body.enabled, status.body.battery_write, status.body.approval], [true, ["bat-1"], "totp"]);
+    assert.equal((await relays("battery-write", { node: "bat-1", state: "on", confirm: true, confirm_text: "bat-1" })).body.error, "totp_required", "the agent's own refusal is handed on");
+    assert.equal((await relays("battery-write", { node: "bat-1", state: "on", confirm: true, confirm_text: "bat-1" })).status, 403, "an agent's 401 reaches the console as a 403: a 401 would read as a session that ended");
+    const done = await relays("battery-write", { node: "bat-1", state: "on", confirm: true, confirm_text: "bat-1" }, "654321");
+    assert.deepEqual([done.status, done.body.ok, done.body.relay, done.body.node, done.body.state], [200, true, "battery-write", "bat-1", "on"]);
+    const alarm = await relays("alarm-state-relay", { state: "on", confirm: true, confirm_text: "alarm-state-relay" }, "111111");
+    assert.deepEqual([alarm.status, alarm.body.alarm_state_relay], [200, true]);
+    assert.equal((await relays("alarm-state-relay", { state: "on", confirm: true, confirm_text: "alarm-state-relay" }, "12345")).body.error, "totp_required", "a code that is not six digits is not handed on");
+    assert.deepEqual(agent.seen.filter(item => item.method === "POST" && item.url.includes("relays/")).map(item => item.totp), ["", "", "654321", "111111", ""]);
+
+    const audit = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8");
+    assert.match(audit, /admin\.acl_relay/);
+    assert.match(audit, /acl_relays_disabled/);
+    assert.match(audit, /battery-write on/);
+    assert.doesNotMatch(audit, /654321|111111|123456/, "the code is never written down");
+  } finally { await running.stop(); await agent.close(); }
 });

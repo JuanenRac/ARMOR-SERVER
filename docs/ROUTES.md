@@ -30,6 +30,8 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/admin/mqtt/accounts` | administrator | `routes/admin.ts` |
 | POST | `/api/v1/admin/mqtt/accounts` | administrator | `routes/admin.ts` |
 | DELETE | `/api/v1/admin/mqtt/accounts/:user` | administrator | `routes/admin.ts` |
+| GET | `/api/v1/admin/mqtt/relays` | administrator | `routes/admin.ts` |
+| POST | `/api/v1/admin/mqtt/relays/:kind` | administrator | `routes/admin.ts` |
 | GET | `/api/v1/admin/node-panels` | administrator | `node_panel_proxy.ts` |
 | DELETE | `/api/v1/admin/node-panels/:id` | administrator, fresh proof of identity | `node_panel_proxy.ts` |
 | PUT | `/api/v1/admin/node-panels/:id` | administrator, fresh proof of identity | `node_panel_proxy.ts` |
