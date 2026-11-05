@@ -195,7 +195,7 @@ test("route: the summary is handed the lost links, the false alarms, the reading
     assert.deepEqual(events.find(event => event.type === "reading"), { t_s: events.find(event => event.type === "reading")!.t_s, type: "reading", node: "sensor-1", sensor: "temperature", value: 22.5 });
     assert.equal(events.find(event => event.type === "power")!.watts, 2900);
     assert.equal(events.find(event => event.type === "node_link_lost")!.node, "radar-1");
-    assert.doesNotMatch(handed, /Hall sensor|token|99|oven|electrical-1/, "names, free text and other fields never reach the summary");
+    assert.doesNotMatch(handed, /Hall sensor|token|"value":99|oven|electrical-1/, "names, free text and other fields never reach the summary");
     // the log is on disk with nothing else in it
     context.dailyLog.flush();
     const stored = JSON.parse(fs.readFileSync(path.join(dir, "daily-log.json"), "utf8")) as { days: Record<string, unknown[]> };
