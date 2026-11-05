@@ -4,4 +4,4 @@
  * the two differ, so this value moves together with the pin and never by itself.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
-export const CONTRACT_VERSION = "0.8.0.6";
+export const CONTRACT_VERSION = "0.8.0.7";
