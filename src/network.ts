@@ -12,45 +12,33 @@ import path from "node:path";
 import { finite, integer, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
 import { durableRename } from "./durable.js";
 import { refresh, sweepStale } from "./staleness.js";
+import type * as Generated from "./armor-contracts.js";
 
 export const DEVICE_KINDS = ["router", "computer", "phone", "tv", "printer", "camera", "iot", "server", "nas", "network", "unknown"] as const;
-export type DeviceKind = (typeof DEVICE_KINDS)[number];
+export type DeviceKind = NonNullable<Generated.NetworkDevice["kind"]>;
 export const INTERNET_STATES = ["up", "degraded", "down", "lan_down", "unknown"] as const;
-export type InternetState = (typeof INTERNET_STATES)[number];
+export type InternetState = Generated.NetworkInternet["state"];
 export const EVENT_KINDS = ["new_device", "device_online", "device_offline", "ip_changed", "arp_conflict", "port_opened", "port_closed", "internet_down", "internet_up", "gateway_down", "gateway_up"] as const;
-export type NetworkEventKind = (typeof EVENT_KINDS)[number];
+export type NetworkEventKind = Generated.NetworkEvent["kind"];
 const INTERNET_EVENTS: readonly string[] = ["internet_down", "internet_up", "gateway_down", "gateway_up"];
 
-export type NetworkProbe = { target: string; kind: "icmp" | "tcp" | "dns" | "http"; ok: boolean; latency_ms?: number };
-export type NetworkPort = { port: number; proto: "tcp" | "udp"; service?: string; banner?: string };
-export type NetworkDevice = {
-  id: string; ip: string; mac?: string; randomized_mac?: boolean; vendor?: string; hostname?: string; kind?: DeviceKind; os?: string; online: boolean;
-  first_seen_ms: number; last_seen_ms: number; latency_ms?: number; ports?: NetworkPort[]; services?: string[];
-};
-export type NetworkEvent = { id: string; kind: NetworkEventKind; at_ms: number; device_id?: string; port?: number; outage_s?: number; detail?: string };
-export type NetworkInternet = {
-  state: InternetState; since_ms?: number; gateway_ok?: boolean; latency_ms?: number; loss_percent?: number; probes?: NetworkProbe[];
-  last_outage?: { started_ms: number; ended_ms: number; duration_s: number }; outages_24h?: number; downtime_24h_s?: number;
-};
+/** The shapes of the network messages are the ones ARMOR-COMMON generates from its schemas. */
+export type NetworkProbe = Generated.NetworkProbe;
+export type NetworkPort = Generated.NetworkPort;
+export type NetworkDevice = Generated.NetworkDevice;
+export type NetworkEvent = Generated.NetworkEvent;
+export type NetworkInternet = Generated.NetworkInternet;
 /** What the internet sees of the connection, asked of a public service by the node now and then. */
-export type NetworkPublic = { ip: string; hostname?: string; city?: string; region?: string; country?: string; org?: string; timezone?: string; checked_ms: number; changed_ms?: number;
-  /** The name the house is reached by from outside, what it resolves to and whether it is this address (when the node was told the name). */
-  dns?: { name: string; addresses: string[]; matches: boolean } };
+export type NetworkPublic = Generated.NetworkPublic;
 export const COMMAND_TYPES = ["scan_now", "ping", "traceroute", "wake", "ports", "http", "inspect"] as const;
-export type CommandType = (typeof COMMAND_TYPES)[number];
+export type CommandType = Generated.NetworkResults["type"];
 /** What a node did with a manual order the server handed it. */
-export type NetworkResult = { id: string; type: CommandType; ok: boolean; finished_ms: number; device_id?: string; output?: string; ports?: NetworkPort[]; latency_ms?: number };
+export type NetworkResult = Generated.NetworkResults;
 /** The version of the network contract this server speaks. A node that says a lower number (or none, which is the first version) is older than the server and is shown as outdated. */
 export const NETWORK_CONTRACT = 1;
 /** Whether a node that says it speaks `said` (or says nothing: the first version) is older than `current`. */
 export const outdatedContract = (said: number | undefined, current: number = NETWORK_CONTRACT): boolean => (said ?? 1) < current;
-export type NetworkMessage = {
-  kind: "network"; node_id: string; timestamp_ms: number;
-  /** The version of the contract the node speaks; a node that does not say it speaks the first one. */
-  contract?: number;
-  interface: { name: string; ip: string; cidr: string; gateway?: string; rx_bps?: number; tx_bps?: number };
-  internet: NetworkInternet; devices: NetworkDevice[]; events?: NetworkEvent[]; scan?: { last_ms: number; hosts: number; duration_ms?: number }; public?: NetworkPublic; results?: NetworkResult[];
-};
+export type NetworkMessage = Generated.Network;
 
 const OCTET = "(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])";
 const IPV4 = new RegExp(`^(?:${OCTET}\\.){3}${OCTET}$`);
@@ -455,3 +443,8 @@ export class NetworkStore {
     return entry.samples.filter(sample => sample.t >= since);
   }
 }
+
+// A list that misses a value of the generated type, or holds one it does not have, stops the build here.
+type Exactly<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
+const listsMatchContract: [Exactly<DeviceKind, (typeof DEVICE_KINDS)[number]>, Exactly<InternetState, (typeof INTERNET_STATES)[number]>, Exactly<NetworkEventKind, (typeof EVENT_KINDS)[number]>, Exactly<CommandType, (typeof COMMAND_TYPES)[number]>] = [true, true, true, true];
+void listsMatchContract;

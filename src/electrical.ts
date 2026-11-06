@@ -5,22 +5,16 @@
  * switch and of the node's answer. Nothing in this file sends anything: the command path is electrical_switching.ts, and it is off unless the operator turned it on.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
+import type { Electrical, ElectricalChannel, ElectricalCommand, ElectricalResult, ElectricalSwitch } from "./armor-contracts.js";
 import { CoarseTier } from "./history.js";
 import { finite, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
 import { refresh, sweepStale } from "./staleness.js";
 
-export type ElectricalChannel = {
-  id: string; domain: "ac" | "dc"; label?: string; voltage_v?: number; current_a?: number; power_w?: number; energy_kwh?: number; power_estimated?: boolean; frequency_hz?: number; power_factor?: number;
-  state?: "closed" | "open" | "unknown"; alarm?: boolean; alarm_code?: string; reading_age_ms?: number; errors?: number;
-};
-export type Side = "none" | "a" | "b";
-export type SwitchFault = "none" | "did_not_close" | "did_not_open" | "both_closed" | "disabled";
-/** A switch of a node (a source transfer: two contactors onto one line). What it says is what the auxiliary contacts show, never what was asked. */
-export type ElectricalSwitch = {
-  id: string; kind: "transfer"; label?: string; source_a?: string; source_b?: string; a_closed: boolean; b_closed: boolean;
-  selected: Side; wanted: Side; closing: boolean; armed: boolean; fault: SwitchFault;
-};
-export type ElectricalMessage = { kind: "electrical"; node_id: string; timestamp_ms: number; switching_enabled?: boolean; channels: ElectricalChannel[]; switches?: ElectricalSwitch[] };
+/** The shapes of the electrical messages are the ones ARMOR-COMMON generates from its schemas. */
+export type { ElectricalChannel, ElectricalCommand, ElectricalResult, ElectricalSwitch };
+export type ElectricalMessage = Electrical;
+export type Side = ElectricalSwitch["selected"];
+export type SwitchFault = ElectricalSwitch["fault"];
 
 const channelId = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 const alarmCode = /^[a-z][a-z0-9_]{0,39}$/;
@@ -86,16 +80,15 @@ export function parseElectricalMessage(value: unknown): ElectricalMessage {
 // ---- the command to a switch, and the node's answer ---------------------------------------------------------------------------------------
 
 export const SWITCH_ACTIONS = ["arm", "close_a", "close_b", "open", "acknowledge"] as const;
-export type SwitchAction = (typeof SWITCH_ACTIONS)[number];
+export type SwitchAction = ElectricalCommand["action"];
 export const REFUSALS = ["none", "disabled", "fault", "not_armed", "not_confirmed_open", "unknown_switch", "bad_token", "not_supported"] as const;
-export type Refusal = (typeof REFUSALS)[number];
+export type Refusal = ElectricalResult["refusal"];
 /** A token: lowercase letters and digits, eight to thirty-two. */
 export const codePattern = /^[a-z0-9]{8,32}$/;
 /** The id of a command: sixteen lowercase hexadecimal digits, the one format of every command in the family. */
 export const commandIdPattern = /^[0-9a-f]{16}$/;
 
-export type ElectricalCommand = { kind: "electrical_command"; node_id: string; timestamp_ms: number; command_id: string; switch: string; action: SwitchAction; token?: string };
-export type ElectricalResult = { kind: "electrical_result"; node_id: string; timestamp_ms: number; command_id: string; switch: string; action: SwitchAction; accepted: boolean; refusal: Refusal; token?: string };
+
 
 function readCommonSwitchFields(body: Record<string, unknown>, kind: string): void {
   for (const key of ["kind", "node_id", "timestamp_ms", "command_id", "switch", "action"]) if (!(key in body)) throw new Error(`the ${kind} is missing ${key}`);
@@ -295,3 +288,8 @@ export class ElectricalStore {
   }
 }
 
+
+// A list that misses a value of the generated type, or holds one it does not have, stops the build here.
+type Exactly<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
+const listsMatchContract: [Exactly<SwitchAction, (typeof SWITCH_ACTIONS)[number]>, Exactly<Refusal, (typeof REFUSALS)[number]>] = [true, true];
+void listsMatchContract;

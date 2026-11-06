@@ -4,6 +4,7 @@
  * The parsers implement ARMOR-COMMON's solar_inverter and solar_battery schemas exactly (tests/conformance.test.ts runs the shared vectors).
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
+import type * as Generated from "./armor-contracts.js";
 import { CellExtremes, type CellsFile, type DayCells } from "./solar_cells.js";
 import { SolarEventLog, type EventsFile, type LoggedEvent } from "./solar_events.js";
 import { finite, integer, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
@@ -11,53 +12,15 @@ import { CoarseTier, type Sample } from "./history.js";
 import { dayOf } from "./day.js";
 import { refresh, sweepStale } from "./staleness.js";
 
-export type SolarMode = "power_on" | "standby" | "line" | "battery" | "fault" | "power_saving" | "shutdown" | "unknown";
+/** The shapes of the solar messages are the ones ARMOR-COMMON generates from its schemas. */
+export type SolarInverter = Generated.SolarInverter;
+export type SolarRatings = Generated.SolarInverterRatings;
+export type SolarUnit = Generated.SolarInverterUnits;
+export type SolarModule = Generated.SolarModule;
+export type SolarEvent = Generated.SolarModuleLastEvent;
+export type SolarBattery = Generated.SolarBattery;
+export type SolarMode = SolarUnit["mode"];
 export const SOLAR_MODES: readonly SolarMode[] = ["power_on", "standby", "line", "battery", "fault", "power_saving", "shutdown", "unknown"];
-export type SolarInverter = {
-  kind: "inverter"; node_id: string; device: string; timestamp_ms: number; mode: SolarMode;
-  grid_v: number; grid_hz: number; out_v: number; out_hz: number; out_va: number; out_w: number; load_percent: number;
-  battery_v: number; battery_a: number; battery_percent: number; pv_v: number; pv_a: number; pv_w: number; heatsink_c: number;
-  ac_charging: boolean; pv_charging: boolean; load_on: boolean; warnings: string[];
-  /** A second PV input (pv_w is already the sum of both) and, for a parallel system, the totals and the units the node reads (QPGS). */
-  pv2_v?: number; pv2_a?: number; pv2_w?: number;
-  /** The DC bus voltage inside the inverter, when the dialect says it. */
-  bus_v?: number;
-  /** False when the inverter's dialect cannot ask for its warnings: the empty list then means "unknown", not "none" (absent means true). */
-  warnings_known?: boolean;
-  total_out_w?: number; total_out_va?: number; total_load_percent?: number; total_charging_a?: number;
-  units?: SolarUnit[];
-  /** What the unit says about itself: its serial number and firmware, the energy the panels have made in all (Wh) and what it is rated for and how it is set. */
-  serial?: string; firmware?: string; pv_energy_total_wh?: number;
-  ratings?: SolarRatings;
-};
-export type SolarRatings = {
-  grid_rating_v?: number; out_rating_v?: number; out_rating_hz?: number; out_rating_va?: number; out_rating_w?: number;
-  battery_rating_v?: number; battery_recharge_v?: number; battery_under_v?: number; battery_bulk_v?: number; battery_float_v?: number;
-  max_charge_a?: number; max_ac_charge_a?: number;
-  battery_type?: "agm" | "flooded" | "user"; input_range?: "appliance" | "ups"; output_priority?: "utility_first" | "solar_first" | "sbu";
-  charger_priority?: "utility_first" | "solar_first" | "solar_and_utility" | "solar_only";
-};
-export type SolarUnit = {
-  unit: number; mode: SolarMode; serial?: string; fault_code?: string; grid_v?: number; out_v?: number; out_va?: number; out_w?: number;
-  load_percent?: number; battery_v?: number; battery_percent?: number; pv_v?: number; charging_a?: number;
-};
-export type SolarModule = {
-  n: number; present: boolean; voltage_v?: number; current_a?: number; temperature_c?: number; soc_percent?: number; state?: string;
-  cells_v?: number[]; temperatures_c?: number[]; capacity_ah?: number; full_capacity_ah?: number; cycles?: number; health_percent?: number;
-  /** The counters of the life of the module its console prints (bat_ov_times, coc_times ...): the console's own names, lowercase; what they mean is not official. */
-  counters?: Record<string, number>;
-  /** What the module says about itself: its model (a stack may mix models), its cells, the current it allows each way (amperes, positive) and the speed of its console. */
-  model?: string; board_version?: string; main_soft_version?: string; soft_version?: string; cell_count?: number; max_charge_a?: number; max_discharge_a?: number; console_baud?: number;
-  /** The state of health of each cell, in cell order, and the cells (0-based) the console does not call Normal. */
-  soh_counts?: number[]; soh_abnormal?: number[];
-  /** The newest entry of the module's event log, as the console prints it. */
-  last_event?: SolarEvent;
-};
-export type SolarEvent = {
-  index: number; time: string; voltage_v?: number; current_a?: number; temperature_c?: number; percent?: number;
-  base_state?: string; voltage_state?: string; current_state?: string; temperature_state?: string; coulomb_state?: string;
-  power_events?: string; battery_events?: string; system_fault?: string;
-};
 const EVENT_TEXTS = ["base_state", "voltage_state", "current_state", "temperature_state", "coulomb_state", "power_events", "battery_events", "system_fault"] as const;
 export function parseSolarEvent(value: unknown, where: string): SolarEvent {
   const event = record(value, where);
@@ -78,14 +41,6 @@ export const SEVERE_COUNTERS: ReadonlySet<string> = new Set([
   "lifealarm_times", "bat_ov_times", "bat_hv_times", "bat_uv_times", "input_ov_times", "pwr_ov_times", "pwr_hv_times", "pwr_uv_times", "coc_times", "coc2_times", "doc_times", "doc2_times",
   "sc_times", "cot_times", "dot_times", "bmicerr_times", "system_error_times",
 ]);
-export type SolarBattery = {
-  kind: "battery"; node_id: string; device: string; timestamp_ms: number; modules: number; stack: SolarModule[];
-  state?: "charging" | "discharging" | "idle"; voltage_v?: number; current_a?: number; temperature_min_c?: number; temperature_max_c?: number;
-  cell_min_v?: number; cell_max_v?: number; soc_percent?: number; alarm?: boolean;
-  model?: string; capacity_ah?: number; full_capacity_ah?: number; energy_kwh?: number; cycles?: number; health_percent?: number;
-  /** What a battery management system adds: its own power reading (negative while discharging), the cells being balanced, a protection active and the status codes of its MOSFETs. */
-  power_w?: number; balancing?: number; protecting?: boolean; charge_mos?: number; discharge_mos?: number;
-};
 export type SolarMessage = SolarInverter | SolarBattery;
 
 const deviceName = /^[a-z0-9][a-z0-9_-]{0,31}$/;
@@ -480,3 +435,8 @@ function sampleOf(message: SolarMessage, t: number): Sample {
   for (const key of ["soc_percent", "voltage_v", "current_a", "temperature_max_c", "cell_min_v", "cell_max_v", "energy_kwh"] as const) if (message[key] !== undefined) sample[key] = message[key] as number;
   return sample;
 }
+
+// A list that misses a value of the generated type, or holds one it does not have, stops the build here.
+type Exactly<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
+const listsMatchContract: [Exactly<SolarMode, (typeof SOLAR_MODES)[number]>] = [true];
+void listsMatchContract;
