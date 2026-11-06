@@ -11,8 +11,8 @@
 # carries (package.json, gradlew, a CMakeLists.txt under tests/, an
 # armor.project.json stack string containing "OpenSCAD", a docker-compose
 # file, or none of those for a pure-Python or pure-Markdown repository), so
-# one workflow file serves all fourteen A.R.M.O.R. repositories plus
-# ARMOR-UPDATER without fourteen bespoke copies. The real build/test
+# one workflow file serves every A.R.M.O.R. repository (and
+# ARMOR-UPDATER) without a bespoke copy for each. The real build/test
 # dispatch itself lives in armor_project_tool.py (vendored alongside this
 # file), not duplicated into YAML.
 name: A.R.M.O.R. CI baseline
