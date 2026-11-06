@@ -16,6 +16,30 @@ const clip = (text: string, length: number): string => (text.length > length ? `
 /** Told about every message the log counts, with what was sent: the optional recorder of the traffic (ingest_recorder.ts) hangs here. */
 export type IngestTap = (topic: string, payload: string | Buffer | undefined, accepted: boolean, reason?: string) => void;
 
+const NODE_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
+
+/**
+ * The topic on the broker that carries the same message as an HTTP route of the nodes (the count keeps the name "http:alarm/x"; the copy for the simulator needs the topic it plays).
+ * A refused message names its node only inside the body, so the node is read from there; a body without a plain node name is not copied.
+ */
+export function brokerTopicOf(topic: string, payload: string | Buffer): string | undefined {
+  if (!topic.startsWith("http:")) return topic;
+  const [kind, ...rest] = topic.slice(5).split("/");
+  if (kind !== "alarm" && kind !== "electrical" && kind !== "solar" && kind !== "network" && kind !== "health") return undefined;
+  let node: string | undefined = rest[0], device: string | undefined = rest[1];
+  if (!node) {
+    try {
+      const body = JSON.parse(typeof payload === "string" ? payload : payload.toString("utf8")) as { node_id?: unknown; device?: unknown } | null;
+      node = typeof body?.node_id === "string" ? body.node_id : undefined;
+      device = typeof body?.device === "string" ? body.device : undefined;
+    } catch { return undefined; }
+  }
+  if (!node || !NODE_NAME.test(node)) return undefined;
+  if (kind === "health") return `armor/health/${node}`;
+  if (kind === "solar") return device && NODE_NAME.test(device) ? `armor/solar/${node}/${device}/state` : undefined;
+  return `armor/${kind}/${node}/state`;
+}
+
 export class IngestLog {
   /** Set once by the context; it must never throw into the ingest. */
   tap: IngestTap | undefined;
@@ -55,7 +79,9 @@ export class IngestLog {
 
   #tell(topic: string, payload: string | Buffer | undefined, accepted: boolean, reason?: string): void {
     if (!this.tap || payload === undefined) return;
-    try { this.tap(topic, payload, accepted, reason); } catch { /* a copy that fails is never a reason to lose the message */ }
+    const played = brokerTopicOf(topic, payload);
+    if (!played) return;
+    try { this.tap(played, payload, accepted, reason); } catch { /* a copy that fails is never a reason to lose the message */ }
   }
 
   /** Hands a message to the tap without counting it (the HTTP routes that keep no count per topic). */

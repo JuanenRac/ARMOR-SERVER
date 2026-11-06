@@ -5,6 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Express } from "express";
+import { rateLimit } from "express-rate-limit";
 import { checkConnection, readConnection, writeConnection } from "../connection.js";
 import { isLoopbackHost } from "../config.js";
 import { buildPanelSummary, energySummary } from "../panel_feed.js";
@@ -83,7 +84,7 @@ export function registerSystemRoutes(app: Express, context: AppContext, version:
   app.get("/api/v1/system/ingest", requireOperator, (_request, response) => response.json({ topics: context.ingestLog.list() }));
 
   // The optional copy of the node traffic, for playing an incident again on the bench (ARMOR-SIMULATOR --replay): off by default, an administrator turns it on and off (written in the audit trail) and reads its state.
-  const recordingView = () => ({ ...context.ingestRecorder.state() });
+  const recordingView = () => ({ ...context.ingestRecorder.state(), file_list: context.ingestRecorder.files() });
   app.get("/api/v1/system/ingest/recording", requireAdmin, (_request, response) => response.json(recordingView()));
   app.put("/api/v1/system/ingest/recording", requireAdmin, requireElevated, (request, response) => {
     const actor = studioUser(request)?.username ?? "admin";
@@ -98,6 +99,28 @@ export function registerSystemRoutes(app: Express, context: AppContext, version:
     if (enabled) context.ingestRecorder.reset();
     audit.record({ action: "ingest.recording", outcome: "allowed", actor, detail: `${before ? "on" : "off"} -> ${enabled ? "on" : "off"}` });
     return response.json(recordingView());
+  });
+
+  // The file itself, for the bench: an administrator who has just confirmed their identity, only while the copy is on (the same option is its switch), a few times an hour (ARMOR_INGEST_RECORD_DOWNLOADS_PER_HOUR), and every download is written in the audit trail.
+  // ?index=0 is the file being written, 1 the one before it, and so on up to the number of files kept.
+  const downloadLimit = rateLimit({ windowMs: 3_600_000, limit: config.ingestRecordDownloadsPerHour, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "too many downloads", code: "rate_limited" } });
+  app.get("/api/v1/system/ingest/recording/file", requireAdmin, requireElevated, downloadLimit, (request, response) => {
+    const actor = studioUser(request)?.username ?? "admin";
+    if (!context.ingestRecorder.enabled) {
+      audit.record({ action: "ingest.recording.download", outcome: "denied", actor, detail: "the copy is off" });
+      return response.status(404).json({ error: "the copy of the node traffic is off", code: "recording_disabled" });
+    }
+    const raw = typeof request.query.index === "string" ? request.query.index : "0";
+    const index = /^\d{1,2}$/.test(raw) ? Number(raw) : -1;
+    const file = context.ingestRecorder.pathOf(index);
+    if (!file) {
+      audit.record({ action: "ingest.recording.download", outcome: "denied", actor, detail: "no such file" });
+      return response.status(404).json({ error: "no such file", code: "not_found" });
+    }
+    audit.record({ action: "ingest.recording.download", outcome: "allowed", actor, detail: `file ${index}` });
+    response.setHeader("Cache-Control", "no-store");
+    response.setHeader("X-Content-Type-Options", "nosniff");
+    return response.download(file, index === 0 ? "ingest.jsonl" : `ingest.${index}.jsonl`);
   });
 
   const versionReader = programVersions(version);

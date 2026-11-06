@@ -24,7 +24,7 @@ export function registerNodeHealthRoutes(app: Express, context: AppContext): voi
     try {
       const { value, ignored } = forwardCompatible(() => parseNodeHealth(request.body));
       nodeHealth.ingest({ ...value, timestamp_ms: stampOf(value.timestamp_ms, Date.now()) });
-      context.ingestLog.ok(`http:health/${value.node_id}`, ignored);
+      context.ingestLog.ok(`http:health/${value.node_id}`, ignored, JSON.stringify(request.body ?? null));
       return response.status(202).json({ accepted: true, ...(ignored.length ? { ignored } : {}) });
     } catch (error) {
       const why = error instanceof Error ? error.message : "invalid node health";

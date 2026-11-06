@@ -50,6 +50,8 @@ export type ArmorConfig = {
   /** ARMOR_INGEST_RECORD_MAX_BYTES and ARMOR_INGEST_RECORD_FILES: the size of the file the optional copy of the node traffic is written to before it rotates, and how many files it keeps (see ingest_recorder.ts). */
   ingestRecordMaxBytes: number;
   ingestRecordFiles: number;
+  /** ARMOR_INGEST_RECORD_DOWNLOADS_PER_HOUR: how many times an administrator may download a file of the copy of the node traffic in an hour (the route answers only while the copy is on). */
+  ingestRecordDownloadsPerHour: number;
   /** ARMOR_VISION_SERVICE_URL: where the live ARMOR-VISION service listens (the heat map is asked of it); empty is "not set up". Studio can change it. */
   visionServiceUrl: string;
   /** ARMOR_VISION_SERVICE_TOKEN or the file named by ARMOR_VISION_SERVICE_TOKEN_FILE: the token sent to the vision service, and only to it. Empty: none. It is never shown, logged or put in the settings. */
@@ -466,6 +468,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     summaryMaxBytes: integer(env, "ARMOR_SUMMARY_MAX_BYTES", 4 * 1024 * 1024, 65_536, 64 * 1024 * 1024),
     ingestRecordMaxBytes: integer(env, "ARMOR_INGEST_RECORD_MAX_BYTES", 8 * 1024 * 1024, 65_536, 256 * 1024 * 1024),
     ingestRecordFiles: integer(env, "ARMOR_INGEST_RECORD_FILES", 4, 1, 20),
+    ingestRecordDownloadsPerHour: integer(env, "ARMOR_INGEST_RECORD_DOWNLOADS_PER_HOUR", 6, 1, 600),
     visionServiceUrl: visionServiceUrl(env),
     visionServiceToken: visionServiceToken(env),
     metricsToken: metricsToken(env),

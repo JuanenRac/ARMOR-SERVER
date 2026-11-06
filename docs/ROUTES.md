@@ -256,6 +256,7 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/system/ingest` | operator | `routes/system.ts` |
 | GET | `/api/v1/system/ingest/recording` | administrator | `routes/system.ts` |
 | PUT | `/api/v1/system/ingest/recording` | administrator, fresh proof of identity | `routes/system.ts` |
+| GET | `/api/v1/system/ingest/recording/file` | administrator, fresh proof of identity | `routes/system.ts` |
 | GET | `/api/v1/system/metrics` | operator | `routes/system.ts` |
 | GET | `/api/v1/system/services` | operator | `routes/system.ts` |
 | POST | `/api/v1/telemetry` | none here | `routes/ingest.ts` |
@@ -266,6 +267,7 @@ Every route the code registers, with who may call it and the file that registers
 | DELETE | `/api/v1/users/:id/pin` | administrator, fresh proof of identity | `routes/users.ts` |
 | PUT | `/api/v1/users/:id/pin` | administrator, fresh proof of identity | `routes/users.ts` |
 | DELETE | `/api/v1/users/:id/totp` | administrator, fresh proof of identity | `routes/sessions.ts` |
+| GET | `/api/v1/vision/counts` | operator | `routes/reports.ts` |
 | GET | `/api/v1/vision/heatmap` | operator | `routes/reports.ts` |
 | POST | `/api/v1/voice/command` | operator | `routes/voice.ts` |
 | POST | `/api/v1/voice/panic-check` | operator | `routes/voice.ts` |

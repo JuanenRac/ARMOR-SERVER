@@ -45,7 +45,7 @@ export function registerNetworkRoutes(app: Express, context: AppContext): void {
     try {
       const { value: message, ignored } = forwardCompatible(() => parseNetworkMessage(request.body));
       networkNodes.ingest(message);
-      context.ingestLog.ok(`http:network/${message.node_id}`, ignored);
+      context.ingestLog.ok(`http:network/${message.node_id}`, ignored, JSON.stringify(request.body ?? null));
       networkCommands.record(message.node_id, message.results);
       // The answer carries the manual orders waiting for this node (handed out once); a node that does not look for them simply ignores the field.
       const commands = networkCommands.take(message.node_id).map(command => {

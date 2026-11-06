@@ -26,7 +26,7 @@ export function registerSolarRoutes(app: Express, context: AppContext): void {
     try {
       const { value, ignored } = forwardCompatible(() => parseSolarMessage(request.body));
       solar.ingest({ ...value, timestamp_ms: stampOf(value.timestamp_ms, Date.now()) });   // a node without a clock counts from zero: the arrival time is used, as over MQTT
-      context.ingestLog.ok(`http:solar/${value.node_id}/${value.device}`, ignored);
+      context.ingestLog.ok(`http:solar/${value.node_id}/${value.device}`, ignored, JSON.stringify(request.body ?? null));
       return response.status(202).json({ accepted: true, ...(ignored.length ? { ignored } : {}) });
     } catch (error) {
       const why = error instanceof Error ? error.message : "invalid solar message";

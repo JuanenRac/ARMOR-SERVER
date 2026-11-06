@@ -26,7 +26,7 @@ export function registerAlarmNodeRoutes(app: Express, context: AppContext): void
     try {
       const { value, ignored } = forwardCompatible(() => parseAlarmMessage(request.body));
       alarmNodes.ingest(value);
-      context.ingestLog.ok(`http:alarm/${value.node_id}`, ignored);
+      context.ingestLog.ok(`http:alarm/${value.node_id}`, ignored, JSON.stringify(request.body ?? null));
       return response.status(202).json({ accepted: true, ...(ignored.length ? { ignored } : {}) });
     } catch (error) {
       const why = error instanceof Error ? error.message : "invalid alarm message";

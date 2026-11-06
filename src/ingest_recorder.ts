@@ -16,7 +16,7 @@ export type RecorderOptions = {
   now?: () => number;
 };
 
-export type RecorderState = { enabled: boolean; file: string; bytes: number; files: number; max_bytes: number; max_files: number; lines: number; skipped: number; rotations: number; since: string | null };
+export type RecorderState = { enabled: boolean; file: string; bytes: number; files: number; max_bytes: number; max_files: number; lines: number; accepted: number; rejected: number; skipped: number; rotations: number; since: string | null };
 
 const FILE = "ingest.jsonl";
 const MAX_MESSAGE_BYTES = 64 * 1024;
@@ -39,7 +39,7 @@ export function withoutSecrets(value: unknown, depth = 0): unknown {
 
 export class IngestRecorder {
   readonly #options: RecorderOptions;
-  #bytes = 0; #lines = 0; #skipped = 0; #rotations = 0; #since: string | null = null; #failed = false;
+  #bytes = 0; #lines = 0; #accepted = 0; #rejected = 0; #skipped = 0; #rotations = 0; #since: string | null = null; #failed = false;
   constructor(options: RecorderOptions) {
     this.#options = options;
     try { this.#bytes = fs.statSync(this.#path(0)).size; } catch { this.#bytes = 0; }
@@ -52,7 +52,7 @@ export class IngestRecorder {
   state(): RecorderState {
     let files = 0;
     for (let index = 0; index < this.#options.maxFiles; index += 1) if (fs.existsSync(this.#path(index))) files += 1;
-    return { enabled: this.enabled, file: FILE, bytes: this.#bytes, files, max_bytes: this.#options.maxBytes, max_files: this.#options.maxFiles, lines: this.#lines, skipped: this.#skipped, rotations: this.#rotations, since: this.#since };
+    return { enabled: this.enabled, file: FILE, bytes: this.#bytes, files, max_bytes: this.#options.maxBytes, max_files: this.#options.maxFiles, lines: this.#lines, accepted: this.#accepted, rejected: this.#rejected, skipped: this.#skipped, rotations: this.#rotations, since: this.#since };
   }
 
   /** Keeps one message. Does nothing while the option is off; a message that is not a JSON object under an armor/ topic is not something the simulator can play and is counted as skipped. */
@@ -76,12 +76,28 @@ export class IngestRecorder {
       fs.mkdirSync(this.#options.dir, { recursive: true, mode: 0o700 });
       if (this.#bytes > 0 && this.#bytes + size > this.#options.maxBytes) this.#rotate();
       fs.appendFileSync(this.#path(0), text, { mode: 0o600 });
-      this.#bytes += size; this.#lines += 1; this.#since ??= at;
+      this.#bytes += size; this.#lines += 1; if (accepted) this.#accepted += 1; else this.#rejected += 1; this.#since ??= at;
     } catch (error) {
       // A disk that cannot be written must not stop the ingest: the copy stops, and the state says so by not growing.
       this.#failed = true;
       console.warn("ARMOR_INGEST_RECORDING=FAILED", error instanceof Error ? error.message : "cannot write");
     }
+  }
+
+  /** The files that exist, newest first (index 0 is the one being written), with their sizes. */
+  files(): { index: number; name: string; bytes: number }[] {
+    const out: { index: number; name: string; bytes: number }[] = [];
+    for (let index = 0; index < this.#options.maxFiles; index += 1) {
+      try { out.push({ index, name: path.basename(this.#path(index)), bytes: fs.statSync(this.#path(index)).size }); } catch { /* not there */ }
+    }
+    return out;
+  }
+
+  /** The path of one of the files for a download, or undefined when it does not exist. The index is a number the caller already checked; nothing of it reaches the path as text. */
+  pathOf(index: number): string | undefined {
+    if (!Number.isInteger(index) || index < 0 || index >= this.#options.maxFiles) return undefined;
+    const file = this.#path(index);
+    return fs.existsSync(file) ? file : undefined;
   }
 
   /** Clears the failure (an administrator turned the option off and on again). */

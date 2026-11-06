@@ -236,3 +236,42 @@ export async function heatmap(deps: HeatmapDeps, query: { camera?: string; forma
   if (query.format === "svg" && !body.subarray(0, 512).toString("utf8").includes("<svg")) return fail(502, "heatmap_failed");
   return { status: 200, type: TYPES[query.format]!, bytes: body };
 }
+
+// ------------------------------------------------------------------ the crossings of the counting lines
+
+/** The crossings of each counting line as ARMOR-VISION counts them: camera -> line -> { to_left, to_right }, whole numbers only. */
+export type LineCounts = Record<string, Record<string, { to_left: number; to_right: number }>>;
+const LINE_ID = /^[A-Za-z0-9._-]{1,80}$/;
+
+/**
+ * The counts of the crossings, asked of the live service of ARMOR-VISION (it keeps them in memory). The answer must be the schema armor.vision.counts/v1 and nothing but counts: a camera or a line
+ * with an odd name, a count that is not a whole number, or any other field makes it "failed" and nothing of it is passed on. Not set up is as for the heat map: the request never leaves.
+ */
+export async function lineCounts(deps: HeatmapDeps): Promise<ReportAnswer> {
+  const service = parseVisionServiceUrl(deps.url);
+  if (!service || (!deps.remote && !isLoopbackHost(service.host))) return fail(503, "counts_not_configured");
+  if (deps.token && service.origin.startsWith("http:") && !isLoopbackHost(service.host)) return fail(503, "counts_not_configured");
+  const result = await deps.fetch(`${service.origin}/counts`, deps.timeoutMs ?? 20_000, deps.maxBytes ?? 16 * 1024 * 1024, deps.token || undefined);
+  if (!result) return fail(502, "counts_failed");
+  if (result.status === 404) return fail(404, "counts_pipeline_off");
+  if (result.status !== 200 || result.type.split(";")[0]!.trim().toLowerCase() !== "application/json") return fail(502, "counts_failed");
+  try {
+    const answer = JSON.parse(result.body.toString("utf8")) as Record<string, unknown>;
+    if (typeof answer !== "object" || answer === null || Object.keys(answer).sort().join() !== "cameras,schema" || answer.schema !== "armor.vision.counts/v1") return fail(502, "counts_failed");
+    const cameras = answer.cameras;
+    if (typeof cameras !== "object" || cameras === null || Array.isArray(cameras)) return fail(502, "counts_failed");
+    const out: LineCounts = {};
+    for (const [camera, lines] of Object.entries(cameras as Record<string, unknown>)) {
+      if (!CAMERA.test(camera) || typeof lines !== "object" || lines === null || Array.isArray(lines)) return fail(502, "counts_failed");
+      out[camera] = {};
+      for (const [line, counted] of Object.entries(lines as Record<string, unknown>)) {
+        const value = counted as { to_left?: unknown; to_right?: unknown } | null;
+        if (!LINE_ID.test(line) || typeof value !== "object" || value === null || Object.keys(value).sort().join() !== "to_left,to_right"
+          || !Number.isSafeInteger(value.to_left) || !Number.isSafeInteger(value.to_right) || (value.to_left as number) < 0 || (value.to_right as number) < 0) return fail(502, "counts_failed");
+        out[camera]![line] = { to_left: value.to_left as number, to_right: value.to_right as number };
+      }
+    }
+    return { status: 200, json: { cameras: out } };
+  } catch { return fail(502, "counts_failed"); }
+}
+
