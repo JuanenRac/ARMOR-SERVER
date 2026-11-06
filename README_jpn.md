@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
   <img src="https://img.shields.io/badge/Tests-1013%20passing-2ea44f.svg" alt="Tests">
-  <img src="https://img.shields.io/badge/Version-0.8.1.9-0f6cbd.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-0.8.2.0-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
@@ -36,12 +36,12 @@
 
 | | |
 |---|---|
-| バージョン | `0.8.1.9` |
+| バージョン | `0.8.2.0` |
 | 成熟度 | 確立 |
 | 役割 | ファミリーの中央セキュリティコーディネーター：ノード、アラーム、デバイス、エネルギー、カメラ、ネットワーク |
 | 技術 | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | テスト | 1013 件（`npm test`：単体と完全な HTTP 結合） |
-| 契約 | HTTP パス 196 本、277 操作（OpenAPI は ARMOR-COMMON）、ルート表は `docs/ROUTES.md` |
+| 契約 | HTTP パス 196 本、283 操作（OpenAPI は ARMOR-COMMON）、ルート表は `docs/ROUTES.md` |
 | 待ち受け | `127.0.0.1:18080`（`ARMOR_HOST`、`ARMOR_PORT`） |
 | 動作環境 | CM5 テストベンチ（サービスとして。ARMOR-DEVOPS 参照）または Node.js のある任意のコンピューター |
 | 実機での確認 | CM5 テストベンチでの日常使用：実際の MQTT ブローカー、実際の IP カメラ、ESP32-S3 基板上の実際のレーダーノード、これに接続する Studio、Android アプリ、音声・観察サービス |
@@ -157,7 +157,7 @@ flowchart LR
 
 ## 🔌 インターフェース
 
-ルート表（`docs/ROUTES.md`、コードから生成）は各ルートと呼び出せる主体を一覧にします。ARMOR-COMMON の OpenAPI は 214 パス・277 操作を記述し、欠けているルートがあるとテストが失敗します。主なもの：
+ルート表（`docs/ROUTES.md`、コードから生成）は各ルートと呼び出せる主体を一覧にします。ARMOR-COMMON の OpenAPI は 220 パス・283 操作を記述し、欠けているルートがあるとテストが失敗します。主なもの：
 
 | ルート | 認証 | 内容 |
 |---|---|---|

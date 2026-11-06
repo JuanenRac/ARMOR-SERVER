@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.8.2.0] - The crossings of the counting lines, as numbers: GET /api/v1/vision/counts asks the live service of ARMOR-VISION how many times each counting line of each camera has been crossed to the left and to the right and passes on only... (and 3 more changes)
+
 - **The crossings of the counting lines, as numbers:** `GET /api/v1/vision/counts` asks the live service of ARMOR-VISION how many times each counting line of each camera has been crossed to the left and to the right and passes on only those whole numbers (administrators and operators, behind the same option as the heat map, off by default, every ask in the audit trail). Tests: 3 more.
 - **The copy of the node traffic now includes the HTTP reports of the alarm, electrical, solar, network and node-health nodes:** each is written under the topic of the broker that carries the same message (`armor/alarm/<node>/state`, `armor/solar/<node>/<device>/state`, and so on), a refused one when its body names its node, with the same removal of secrets, so the simulator plays what arrived over HTTP like what arrived over MQTT.
 - **The state of the copy counts accepted and refused messages and lists its files, and a file can be downloaded:** `GET /api/v1/system/ingest/recording` adds `accepted`, `rejected` and `file_list`; the new `GET /api/v1/system/ingest/recording/file?index=N` is for an administrator who proved themselves again, answers only while the copy is on, is limited by `ARMOR_INGEST_RECORD_DOWNLOADS_PER_HOUR` (6 by default) and writes every download in the audit trail. Tests: 3 more.

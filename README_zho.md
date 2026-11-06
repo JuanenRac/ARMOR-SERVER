@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
   <img src="https://img.shields.io/badge/Tests-1013%20passing-2ea44f.svg" alt="Tests">
-  <img src="https://img.shields.io/badge/Version-0.8.1.9-0f6cbd.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-0.8.2.0-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
@@ -36,12 +36,12 @@
 
 | | |
 |---|---|
-| 版本 | `0.8.1.9` |
+| 版本 | `0.8.2.0` |
 | 成熟度 | 成熟 |
 | 角色 | 家族的中央安全协调器：节点、报警、设备、能源、摄像头、网络 |
 | 技术栈 | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | 测试 | 1013 项（`npm test`：单元与完整 HTTP 集成） |
-| 契约 | 214 条 HTTP 路径、277 个操作（OpenAPI 在 ARMOR-COMMON 中），路由表见 `docs/ROUTES.md` |
+| 契约 | 220 条 HTTP 路径、283 个操作（OpenAPI 在 ARMOR-COMMON 中），路由表见 `docs/ROUTES.md` |
 | 监听地址 | `127.0.0.1:18080`（`ARMOR_HOST`、`ARMOR_PORT`） |
 | 运行位置 | CM5 测试台（作为服务，见 ARMOR-DEVOPS）或任何装有 Node.js 的计算机 |
 | 真实硬件 | CM5 测试台的日常使用：真实的 MQTT 代理、真实的 IP 摄像头、ESP32-S3 板上的真实雷达节点，以及与之配合的 Studio、Android 应用和语音、观察服务 |
@@ -157,7 +157,7 @@ flowchart LR
 
 ## 🔌 接口
 
-路由表（`docs/ROUTES.md`，由代码生成）列出每条路由及可调用者；ARMOR-COMMON 的 OpenAPI 文件描述了 214 条路径和 277 个操作，缺少任何路由时测试会失败。最重要的几条：
+路由表（`docs/ROUTES.md`，由代码生成）列出每条路由及可调用者；ARMOR-COMMON 的 OpenAPI 文件描述了 220 条路径和 283 个操作，缺少任何路由时测试会失败。最重要的几条：
 
 | 路由 | 认证 | 作用 |
 |---|---|---|

@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Langage">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
   <img src="https://img.shields.io/badge/Tests-1013%20passing-2ea44f.svg" alt="Tests">
-  <img src="https://img.shields.io/badge/Version-0.8.1.9-0f6cbd.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-0.8.2.0-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturité">
 </p>
 
@@ -36,12 +36,12 @@
 
 | | |
 |---|---|
-| Version | `0.8.1.9` |
+| Version | `0.8.2.0` |
 | Maturité | Établi |
 | Rôle | Coordinateur central de sécurité de la famille : nœuds, alarmes, appareils, énergie, caméras, réseau |
 | Technologie | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | Tests | 1013 (`npm test` : unitaires et intégration HTTP complète) |
-| Contrat | 214 chemins HTTP, 277 opérations (OpenAPI dans ARMOR-COMMON), table des routes dans `docs/ROUTES.md` |
+| Contrat | 220 chemins HTTP, 283 opérations (OpenAPI dans ARMOR-COMMON), table des routes dans `docs/ROUTES.md` |
 | Écoute sur | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Fonctionne sur | Le banc d'essai CM5 (en service, voir ARMOR-DEVOPS) ou tout ordinateur avec Node.js |
 | Sur matériel réel | Le banc de test CM5, en usage quotidien : un vrai broker MQTT, de vraies caméras IP, un vrai nœud radar sur une carte ESP32-S3, Studio, l'application Android et les services de voix et d'observation contre lui |
@@ -157,7 +157,7 @@ flowchart LR
 
 ## 🔌 Interfaces
 
-La table des routes (`docs/ROUTES.md`, générée depuis le code) liste chaque route avec qui peut l'appeler ; le fichier OpenAPI d'ARMOR-COMMON décrit 214 chemins et 277 opérations, et un test échoue s'il en manque une. Les plus importantes :
+La table des routes (`docs/ROUTES.md`, générée depuis le code) liste chaque route avec qui peut l'appeler ; le fichier OpenAPI d'ARMOR-COMMON décrit 220 chemins et 283 opérations, et un test échoue s'il en manque une. Les plus importantes :
 
 | Route | Authentification | Ce qu'elle fait |
 |---|---|---|

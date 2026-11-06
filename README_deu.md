@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Sprache">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
   <img src="https://img.shields.io/badge/Tests-1013%20passing-2ea44f.svg" alt="Tests">
-  <img src="https://img.shields.io/badge/Version-0.8.1.9-0f6cbd.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-0.8.2.0-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Reifegrad">
 </p>
 
@@ -36,12 +36,12 @@
 
 | | |
 |---|---|
-| Version | `0.8.1.9` |
+| Version | `0.8.2.0` |
 | Reifegrad | Etabliert |
 | Rolle | Zentraler Sicherheitskoordinator der Familie: Knoten, Alarme, Geräte, Energie, Kameras, Netzwerk |
 | Technik | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | Tests | 1013 (`npm test`: Unit und volle HTTP-Integration) |
-| Vertrag | 214 HTTP-Pfade, 277 Operationen (OpenAPI in ARMOR-COMMON), Routentabelle in `docs/ROUTES.md` |
+| Vertrag | 220 HTTP-Pfade, 283 Operationen (OpenAPI in ARMOR-COMMON), Routentabelle in `docs/ROUTES.md` |
 | Lauscht auf | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Läuft auf | Der CM5-Prüfstand (als Dienst, siehe ARMOR-DEVOPS) oder jeder Computer mit Node.js |
 | Auf echter Hardware | Der CM5-Testaufbau im täglichen Einsatz: ein echter MQTT-Broker, echte IP-Kameras, ein echter Radarknoten auf einer ESP32-S3-Platine, Studio, die Android-App und die Sprach- und Beobachtungsdienste daran |
@@ -157,7 +157,7 @@ flowchart LR
 
 ## 🔌 Schnittstellen
 
-Die Routentabelle (`docs/ROUTES.md`, aus dem Code erzeugt) listet jede Route mit den Berechtigten; die OpenAPI-Datei von ARMOR-COMMON beschreibt 214 Pfade und 277 Operationen, und ein Test schlägt fehl, wenn eine Route fehlt. Die wichtigsten:
+Die Routentabelle (`docs/ROUTES.md`, aus dem Code erzeugt) listet jede Route mit den Berechtigten; die OpenAPI-Datei von ARMOR-COMMON beschreibt 220 Pfade und 283 Operationen, und ein Test schlägt fehl, wenn eine Route fehlt. Die wichtigsten:
 
 | Route | Authentifizierung | Was sie tut |
 |---|---|---|

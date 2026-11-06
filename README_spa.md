@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Lenguaje">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
   <img src="https://img.shields.io/badge/Tests-1013%20passing-2ea44f.svg" alt="Pruebas">
-  <img src="https://img.shields.io/badge/Version-0.8.1.9-0f6cbd.svg" alt="Versión">
+  <img src="https://img.shields.io/badge/Version-0.8.2.0-0f6cbd.svg" alt="Versión">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Madurez">
 </p>
 
@@ -36,12 +36,12 @@
 
 | | |
 |---|---|
-| Versión | `0.8.1.9` |
+| Versión | `0.8.2.0` |
 | Madurez | Establecido |
 | Función | Coordinador central de seguridad de la familia: nodos, alarmas, dispositivos, energía, cámaras, red |
 | Tecnología | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | Pruebas | 1013 (`npm test`: unitarias e integración HTTP completa) |
-| Contrato | 214 rutas HTTP, 277 operaciones (OpenAPI en ARMOR-COMMON), tabla de rutas en `docs/ROUTES.md` |
+| Contrato | 220 rutas HTTP, 283 operaciones (OpenAPI en ARMOR-COMMON), tabla de rutas en `docs/ROUTES.md` |
 | Escucha en | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Funciona en | El banco de la CM5 (como servicio, ver ARMOR-DEVOPS) o cualquier ordenador con Node.js |
 | En hardware real | El banco de pruebas de la CM5, en uso diario: un broker MQTT real, cámaras IP reales, un nodo radar real en una placa ESP32-S3, Studio, la app Android y los servicios de voz y observación contra él |
@@ -157,7 +157,7 @@ flowchart LR
 
 ## 🔌 Interfaces
 
-La tabla de rutas (`docs/ROUTES.md`, generada del código) lista cada ruta con quién puede llamarla; el fichero OpenAPI de ARMOR-COMMON describe 214 rutas y 277 operaciones, y una prueba falla si falta alguna. Las que más importan:
+La tabla de rutas (`docs/ROUTES.md`, generada del código) lista cada ruta con quién puede llamarla; el fichero OpenAPI de ARMOR-COMMON describe 220 rutas y 283 operaciones, y una prueba falla si falta alguna. Las que más importan:
 
 | Ruta | Autenticación | Qué hace |
 |---|---|---|

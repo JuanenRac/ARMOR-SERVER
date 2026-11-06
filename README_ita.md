@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Linguaggio">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
   <img src="https://img.shields.io/badge/Tests-1013%20passing-2ea44f.svg" alt="Test">
-  <img src="https://img.shields.io/badge/Version-0.8.1.9-0f6cbd.svg" alt="Versione">
+  <img src="https://img.shields.io/badge/Version-0.8.2.0-0f6cbd.svg" alt="Versione">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturità">
 </p>
 
@@ -36,12 +36,12 @@
 
 | | |
 |---|---|
-| Versione | `0.8.1.9` |
+| Versione | `0.8.2.0` |
 | Maturità | Consolidato |
 | Ruolo | Coordinatore centrale di sicurezza della famiglia: nodi, allarmi, dispositivi, energia, telecamere, rete |
 | Tecnologia | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | Test | 1013 (`npm test`: unitari e integrazione HTTP completa) |
-| Contratto | 214 percorsi HTTP, 277 operazioni (OpenAPI in ARMOR-COMMON), tabella delle rotte in `docs/ROUTES.md` |
+| Contratto | 220 percorsi HTTP, 283 operazioni (OpenAPI in ARMOR-COMMON), tabella delle rotte in `docs/ROUTES.md` |
 | In ascolto su | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Gira su | Il banco di prova CM5 (come servizio, vedi ARMOR-DEVOPS) o qualsiasi computer con Node.js |
 | Su hardware reale | Il banco di prova CM5, in uso quotidiano: un vero broker MQTT, vere telecamere IP, un vero nodo radar su una scheda ESP32-S3, Studio, l'app Android e i servizi di voce e osservazione contro di esso |
@@ -157,7 +157,7 @@ flowchart LR
 
 ## 🔌 Interfacce
 
-La tabella delle rotte (`docs/ROUTES.md`, generata dal codice) elenca ogni rotta con chi può chiamarla; il file OpenAPI di ARMOR-COMMON descrive 214 percorsi e 277 operazioni, e un test fallisce se ne manca una. Le più importanti:
+La tabella delle rotte (`docs/ROUTES.md`, generata dal codice) elenca ogni rotta con chi può chiamarla; il file OpenAPI di ARMOR-COMMON descrive 220 percorsi e 283 operazioni, e un test fallisce se ne manca una. Le più importanti:
 
 | Rotta | Autenticazione | Cosa fa |
 |---|---|---|

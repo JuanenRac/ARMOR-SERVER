@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
   <img src="https://img.shields.io/badge/Tests-1013%20passing-2ea44f.svg" alt="Tests">
-  <img src="https://img.shields.io/badge/Version-0.8.1.9-0f6cbd.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-0.8.2.0-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
@@ -36,12 +36,12 @@
 
 | | |
 |---|---|
-| Version | `0.8.1.9` |
+| Version | `0.8.2.0` |
 | Maturity | Established |
 | Role | Central security coordinator of the family: nodes, alarms, devices, energy, cameras, network |
 | Stack | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | Tests | 1013 (`npm test`: unit and full HTTP integration) |
-| Contract | 214 HTTP paths, 277 operations (OpenAPI in ARMOR-COMMON), route table in `docs/ROUTES.md` |
+| Contract | 220 HTTP paths, 283 operations (OpenAPI in ARMOR-COMMON), route table in `docs/ROUTES.md` |
 | Listens on | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Runs on | The CM5 test bench (as a service, see ARMOR-DEVOPS) or any computer with Node.js |
 | On real hardware | The CM5 test bench, in daily use: a real MQTT broker, real IP cameras, a real radar node on an ESP32-S3 board, Studio, the Android app and the voice and observation services against it |
@@ -157,7 +157,7 @@ flowchart LR
 
 ## 🔌 Interfaces
 
-The route table (`docs/ROUTES.md`, generated from the code) lists every route with who may call it; the OpenAPI file of ARMOR-COMMON describes 214 paths and 277 operations, and a test fails if a route is missing from it. The ones that matter most:
+The route table (`docs/ROUTES.md`, generated from the code) lists every route with who may call it; the OpenAPI file of ARMOR-COMMON describes 220 paths and 283 operations, and a test fails if a route is missing from it. The ones that matter most:
 
 | Route | Auth | What it does |
 |---|---|---|
