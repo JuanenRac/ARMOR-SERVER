@@ -22,6 +22,8 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Read-only token. No job of this file signs or attests anything, so none asks for id-token or attestations: the workflows that do (the APK and package builds)
+# declare id-token: write and attestations: write on that one job only, never here.
 permissions:
   contents: read
 

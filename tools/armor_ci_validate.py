@@ -40,6 +40,11 @@ try:   # the same: the traffic lights of the Project status table against the ma
 except ImportError:
     status_lights = None  # type: ignore[assignment]
 
+try:   # the same: the manifest against what can be computed about the repository (shipped version, changelog, tests, simulation)
+    import sync_manifests  # noqa: E402
+except ImportError:
+    sync_manifests = None  # type: ignore[assignment]
+
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = ROOT / "armor.project.json"
 REQUIRED_DOCUMENTS = (
@@ -252,6 +257,11 @@ def main() -> int:
     if status_lights is not None:
         for lights_problem in status_lights.run_in_ci(ROOT):
             fail(lights_problem)
+
+    # The manifest agrees with what can be computed offline from this working tree (see tools/sync_manifests.py).
+    if sync_manifests is not None:
+        for facts_problem in sync_manifests.run_in_ci(ROOT):
+            fail(facts_problem)
 
     print(f"CI_VALIDATION=PASS project={manifest['name']} version={manifest['version']}")
     return 0
