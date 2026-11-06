@@ -41,7 +41,7 @@ export function routeMessage(routes: RouteTable, log: IngestLog, rejected: (topi
       const { value, ignored } = forwardCompatible(() => route.parse(body));
       if (!route.matches(value, named)) throw new Error(route.mismatch ?? "node_id does not match the topic");
       route.apply(value, named);
-      log.ok(topic, ignored);
+      log.ok(topic, ignored, raw);
     } catch (error) { rejected(topic, raw, error, route.fallback); }
     return true;
   }

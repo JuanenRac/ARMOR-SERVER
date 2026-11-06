@@ -33,22 +33,32 @@ export function registerIngestRoutes(app: Express, context: AppContext, startedA
   // it did not, so a node that restarted had its messages taken for old ones and ignored until its counter passed the old one.
   const stamped = <T extends { timestamp_ms: number }>(message: T): T => ({ ...message, timestamp_ms: stampOf(message.timestamp_ms, Date.now()) });
 
+  // A refused message is copied too (with why) when it at least names its node, so the same refusal can be played again.
+  const copyRefused = (body: unknown, kind: "telemetry" | "health", error: unknown, fallback: string): void => {
+    const node = (body as { node_id?: unknown } | null)?.node_id;
+    if (typeof node === "string" && /^[a-z0-9][a-z0-9_-]{0,63}$/i.test(node)) context.ingestLog.copy(`armor/node/${node}/${kind}`, body, false, error instanceof Error ? error.message : fallback);
+  };
+
   app.post("/api/v1/telemetry", ingestLimit, (request, response) => {
     if (!ingestCaller(request, config.ingestToken, config.ingestStrict, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
     // The answer is deliberately minimal: a field node's token must not reveal the rest of the perimeter.
     try {
       // As over MQTT, a field this server does not know yet is ignored and said, not a reason to lose the message (a newer node, an older server).
       const { value, ignored } = forwardCompatible(() => parseTelemetry(request.body));
-      return response.status(202).json({ accepted: true, revision: store.telemetry(stamped(value)).revision, ...(ignored.length ? { ignored } : {}) });
-    } catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "invalid telemetry" }); }
+      const revision = store.telemetry(stamped(value)).revision;
+      context.ingestLog.copy(`armor/node/${value.node_id}/telemetry`, request.body, true);
+      return response.status(202).json({ accepted: true, revision, ...(ignored.length ? { ignored } : {}) });
+    } catch (error) { copyRefused(request.body, "telemetry", error, "invalid telemetry"); return response.status(400).json({ error: error instanceof Error ? error.message : "invalid telemetry" }); }
   });
 
   app.post("/api/v1/health", ingestLimit, (request, response) => {
     if (!ingestCaller(request, config.ingestToken, config.ingestStrict, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
     try {
       const { value, ignored } = forwardCompatible(() => parseHealth(request.body));
-      return response.status(202).json({ accepted: true, revision: store.health(stamped(value)).revision, ...(ignored.length ? { ignored } : {}) });
-    } catch (error) { return response.status(400).json({ error: error instanceof Error ? error.message : "invalid health" }); }
+      const revision = store.health(stamped(value)).revision;
+      context.ingestLog.copy(`armor/node/${value.node_id}/health`, request.body, true);
+      return response.status(202).json({ accepted: true, revision, ...(ignored.length ? { ignored } : {}) });
+    } catch (error) { copyRefused(request.body, "health", error, "invalid health"); return response.status(400).json({ error: error instanceof Error ? error.message : "invalid health" }); }
   });
 
   app.post("/api/v1/control/:mode", controlLimit, (request, response) => {

@@ -54,7 +54,7 @@ export function attachMqtt(store: ArmorStore, brokerUrl: string, username?: stri
       if (kind === "telemetry") store.telemetry(message as ReturnType<typeof parseTelemetry>);
       else if (kind === "info") store.info(message as ReturnType<typeof parseInfo>);
       else store.health(message as ReturnType<typeof parseHealth>);
-      log?.ok(topic, ignored);
+      log?.ok(topic, ignored, raw);
     } catch (error) {
       log?.rejected(topic, error instanceof Error ? error.message : "invalid payload", raw);
       console.warn("ARMOR_MQTT=REJECTED", error instanceof Error ? error.message : "invalid payload");

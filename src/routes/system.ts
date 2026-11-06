@@ -52,7 +52,7 @@ export function auditLinesAbout(dataDir: string, containing: string): { lines: A
 export { energySummary };
 
 export function registerSystemRoutes(app: Express, context: AppContext, version: string, readUnits: UnitReader = systemctlReader): void {
-  const { config, store, devices, alarms, automations, users, vault, events, evidence, systemMonitor, requireOperator, requireAdmin } = context;
+  const { config, store, devices, alarms, automations, users, vault, events, evidence, systemMonitor, requireOperator, requireAdmin, requireElevated, studioUser, audit } = context;
   // How the machine is doing, as a task manager shows it: the latest sample and the last few minutes of it.
   app.get("/api/v1/system/metrics", requireOperator, (_request, response) => response.json({ ...systemMonitor.current, history: systemMonitor.history }));
 
@@ -81,6 +81,24 @@ export function registerSystemRoutes(app: Express, context: AppContext, version:
 
   // What the nodes sent that the server took, refused or partly ignored (fields of a newer firmware), per topic, with the start of the last refused message.
   app.get("/api/v1/system/ingest", requireOperator, (_request, response) => response.json({ topics: context.ingestLog.list() }));
+
+  // The optional copy of the node traffic, for playing an incident again on the bench (ARMOR-SIMULATOR --replay): off by default, an administrator turns it on and off (written in the audit trail) and reads its state.
+  const recordingView = () => ({ ...context.ingestRecorder.state() });
+  app.get("/api/v1/system/ingest/recording", requireAdmin, (_request, response) => response.json(recordingView()));
+  app.put("/api/v1/system/ingest/recording", requireAdmin, requireElevated, (request, response) => {
+    const actor = studioUser(request)?.username ?? "admin";
+    const enabled = (request.body as { enabled?: unknown } | undefined)?.enabled;
+    if (typeof enabled !== "boolean" || Object.keys(request.body as object).some(key => key !== "enabled")) {
+      audit.record({ action: "ingest.recording", outcome: "denied", actor, detail: "the body is { enabled: true | false }" });
+      return response.status(400).json({ error: "the body is { \"enabled\": true | false }", code: "invalid_body" });
+    }
+    if (context.securitySettings.lockedKeys.includes("ingest.recording")) return response.status(409).json({ error: "the environment fixes this option", code: "setting_locked" });
+    const before = context.ingestRecorder.enabled;
+    context.securitySettings.update({ "ingest.recording": enabled });
+    if (enabled) context.ingestRecorder.reset();
+    audit.record({ action: "ingest.recording", outcome: "allowed", actor, detail: `${before ? "on" : "off"} -> ${enabled ? "on" : "off"}` });
+    return response.json(recordingView());
+  });
 
   const versionReader = programVersions(version);
 

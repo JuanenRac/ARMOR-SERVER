@@ -13,7 +13,12 @@ export type IngestEntry = {
 const MAX_TOPICS = 200, MAX_IGNORED = 24, EXCERPT = 400;
 const clip = (text: string, length: number): string => (text.length > length ? `${text.slice(0, length)}…` : text);
 
+/** Told about every message the log counts, with what was sent: the optional recorder of the traffic (ingest_recorder.ts) hangs here. */
+export type IngestTap = (topic: string, payload: string | Buffer | undefined, accepted: boolean, reason?: string) => void;
+
 export class IngestLog {
+  /** Set once by the context; it must never throw into the ingest. */
+  tap: IngestTap | undefined;
   readonly #entries = new Map<string, IngestEntry>();
   readonly #now: () => number;
   constructor(now: () => number = () => Date.now()) { this.#now = now; }
@@ -29,7 +34,8 @@ export class IngestLog {
     return entry;
   }
 
-  ok(topic: string, ignored: readonly string[] = []): void {
+  ok(topic: string, ignored: readonly string[] = [], payload?: string | Buffer): void {
+    this.#tell(topic, payload, true);
     const entry = this.#entry(topic);
     if (!entry) return;
     entry.accepted += 1;
@@ -38,12 +44,24 @@ export class IngestLog {
   }
 
   rejected(topic: string, error: string, payload: string | Buffer): void {
+    this.#tell(topic, payload, false, error);
     const entry = this.#entry(topic);
     if (!entry) return;
     entry.rejected += 1;
     entry.last_error = clip(error, 200);
     entry.last_error_at = new Date(this.#now()).toISOString();
     entry.last_payload = clip(typeof payload === "string" ? payload : payload.toString("utf8"), EXCERPT);
+  }
+
+  #tell(topic: string, payload: string | Buffer | undefined, accepted: boolean, reason?: string): void {
+    if (!this.tap || payload === undefined) return;
+    try { this.tap(topic, payload, accepted, reason); } catch { /* a copy that fails is never a reason to lose the message */ }
+  }
+
+  /** Hands a message to the tap without counting it (the HTTP routes that keep no count per topic). */
+  copy(topic: string, payload: unknown, accepted: boolean, reason?: string): void {
+    if (!this.tap) return;
+    try { this.tap(topic, typeof payload === "string" || Buffer.isBuffer(payload) ? payload : JSON.stringify(payload ?? null), accepted, reason); } catch { /* as above */ }
   }
 
   list(): IngestEntry[] { return [...this.#entries.values()].sort((a, b) => a.topic.localeCompare(b.topic)); }

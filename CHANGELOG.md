@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **An optional copy of the node traffic, for playing an incident again on the bench:** while the new setting `ingest.recording` is on (off by default; Studio shows it with the other protections) the server writes every message it takes or refuses as one JSON line in `ingest-recording/ingest.jsonl` of its data directory, in the form `ARMOR-SIMULATOR --replay` plays (`topic` and `payload`, plus the optional `at`, `accepted` and `reason`). Fields named like a secret (token, key, password, PIN, cookie, signature) are left out, the orders to the nodes are not copied, and a message that is not a JSON object is counted as skipped. The file is limited and rotated by `ARMOR_INGEST_RECORD_MAX_BYTES` (8 MiB) and `ARMOR_INGEST_RECORD_FILES` (4). `GET` and `PUT /api/v1/system/ingest/recording` (an administrator; the change is written in the audit trail) read the state and turn it on and off.
+
 ## [0.8.1.8] - The types of the node messages come from the shared contracts: the shapes of the radar, health, information and alarm messages (and the limits of a radar message) are no longer written twice: they are the ones generated from...
 
 - **The types of the node messages come from the shared contracts:** the shapes of the radar, health, information and alarm messages (and the limits of a radar message) are no longer written twice: they are the ones generated from the shared schemas, kept in `src/armor-contracts.ts` (a test fails when it differs from what the shared repository generates now), and the lists of values that the alarm parsers accept are checked by the compiler against the generated types.

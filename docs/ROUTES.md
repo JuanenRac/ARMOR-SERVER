@@ -254,6 +254,8 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/system/connection` | administrator | `routes/system.ts` |
 | PUT | `/api/v1/system/connection` | administrator | `routes/system.ts` |
 | GET | `/api/v1/system/ingest` | operator | `routes/system.ts` |
+| GET | `/api/v1/system/ingest/recording` | administrator | `routes/system.ts` |
+| PUT | `/api/v1/system/ingest/recording` | administrator, fresh proof of identity | `routes/system.ts` |
 | GET | `/api/v1/system/metrics` | operator | `routes/system.ts` |
 | GET | `/api/v1/system/services` | operator | `routes/system.ts` |
 | POST | `/api/v1/telemetry` | none here | `routes/ingest.ts` |
