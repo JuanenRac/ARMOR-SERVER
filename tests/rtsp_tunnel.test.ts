@@ -6,7 +6,7 @@ import test from "node:test";
 import { AiGateway } from "../src/ai.js";
 import { digestAuthorization, parseDigestChallenge } from "../src/cameras/digest.js";
 import type { CameraConnection } from "../src/cameras/model.js";
-import { closeOnServerError, openRtspTunnel, RtspFramer } from "../src/cameras/rtsp_tunnel.js";
+import { closeOnServerError, listenLoopback, openRtspTunnel, RtspFramer } from "../src/cameras/rtsp_tunnel.js";
 import { EvidenceLibrary } from "../src/media/evidence.js";
 import { RelayManager, StreamTickets } from "../src/media/relay.js";
 import { tempDir } from "./helpers.js";
@@ -205,4 +205,15 @@ test("a later error of the local tunnel server closes the tunnel instead of goin
   closeOnServerError(server as never, () => { closed += 1; });
   assert.doesNotThrow(() => server.emit("error", new Error("EMFILE")));
   assert.equal(closed, 1);
+});
+
+test("the listening step rejects only while it starts, and leaves no error listener behind", async () => {
+  const first = net.createServer();
+  await listenLoopback(first);
+  assert.equal(first.listenerCount("error"), 0, "after listening, the start listener is gone");
+  const port = (first.address() as net.AddressInfo).port;
+  const second = net.createServer();
+  await assert.rejects(listenLoopback(second, port), /EADDRINUSE/);
+  assert.equal(second.listenerCount("error"), 0, "after failing, the start listener is gone too");
+  first.close();
 });

@@ -150,6 +150,15 @@ export function closeOnServerError(server: Pick<Server, "on">, close: () => void
   server.on("error", () => close());
 }
 
+/** Starts listening on the loopback address. An error rejects only while it starts; the listener is removed afterwards so the later errors are left to closeOnServerError. */
+export function listenLoopback(server: Server, port = 0): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const failed = (error: Error) => reject(error);
+    server.once("error", failed);
+    server.listen(port, "127.0.0.1", () => { server.off("error", failed); resolve(); });
+  });
+}
+
 export async function openRtspTunnel(camera: CameraConnection, options: TunnelOptions = {}): Promise<RtspTunnel | null> {
   if (options.direct) { const url = rtspUrl(camera, options.preview); return url ? { url, close: () => undefined } : null; }
   const path = (options.preview && camera.previewPath ? camera.previewPath : camera.rtspPath).replace(/^\/+/, "");
@@ -171,7 +180,7 @@ export async function openRtspTunnel(camera: CameraConnection, options: TunnelOp
   };
   const idle = setTimeout(() => { if (!admitted) close(); }, options.idleCloseMs ?? 20_000);
   idle.unref();
-  await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", () => resolve()); });
+  await listenLoopback(server);
   closeOnServerError(server, close);
   const port = (server.address() as AddressInfo).port;
   const proxyBase = `rtsp://127.0.0.1:${port}/${word}`;

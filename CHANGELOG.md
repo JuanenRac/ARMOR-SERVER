@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The local door of a camera tunnel listens for errors the right way:** an error while it starts rejects the start, and once it is listening the start listener is removed, so a later error (running out of descriptors, for instance) is heard only by the one that closes the tunnel. Tests: 1 more.
+
 ## [0.8.2.0] - The crossings of the counting lines, as numbers: GET /api/v1/vision/counts asks the live service of ARMOR-VISION how many times each counting line of each camera has been crossed to the left and to the right and passes on only... (and 3 more changes)
 
 - **The crossings of the counting lines, as numbers:** `GET /api/v1/vision/counts` asks the live service of ARMOR-VISION how many times each counting line of each camera has been crossed to the left and to the right and passes on only those whole numbers (administrators and operators, behind the same option as the heat map, off by default, every ask in the audit trail). Tests: 3 more.
