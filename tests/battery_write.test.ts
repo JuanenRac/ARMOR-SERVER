@@ -428,3 +428,21 @@ test("the table lists the operations and what each one needs", { skip }, () => {
   for (const wanted of ["set_clock", "clear_stats", "clear_log", "clear_data", "restart", "shutdown", "soc_capacity", "mosfail_test", "soc_reset", "pcb_setup", "limits_set", "limits_default", "protections_set", "protections_default", "output_set", "fault_clear", "write_barcode", "eeprom_erase", "firmware_update", "expert_command"]) assert.ok(ids.includes(wanted), wanted);
   for (const item of BATTERY_CATALOG.ops) if (item.risk === "irreversible") assert.ok(item.atomic && item.needs_idle, item.id);
 });
+
+test("a node that is forgotten leaves nothing armed behind, and what already ended or belongs to another node is left alone", () => {
+  const b = bench();
+  const waiting = b.service.arm("ana", outputOff);
+  assert.equal(waiting.stage, "arming");
+  b.service.forget("solar-1");
+  assert.equal(b.service.get(waiting.id)!.stage, "withdrawn");
+  const armedOne = b.service.arm("ana", outputOff);
+  b.armed("cccccccccccccccccccccccccccccccc");
+  assert.equal(b.service.get(armedOne.id)!.stage, "armed");
+  b.service.forget("another-node");
+  assert.equal(b.service.get(armedOne.id)!.stage, "armed", "another node's forgetting does not touch it");
+  b.service.forget("solar-1");
+  assert.equal(b.service.get(armedOne.id)!.stage, "withdrawn");
+  assert.equal(code(() => b.service.execute("ana", armedOne.id, outputOff.serial)), "not_armed", "the token is no longer good");
+  b.service.forget("solar-1");
+  assert.equal(b.service.get(armedOne.id)!.stage, "withdrawn", "forgetting twice changes nothing");
+});
