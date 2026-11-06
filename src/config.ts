@@ -142,6 +142,8 @@ export type ArmorConfig = {
   electricalSwitching: boolean;
   /** Whether this server may send a gateway node an order to write to a Pylontech battery (clock, counters, limits, outputs, serial number, firmware). Off unless ARMOR_BATTERY_WRITE=1; even then the node and the broker have to allow it too. */
   batteryWrite: boolean;
+  /** Whether Studio and the phone may ask the maintenance agent to update this machine's programs with the engine of the updater (a preview, then an apply with the project typed). Off unless ARMOR_CM5_UPDATE=1. */
+  cm5Update: boolean;
   /** Whether this server may arm and disarm the panel of an alarm node. Off unless ARMOR_ALARM_COMMANDS=1; even then the node and the broker have to allow it too. */
   alarmCommands: boolean;
   /** ARMOR_DISARM_PIN=required: disarming from Studio, the phone or the wall panel needs the PIN of the signed-in user, and a user without a PIN cannot disarm. Otherwise a PIN is asked only of users who have one. */
@@ -418,6 +420,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
   const { admin, maintenance, voice, aiToken } = readAgents(env);
   const electricalSwitching = env.ARMOR_ELECTRICAL_SWITCHING === "1";
   const batteryWrite = env.ARMOR_BATTERY_WRITE === "1";
+  const cm5Update = env.ARMOR_CM5_UPDATE === "1";
   const alarmCommands = env.ARMOR_ALARM_COMMANDS === "1";
   const disarmPinRequired = env.ARMOR_DISARM_PIN?.trim() === "required";
   const disarmPinEnv = disarmPinRequired ? "always" : env.ARMOR_DISARM_PIN?.trim() ? "if_set" : undefined;
@@ -442,6 +445,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(haPrefix)) throw new ConfigError("ARMOR_HA_DISCOVERY_PREFIX is one word of letters, digits, - and _");
   const haDiscovery = env.ARMOR_HA_DISCOVERY === "1" ? { prefix: haPrefix } : null;
   if (alarmCommands) warnings.push("ARMOR_ALARM_COMMANDS=1: this server may arm and disarm the panels of alarm nodes, and a disarm from here carries no PIN; keep the broker's access list and the nodes' own setting as strict as you want this to be.");
+  if (cm5Update) warnings.push("ARMOR_CM5_UPDATE=1: an administrator may ask, from Studio or the phone, to update this machine's programs through the maintenance agent (a preview first, then the project typed again, a second proof of identity and a signed release are all required)");
   if (batteryWrite) warnings.push("ARMOR_BATTERY_WRITE=1: this server may order a gateway node to change what a Pylontech battery keeps (clock, counters, limits, outputs, serial number, firmware); some of it cannot be undone and can void the maker's warranty, and only an administrator who has just proved themselves again, with the battery's serial number typed, can do it");
   if (electricalSwitching) warnings.push("ARMOR_ELECTRICAL_SWITCHING=1: this server may send commands to the switches of electrical nodes; that is only for a bench, a lamp and a person present, until the installation has its own protections");
 
@@ -516,7 +520,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     escalateAfterMin: integer(env, "ARMOR_ESCALATE_AFTER_MIN", 0, 0, 1440),
     alertMinTargets: integer(env, "ARMOR_ALERT_MIN_TARGETS", 1, 1, 20),
     cameraCheckS: integer(env, "ARMOR_CAMERA_CHECK_S", 20, 0, 3600),
-    alertWebhookUrl, alertWebhookSecret, telegram, ntfy, fcmServiceAccount, homeAssistant, alertLanguage, electricalSwitching, batteryWrite, alarmCommands, disarmPinRequired, disarmPinEnv, controlDisarm, evidenceKey, trustProxy, haDiscovery, admin, maintenance, voice, aiToken,
+    alertWebhookUrl, alertWebhookSecret, telegram, ntfy, fcmServiceAccount, homeAssistant, alertLanguage, electricalSwitching, batteryWrite, cm5Update, alarmCommands, disarmPinRequired, disarmPinEnv, controlDisarm, evidenceKey, trustProxy, haDiscovery, admin, maintenance, voice, aiToken,
     tls,
     warnings,
   };

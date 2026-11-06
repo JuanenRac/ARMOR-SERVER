@@ -37,6 +37,7 @@ import { registerDiagnosticsRoutes } from "./routes/diagnostics.js";
 import { parseRadarEvent, radarEventTopic } from "./radar_events.js";
 import { controlTopic, maintenanceTopic, parseControlResult, parseMaintenance, redactToken } from "./node_control.js";
 import { registerMaintenanceRoutes } from "./routes/maintenance.js";
+import { registerMachineUpdateRoutes } from "./routes/machine_update.js";
 import { networkTopic, parseNetworkMessage } from "./network.js";
 import { electricalTopic, parseElectricalMessage, parseElectricalResult } from "./electrical.js";
 import { alarmTopic, parseAlarmMessage, parseAlarmResult } from "./alarm.js";
@@ -158,6 +159,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerNodeControlRoutes(app, context);
   registerDiagnosticsRoutes(app, context);
   registerMaintenanceRoutes(app, context);
+  registerMachineUpdateRoutes(app, context);
   registerAlarmRoutes(app, context);
   registerSystemRoutes(app, context, version);
   registerAdminRoutes(app, context);
