@@ -21,6 +21,12 @@ for (const [kind, parse] of [["telemetry", parseTelemetry], ["health", parseHeal
   });
 }
 
+const generatedParsers = path.resolve(directory, "..", "generated", "armor-parsers.ts");
+test("src/armor-parsers.ts is what ARMOR-COMMON generates now", { skip: fs.existsSync(generatedParsers) ? false : "ARMOR-COMMON generated parsers are not available" }, () => {
+  const norm = (text: string): string => text.replace(/\r\n/g, "\n");
+  assert.equal(norm(fs.readFileSync(path.resolve(import.meta.dirname, "..", "src", "armor-parsers.ts"), "utf8")), norm(fs.readFileSync(generatedParsers, "utf8")));
+});
+
 const generated = path.resolve(directory, "..", "generated", "armor-contracts.ts");
 test("the limits in src/contracts.ts match the generated contract constants", { skip: fs.existsSync(generated) ? false : "ARMOR-COMMON generated types are not available" }, async () => {
   const text = fs.readFileSync(generated, "utf8");
