@@ -4,15 +4,12 @@
  * vectors against them so the two can not drift apart.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
-export type RadarTrack = { sensor_id: number; track_id: number; x_mm: number; y_mm: number; speed_mm_s: number };
-export type Telemetry = { node_id: string; timestamp_ms: number; lux: number; targets: RadarTrack[] };
-export type Health = { node_id: string; timestamp_ms: number; online: boolean; /** A wall panel (ARMOR-NODE-HMI) says "panel": the server keeps it apart from the radars. */ kind?: "radar" | "panel" };
-/** What a node says about itself so that a console can offer its web panel (see ARMOR-COMMON's info schema). */
-export type Info = { node_id: string; timestamp_ms: number; name: string; firmware: string; ip: string; port: number; /** The version of the contracts the firmware was checked against (optional: an older node does not say it). */ contract?: string };
+import { MAX_LUX, MAX_TARGETS, NODE_ID_PATTERN, type Health, type Info, type RadarTrack, type Telemetry } from "./armor-contracts.js";
+/** The shapes of the messages and their limits are the ones ARMOR-COMMON generates from its schemas (src/armor-contracts.ts is that file; tests/conformance.test.ts keeps them equal). */
+export type { Health, Info, RadarTrack, Telemetry };
+export { MAX_LUX, MAX_TARGETS };
 
-export const MAX_TARGETS = 15;
-export const MAX_LUX = 200_000;
-const nodeId = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const nodeId = NODE_ID_PATTERN;
 export const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 export const integer = (value: unknown): value is number => finite(value) && Number.isInteger(value);
 

@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The types of the node messages come from the shared contracts:** the shapes of the radar, health, information and alarm messages (and the limits of a radar message) are no longer written twice: they are the ones generated from the shared schemas, kept in `src/armor-contracts.ts` (a test fails when it differs from what the shared repository generates now), and the lists of values that the alarm parsers accept are checked by the compiler against the generated types.
+
 ## [0.8.1.7] - The contracts a node was checked against are read from its health report too: the optional contract of nodehealth is validated like the one of the information message (three or four numbers) and kept in the report each node's... (and 4 more changes)
 
 - **The contracts a node was checked against are read from its health report too:** the optional `contract` of `node_health` is validated like the one of the information message (three or four numbers) and kept in the report each node's health view carries, so the alarm, electrical and solar nodes, which send no information message, can be compared with the server; a node that does not say it is an older one. The shared vectors cover it.

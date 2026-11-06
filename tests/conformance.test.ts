@@ -109,3 +109,8 @@ test("every refusal code that the clients share is one the server can answer", {
   const sources = fs.readdirSync(path.resolve(import.meta.dirname, "..", "src"), { recursive: true, encoding: "utf8" }).filter(name => name.endsWith(".ts")).map(name => fs.readFileSync(path.resolve(import.meta.dirname, "..", "src", name), "utf8")).join("\n");
   for (const code of codes) assert.ok(sources.includes(`"${code}"`), `the server never answers ${code}`);
 });
+
+test("src/armor-contracts.ts is what ARMOR-COMMON generates now", { skip: fs.existsSync(generated) ? false : "ARMOR-COMMON generated types are not available" }, () => {
+  const norm = (text: string) => text.split(String.fromCharCode(13, 10)).join(String.fromCharCode(10));
+  assert.equal(norm(fs.readFileSync(path.resolve(import.meta.dirname, "..", "src", "armor-contracts.ts"), "utf8")), norm(fs.readFileSync(generated, "utf8")));
+});

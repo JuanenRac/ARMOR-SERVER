@@ -5,46 +5,31 @@
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import { onlyKnown, readNodeId, readTimestamp, record, integer } from "./contracts.js";
+import type { Alarm, AlarmCommand, AlarmEvent, AlarmResult, AlarmZone } from "./armor-contracts.js";
 import { parseArmProfile, type ArmProfile } from "./arm_profiles.js";
+
+/** The shapes of the alarm messages are the ones ARMOR-COMMON generates from its schemas; the lists below are the values the parsers accept, and the compiler checks that each list holds exactly the values of the generated type. */
+export type { AlarmCommand, AlarmEvent, AlarmResult, AlarmZone };
+export type AlarmMessage = Alarm;
 import { refresh, sweepStale } from "./staleness.js";
 
 export const PHASES = ["disarmed", "exit_delay", "armed", "entry_delay", "alarm"] as const;
-export type Phase = (typeof PHASES)[number];
+export type Phase = Alarm["phase"];
 export const MODES = ["disarmed", "away", "stay"] as const;
-export type Mode = (typeof MODES)[number];
+export type Mode = Alarm["mode"];
 export const ZONE_KINDS = ["instant", "entry", "interior", "always"] as const;
-export type ZoneKind = (typeof ZONE_KINDS)[number];
+export type ZoneKind = AlarmZone["kind"];
 export const ZONE_STATES = ["normal", "triggered", "tamper", "trouble"] as const;   // trouble: the zone cannot be read, so it is not guarding
-export type ZoneState = (typeof ZONE_STATES)[number];
+export type ZoneState = AlarmZone["state"];
 export const EVENT_KINDS = ["armed", "exit_delay_started", "entry_delay_started", "alarm", "siren_timed_out", "disarmed", "bad_pin", "locked_out", "zone_bypassed", "siren_silenced"] as const;
-export type EventKind = (typeof EVENT_KINDS)[number];
+export type EventKind = AlarmEvent["kind"];
 /** The state of the siren's wiring on a node that supervises it: ok the siren is there, open the wire is cut or the siren is gone, short the wire is shorted, unreadable the node cannot read the return line. */
 export const SIREN_LOOP_STATES = ["unknown", "ok", "open", "short", "unreadable"] as const;
-export type SirenLoopState = (typeof SIREN_LOOP_STATES)[number];
+export type SirenLoopState = NonNullable<Alarm["siren_loop"]>;
 export const ACTIONS = ["arm", "disarm", "silence"] as const;
-export type AlarmAction = (typeof ACTIONS)[number];
+export type AlarmAction = AlarmCommand["action"];
 export const REFUSALS = ["none", "not_disarmed", "zones_open", "not_armed", "bad_pin", "locked_out"] as const;
-export type AlarmRefusal = (typeof REFUSALS)[number];
-
-export type AlarmZone = { id: string; name?: string; kind: ZoneKind; state: ZoneState; bypassed: boolean };
-export type AlarmEvent = { ago_s: number; kind: EventKind; zone?: string };
-export type AlarmMessage = {
-  kind: "alarm"; node_id: string; timestamp_ms: number; phase: Phase; mode: Mode; siren: boolean; locked_out: boolean; commands_enabled: boolean;
-  zones: AlarmZone[]; open_zones: string[]; events: AlarmEvent[];
-  /** The node understands the arming profiles of the arm command (an older firmware does not say it, and is armed without one). */
-  arm_profiles?: boolean;
-  /** The id of the arming profile the panel is armed (or arming) with. */
-  profile?: string;
-  /** The siren's wiring, only on a node that supervises it; always together with siren_fault. */
-  siren_loop?: SirenLoopState;
-  /** true when siren_loop is open, short or unreadable: the siren may not sound when the alarm needs it. */
-  siren_fault?: boolean;
-  /** Only in a signed state (server.alarm_state_signature): a number that only goes up, and the HMAC-SHA256 in hex over the state with the key of the installation. They come together. */
-  seq?: number;
-  sig?: string;
-};
-export type AlarmCommand = { kind: "alarm_command"; node_id: string; timestamp_ms: number; command_id: string; action: AlarmAction; mode?: "away" | "stay"; force?: boolean; profile?: ArmProfile };
-export type AlarmResult = { kind: "alarm_result"; node_id: string; timestamp_ms: number; command_id: string; action: AlarmAction; accepted: boolean; refusal: AlarmRefusal; phase: Phase };
+export type AlarmRefusal = AlarmResult["refusal"];
 
 const zoneId = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 /** A command id is sixteen lowercase hexadecimal digits. */
@@ -222,3 +207,11 @@ export class AlarmStore {
     return { nodes: this.#entries.size, stale, armed, sounding };
   }
 }
+
+// A list that misses a value of the generated type, or holds one it does not have, stops the build here.
+type Exactly<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
+const listsMatchContract: [
+  Exactly<Phase, (typeof PHASES)[number]>, Exactly<Mode, (typeof MODES)[number]>, Exactly<ZoneKind, (typeof ZONE_KINDS)[number]>, Exactly<ZoneState, (typeof ZONE_STATES)[number]>,
+  Exactly<EventKind, (typeof EVENT_KINDS)[number]>, Exactly<SirenLoopState, (typeof SIREN_LOOP_STATES)[number]>, Exactly<AlarmAction, (typeof ACTIONS)[number]>, Exactly<AlarmRefusal, (typeof REFUSALS)[number]>,
+] = [true, true, true, true, true, true, true, true];
+void listsMatchContract;
