@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The readers of a telemetry, health or information message check the document with the reader generated from the shared schemas:** the field rules of those three messages are no longer written a second time in src/contracts.ts; after the fields this server does not know are set aside (forward-compatible reading) the generated reader decides, and the refusal still names the first wrong field (invalid lux). The seeded cases of the shared contracts keep both readers equal.
 - **The local door of a camera tunnel listens for errors the right way:** an error while it starts rejects the start, and once it is listening the start listener is removed, so a later error (running out of descriptors, for instance) is heard only by the one that closes the tunnel. Tests: 1 more.
 
 ## [0.8.2.0] - The crossings of the counting lines, as numbers: GET /api/v1/vision/counts asks the live service of ARMOR-VISION how many times each counting line of each camera has been crossed to the left and to the right and passes on only... (and 3 more changes)

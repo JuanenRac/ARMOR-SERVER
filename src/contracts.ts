@@ -4,6 +4,7 @@
  * vectors against them so the two can not drift apart.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
+import { checkMessage, type MessageName } from "./armor-parsers.js";
 import { MAX_LUX, MAX_TARGETS, NODE_ID_PATTERN, type Health, type Info, type RadarTrack, type Telemetry } from "./armor-contracts.js";
 /** The shapes of the messages and their limits are the ones ARMOR-COMMON generates from its schemas (src/armor-contracts.ts is that file; tests/conformance.test.ts keeps them equal). */
 export type { Health, Info, RadarTrack, Telemetry };
@@ -54,6 +55,12 @@ export const readTimestamp = (body: Record<string, unknown>): number => {
   return body.timestamp_ms;
 };
 
+/** Checks a message (after the fields this server does not know were dropped) with the reader that ARMOR-COMMON generates from the schema; the refusal names the first wrong field, like `invalid lux`. */
+export function checkAgainstContract(name: MessageName, body: Record<string, unknown>): void {
+  const error = checkMessage(name, body);
+  if (error) throw new Error(`invalid ${error.path.replace(/^\//, "").replace(/\//g, ".") || name}`);
+}
+
 function parseTrack(value: unknown, index: number): RadarTrack {
   const track = record(value, `target ${index}`);
   onlyKnown(track, ["sensor_id", "track_id", "x_mm", "y_mm", "speed_mm_s"], `target ${index}`);
@@ -72,39 +79,24 @@ export function parseTelemetry(value: unknown): Telemetry {
   const body = record(value, "telemetry");
   onlyKnown(body, ["node_id", "timestamp_ms", "lux", "targets", "kind"], "telemetry");
   ownKind(body, "telemetry");
-  const node = readNodeId(body);
-  const timestamp = readTimestamp(body);
-  if (!finite(body.lux) || body.lux < 0 || body.lux > MAX_LUX) throw new Error("invalid lux");
-  if (!Array.isArray(body.targets) || body.targets.length > MAX_TARGETS) throw new Error("invalid targets");
-  return { node_id: node, timestamp_ms: timestamp, lux: body.lux, targets: body.targets.map(parseTrack) };
+  checkAgainstContract("telemetry", body);
+  const targets = (body.targets as unknown[]).map(parseTrack);
+  return { node_id: body.node_id as string, timestamp_ms: body.timestamp_ms as number, lux: body.lux as number, targets };
 }
 
 export function parseHealth(value: unknown): Health {
   const body = record(value, "health");
   onlyKnown(body, ["node_id", "timestamp_ms", "online", "kind"], "health");
-  const node = readNodeId(body);
-  const timestamp = readTimestamp(body);
-  if (typeof body.online !== "boolean") throw new Error("invalid online flag");
-  if ("kind" in body && body.kind !== "radar" && body.kind !== "panel") throw new Error("invalid kind");
-  return { node_id: node, timestamp_ms: timestamp, online: body.online, ...(body.kind === "panel" ? { kind: "panel" as const } : {}) };
+  checkAgainstContract("health", body);
+  return { node_id: body.node_id as string, timestamp_ms: body.timestamp_ms as number, online: body.online as boolean, ...(body.kind === "panel" ? { kind: "panel" as const } : {}) };
 }
 
-const IPV4 = /^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}$/;
-// Three parts, or four from 0.8.0 on (the odometer of the family): see ARMOR-COMMON docs/CONTRACTS.md.
-const FIRMWARE = /^[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?$/;
 export const MAX_NAME = 48;
 
 export function parseInfo(value: unknown): Info {
   const body = record(value, "info");
   onlyKnown(body, ["node_id", "timestamp_ms", "name", "firmware", "ip", "port", "kind", "contract"], "info");
   ownKind(body, "info");
-  const node = readNodeId(body);
-  const timestamp = readTimestamp(body);
-  // The schema counts characters, not UTF-16 units: an emoji is one.
-  if (typeof body.name !== "string" || Array.from(body.name).length < 1 || Array.from(body.name).length > MAX_NAME) throw new Error("invalid name");
-  if (typeof body.firmware !== "string" || !FIRMWARE.test(body.firmware)) throw new Error("invalid firmware");
-  if (typeof body.ip !== "string" || !IPV4.test(body.ip)) throw new Error("invalid ip");
-  if (!integer(body.port) || body.port < 1 || body.port > 65535) throw new Error("invalid port");
-  if (body.contract !== undefined && (typeof body.contract !== "string" || !FIRMWARE.test(body.contract))) throw new Error("invalid contract");
-  return { node_id: node, timestamp_ms: timestamp, name: body.name, firmware: body.firmware, ip: body.ip, port: body.port, ...(body.contract === undefined ? {} : { contract: body.contract }) };
+  checkAgainstContract("info", body);
+  return { node_id: body.node_id as string, timestamp_ms: body.timestamp_ms as number, name: body.name as string, firmware: body.firmware as string, ip: body.ip as string, port: body.port as number, ...(body.contract === undefined ? {} : { contract: body.contract as string }) };
 }
