@@ -30,6 +30,7 @@ async function fakeAgent(consoleEnabled = true): Promise<{ socket: string; seen:
       if (request.method === "POST" && url === "/v1/updates") return send(202, { id: "job-1", kind: "update", state: "running", percent: 0, steps: [], log: [] });
       if (request.method === "POST" && url.endsWith("/rollback")) return send(202, { id: "job-2", state: "running" });
       if (url === "/v1/system/auto-updates") return send(200, { settings: { enabled: true, reboot: "disarmed", window_start: "03:00", window_end: "05:00", ...(request.method === "POST" ? body : {}) }, package: true, applied: [], reboot_required: false });
+      if (url === "/v1/staging") return send(200, { enabled: request.method === "POST" ? body.enabled === true : false, source: request.method === "POST" ? "studio" : "env", wait_s: 30 });
       if (request.method === "POST" && url.startsWith("/v1/system/")) return send(202, { id: "job-3", state: "running" });
       if (request.method === "GET" && url.startsWith("/v1/jobs/")) return send(200, { id: "job-1", state: "done", percent: 100, log: ["x"], log_total: 1 });
       if (request.method === "POST" && url === "/v1/history/clear") return send(200, { ok: true, cleared: 3 });
@@ -228,5 +229,31 @@ test("without the maintenance agent nobody can ask whether the system is armed",
   const running = await startServer();
   try {
     assert.equal((await fetch(`${running.base}/api/v1/maintenance/armed`, { headers: { "X-Armor-Maint-Token": TOKEN } })).status, 401);
+  } finally { await running.stop(); }
+});
+
+test("an administrator chooses whether a new server is tried on the side first, and nothing else can be set that way", async () => {
+  const agent = await fakeAgent();
+  const running = await startServer({ ARMOR_MAINT_SOCKET: agent.socket, ARMOR_MAINT_TOKEN: TOKEN });
+  try {
+    const cookie = await studioCookie(running.base);
+    assert.equal((await fetch(`${running.base}/api/v1/admin/maintenance/staging`)).status, 401);
+    const read = await call(running, cookie, "GET", "/api/v1/admin/maintenance/staging");
+    assert.deepEqual([read.status, read.body.enabled, read.body.source], [200, false, "env"], "off until somebody turns it on");
+    const put = await call(running, cookie, "PUT", "/api/v1/admin/maintenance/staging", { enabled: true });
+    assert.deepEqual([put.status, put.body.enabled, put.body.source], [200, true, "studio"]);
+    assert.deepEqual(agent.seen.at(-1)?.body, { enabled: true });
+    const before = agent.seen.length;
+    for (const bad of [{}, { enabled: "on" }, { enabled: 1 }, { enabled: true, wait: 5 }, { wait: 5 }]) assert.equal((await call(running, cookie, "PUT", "/api/v1/admin/maintenance/staging", bad)).status, 422, JSON.stringify(bad));
+    assert.equal(agent.seen.length, before, "a refusal here never reaches the agent");
+    assert.match(fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8"), /maintenance\.staging[\s\S]*enabled=true/);
+  } finally { await running.stop(); await agent.close(); }
+});
+
+test("without the maintenance agent the staging switch says so", async () => {
+  const running = await startServer();
+  try {
+    const cookie = await studioCookie(running.base);
+    assert.deepEqual([(await call(running, cookie, "GET", "/api/v1/admin/maintenance/staging")).status, (await call(running, cookie, "PUT", "/api/v1/admin/maintenance/staging", { enabled: true })).status], [503, 503]);
   } finally { await running.stop(); }
 });

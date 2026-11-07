@@ -107,6 +107,21 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
     relay(response, reply);
   });
 
+  // Trying the new server on the side before it replaces the running one (ARMOR_MAINT_STAGING of the agent). Off by default; the agent keeps the choice.
+  app.get("/api/v1/admin/maintenance/staging", requireAdmin, async (_request, response) => {
+    const reply = await ask(response, "GET", "/v1/staging");
+    if (reply) relay(response, reply);
+  });
+  app.put("/api/v1/admin/maintenance/staging", requireAdmin, async (request, response) => {
+    const input = body(request);
+    if (Object.keys(input).some(key => key !== "enabled")) return response.status(422).json({ error: "unknown_setting" });
+    if (typeof input.enabled !== "boolean") return response.status(422).json({ error: "bad_enabled" });
+    const reply = await ask(response, "POST", "/v1/staging", { enabled: input.enabled });
+    if (!reply) return;
+    audit.record({ action: "maintenance.staging", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), detail: `enabled=${String(input.enabled)}` });
+    relay(response, reply);
+  });
+
   // The agent asks, before it reboots the machine after a security update, whether anything is armed: with its own token (the one this server uses to ask it), not a session.
   // Armed is the system mode or any panel that is not disarmed; the answer carries nothing else.
   app.get("/api/v1/maintenance/armed", (request, response) => {

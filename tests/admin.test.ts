@@ -16,6 +16,7 @@ type Seen = { method: string; url: string; body: Record<string, unknown>; token:
 /** A stand-in for the admin agent: the same paths and answers, recording what it was asked. */
 async function fakeAgent(options: { status?: boolean; rotation?: boolean; hides?: boolean } = {}): Promise<{ socket: string; seen: Seen[]; files: Record<string, string>; accounts: string[]; close: () => Promise<void> }> {
   const socket = socketName(), seen: Seen[] = [], accounts = ["field-node-north-1"];
+  let fieldHttp = false;
   const files: Record<string, string> = { "server.env": "ARMOR_PORT=18080\nARMOR_STUDIO_PASSWORD=hunter2-hunter2\nARMOR_INGEST_TOKEN=\n", "mosquitto.conf": "listener 18883\n" };
   const server = http.createServer((request, response) => {
     const chunks: Buffer[] = [];
@@ -38,6 +39,12 @@ async function fakeAgent(options: { status?: boolean; rotation?: boolean; hides?
       if (request.method === "POST" && url.startsWith("/v1/mqtt/relays/")) {
         if (!String(request.headers["x-armor-maint-totp"] ?? "")) return send(401, { error: "totp_required" });
         return send(200, { ok: true, relay: url.slice(16), node: String(body.node ?? ""), state: body.state, installed: true, battery_write: body.node ? [String(body.node)] : [], alarm_state_relay: url.endsWith("alarm-state-relay") && body.state === "on", approval: "totp" });
+      }
+      if (request.method === "GET" && url === "/v1/firewall") return send(200, { installed: true, field_http: fieldHttp, approval: "totp" });
+      if (request.method === "POST" && url === "/v1/firewall/field-http") {
+        if (!String(request.headers["x-armor-maint-totp"] ?? "")) return send(401, { error: "totp_required" });
+        fieldHttp = body.state === "on";
+        return send(200, { ok: true, state: body.state, installed: true, field_http: fieldHttp, approval: "totp" });
       }
       if (request.method === "GET" && url === "/v1/mqtt/accounts") return send(200, { accounts: accounts.map(user => ({ user, role: "field-node", manageable: true, topics: [] })) });
       if (request.method === "POST" && url === "/v1/mqtt/accounts") {
@@ -347,6 +354,35 @@ test("the two switches of the broker rules are off until an administrator turns 
     assert.match(audit, /admin\.acl_relay/);
     assert.match(audit, /acl_relays_disabled/);
     assert.match(audit, /battery-write on/);
+    assert.doesNotMatch(audit, /654321|111111|123456/, "the code is never written down");
+  } finally { await running.stop(); await agent.close(); }
+});
+
+test("the field-http switch of the firewall is off until the option is on, then needs a confirmation and the code of the authenticator", async () => {
+  const agent = await fakeAgent();
+  const running = await startServer({ ARMOR_ADMIN_SOCKET: agent.socket, ARMOR_ADMIN_TOKEN: TOKEN });
+  try {
+    const cookie = await studioCookie(running.base);
+    const change = (input: Record<string, unknown>, code?: string) => fetch(`${running.base}/api/v1/admin/firewall/field-http`, { method: "POST", headers: { ...json, cookie, ...(code ? { "X-Armor-Maint-Totp": code } : {}) }, body: JSON.stringify(input) }).then(async answer => ({ status: answer.status, body: await answer.json() as Record<string, any> }));
+    assert.deepEqual((await call(running, cookie, "GET", "/api/v1/admin/firewall")).body, { enabled: false });
+    assert.deepEqual([(await change({ state: "on", confirm: true, confirm_text: "field-http" }, "123456")).body.error, agent.seen.some(item => item.url.includes("firewall"))], ["field_http_disabled", false], "off: the agent is not even asked");
+    assert.equal((await call(running, cookie, "PUT", "/api/v1/security/settings", { "admin.field_http": true })).status, 200);
+    assert.deepEqual((await change({ state: "maybe", confirm: true, confirm_text: "field-http" }, "123456")).body, { error: "invalid_state" });
+    assert.deepEqual((await change({ state: "on" }, "123456")).body, { error: "confirmation_required" });
+    assert.deepEqual((await change({ state: "on", confirm: true, confirm_text: "other" }, "123456")).body, { error: "confirmation_mismatch" });
+    assert.equal(agent.seen.some(item => item.url.includes("firewall")), false, "no refusal here reaches the agent");
+    const status = await call(running, cookie, "GET", "/api/v1/admin/firewall");
+    assert.deepEqual([status.body.enabled, status.body.installed, status.body.field_http, status.body.approval], [true, true, false, "totp"]);
+    const refused = await change({ state: "on", confirm: true, confirm_text: "field-http" });
+    assert.deepEqual([refused.status, refused.body.error], [403, "totp_required"], "the agent's 401 reaches the console as a 403");
+    const done = await change({ state: "on", confirm: true, confirm_text: "field-http" }, "654321");
+    assert.deepEqual([done.status, done.body.ok, done.body.field_http], [200, true, true]);
+    assert.equal((await call(running, cookie, "GET", "/api/v1/admin/firewall")).body.field_http, true);
+    assert.equal((await change({ state: "off", confirm: true, confirm_text: "field-http" }, "111111")).body.field_http, false);
+    assert.deepEqual(agent.seen.filter(item => item.method === "POST" && item.url.includes("firewall")).map(item => item.totp), ["", "654321", "111111"]);
+    const audit = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8");
+    assert.match(audit, /admin\.firewall/);
+    assert.match(audit, /field_http_disabled/);
     assert.doesNotMatch(audit, /654321|111111|123456/, "the code is never written down");
   } finally { await running.stop(); await agent.close(); }
 });

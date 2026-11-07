@@ -16,6 +16,8 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/admin/files` | administrator | `routes/admin.ts` |
 | GET | `/api/v1/admin/files/:id` | administrator | `routes/admin.ts` |
 | PUT | `/api/v1/admin/files/:id` | administrator | `routes/admin.ts` |
+| GET | `/api/v1/admin/firewall` | administrator | `routes/admin.ts` |
+| POST | `/api/v1/admin/firewall/field-http` | administrator | `routes/admin.ts` |
 | POST | `/api/v1/admin/firmware/jobs` | administrator, fresh proof of identity | `routes/firmware.ts` |
 | GET | `/api/v1/admin/firmware/jobs/:id` | administrator | `routes/firmware.ts` |
 | POST | `/api/v1/admin/firmware/probe` | administrator | `routes/firmware.ts` |
@@ -30,6 +32,8 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/admin/machine-update/jobs/:id` | administrator | `routes/machine_update.ts` |
 | POST | `/api/v1/admin/machine-update/preview` | administrator | `routes/machine_update.ts` |
 | GET | `/api/v1/admin/maintenance/jobs/:id` | administrator | `routes/maintenance.ts` |
+| GET | `/api/v1/admin/maintenance/staging` | administrator | `routes/maintenance.ts` |
+| PUT | `/api/v1/admin/maintenance/staging` | administrator | `routes/maintenance.ts` |
 | GET | `/api/v1/admin/maintenance/status` | administrator | `routes/maintenance.ts` |
 | GET | `/api/v1/admin/mqtt/accounts` | administrator | `routes/admin.ts` |
 | POST | `/api/v1/admin/mqtt/accounts` | administrator | `routes/admin.ts` |

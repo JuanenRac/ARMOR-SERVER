@@ -143,6 +143,30 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
     relay(response, reply);
   });
 
+  // The one switch of the host firewall that Studio may ask for: may the field network also reach the server's port over HTTP (nodes that report without the broker). Off unless an administrator turns the option on.
+  app.get("/api/v1/admin/firewall", requireAdmin, async (_request, response) => {
+    if (!context.securitySettings.get("admin.field_http")) return response.json({ enabled: false });
+    const reply = await ask(response, "GET", "/v1/firewall");
+    if (reply) relay(response, reply, data => ({ ...data, enabled: true }));
+  });
+
+  app.post("/api/v1/admin/firewall/field-http", requireAdmin, async (request, response) => {
+    const input = body(request);
+    const refuse = (status: number, error: string) => {
+      audit.record({ action: "admin.firewall", outcome: "denied", actor: actor(request), target: "field-http", detail: error });
+      return response.status(status).json({ error });
+    };
+    if (!context.securitySettings.get("admin.field_http")) return refuse(403, "field_http_disabled");
+    if (input.state !== "on" && input.state !== "off") return refuse(422, "invalid_state");
+    if (input.confirm !== true) return refuse(422, "confirmation_required");
+    if (input.confirm_text !== "field-http") return refuse(422, "confirmation_mismatch");
+    const reply = await ask(response, "POST", "/v1/firewall/field-http", { state: input.state }, sensitive(request));
+    if (!reply) return;
+    audit.record({ action: "admin.firewall", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: "field-http", detail: `${String(input.state)}${reply.status < 300 ? "" : ` ${String(reply.body.error ?? reply.status)}`}` });
+    response.setHeader("Cache-Control", "no-store");
+    relay(response, reply);
+  });
+
   app.get("/api/v1/admin/mqtt/accounts", requireAdmin, async (_request, response) => {
     const reply = await ask(response, "GET", "/v1/mqtt/accounts");
     if (reply) relay(response, reply);
