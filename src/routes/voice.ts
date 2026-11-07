@@ -122,6 +122,30 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
       return response.status(reply.status).type("application/json").send(text.slice(0, 400_000));
     } catch { return response.status(503).json({ error: "voice_not_answering" }); }
   };
+  // The wake word: the panel sends the last second or two of audio now and then and the gateway answers whether its word was said. Off (403) until the security option voice.wake_word is turned on.
+  // Nothing is kept here: the chunk is passed on and dropped, and only the answer comes back.
+  const WAKE_MAX_BYTES = 64_000;
+  const wakeLimit = rateLimit({ windowMs: 60_000, limit: 900, standardHeaders: "draft-8", legacyHeaders: false });
+  const wakeBody = express.raw({ type: () => true, limit: WAKE_MAX_BYTES });
+  const wakeGate = (request: Request, response: import("express").Response, next: import("express").NextFunction) => {
+    if (!context.securitySettings.get("voice.wake_word")) return response.status(403).json({ error: "wake_word_disabled" });
+    return authorize(request, response, next);
+  };
+  app.post("/api/v1/voice/wake", wakeLimit, wakeGate, (request, response, next) => wakeBody(request, response, (error?: unknown) => (error ? response.status((error as { status?: number }).status === 413 ? 413 : 400).json({ error: "audio_too_large" }) : next())), async (request, response) => {
+    const config_voice = config.voice!;   // wakeGate has answered 503 when there is none
+    const body = Buffer.isBuffer(request.body) ? request.body : Buffer.alloc(0);
+    if (body.length === 0) return response.status(411).json({ error: "bad audio length" });
+    try {
+      const reply = await fetch(`${config_voice.url.replace(/\/$/, "")}/v1/wake`, {
+        method: "POST", body: new Uint8Array(body), signal: AbortSignal.timeout(5_000),
+        headers: { "Content-Type": "audio/L16;rate=16000", "X-Armor-Voice-Token": config_voice.token, "X-Armor-Language": String(request.headers["x-armor-language"] ?? "en"), "X-Armor-Client": panelOf(request.headers["x-armor-panel"]) ?? request.ip ?? "panel" },
+      });
+      const text = await readCapped(reply, 4_000);
+      if (text === undefined) return response.status(502).json({ error: "voice_bad_reply" });
+      return response.status(reply.status).type("application/json").send(text);
+    } catch { return response.status(503).json({ error: "voice_not_answering" }); }
+  });
+
   app.post("/api/v1/voice/turn", turnLimit, authorize, readBody, turn);
   app.post("/api/v1/voice/v1/turn", turnLimit, authorize, readBody, turn);
 

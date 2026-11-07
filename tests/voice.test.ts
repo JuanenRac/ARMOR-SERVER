@@ -251,3 +251,43 @@ test("the panel that spoke is told to the voice gateway with its turn, when it g
     assert.deepEqual(seen, ["wall-1", "undefined", "undefined"]);
   } finally { await running.stop(); await new Promise<void>(resolve => gateway.close(() => resolve())); }
 });
+
+test("the wake word is off until the option is on, and then the chunk is passed on and only the answer comes back", async () => {
+  const seen: Array<{ language: string; client: string; bytes: number; contentType: string }> = [];
+  const wake = http.createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", chunk => chunks.push(chunk as Buffer));
+    request.on("end", () => {
+      if (request.url !== "/v1/wake" || request.headers["x-armor-voice-token"] !== TOKEN) { response.writeHead(401, json); return response.end("{}"); }
+      seen.push({ language: String(request.headers["x-armor-language"]), client: String(request.headers["x-armor-client"]), bytes: Buffer.concat(chunks).length, contentType: String(request.headers["content-type"]) });
+      response.writeHead(200, json); response.end(JSON.stringify({ wake: true, word: "hey armor", score: 0.93, frames: 2 }));
+    });
+  });
+  await new Promise<void>(resolve => wake.listen(0, "127.0.0.1", resolve));
+  const running = await startServer({ ARMOR_VOICE_URL: `http://127.0.0.1:${(wake.address() as { port: number }).port}`, ARMOR_VOICE_TOKEN: TOKEN });
+  try {
+    const cookie = await studioCookie(running.base);
+    const send = (token: string | undefined, bytes: number, language = "es") => fetch(`${running.base}/api/v1/voice/wake`, { method: "POST", headers: { "Content-Type": "audio/L16;rate=16000", "X-Armor-Language": language, "X-Armor-Panel": "hall", ...(token ? { "X-Armor-Voice-Token": token } : {}) }, body: new Uint8Array(bytes) });
+    assert.deepEqual([(await send(TOKEN, 2560)).status, seen.length], [403, 0], "off by default: nothing is passed on");
+    assert.equal((await call(running, cookie, "PUT", "/api/v1/security/settings", { "voice.wake_word": true })).status, 200);
+    assert.equal((await send(undefined, 2560)).status, 401);
+    assert.equal((await send("w".repeat(32), 2560)).status, 401);
+    assert.equal((await send(TOKEN, 0)).status, 411);
+    assert.equal((await send(TOKEN, 64_001)).status, 413);
+    assert.equal(seen.length, 0, "a refusal here never reaches the gateway");
+    const ok = await send(TOKEN, 2560);
+    assert.deepEqual([ok.status, await ok.json()], [200, { wake: true, word: "hey armor", score: 0.93, frames: 2 }]);
+    assert.deepEqual(seen, [{ language: "es", client: "hall", bytes: 2560, contentType: "audio/L16;rate=16000" }]);
+    assert.match(fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8"), /voice\.wake_word/, "turning it on is written down");
+  } finally { await running.stop(); await new Promise<void>(resolve => wake.close(() => resolve())); }
+});
+
+test("without a voice gateway the wake word says so once the option is on", async () => {
+  const running = await startServer();
+  try {
+    const cookie = await studioCookie(running.base);
+    await call(running, cookie, "PUT", "/api/v1/security/settings", { "voice.wake_word": true });
+    const reply = await fetch(`${running.base}/api/v1/voice/wake`, { method: "POST", headers: { "Content-Type": "audio/L16;rate=16000", "X-Armor-Voice-Token": TOKEN }, body: new Uint8Array(2560) });
+    assert.equal(reply.status, 503);
+  } finally { await running.stop(); }
+});

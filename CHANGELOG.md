@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **A wake word for the wall panel, off by default:** `POST /api/v1/voice/wake` takes up to two seconds of audio from the panel (the voice token, as for a turn), passes it to the voice gateway of this machine and gives back `{ wake, word, score, frames }`; nothing is kept here. It answers 403 `wake_word_disabled` until an administrator turns on the new security option `voice.wake_word` (off by default; turning it on counts as lowering security). Tests, route table and contract updated.
+
 - **The CI keeps a floor under the test coverage:** `npm run coverage` (tools/coverage_check.mjs) runs the suite with the coverage of Node and fails when lines, branches or functions fall under the numbers in `docs/coverage_threshold.json` (98, 90 and 93, just under what the tests reach today: 98.6, 91.1 and 94.0). The reader of the floor and the totals are tested.
 
 - **Two more switches for Studio, both off or conservative by default:** `GET /api/v1/admin/firewall` and `POST /api/v1/admin/firewall/field-http` let an administrator open or close the host firewall rule that lets the field network reach the server's port over HTTP; they answer 403 `field_http_disabled` until the new security option `admin.field_http` is turned on (it is off by default and turning it on counts as lowering security), and each change needs the state, `confirm: true`, the word `field-http` typed again and the one-time code of the authenticator, which the admin agent checks. `GET`/`PUT /api/v1/admin/maintenance/staging` turn the trial of a new server on the side, before the maintenance agent switches to it, on or off (off by default). Tests, route table and shared contract updated.

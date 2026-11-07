@@ -282,5 +282,6 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/voice/status` | operator | `routes/voice.ts` |
 | POST | `/api/v1/voice/turn` | none here | `routes/voice.ts` |
 | POST | `/api/v1/voice/v1/turn` | none here | `routes/voice.ts` |
+| POST | `/api/v1/voice/wake` | none here | `routes/voice.ts` |
 | GET | `/healthz` | none here | `routes/ingest.ts` |
 | GET | `/metrics` | none here | `routes/system.ts` |

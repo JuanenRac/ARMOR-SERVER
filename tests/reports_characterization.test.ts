@@ -8,7 +8,7 @@ import { startServer, studioCookie } from "./helpers.js";
 const EXISTING_DEFAULTS = {
   "alarm.disarm_pin": "if_set", "voice.silence_confirmation": "off", "alarm.arming_modes": false, "alarm.mode_downgrade_pin": "required", "alarm.mode_schedule": false, "alarm.mode_schedule_lowers": false,
   "alarm.mode_panel_sync": false, "alarm.config_hash": true, "server.zone_feed": true, "server.zone_feed_signature": true, "media.rtsp_proxy": true, "network.login_secure_only": false,
-  "login.country_alert": true, "electrical.set_aside_old_readings": true, "voice.multipart_turn": true, "admin.acl_relays": false, "admin.field_http": false, "panel.live_events": true, "client.device_lock": "user", "nodes.nvs_encryption": "off",
+  "login.country_alert": true, "electrical.set_aside_old_readings": true, "voice.multipart_turn": true, "voice.wake_word": false, "admin.acl_relays": false, "admin.field_http": false, "panel.live_events": true, "client.device_lock": "user", "nodes.nvs_encryption": "off",
   "voice.turn_max_bytes": 480_000, "voice.reply_audio_max_bytes": 200_000, "alarm_audio.spoken": false, "alarm_audio.custom_sounds": false,
   "vision.service_url": "", "vision.service_remote": false, "summary.log_days": 14, "summary.reading_every_s": 300, "summary.power_every_s": 60, "summary.false_alarm_s": 60,
 };
