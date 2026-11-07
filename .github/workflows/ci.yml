@@ -117,3 +117,9 @@ jobs:
           ARMOR_REQUIRE_MOSQUITTO: ${{ startsWith(github.event.repository.name, 'ARMOR-NODE-') && '1' || '' }}
           # A comparison with another repository that cannot be made is a failure here, not a skipped test.
           ARMOR_REQUIRE_SIBLINGS: "1"
+
+      # The floor of the test coverage, for a repository that keeps one: docs/coverage_threshold.json holds a number per measure (just under what the tests reach) and the package script
+      # `coverage` fails below it. Raising a floor is a change of that file; a repository without the file runs nothing here.
+      - name: Check the test coverage floor
+        if: ${{ hashFiles('package.json') != '' && hashFiles('docs/coverage_threshold.json') != '' }}
+        run: npm run coverage
