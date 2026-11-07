@@ -39,7 +39,7 @@ export function registerUserRoutes(app: Express, context: AppContext): void {
     const input = body(request), actor = studioUser(request), id = String(request.params.id);
     try {
       const before = users.get(id)?.username;
-      const changed = users.update(id, { username: input.username, password: input.password, role: input.role });
+      const changed = users.update(id, { username: input.username, password: input.password, role: input.role, panicPhraseAllowed: input.panicPhraseAllowed });
       if (before && before !== changed.user.username) context.fcmDevices.rename(before, changed.user.username);
       // A different password or role must take effect at once: the user's other sessions end (this one stays when it is your own).
       if (changed.passwordChanged || changed.roleChanged) studioSessions.revokeUser(id, id === actor?.id ? request : undefined);

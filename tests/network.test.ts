@@ -275,6 +275,6 @@ test("the name the house is reached by that stops following the public address i
 test("the DNS block of the public part is read strictly", () => {
   const good = { ip: "203.0.113.9", checked_ms: 1, dns: { name: "home.example.net", addresses: ["203.0.113.9"], matches: true } };
   assert.equal(parseNetworkMessage(message({ public: good })).public?.dns?.matches, true);
-  for (const dns of [{ name: "home.example.net", addresses: [] } as unknown, { name: "", addresses: [], matches: true }, { name: "x", addresses: ["1.1.1.1"], matches: "yes" }, { name: "x", addresses: Array(9).fill("1.1.1.1"), matches: true }, { name: "x", addresses: [], matches: true, ttl: 5 }])
+  for (const dns of [{ name: "home.example.net", addresses: [] } as unknown, { name: "", addresses: [], matches: true }, { name: "x", addresses: [""], matches: true }, { name: "x", addresses: ["1.1.1.1", ""], matches: true }, { name: "x", addresses: ["1.1.1.1"], matches: "yes" }, { name: "x", addresses: Array(9).fill("1.1.1.1"), matches: true }, { name: "x", addresses: [], matches: true, ttl: 5 }])
     assert.throws(() => parseNetworkMessage(message({ public: { ...good, dns: dns as never } })), Error);
 });

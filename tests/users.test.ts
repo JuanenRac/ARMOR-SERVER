@@ -318,3 +318,53 @@ test("a users file damaged by a power cut is never overwritten by the seed: the 
   assert.equal(fresh.list().length, 1);
   assert.equal(fs.readFileSync(`${lone}.damaged`, "utf8"), "{broken");
 });
+
+const code = (action: () => unknown): string | undefined => { try { action(); return undefined; } catch (error) { return error instanceof UserError ? `${error.code}/${error.status}` : "other"; } };
+
+test("an administrator allows who may have a panic phrase: an operator may not until then, the permission is kept and taking it away takes the phrase", () => {
+  const file = path.join(tempDir(), "users.json");
+  const make = () => new UserStore({ file, seed: { username: "admin", password: "correct-horse-battery" }, minPasswordLength: 8 });
+  const users = make();
+  const admin = users.list()[0], operator = users.create({ username: "guard", password: "another-long-password", role: "operator" });
+  const PHRASE = "The blue heron flies at midnight!";
+  assert.equal(admin.panicPhraseAllowed, true, "an administrator may have one without asking");
+  assert.equal(operator.panicPhraseAllowed, false, "off for everybody else until an administrator says so");
+  assert.equal(code(() => users.setPanicPhrase(operator.id, PHRASE)), "panic_not_allowed/403");
+  assert.equal(users.get(operator.id)?.hasPanicPhrase, false);
+  assert.equal(code(() => users.update(operator.id, { panicPhraseAllowed: "yes" })), "invalid_panic_allowed/400");
+  assert.equal(users.get(operator.id)?.panicPhraseAllowed, false, "a refused change leaves it as it was");
+  // allowed: the user sets it, it matches only for that user, and it is kept in the file
+  assert.equal(users.update(operator.id, { panicPhraseAllowed: true }).user.panicPhraseAllowed, true);
+  assert.equal(users.setPanicPhrase(operator.id, PHRASE).hasPanicPhrase, true);
+  assert.equal(users.matchesPanicPhrase(operator.id, PHRASE), true);
+  assert.equal(users.panicPhraseOwner(PHRASE)?.username, "guard");
+  const again = make();
+  assert.equal(again.get(operator.id)?.panicPhraseAllowed, true);
+  assert.equal(again.matchesPanicPhrase(operator.id, PHRASE), true);
+  // taking the permission away takes the phrase with it, and it stops matching at once
+  const taken = users.update(operator.id, { panicPhraseAllowed: false }).user;
+  assert.equal(taken.panicPhraseAllowed, false);
+  assert.equal(taken.hasPanicPhrase, false);
+  assert.equal(users.matchesPanicPhrase(operator.id, PHRASE), false);
+  assert.equal(users.panicPhraseOwner(PHRASE), undefined);
+  assert.equal(code(() => users.setPanicPhrase(operator.id, PHRASE)), "panic_not_allowed/403");
+  // an administrator can be refused too
+  assert.equal(users.update(admin.id, { panicPhraseAllowed: false }).user.panicPhraseAllowed, false);
+  assert.equal(code(() => users.setPanicPhrase(admin.id, PHRASE)), "panic_not_allowed/403");
+});
+
+test("a user who had a panic phrase before the permission existed keeps it, and an unknown value in a stored file is ignored", () => {
+  const file = path.join(tempDir(), "users.json");
+  const first = new UserStore({ file, seed: { username: "admin", password: "correct-horse-battery" }, minPasswordLength: 8 });
+  const operator = first.create({ username: "guard", password: "another-long-password", role: "operator" });
+  first.update(operator.id, { panicPhraseAllowed: true });
+  first.setPanicPhrase(operator.id, "The blue heron flies at midnight!");
+  // an older file has the phrase and no permission field at all; a damaged one has a value that is not true or false
+  const stored = JSON.parse(fs.readFileSync(file, "utf8")) as { users: Array<Record<string, unknown>> };
+  for (const user of stored.users) { delete user.panicAllowed; if (user.username === "admin") user.panicAllowed = "maybe"; }
+  fs.writeFileSync(file, JSON.stringify(stored));
+  const reread = new UserStore({ file, seed: { username: "admin", password: "correct-horse-battery" }, minPasswordLength: 8 });
+  assert.equal(reread.byName("guard")?.panicPhraseAllowed, true, "the phrase it already had still works");
+  assert.equal(reread.matchesPanicPhrase(operator.id, "The blue heron flies at midnight!"), true);
+  assert.equal(reread.byName("admin")?.panicPhraseAllowed, true, "a value that is not a boolean is dropped, and the administrator is allowed as by default");
+});

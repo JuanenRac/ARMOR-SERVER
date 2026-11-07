@@ -85,9 +85,7 @@ function checkNetworkRules(body: Record<string, unknown>): { devices: NetworkDev
     });
     if (new Set(events.map(event => event.id)).size !== events.length) throw new Error("an event id must appear once");
   }
-  // the schema of the DNS check gives only the longest a name and an address may be; an empty one says nothing and is refused here
-  const dns = (body.public as NetworkPublic | undefined)?.dns;
-  if (dns && (dns.name === "" || dns.addresses.some(address => address === ""))) throw new Error("invalid public.dns");
+  // an empty name or address in public.dns is refused by the contract itself (minLength 1 in the schema of the network message)
   const results = body.results as NetworkResult[] | undefined;
   if (results && new Set(results.map(result => result.id)).size !== results.length) throw new Error("a result id must appear once");
   return { devices, events, results };

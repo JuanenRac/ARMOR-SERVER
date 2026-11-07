@@ -15,8 +15,8 @@ import { normalisePhrase, phraseProblem } from "./panic_phrase.js";
 export type Role = "admin" | "operator" | "panel" | "viewer";
 export const ROLES: readonly Role[] = ["admin", "operator", "panel", "viewer"];
 /** `hasPin` / `hasDuress` say that a PIN to disarm (and a second one that disarms but warns in silence) is set; the PINs themselves are never shown. */
-export type PublicUser = { id: string; username: string; role: Role; createdAt: string; updatedAt: string; hasPin: boolean; hasDuress: boolean; hasPanicPhrase: boolean };
-type UserRecord = Omit<PublicUser, "hasPin" | "hasDuress" | "hasPanicPhrase"> & { salt: string; hash: string; pin?: { salt: string; hash: string }; duress?: { salt: string; hash: string }; panic?: { salt: string; hash: string } };
+export type PublicUser = { id: string; username: string; role: Role; createdAt: string; updatedAt: string; hasPin: boolean; hasDuress: boolean; hasPanicPhrase: boolean; panicPhraseAllowed: boolean };
+type UserRecord = Omit<PublicUser, "hasPin" | "hasDuress" | "hasPanicPhrase" | "panicPhraseAllowed"> & { panicAllowed?: boolean; salt: string; hash: string; pin?: { salt: string; hash: string }; duress?: { salt: string; hash: string }; panic?: { salt: string; hash: string } };
 /** What a PIN typed to disarm came to. `none`: the user has no PIN. `duress`: the duress PIN, which disarms and warns in silence. */
 export type PinResult = "ok" | "duress" | "bad" | "locked" | "none";
 
@@ -30,7 +30,7 @@ const PIN_LOCKS_MS = [60_000, 300_000, 900_000, 3_600_000];
 
 /** A rule the request broke: `code` is stable for clients, `status` is the HTTP answer. */
 export class UserError extends Error {
-  constructor(readonly code: string, message: string, readonly status: 400 | 404 | 409) { super(message); }
+  constructor(readonly code: string, message: string, readonly status: 400 | 403 | 404 | 409) { super(message); }
 }
 
 const secretOf = (key: "pin" | "duress" | "panic", user: Partial<UserRecord>): Partial<Pick<UserRecord, "pin" | "duress" | "panic">> => {
@@ -91,7 +91,7 @@ export class UserStore {
       const user = item as Partial<UserRecord>;
       if (typeof user?.id === "string" && typeof user.username === "string" && USERNAME_PATTERN.test(user.username) && ROLES.includes(user.role as Role)
         && typeof user.salt === "string" && typeof user.hash === "string" && !this.#users.some(other => same(other.username, user.username!))) {
-        this.#users.push({ id: user.id, username: user.username, role: user.role as Role, salt: user.salt, hash: user.hash, createdAt: String(user.createdAt ?? this.#now()), updatedAt: String(user.updatedAt ?? this.#now()), ...secretOf("pin", user), ...secretOf("duress", user), ...secretOf("panic", user) });
+        this.#users.push({ id: user.id, username: user.username, role: user.role as Role, salt: user.salt, hash: user.hash, createdAt: String(user.createdAt ?? this.#now()), updatedAt: String(user.updatedAt ?? this.#now()), ...secretOf("pin", user), ...secretOf("duress", user), ...secretOf("panic", user), ...(typeof user.panicAllowed === "boolean" ? { panicAllowed: user.panicAllowed } : {}) });
       }
     }
   }
@@ -161,7 +161,10 @@ export class UserStore {
     }
   }
 
-  static #view(user: UserRecord): PublicUser { return { id: user.id, username: user.username, role: user.role, createdAt: user.createdAt, updatedAt: user.updatedAt, hasPin: user.pin !== undefined, hasDuress: user.duress !== undefined, hasPanicPhrase: user.panic !== undefined }; }
+  static #view(user: UserRecord): PublicUser { return { id: user.id, username: user.username, role: user.role, createdAt: user.createdAt, updatedAt: user.updatedAt, hasPin: user.pin !== undefined, hasDuress: user.duress !== undefined, hasPanicPhrase: user.panic !== undefined, panicPhraseAllowed: UserStore.#panicAllowed(user) }; }
+
+  /** An administrator has to allow a user to have a panic phrase. An administrator is allowed unless it was taken away, and a user who already had a phrase when this rule came keeps being allowed (no value stored yet), so nothing stops working. */
+  static #panicAllowed(user: UserRecord): boolean { return user.panicAllowed ?? (user.panic !== undefined || user.role === "admin"); }
 
   #checkUsername(username: unknown, except?: string): string {
     if (typeof username !== "string" || !USERNAME_PATTERN.test(username.trim())) throw new UserError("invalid_username", "a user name has 3 to 40 letters, digits, dots, dashes, underscores or @", 400);
@@ -213,10 +216,10 @@ export class UserStore {
   }
 
   /** Change any of the name, the password and the role; the last administrator can neither lose the role nor be removed. */
-  update(id: string, input: { username?: unknown; password?: unknown; role?: unknown }): { user: PublicUser; passwordChanged: boolean; roleChanged: boolean } {
+  update(id: string, input: { username?: unknown; password?: unknown; role?: unknown; panicPhraseAllowed?: unknown }): { user: PublicUser; passwordChanged: boolean; roleChanged: boolean } {
     const user = this.#users.find(item => item.id === id);
     if (!user) throw new UserError("not_found", "no such user", 404);
-    const before = { username: user.username, role: user.role, salt: user.salt, hash: user.hash, updatedAt: user.updatedAt };
+    const before = { username: user.username, role: user.role, salt: user.salt, hash: user.hash, updatedAt: user.updatedAt, panicAllowed: user.panicAllowed, panic: user.panic };
     try {
       if (input.username !== undefined) user.username = this.#checkUsername(input.username, id);
       if (input.role !== undefined) {
@@ -224,11 +227,18 @@ export class UserStore {
         if (user.role === "admin" && role !== "admin" && this.#admins() <= 1) throw new UserError("last_admin", "there must always be one administrator", 409);
         user.role = role;
       }
+      if (input.panicPhraseAllowed !== undefined) {
+        if (typeof input.panicPhraseAllowed !== "boolean") throw new UserError("invalid_panic_allowed", "panicPhraseAllowed is true or false", 400);
+        user.panicAllowed = input.panicPhraseAllowed;
+        if (!input.panicPhraseAllowed) delete user.panic;   // taking the permission away takes the phrase with it
+      }
       if (input.password !== undefined) this.#setPassword(user, this.#checkPassword(input.password));
       user.updatedAt = this.#now();
       this.#save();
     } catch (error) {
       Object.assign(user, before);
+      if (before.panicAllowed === undefined) delete user.panicAllowed;
+      if (before.panic === undefined) delete user.panic;
       throw error;
     }
     return { user: UserStore.#view(user), passwordChanged: input.password !== undefined, roleChanged: input.role !== undefined && input.role !== before.role };
@@ -298,6 +308,7 @@ export class UserStore {
   setPanicPhrase(id: string, phrase: unknown): PublicUser {
     const user = this.#users.find(item => item.id === id);
     if (!user) throw new UserError("not_found", "no such user", 404);
+    if (!UserStore.#panicAllowed(user)) throw new UserError("panic_not_allowed", "an administrator has not allowed this user to have a panic phrase", 403);
     const problem = phraseProblem(phrase);
     if (problem) throw new UserError(problem, "the phrase is not acceptable", 400);
     const keep = { panic: user.panic, updatedAt: user.updatedAt };
@@ -323,10 +334,11 @@ export class UserStore {
   matchesPanicPhrase(id: string, said: unknown): boolean {
     const user = this.#users.find(item => item.id === id);
     const normal = typeof said === "string" && said.length <= 240 ? normalisePhrase(said) : "";
+    const allowed = user !== undefined && UserStore.#panicAllowed(user);
     const salt = Buffer.from(user?.panic?.salt ?? "AAAAAAAAAAAAAAAAAAAAAA==", "base64");
     const expected = Buffer.from(user?.panic?.hash ?? Buffer.alloc(64).toString("base64"), "base64");
     const actual = hash(normal, salt);
-    return user?.panic !== undefined && normal !== "" && expected.length === actual.length && timingSafeEqual(expected, actual);
+    return allowed && user?.panic !== undefined && normal !== "" && expected.length === actual.length && timingSafeEqual(expected, actual);
   }
 
   /**
@@ -338,7 +350,7 @@ export class UserStore {
     if (normal === "") return undefined;
     let found: { id: string; username: string } | undefined;
     for (const user of this.#users) {
-      if (user.panic === undefined) continue;
+      if (user.panic === undefined || !UserStore.#panicAllowed(user)) continue;
       const expected = Buffer.from(user.panic.hash, "base64");
       const actual = hash(normal, Buffer.from(user.panic.salt, "base64"));
       if (expected.length === actual.length && timingSafeEqual(expected, actual) && found === undefined) found = { id: user.id, username: user.username };
