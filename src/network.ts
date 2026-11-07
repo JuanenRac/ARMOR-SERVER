@@ -9,7 +9,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { finite, integer, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
+import { checkAgainstContract, onlyKnown, record } from "./contracts.js";
 import { durableRename } from "./durable.js";
 import { refresh, sweepStale } from "./staleness.js";
 import type * as Generated from "./armor-contracts.js";
@@ -40,19 +40,12 @@ export const NETWORK_CONTRACT = 1;
 export const outdatedContract = (said: number | undefined, current: number = NETWORK_CONTRACT): boolean => (said ?? 1) < current;
 export type NetworkMessage = Generated.Network;
 
-const OCTET = "(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])";
-const IPV4 = new RegExp(`^(?:${OCTET}\\.){3}${OCTET}$`);
-const CIDR = new RegExp(`^(?:${OCTET}\\.){3}${OCTET}/(?:3[0-2]|[12]?[0-9])$`);
-const MAC = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/;
 const DEVICE_ID = /^[a-z0-9][a-z0-9:._-]{0,63}$/;
-const EVENT_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 export const MAX_DEVICES = 512;
 export const MAX_EVENTS = 64;
 
 const length = (value: string): number => Array.from(value).length;
-const text = (value: unknown, min: number, max: number): value is string => typeof value === "string" && length(value) >= min && length(value) <= max;
-const bounded = (value: unknown, low: number, high: number): value is number => finite(value) && value >= low && value <= high;
-const whole = (value: unknown, low: number, high = Number.MAX_SAFE_INTEGER): value is number => integer(value) && value >= low && value <= high;
+const whole = (value: unknown, low: number, high = Number.MAX_SAFE_INTEGER): value is number => typeof value === "number" && Number.isInteger(value) && value >= low && value <= high;
 
 /** Whether `cidr` (already well formed) lies inside 10/8, 172.16/12 or 192.168/16: the nodes never scan anything else. */
 function insidePrivateRange(cidr: string): boolean {
@@ -62,173 +55,66 @@ function insidePrivateRange(cidr: string): boolean {
   return ([[0x0a000000, 8], [0xac100000, 12], [0xc0a80000, 16]] as const).some(([base, length]) => prefix >= length && Math.floor(value / 2 ** (32 - length)) === base / 2 ** (32 - length));
 }
 
-function parseInterface(value: unknown): NetworkMessage["interface"] {
-  const item = record(value, "interface");
-  onlyKnown(item, ["name", "ip", "cidr", "gateway", "rx_bps", "tx_bps"], "interface");
-  for (const key of ["name", "ip", "cidr"]) if (!(key in item)) throw new Error(`the interface is missing ${key}`);
-  if (!text(item.name, 1, 64)) throw new Error("invalid interface.name");
-  if (typeof item.ip !== "string" || !IPV4.test(item.ip)) throw new Error("invalid interface.ip");
-  if (typeof item.cidr !== "string" || !CIDR.test(item.cidr)) throw new Error("invalid interface.cidr");
-  if (!insidePrivateRange(item.cidr)) throw new Error("the network a node watches is a private range (10/8, 172.16/12 or 192.168/16)");
-  if ("gateway" in item && (typeof item.gateway !== "string" || !IPV4.test(item.gateway))) throw new Error("invalid interface.gateway");
-  for (const key of ["rx_bps", "tx_bps"]) if (key in item && !whole(item[key], 0)) throw new Error(`invalid interface.${key}`);
-  return item as unknown as NetworkMessage["interface"];
+/** The objects inside a message never carry a field the contract does not define, even when the server reads a node's message forgivingly: they are refused before the generated reader looks at the rest. */
+function onlyKnownIn(value: unknown, allowed: readonly string[], what: string): void {
+  if (value && typeof value === "object" && !Array.isArray(value)) onlyKnown(value as Record<string, unknown>, allowed, what);
+}
+function onlyKnownEach(values: unknown, allowed: readonly string[], what: string): void {
+  if (Array.isArray(values)) values.forEach((value, index) => onlyKnownIn(value, allowed, `${what} ${index}`));
 }
 
-function parseInternet(value: unknown): NetworkInternet {
-  const item = record(value, "internet");
-  onlyKnown(item, ["state", "since_ms", "gateway_ok", "latency_ms", "loss_percent", "probes", "last_outage", "outages_24h", "downtime_24h_s"], "internet");
-  if (!("state" in item)) throw new Error("the internet block is missing state");
-  if (typeof item.state !== "string" || !(INTERNET_STATES as readonly string[]).includes(item.state)) throw new Error("invalid internet.state");
-  if ("since_ms" in item && !whole(item.since_ms, 0)) throw new Error("invalid internet.since_ms");
-  if ("gateway_ok" in item && typeof item.gateway_ok !== "boolean") throw new Error("invalid internet.gateway_ok");
-  if ("latency_ms" in item && !bounded(item.latency_ms, 0, 60_000)) throw new Error("invalid internet.latency_ms");
-  if ("loss_percent" in item && !bounded(item.loss_percent, 0, 100)) throw new Error("invalid internet.loss_percent");
-  if ("outages_24h" in item && !whole(item.outages_24h, 0)) throw new Error("invalid internet.outages_24h");
-  if ("downtime_24h_s" in item && !whole(item.downtime_24h_s, 0, 86_400)) throw new Error("invalid internet.downtime_24h_s");
-  if ("probes" in item) {
-    if (!Array.isArray(item.probes) || item.probes.length > 8) throw new Error("invalid internet.probes");
-    item.probes.forEach((raw, index) => {
-      const probe = record(raw, `probe ${index}`);
-      onlyKnown(probe, ["target", "kind", "ok", "latency_ms"], `probe ${index}`);
-      for (const key of ["target", "kind", "ok"]) if (!(key in probe)) throw new Error(`probe ${index} is missing ${key}`);
-      if (!text(probe.target, 1, 64)) throw new Error(`invalid probe ${index}.target`);
-      if (typeof probe.kind !== "string" || !["icmp", "tcp", "dns", "http"].includes(probe.kind)) throw new Error(`invalid probe ${index}.kind`);
-      if (typeof probe.ok !== "boolean") throw new Error(`invalid probe ${index}.ok`);
-      if ("latency_ms" in probe && !bounded(probe.latency_ms, 0, 60_000)) throw new Error(`invalid probe ${index}.latency_ms`);
+/** The rules that join fields or reach beyond one field; every single field is checked by the reader ARMOR-COMMON generates. */
+function checkNetworkRules(body: Record<string, unknown>): { devices: NetworkDevice[]; events: NetworkEvent[] | undefined; results: NetworkResult[] | undefined } {
+  const iface = body.interface as NetworkMessage["interface"];
+  if (!insidePrivateRange(iface.cidr)) throw new Error("the network a node watches is a private range (10/8, 172.16/12 or 192.168/16)");
+  const devices = body.devices as NetworkDevice[];
+  devices.forEach((device, index) => {
+    // a device with a MAC has it as its id (or is still known by its address), and it was not first seen after it was last seen
+    if (typeof device.mac === "string" && device.id !== device.mac && !device.id.startsWith("ip-")) throw new Error(`device ${index} has a MAC that is not its id`);
+    if (device.first_seen_ms > device.last_seen_ms) throw new Error(`device ${index} was first seen after it was last seen`);
+  });
+  if (new Set(devices.map(device => device.id)).size !== devices.length) throw new Error("a device id must appear once");
+  const events = body.events as NetworkEvent[] | undefined;
+  if (events) {
+    events.forEach((event, index) => {
+      const internet = INTERNET_EVENTS.includes(event.kind);
+      if (internet && ("device_id" in event || "port" in event)) throw new Error(`event ${index} is about the internet, not a device or a port`);
+      if (!internet && !("device_id" in event)) throw new Error(`event ${index} is about a device and names none`);
+      if ("outage_s" in event && event.kind !== "internet_up" && event.kind !== "gateway_up") throw new Error(`event ${index} says how long it was down but is not an end`);
+      if ((event.kind === "port_opened" || event.kind === "port_closed") && !("port" in event)) throw new Error(`event ${index} is about a port and names none`);
     });
+    if (new Set(events.map(event => event.id)).size !== events.length) throw new Error("an event id must appear once");
   }
-  if ("last_outage" in item) {
-    const outage = record(item.last_outage, "last_outage");
-    onlyKnown(outage, ["started_ms", "ended_ms", "duration_s"], "last_outage");
-    for (const key of ["started_ms", "ended_ms", "duration_s"]) if (!(key in outage) || !whole(outage[key], 0)) throw new Error(`invalid last_outage.${key}`);
-  }
-  return item as unknown as NetworkInternet;
-}
-
-function parsePort(raw: unknown, device: number, index: number): NetworkPort {
-  const port = record(raw, `port ${index} of device ${device}`);
-  onlyKnown(port, ["port", "proto", "service", "banner"], `port ${index}`);
-  if (!whole(port.port, 1, 65_535)) throw new Error(`invalid port ${index} of device ${device}`);
-  if (port.proto !== "tcp" && port.proto !== "udp") throw new Error(`invalid proto of port ${index} of device ${device}`);
-  if ("service" in port && !text(port.service, 1, 32)) throw new Error(`invalid service of port ${index} of device ${device}`);
-  if ("banner" in port && !text(port.banner, 1, 80)) throw new Error(`invalid banner of port ${index} of device ${device}`);
-  return port as unknown as NetworkPort;
-}
-
-function parseDevice(raw: unknown, index: number): NetworkDevice {
-  const device = record(raw, `device ${index}`);
-  onlyKnown(device, ["id", "ip", "mac", "randomized_mac", "vendor", "hostname", "kind", "os", "online", "first_seen_ms", "last_seen_ms", "latency_ms", "ports", "services"], `device ${index}`);
-  for (const key of ["id", "ip", "online", "first_seen_ms", "last_seen_ms"]) if (!(key in device)) throw new Error(`device ${index} is missing ${key}`);
-  if (typeof device.id !== "string" || !DEVICE_ID.test(device.id)) throw new Error(`invalid device ${index}.id`);
-  if (typeof device.ip !== "string" || !IPV4.test(device.ip)) throw new Error(`invalid device ${index}.ip`);
-  if ("mac" in device && (typeof device.mac !== "string" || !MAC.test(device.mac))) throw new Error(`invalid device ${index}.mac`);
-  if ("randomized_mac" in device && typeof device.randomized_mac !== "boolean") throw new Error(`invalid device ${index}.randomized_mac`);
-  if ("vendor" in device && !text(device.vendor, 1, 64)) throw new Error(`invalid device ${index}.vendor`);
-  if ("hostname" in device && !text(device.hostname, 1, 64)) throw new Error(`invalid device ${index}.hostname`);
-  if ("os" in device && !text(device.os, 1, 32)) throw new Error(`invalid device ${index}.os`);
-  if ("kind" in device && (typeof device.kind !== "string" || !(DEVICE_KINDS as readonly string[]).includes(device.kind))) throw new Error(`invalid device ${index}.kind`);
-  if (typeof device.online !== "boolean") throw new Error(`invalid device ${index}.online`);
-  if (!whole(device.first_seen_ms, 0) || !whole(device.last_seen_ms, 0)) throw new Error(`invalid time of device ${index}`);
-  if ("latency_ms" in device && !bounded(device.latency_ms, 0, 60_000)) throw new Error(`invalid device ${index}.latency_ms`);
-  if ("ports" in device) {
-    if (!Array.isArray(device.ports) || device.ports.length > 64) throw new Error(`invalid ports of device ${index}`);
-    device.ports.forEach((port, at) => parsePort(port, index, at));
-  }
-  if ("services" in device) {
-    if (!Array.isArray(device.services) || device.services.length > 16 || !device.services.every(service => text(service, 1, 48))) throw new Error(`invalid services of device ${index}`);
-  }
-  // the rules that join fields: a device with a MAC has it as its id (or is still known by its address), and it was not first seen after it was last seen
-  if (typeof device.mac === "string" && device.id !== device.mac && !device.id.startsWith("ip-")) throw new Error(`device ${index} has a MAC that is not its id`);
-  if ((device.first_seen_ms as number) > (device.last_seen_ms as number)) throw new Error(`device ${index} was first seen after it was last seen`);
-  return device as unknown as NetworkDevice;
-}
-
-function parseEvent(raw: unknown, index: number): NetworkEvent {
-  const event = record(raw, `event ${index}`);
-  onlyKnown(event, ["id", "kind", "at_ms", "device_id", "port", "outage_s", "detail"], `event ${index}`);
-  for (const key of ["id", "kind", "at_ms"]) if (!(key in event)) throw new Error(`event ${index} is missing ${key}`);
-  if (typeof event.id !== "string" || !EVENT_ID.test(event.id)) throw new Error(`invalid event ${index}.id`);
-  if (typeof event.kind !== "string" || !(EVENT_KINDS as readonly string[]).includes(event.kind)) throw new Error(`invalid event ${index}.kind`);
-  if (!whole(event.at_ms, 0)) throw new Error(`invalid event ${index}.at_ms`);
-  if ("device_id" in event && (typeof event.device_id !== "string" || !DEVICE_ID.test(event.device_id))) throw new Error(`invalid event ${index}.device_id`);
-  if ("port" in event && !whole(event.port, 1, 65_535)) throw new Error(`invalid event ${index}.port`);
-  if ("outage_s" in event && !whole(event.outage_s, 0)) throw new Error(`invalid event ${index}.outage_s`);
-  if ("detail" in event && !text(event.detail, 1, 120)) throw new Error(`invalid event ${index}.detail`);
-  const internet = INTERNET_EVENTS.includes(event.kind);
-  if (internet && ("device_id" in event || "port" in event)) throw new Error(`event ${index} is about the internet, not a device or a port`);
-  if (!internet && !("device_id" in event)) throw new Error(`event ${index} is about a device and names none`);
-  if ("outage_s" in event && event.kind !== "internet_up" && event.kind !== "gateway_up") throw new Error(`event ${index} says how long it was down but is not an end`);
-  if ((event.kind === "port_opened" || event.kind === "port_closed") && !("port" in event)) throw new Error(`event ${index} is about a port and names none`);
-  return event as unknown as NetworkEvent;
-}
-
-function parsePublic(value: unknown): NetworkPublic {
-  const item = record(value, "public");
-  onlyKnown(item, ["ip", "hostname", "city", "region", "country", "org", "timezone", "checked_ms", "changed_ms", "dns"], "public");
-  for (const key of ["ip", "checked_ms"]) if (!(key in item)) throw new Error(`the public block is missing ${key}`);
-  if (!text(item.ip, 1, 45)) throw new Error("invalid public.ip");
-  for (const [key, max] of [["hostname", 128], ["city", 64], ["region", 64], ["country", 64], ["org", 128], ["timezone", 64]] as const) if (key in item && !text(item[key], 1, max)) throw new Error(`invalid public.${key}`);
-  if (!whole(item.checked_ms, 0) || ("changed_ms" in item && !whole(item.changed_ms, 0))) throw new Error("invalid time of public");
-  if ("dns" in item) {
-    const dns = record(item.dns, "public.dns");
-    onlyKnown(dns, ["name", "addresses", "matches"], "public.dns");
-    if (!text(dns.name, 1, 253) || typeof dns.matches !== "boolean" || !Array.isArray(dns.addresses) || dns.addresses.length > 8 || !dns.addresses.every(address => text(address, 1, 45))) throw new Error("invalid public.dns");
-  }
-  return item as unknown as NetworkPublic;
-}
-
-function parseResult(raw: unknown, index: number): NetworkResult {
-  const item = record(raw, `result ${index}`);
-  onlyKnown(item, ["id", "type", "ok", "finished_ms", "device_id", "output", "ports", "latency_ms"], `result ${index}`);
-  for (const key of ["id", "type", "ok", "finished_ms"]) if (!(key in item)) throw new Error(`result ${index} is missing ${key}`);
-  if (typeof item.id !== "string" || !EVENT_ID.test(item.id)) throw new Error(`invalid result ${index}.id`);
-  if (typeof item.type !== "string" || !(COMMAND_TYPES as readonly string[]).includes(item.type)) throw new Error(`invalid result ${index}.type`);
-  if (typeof item.ok !== "boolean") throw new Error(`invalid result ${index}.ok`);
-  if (!whole(item.finished_ms, 0)) throw new Error(`invalid result ${index}.finished_ms`);
-  if ("device_id" in item && (typeof item.device_id !== "string" || !DEVICE_ID.test(item.device_id))) throw new Error(`invalid result ${index}.device_id`);
-  if ("output" in item && (typeof item.output !== "string" || length(item.output) > 2000)) throw new Error(`invalid result ${index}.output`);
-  if ("latency_ms" in item && !bounded(item.latency_ms, 0, 600_000)) throw new Error(`invalid result ${index}.latency_ms`);
-  if ("ports" in item) {
-    if (!Array.isArray(item.ports) || item.ports.length > 64) throw new Error(`invalid ports of result ${index}`);
-    item.ports.forEach((port, at) => parsePort(port, index, at));
-  }
-  return item as unknown as NetworkResult;
+  // the schema of the DNS check gives only the longest a name and an address may be; an empty one says nothing and is refused here
+  const dns = (body.public as NetworkPublic | undefined)?.dns;
+  if (dns && (dns.name === "" || dns.addresses.some(address => address === ""))) throw new Error("invalid public.dns");
+  const results = body.results as NetworkResult[] | undefined;
+  if (results && new Set(results.map(result => result.id)).size !== results.length) throw new Error("a result id must appear once");
+  return { devices, events, results };
 }
 
 export function parseNetworkMessage(value: unknown): NetworkMessage {
   const body = record(value, "network message");
   onlyKnown(body, ["kind", "node_id", "contract", "timestamp_ms", "interface", "internet", "devices", "events", "scan", "public", "results"], "network message");
-  for (const key of ["kind", "node_id", "timestamp_ms", "interface", "internet", "devices"]) if (!(key in body)) throw new Error(`the network message is missing ${key}`);
-  if (body.kind !== "network") throw new Error("invalid kind");
-  const node = readNodeId(body), timestamp = readTimestamp(body);
-  if ("contract" in body && !whole(body.contract, 1)) throw new Error("invalid contract");
-  const iface = parseInterface(body.interface), internet = parseInternet(body.internet);
-  if (!Array.isArray(body.devices) || body.devices.length > MAX_DEVICES) throw new Error("invalid devices");
-  const devices = body.devices.map(parseDevice);
-  if (new Set(devices.map(device => device.id)).size !== devices.length) throw new Error("a device id must appear once");
-  let events: NetworkEvent[] | undefined;
-  if ("events" in body) {
-    if (!Array.isArray(body.events) || body.events.length > MAX_EVENTS) throw new Error("invalid events");
-    events = body.events.map(parseEvent);
-    if (new Set(events.map(event => event.id)).size !== events.length) throw new Error("an event id must appear once");
+  onlyKnownIn(body.interface, ["name", "ip", "cidr", "gateway", "rx_bps", "tx_bps"], "interface");
+  const internet = body.internet as Record<string, unknown> | undefined;
+  onlyKnownIn(internet, ["state", "since_ms", "gateway_ok", "latency_ms", "loss_percent", "probes", "last_outage", "outages_24h", "downtime_24h_s"], "internet");
+  if (internet && typeof internet === "object") {
+    onlyKnownEach(internet.probes, ["target", "kind", "ok", "latency_ms"], "probe");
+    onlyKnownIn(internet.last_outage, ["started_ms", "ended_ms", "duration_s"], "last_outage");
   }
-  let scan: NetworkMessage["scan"];
-  if ("scan" in body) {
-    const item = record(body.scan, "scan");
-    onlyKnown(item, ["last_ms", "hosts", "duration_ms"], "scan");
-    if (!whole(item.last_ms, 0) || !whole(item.hosts, 0, 1024) || ("duration_ms" in item && !whole(item.duration_ms, 0))) throw new Error("invalid scan");
-    scan = item as unknown as NetworkMessage["scan"];
-  }
-  let publicInfo: NetworkPublic | undefined;
-  if ("public" in body) publicInfo = parsePublic(body.public);
-  let results: NetworkResult[] | undefined;
-  if ("results" in body) {
-    if (!Array.isArray(body.results) || body.results.length > 16) throw new Error("invalid results");
-    results = body.results.map(parseResult);
-    if (new Set(results.map(result => result.id)).size !== results.length) throw new Error("a result id must appear once");
-  }
-  return { kind: "network", node_id: node, ...("contract" in body ? { contract: body.contract as number } : {}), timestamp_ms: timestamp, interface: iface, internet, devices, ...(events ? { events } : {}), ...(scan ? { scan } : {}), ...(publicInfo ? { public: publicInfo } : {}), ...(results ? { results } : {}) };
+  onlyKnownEach(body.devices, ["id", "ip", "mac", "randomized_mac", "vendor", "hostname", "kind", "os", "online", "first_seen_ms", "last_seen_ms", "latency_ms", "ports", "services"], "device");
+  if (Array.isArray(body.devices)) for (const device of body.devices) if (device && typeof device === "object") onlyKnownEach((device as Record<string, unknown>).ports, ["port", "proto", "service", "banner"], "port");
+  onlyKnownEach(body.events, ["id", "kind", "at_ms", "device_id", "port", "outage_s", "detail"], "event");
+  onlyKnownIn(body.scan, ["last_ms", "hosts", "duration_ms"], "scan");
+  const publicInfo = body.public as Record<string, unknown> | undefined;
+  onlyKnownIn(publicInfo, ["ip", "hostname", "city", "region", "country", "org", "timezone", "checked_ms", "changed_ms", "dns"], "public");
+  if (publicInfo && typeof publicInfo === "object") onlyKnownIn(publicInfo.dns, ["name", "addresses", "matches"], "public.dns");
+  onlyKnownEach(body.results, ["id", "type", "ok", "finished_ms", "device_id", "output", "ports", "latency_ms"], "result");
+  if (Array.isArray(body.results)) for (const result of body.results) if (result && typeof result === "object") onlyKnownEach((result as Record<string, unknown>).ports, ["port", "proto", "service", "banner"], "port");
+  checkAgainstContract("network", body);
+  checkNetworkRules(body);
+  return body as unknown as NetworkMessage;
 }
 
 /** armor/network/{node_id}/state as node_id, or undefined when the topic is not one. */

@@ -14,7 +14,7 @@
  * here it is only shown as "no report" after a few minutes.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
-import { integer, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
+import { checkAgainstContract, onlyKnown, record } from "./contracts.js";
 import type { MaintenanceReason } from "./node_control.js";
 import { parseBootReport, parseConfigCheck, parseCoredumpFact, parseMemoryGate, parseRadarFacts, parseSensors, type BootReport, type ConfigCheck, type CoredumpFact, type MemoryGate, type RadarFacts, type SensorHealth } from "./node_diag_contract.js";
 
@@ -47,7 +47,6 @@ export type NodeHealthMessage = {
 };
 export const CONTROL_STATES = ["running", "paused", "standby"] as const;
 export type ControlState = (typeof CONTROL_STATES)[number];
-const CONTROL_PERSON = /^[A-Za-z0-9._@ -]{1,64}$/;
 
 export const HEALTH_CODES = ["node_low_memory", "node_frequent_resets", "node_link_flapping", "node_weak_signal", "node_sensor_bluetooth_open", "node_radar_masked", "node_wifi_jam"] as const;
 export type HealthCode = (typeof HEALTH_CODES)[number];
@@ -58,9 +57,7 @@ export const HEALTH_LEVELS = {
   low_heap_b: 30_000, low_heap_clear_b: 40_000, low_internal_b: 40_960, low_internal_clear_b: 49_152, low_block_b: 8_192, restarts_per_day: 3, abnormal_window_min: 60, flap_reconnects: 3, flap_window_min: 15, weak_signal_dbm: -80, weak_signal_reports: 3, silent_after_s: 180,
 } as const;
 
-const FIRMWARE = /^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$/;
 const oneOf = <T extends string>(list: readonly T[], value: unknown): value is T => typeof value === "string" && (list as readonly string[]).includes(value);
-const chars = (text: string): number => Array.from(text).length;
 const INTERNAL = ["heap_internal_free", "heap_internal_min", "heap_internal_largest"] as const;
 const REQUIRED = ["kind", "node_id", "timestamp_ms", "family", "firmware", "uptime_s", "reset_reason", "heap_free", "heap_min", "link", "link_up", "broker_reconnects"] as const;
 
@@ -68,33 +65,13 @@ const REQUIRED = ["kind", "node_id", "timestamp_ms", "family", "firmware", "upti
 export function parseNodeHealth(value: unknown): NodeHealthMessage {
   const body = record(value, "node health");
   onlyKnown(body, [...REQUIRED, "board", "contract", "rssi_dbm", "low_stack_tasks", "last_error", ...INTERNAL, "psram_free", "control_state", "control_since_ms", "control_by", "control_until_s", "maintenance", "maintenance_until_s", "boot", "memory_gate", "coredump", "config_check", "sensors", "radar"], "node health");
-  for (const key of REQUIRED) if (!(key in body)) throw new Error(`the node health is missing ${key}`);
-  if (body.kind !== "node_health") throw new Error("invalid kind");
-  const node = readNodeId(body), timestamp = readTimestamp(body);
-  if (!oneOf(HEALTH_FAMILIES, body.family)) throw new Error("invalid family");
-  if (typeof body.firmware !== "string" || !FIRMWARE.test(body.firmware)) throw new Error("invalid firmware");
-  if ("contract" in body && (typeof body.contract !== "string" || !FIRMWARE.test(body.contract))) throw new Error("invalid contract");
-  if ("board" in body && (typeof body.board !== "string" || chars(body.board) < 1 || chars(body.board) > 32)) throw new Error("invalid board");
-  for (const key of ["uptime_s", "heap_free", "heap_min", "broker_reconnects"] as const) if (!integer(body[key]) || (body[key] as number) < 0) throw new Error(`invalid ${key}`);
-  if (!oneOf(RESET_REASONS, body.reset_reason)) throw new Error("invalid reset_reason");
-  for (const key of [...INTERNAL, "psram_free"] as const) if (key in body && (!integer(body[key]) || (body[key] as number) < 0)) throw new Error(`invalid ${key}`);
-  if (!oneOf(HEALTH_LINKS, body.link)) throw new Error("invalid link");
-  if (typeof body.link_up !== "boolean") throw new Error("invalid link_up");
-  if ("rssi_dbm" in body && (!integer(body.rssi_dbm) || body.rssi_dbm < -120 || body.rssi_dbm > 0)) throw new Error("invalid rssi_dbm");
-  if ("low_stack_tasks" in body && (!integer(body.low_stack_tasks) || body.low_stack_tasks < 0 || body.low_stack_tasks > 64)) throw new Error("invalid low_stack_tasks");
-  if ("last_error" in body && (typeof body.last_error !== "string" || chars(body.last_error) < 1 || chars(body.last_error) > 96)) throw new Error("invalid last_error");
+  checkAgainstContract("node_health", body);
   if ((body.heap_min as number) > (body.heap_free as number)) throw new Error("the least heap is never more than the heap free now");
   const told = INTERNAL.filter(key => key in body).length;
   if (told !== 0 && told !== INTERNAL.length) throw new Error("the internal memory is told whole: heap_internal_free, heap_internal_min and heap_internal_largest together");
   if (told !== 0 && ((body.heap_internal_min as number) > (body.heap_internal_free as number) || (body.heap_internal_largest as number) > (body.heap_internal_free as number))) throw new Error("the least internal memory and its biggest block are never more than the internal memory free now");
   if (body.link === "none" && body.link_up !== false) throw new Error("no link means a link that is down");
   if ("rssi_dbm" in body && !(body.link === "wifi" && body.link_up === true)) throw new Error("a signal strength goes only with a Wi-Fi link that is up");
-  if ("control_state" in body && !oneOf(CONTROL_STATES, body.control_state)) throw new Error("invalid control_state");
-  if ("control_since_ms" in body && (!integer(body.control_since_ms) || body.control_since_ms < 0)) throw new Error("invalid control_since_ms");
-  if ("control_by" in body && (typeof body.control_by !== "string" || !CONTROL_PERSON.test(body.control_by))) throw new Error("invalid control_by");
-  if ("control_until_s" in body && (!integer(body.control_until_s) || body.control_until_s < 0 || body.control_until_s > 86_400)) throw new Error("invalid control_until_s");
-  if ("maintenance" in body && typeof body.maintenance !== "boolean") throw new Error("invalid maintenance");
-  if ("maintenance_until_s" in body && (!integer(body.maintenance_until_s) || body.maintenance_until_s < 0 || body.maintenance_until_s > 86_400)) throw new Error("invalid maintenance_until_s");
   if ("boot" in body) parseBootReport(body.boot);
   if ("memory_gate" in body) parseMemoryGate(body.memory_gate);
   if ("coredump" in body) parseCoredumpFact(body.coredump);
@@ -106,7 +83,7 @@ export function parseNodeHealth(value: unknown): NodeHealthMessage {
   if (("control_since_ms" in body || "control_by" in body) && body.control_state !== "paused" && body.control_state !== "standby") throw new Error("since and by go with a paused or standby node");
   if ("control_until_s" in body && body.control_state !== "paused") throw new Error("the time left goes with a paused node: standby has no end");
   if ("maintenance_until_s" in body && body.maintenance !== true) throw new Error("the maintenance time left goes with the maintenance flag on");
-  return { ...(body as unknown as NodeHealthMessage), node_id: node, timestamp_ms: timestamp };
+  return body as unknown as NodeHealthMessage;
 }
 
 /** armor/health/{node_id} as the node id, or undefined when the topic is not one. */

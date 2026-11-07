@@ -7,7 +7,7 @@
 import type * as Generated from "./armor-contracts.js";
 import { CellExtremes, type CellsFile, type DayCells } from "./solar_cells.js";
 import { SolarEventLog, type EventsFile, type LoggedEvent } from "./solar_events.js";
-import { finite, integer, onlyKnown, readNodeId, readTimestamp, record } from "./contracts.js";
+import { checkAgainstContract, finite, integer, onlyKnown, record } from "./contracts.js";
 import { CoarseTier, type Sample } from "./history.js";
 import { dayOf } from "./day.js";
 import { refresh, sweepStale } from "./staleness.js";
@@ -44,7 +44,6 @@ export const SEVERE_COUNTERS: ReadonlySet<string> = new Set([
 export type SolarMessage = SolarInverter | SolarBattery;
 
 const deviceName = /^[a-z0-9][a-z0-9_-]{0,31}$/;
-const warningName = /^[a-z][a-z0-9_]{0,39}$/;
 const INVERTER_KEYS = ["kind", "node_id", "device", "timestamp_ms", "mode", "grid_v", "grid_hz", "out_v", "out_hz", "out_va", "out_w", "load_percent", "battery_v", "battery_a", "battery_percent",
   "pv_v", "pv_a", "pv_w", "heatsink_c", "ac_charging", "pv_charging", "load_on", "warnings"] as const;
 const INVERTER_OPTIONAL_KEYS = ["warnings_known", "bus_v", "pv2_v", "pv2_a", "pv2_w", "total_out_w", "total_out_va", "total_load_percent", "total_charging_a", "units", "serial", "firmware", "pv_energy_total_wh", "ratings", "clamped"] as const;
@@ -55,126 +54,34 @@ const RATINGS_RANGES: Record<string, readonly [number, number]> = {
 const RATINGS_CHOICES: Record<string, readonly string[]> = {
   battery_type: ["agm", "flooded", "user"], input_range: ["appliance", "ups"], output_priority: ["utility_first", "solar_first", "sbu"], charger_priority: ["utility_first", "solar_first", "solar_and_utility", "solar_only"],
 };
-const serialText = /^[0-9A-Za-z]{8,20}$/;
-const firmwareText = /^[0-9A-Za-z._-]{1,24}$/;
-const INVERTER_OPTIONAL_RANGES: Record<string, readonly [number, number]> = {
-  bus_v: [0, 1500], pv2_v: [0, 1500], pv2_a: [0, 500], pv2_w: [0, 100_000], total_out_w: [0, 1_000_000], total_out_va: [0, 1_000_000], total_load_percent: [0, 200], total_charging_a: [0, 10_000],
-};
 const UNIT_KEYS = ["unit", "serial", "mode", "fault_code", "grid_v", "out_v", "out_va", "out_w", "load_percent", "battery_v", "battery_percent", "pv_v", "charging_a"] as const;
-const UNIT_RANGES: Record<string, readonly [number, number]> = {
-  grid_v: [0, 600], out_v: [0, 600], out_va: [0, 100_000], out_w: [0, 100_000], load_percent: [0, 200], battery_v: [0, 1000], battery_percent: [0, 100], pv_v: [0, 1500], charging_a: [0, 1000],
-};
-/** The bounds of every number of an inverter message: [minimum, maximum]. */
-const INVERTER_RANGES: Record<string, readonly [number, number]> = {
-  grid_v: [0, 600], grid_hz: [0, 100], out_v: [0, 600], out_hz: [0, 100], out_va: [0, 100_000], out_w: [0, 100_000], load_percent: [0, 200], battery_v: [0, 1000], battery_a: [-1000, 1000],
-  battery_percent: [0, 100], pv_v: [0, 1500], pv_a: [0, 500], pv_w: [0, 100_000], heatsink_c: [-50, 200],
-};
 const inRange = (value: unknown, low: number, high: number): value is number => finite(value) && value >= low && value <= high;
 
-function readDevice(body: Record<string, unknown>): string {
-  if (typeof body.device !== "string" || !deviceName.test(body.device)) throw new Error("invalid device");
-  return body.device;
-}
-
-function parseRatings(value: unknown): SolarRatings {
-  const ratings = record(value, "ratings");
-  onlyKnown(ratings, [...Object.keys(RATINGS_RANGES), ...Object.keys(RATINGS_CHOICES)], "ratings");
-  for (const [key, [low, high]] of Object.entries(RATINGS_RANGES)) if (key in ratings && !inRange(ratings[key], low, high)) throw new Error(`invalid ratings.${key}`);
-  for (const [key, choices] of Object.entries(RATINGS_CHOICES)) if (key in ratings && !(typeof ratings[key] === "string" && choices.includes(ratings[key] as string))) throw new Error(`invalid ratings.${key}`);
-  return ratings as unknown as SolarRatings;
-}
-
-function parseUnit(value: unknown, index: number): SolarUnit {
-  const unit = record(value, `unit ${index}`);
-  onlyKnown(unit, UNIT_KEYS, `unit ${index}`);
-  if (!integer(unit.unit) || unit.unit < 0 || unit.unit > 9) throw new Error(`invalid unit ${index}.unit`);
-  if (typeof unit.mode !== "string" || !(SOLAR_MODES as readonly string[]).includes(unit.mode)) throw new Error(`invalid unit ${index}.mode`);
-  if ("serial" in unit && (typeof unit.serial !== "string" || unit.serial.length > 24)) throw new Error(`invalid unit ${index}.serial`);
-  if ("fault_code" in unit && (typeof unit.fault_code !== "string" || !/^[0-9]{2}$/.test(unit.fault_code))) throw new Error(`invalid unit ${index}.fault_code`);
-  for (const [key, [low, high]] of Object.entries(UNIT_RANGES)) if (key in unit && !inRange(unit[key], low, high)) throw new Error(`invalid unit ${index}.${key}`);
-  return unit as unknown as SolarUnit;
+/** The objects inside a message never carry a field the contract does not define, even when the server reads a node's message forgivingly: they are refused before the generated reader looks at the rest. */
+function onlyKnownIn(value: unknown, allowed: readonly string[], what: string): void {
+  if (value && typeof value === "object" && !Array.isArray(value)) onlyKnown(value as Record<string, unknown>, allowed, what);
 }
 
 export function parseSolarInverter(value: unknown): SolarInverter {
   const body = record(value, "inverter");
   onlyKnown(body, [...INVERTER_KEYS, ...INVERTER_OPTIONAL_KEYS], "inverter");
-  for (const key of INVERTER_KEYS) if (!(key in body)) throw new Error(`inverter is missing ${key}`);
-  for (const [key, [low, high]] of Object.entries(INVERTER_OPTIONAL_RANGES)) if (key in body && !inRange(body[key], low, high)) throw new Error(`invalid ${key}`);
-  if ("units" in body && (!Array.isArray(body.units) || body.units.length > 10)) throw new Error("invalid units");
-  const units = Array.isArray(body.units) ? body.units.map(parseUnit) : undefined;
-  if ("warnings_known" in body && typeof body.warnings_known !== "boolean") throw new Error("invalid warnings_known");
-  if ("clamped" in body && (!Array.isArray(body.clamped) || body.clamped.length > 16 || !body.clamped.every(name => typeof name === "string" && name.length <= 32))) throw new Error("invalid clamped");
-  if ("serial" in body && !(typeof body.serial === "string" && serialText.test(body.serial))) throw new Error("invalid serial");
-  if ("firmware" in body && !(typeof body.firmware === "string" && firmwareText.test(body.firmware))) throw new Error("invalid firmware");
-  if ("pv_energy_total_wh" in body && !inRange(body.pv_energy_total_wh, 0, 1e12)) throw new Error("invalid pv_energy_total_wh");
-  const ratings = "ratings" in body ? parseRatings(body.ratings) : undefined;
-  if (body.kind !== "inverter") throw new Error("invalid kind");
-  const node = readNodeId(body), device = readDevice(body), timestamp = readTimestamp(body);
-  if (typeof body.mode !== "string" || !(SOLAR_MODES as readonly string[]).includes(body.mode)) throw new Error("invalid mode");
-  for (const [key, [low, high]] of Object.entries(INVERTER_RANGES)) if (!inRange(body[key], low, high)) throw new Error(`invalid ${key}`);
-  for (const key of ["ac_charging", "pv_charging", "load_on"]) if (typeof body[key] !== "boolean") throw new Error(`invalid ${key}`);
-  if (!Array.isArray(body.warnings) || body.warnings.length > 32 || !body.warnings.every(name => typeof name === "string" && warningName.test(name))) throw new Error("invalid warnings");
-  return { ...(body as unknown as SolarInverter), node_id: node, device, timestamp_ms: timestamp, warnings: [...(body.warnings as string[])], ...(units ? { units } : {}), ...(ratings ? { ratings } : {}) };
+  onlyKnownIn(body.ratings, [...Object.keys(RATINGS_RANGES), ...Object.keys(RATINGS_CHOICES)], "ratings");
+  if (Array.isArray(body.units)) body.units.forEach((unit, index) => onlyKnownIn(unit, UNIT_KEYS, `unit ${index}`));
+  checkAgainstContract("solar_inverter", body);
+  return body as unknown as SolarInverter;
 }
 
-const BATTERY_OPTIONAL_RANGES: Record<string, readonly [number, number]> = {
-  voltage_v: [0, 1000], current_a: [-1000, 1000], temperature_min_c: [-50, 200], temperature_max_c: [-50, 200], cell_min_v: [0, 10], cell_max_v: [0, 10],
-};
-
-function parseModule(value: unknown, index: number): SolarModule {
-  const module = record(value, `module ${index}`);
-  onlyKnown(module, ["n", "present", "voltage_v", "current_a", "temperature_c", "soc_percent", "state", "cells_v", "temperatures_c", "capacity_ah", "full_capacity_ah", "cycles", "health_percent", "counters", "model", "board_version", "main_soft_version", "soft_version", "cell_count", "max_charge_a", "max_discharge_a", "console_baud", "soh_counts", "soh_abnormal", "last_event"], `module ${index}`);
-  if (!integer(module.n) || module.n < 1 || module.n > 16) throw new Error(`invalid module ${index}.n`);
-  if (typeof module.present !== "boolean") throw new Error(`invalid module ${index}.present`);
-  if ("voltage_v" in module && !inRange(module.voltage_v, 0, 1000)) throw new Error(`invalid module ${index}.voltage_v`);
-  if ("current_a" in module && !inRange(module.current_a, -1000, 1000)) throw new Error(`invalid module ${index}.current_a`);
-  if ("temperature_c" in module && !inRange(module.temperature_c, -50, 200)) throw new Error(`invalid module ${index}.temperature_c`);
-  if ("soc_percent" in module && (!integer(module.soc_percent) || module.soc_percent < 0 || module.soc_percent > 100)) throw new Error(`invalid module ${index}.soc_percent`);
-  if ("state" in module && (typeof module.state !== "string" || Array.from(module.state).length < 1 || Array.from(module.state).length > 16)) throw new Error(`invalid module ${index}.state`);
-  if ("cells_v" in module && (!Array.isArray(module.cells_v) || module.cells_v.length > 32 || !module.cells_v.every(v => inRange(v, 0, 10)))) throw new Error(`invalid module ${index}.cells_v`);
-  if ("temperatures_c" in module && (!Array.isArray(module.temperatures_c) || module.temperatures_c.length > 8 || !module.temperatures_c.every(v => inRange(v, -50, 200)))) throw new Error(`invalid module ${index}.temperatures_c`);
-  for (const key of ["capacity_ah", "full_capacity_ah"]) if (key in module && !inRange(module[key], 0, 100_000)) throw new Error(`invalid module ${index}.${key}`);
-  if ("cycles" in module && (!integer(module.cycles) || module.cycles < 0 || module.cycles > 1_000_000)) throw new Error(`invalid module ${index}.cycles`);
-  if ("health_percent" in module && (!integer(module.health_percent) || module.health_percent < 0 || module.health_percent > 100)) throw new Error(`invalid module ${index}.health_percent`);
-  if ("counters" in module) {
-    const counters = module.counters;
-    if (typeof counters !== "object" || counters === null || Array.isArray(counters)) throw new Error(`invalid module ${index}.counters`);
-    const entries = Object.entries(counters);
-    if (entries.length > 48 || !entries.every(([name, value]) => /^[a-z][a-z0-9_]{0,31}$/.test(name) && integer(value) && value >= 0 && value <= 9_999_999_999)) throw new Error(`invalid module ${index}.counters`);
-  }
-  if ("model" in module && (typeof module.model !== "string" || Array.from(module.model).length < 1 || Array.from(module.model).length > 24)) throw new Error(`invalid module ${index}.model`);
-  for (const key of ["board_version", "main_soft_version", "soft_version"]) if (key in module && (typeof module[key] !== "string" || Array.from(module[key] as string).length < 1 || Array.from(module[key] as string).length > 24)) throw new Error(`invalid module ${index}.${key}`);
-  if ("cell_count" in module && (!integer(module.cell_count) || module.cell_count < 1 || module.cell_count > 32)) throw new Error(`invalid module ${index}.cell_count`);
-  for (const key of ["max_charge_a", "max_discharge_a"]) if (key in module && !inRange(module[key], 0, 1000)) throw new Error(`invalid module ${index}.${key}`);
-  if ("console_baud" in module && (!integer(module.console_baud) || module.console_baud < 300 || module.console_baud > 1_000_000)) throw new Error(`invalid module ${index}.console_baud`);
-  if ("soh_counts" in module && (!Array.isArray(module.soh_counts) || module.soh_counts.length > 32 || !module.soh_counts.every(v => integer(v) && v >= 0 && v <= 1_000_000))) throw new Error(`invalid module ${index}.soh_counts`);
-  if ("soh_abnormal" in module && (!Array.isArray(module.soh_abnormal) || module.soh_abnormal.length > 32 || !module.soh_abnormal.every(v => integer(v) && v >= 0 && v <= 31))) throw new Error(`invalid module ${index}.soh_abnormal`);
-  if ("last_event" in module) parseSolarEvent(module.last_event, `module ${index}.last_event`);
-  return module as unknown as SolarModule;
-}
+const MODULE_KEYS = ["n", "present", "voltage_v", "current_a", "temperature_c", "soc_percent", "state", "cells_v", "temperatures_c", "capacity_ah", "full_capacity_ah", "cycles", "health_percent", "counters", "model", "board_version", "main_soft_version", "soft_version", "cell_count", "max_charge_a", "max_discharge_a", "console_baud", "soh_counts", "soh_abnormal", "last_event"];
 
 export function parseSolarBattery(value: unknown): SolarBattery {
   const body = record(value, "battery");
   onlyKnown(body, ["kind", "node_id", "device", "timestamp_ms", "modules", "stack", "state", "voltage_v", "current_a", "temperature_min_c", "temperature_max_c", "cell_min_v", "cell_max_v", "soc_percent", "alarm", "model", "capacity_ah", "full_capacity_ah", "energy_kwh", "cycles", "health_percent", "power_w", "balancing", "protecting", "charge_mos", "discharge_mos"], "battery");
-  for (const key of ["kind", "node_id", "device", "timestamp_ms", "modules", "stack"]) if (!(key in body)) throw new Error(`battery is missing ${key}`);
-  if (body.kind !== "battery") throw new Error("invalid kind");
-  const node = readNodeId(body), device = readDevice(body), timestamp = readTimestamp(body);
-  if (!integer(body.modules) || body.modules < 0 || body.modules > 16) throw new Error("invalid modules");
-  if (!Array.isArray(body.stack) || body.stack.length > 16) throw new Error("invalid stack");
-  const stack = body.stack.map(parseModule);
-  if ("state" in body && body.state !== "charging" && body.state !== "discharging" && body.state !== "idle") throw new Error("invalid state");
-  for (const [key, [low, high]] of Object.entries(BATTERY_OPTIONAL_RANGES)) if (key in body && !inRange(body[key], low, high)) throw new Error(`invalid ${key}`);
-  if ("soc_percent" in body && (!integer(body.soc_percent) || body.soc_percent < 0 || body.soc_percent > 100)) throw new Error("invalid soc_percent");
-  if ("alarm" in body && typeof body.alarm !== "boolean") throw new Error("invalid alarm");
-  if ("model" in body && (typeof body.model !== "string" || Array.from(body.model).length < 1 || Array.from(body.model).length > 24)) throw new Error("invalid model");
-  for (const [key, high] of [["capacity_ah", 100_000], ["full_capacity_ah", 100_000], ["energy_kwh", 10_000]] as const) if (key in body && !inRange(body[key], 0, high)) throw new Error(`invalid ${key}`);
-  if ("cycles" in body && (!integer(body.cycles) || body.cycles < 0 || body.cycles > 1_000_000)) throw new Error("invalid cycles");
-  if ("health_percent" in body && (!integer(body.health_percent) || body.health_percent < 0 || body.health_percent > 100)) throw new Error("invalid health_percent");
-  if ("power_w" in body && !inRange(body.power_w, -1_000_000, 1_000_000)) throw new Error("invalid power_w");
-  if ("balancing" in body && (!integer(body.balancing) || body.balancing < 0 || body.balancing > 64)) throw new Error("invalid balancing");
-  if ("protecting" in body && typeof body.protecting !== "boolean") throw new Error("invalid protecting");
-  for (const key of ["charge_mos", "discharge_mos"]) if (key in body && (!integer(body[key]) || (body[key] as number) < 0 || (body[key] as number) > 255)) throw new Error(`invalid ${key}`);
-  return { ...(body as unknown as SolarBattery), node_id: node, device, timestamp_ms: timestamp, stack };
+  if (Array.isArray(body.stack)) body.stack.forEach((module, index) => {
+    onlyKnownIn(module, MODULE_KEYS, `module ${index}`);
+    if (module && typeof module === "object" && "last_event" in module) parseSolarEvent((module as Record<string, unknown>).last_event, `module ${index}.last_event`);
+  });
+  checkAgainstContract("solar_battery", body);
+  return body as unknown as SolarBattery;
 }
 
 /** A solar message of either kind; the payload's own `kind` picks the parser. */

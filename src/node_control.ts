@@ -5,7 +5,7 @@
  * that puts it into deep sleep and none that sets a wake timer: the list below is closed, and the readers refuse every other word.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
-import { integer, onlyKnown, record } from "./contracts.js";
+import { checkAgainstContract, integer, onlyKnown, record } from "./contracts.js";
 import { parseDiagnosticPackage, type DiagnosticPackage } from "./node_diag_contract.js";
 
 export const CONTROL_OPERATIONS = ["restart", "pause", "resume", "standby", "identify", "diagnostics", "maintenance_on", "maintenance_off"] as const;
@@ -39,7 +39,6 @@ export const TOKEN_TTL_S = 30;
 export const NODE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 /** The id of a command: sixteen lowercase hexadecimal digits, the one format of every command in the family. */
 export const COMMAND_ID = /^[0-9a-f]{16}$/;
-const TOKEN = /^[a-z0-9]{16,32}$/;
 export const PERSON = /^[A-Za-z0-9._@ -]{1,64}$/;
 const FIRMWARE = /^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$/;
 const RESET_REASONS = ["power_on", "external", "software", "panic", "int_wdt", "task_wdt", "other_wdt", "deep_sleep", "brownout", "sdio", "usb", "jtag", "efuse", "power_glitch", "cpu_lockup", "unknown"];
@@ -67,19 +66,7 @@ export type ControlCommand = {
 export function parseControlCommand(value: unknown): ControlCommand {
   const body = record(value, "control command");
   onlyKnown(body, ["kind", "node_id", "timestamp_ms", "command_id", "action", "operation", "mode", "requested_by", "delay_s", "slot", "duration_s", "token", "detail"], "control command");
-  if (body.kind !== "node_control_command") throw new Error("invalid kind");
-  if (typeof body.node_id !== "string" || !NODE_ID.test(body.node_id)) throw new Error("invalid node_id");
-  if (!integer(body.timestamp_ms) || body.timestamp_ms < 0) throw new Error("invalid timestamp_ms");
-  if (typeof body.command_id !== "string" || !COMMAND_ID.test(body.command_id)) throw new Error("invalid command_id");
-  if (!oneOf(CONTROL_ACTIONS, body.action)) throw new Error("invalid action");
-  if (!oneOf(CONTROL_OPERATIONS, body.operation)) throw new Error("invalid operation");
-  if (!oneOf(CONTROL_MODES, body.mode)) throw new Error("invalid mode");
-  if (typeof body.requested_by !== "string" || !PERSON.test(body.requested_by)) throw new Error("invalid requested_by");
-  if ("delay_s" in body && (!integer(body.delay_s) || body.delay_s < 0 || body.delay_s > MAX_DELAY_S)) throw new Error("invalid delay_s");
-  if ("slot" in body && (!integer(body.slot) || body.slot < 0 || body.slot > MAX_SLOT)) throw new Error("invalid slot");
-  if ("duration_s" in body && (!integer(body.duration_s) || body.duration_s < 1 || body.duration_s > 86_400)) throw new Error("invalid duration_s");
-  if ("token" in body && (typeof body.token !== "string" || !TOKEN.test(body.token))) throw new Error("invalid token");
-  if ("detail" in body && (typeof body.detail !== "string" || !(DIAGNOSTIC_DETAILS as readonly string[]).includes(body.detail))) throw new Error("invalid detail");
+  checkAgainstContract("node_control_command", body);
   const execute = body.action === "execute";
   if (execute !== ("token" in body)) throw new Error("a token goes on an execute and on nothing else");
   if (execute && body.node_id === "all") throw new Error("an execute is for one node: its token is its own");
@@ -88,7 +75,7 @@ export function parseControlCommand(value: unknown): ControlCommand {
   if (("delay_s" in body || "slot" in body) && !(execute && body.operation === "restart")) throw new Error("a delay and a slot go on the execute of a restart");
   if ("slot" in body && body.mode !== "rolling") throw new Error("a slot goes with the rolling mode");
   if ("duration_s" in body) {
-    const span = DURATIONS[body.operation];
+    const span = DURATIONS[body.operation as ControlOperation];
     if (!execute || !span) throw new Error("a duration goes on the execute of pause, identify or maintenance_on");
     if ((body.duration_s as number) < span[0] || (body.duration_s as number) > span[1]) throw new Error(`the duration of ${body.operation} is ${span[0]} to ${span[1]} seconds`);
   }
@@ -134,15 +121,7 @@ function parseDiagnostics(value: unknown): ControlDiagnostics {
 export function parseControlResult(value: unknown): ControlResult {
   const body = record(value, "control result");
   for (const key of Object.keys(body)) if (!RESULT_KNOWN.includes(key)) throw new Error(`the control result has an unknown field ${key}`);
-  if (body.kind !== "node_control_result") throw new Error("invalid kind");
-  if (typeof body.node_id !== "string" || !NODE_ID.test(body.node_id)) throw new Error("invalid node_id");
-  if (!integer(body.timestamp_ms) || body.timestamp_ms < 0) throw new Error("invalid timestamp_ms");
-  if (typeof body.command_id !== "string" || !COMMAND_ID.test(body.command_id)) throw new Error("invalid command_id");
-  if (!oneOf(CONTROL_ACTIONS, body.action)) throw new Error("invalid action");
-  if (!oneOf(CONTROL_OPERATIONS, body.operation)) throw new Error("invalid operation");
-  if (!oneOf(CONTROL_STAGES, body.stage)) throw new Error("invalid stage");
-  if (typeof body.accepted !== "boolean") throw new Error("invalid accepted");
-  if (!oneOf(CONTROL_REFUSALS, body.refusal)) throw new Error("invalid refusal");
+  checkAgainstContract("node_control_result", body);
   if (body.accepted !== (body.refusal === "none")) throw new Error("the refusal is none exactly when the order was accepted");
   if ((body.stage === "rejected") === body.accepted) throw new Error("a rejected answer is one that was not accepted");
   if (body.refusal === "already_restarting" && body.operation !== "restart") throw new Error("only a restart can find the node already restarting");
@@ -150,18 +129,6 @@ export function parseControlResult(value: unknown): ControlResult {
     const expected = body.action === "arm" ? "armed" : body.operation === "restart" ? "restarting" : body.operation === "diagnostics" ? "diagnostics" : "applied";
     if (body.stage !== expected) throw new Error(`an accepted ${body.action} of ${body.operation} is answered ${expected}`);
   }
-  if ("token" in body && (typeof body.token !== "string" || !TOKEN.test(body.token))) throw new Error("invalid token");
-  if ("token_ttl_s" in body && (!integer(body.token_ttl_s) || body.token_ttl_s < 1 || body.token_ttl_s > 120)) throw new Error("invalid token_ttl_s");
-  if ("reason" in body && body.reason !== "requested_by_server") throw new Error("invalid reason");
-  if ("mode" in body && !oneOf(CONTROL_MODES, body.mode)) throw new Error("invalid mode");
-  if ("restart_in_s" in body && (!integer(body.restart_in_s) || body.restart_in_s < 0 || body.restart_in_s > 3600)) throw new Error("invalid restart_in_s");
-  if ("uptime_s" in body && (!integer(body.uptime_s) || body.uptime_s < 0)) throw new Error("invalid uptime_s");
-  if ("firmware" in body && (typeof body.firmware !== "string" || !FIRMWARE.test(body.firmware))) throw new Error("invalid firmware");
-  if ("requested_by" in body && (typeof body.requested_by !== "string" || !PERSON.test(body.requested_by))) throw new Error("invalid requested_by");
-  if ("state" in body && !oneOf(CONTROL_STATES, body.state)) throw new Error("invalid state");
-  if ("maintenance" in body && typeof body.maintenance !== "boolean") throw new Error("invalid maintenance");
-  if ("until_s" in body && (!integer(body.until_s) || body.until_s < 0 || body.until_s > 86_400)) throw new Error("invalid until_s");
-  if ("since_ms" in body && (!integer(body.since_ms) || body.since_ms < 0)) throw new Error("invalid since_ms");
   if ("diagnostics" in body) parseDiagnostics(body.diagnostics);
   for (const [name, group] of Object.entries(GROUPS)) {
     const present = group.fields.filter(field => field in body);
@@ -191,14 +158,7 @@ export type NodeMaintenance = { kind: "node_maintenance"; node_id: string; times
 export function parseMaintenance(value: unknown): NodeMaintenance {
   const body = record(value, "maintenance signal");
   onlyKnown(body, ["kind", "node_id", "timestamp_ms", "active", "reason", "expected_s", "firmware", "requested_by"], "maintenance signal");
-  if (body.kind !== "node_maintenance") throw new Error("invalid kind");
-  if (typeof body.node_id !== "string" || !NODE_ID.test(body.node_id)) throw new Error("invalid node_id");
-  if (!integer(body.timestamp_ms) || body.timestamp_ms < 0) throw new Error("invalid timestamp_ms");
-  if (typeof body.active !== "boolean") throw new Error("invalid active");
-  if (!oneOf(MAINTENANCE_REASONS, body.reason)) throw new Error("invalid reason");
-  if ("expected_s" in body && (!integer(body.expected_s) || body.expected_s < 1 || body.expected_s > 3600)) throw new Error("invalid expected_s");
-  if (typeof body.firmware !== "string" || !FIRMWARE.test(body.firmware)) throw new Error("invalid firmware");
-  if ("requested_by" in body && (typeof body.requested_by !== "string" || !PERSON.test(body.requested_by))) throw new Error("invalid requested_by");
+  checkAgainstContract("node_maintenance", body);
   if (!body.active && "expected_s" in body) throw new Error("a window that ends has no expected time");
   return body as unknown as NodeMaintenance;
 }
