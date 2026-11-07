@@ -8,7 +8,8 @@
     "build": "esbuild src/server.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/server.mjs",
     "start": "node dist/server.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "coverage": "node tools/coverage_check.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
