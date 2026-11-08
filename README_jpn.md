@@ -41,7 +41,7 @@
 | 役割 | ファミリーの中央セキュリティコーディネーター：ノード、アラーム、デバイス、エネルギー、カメラ、ネットワーク |
 | 技術 | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | テスト | 1115 件（`npm test`：単体と完全な HTTP 結合） |
-| 契約 | HTTP パス 196 本、287 操作（OpenAPI は ARMOR-COMMON）、ルート表は `docs/ROUTES.md` |
+| 契約 | HTTP パス 196 本、288 操作（OpenAPI は ARMOR-COMMON）、ルート表は `docs/ROUTES.md` |
 | 待ち受け | `127.0.0.1:18080`（`ARMOR_HOST`、`ARMOR_PORT`） |
 | 動作環境 | CM5 テストベンチ（サービスとして。ARMOR-DEVOPS 参照）または Node.js のある任意のコンピューター |
 | 実機での確認 | CM5 テストベンチでの日常使用：実際の MQTT ブローカー、実際の IP カメラ、ESP32-S3 基板上の実際のレーダーノード、これに接続する Studio、Android アプリ、音声・観察サービス |
@@ -157,7 +157,7 @@ flowchart LR
 
 ## 🔌 インターフェース
 
-ルート表（`docs/ROUTES.md`、コードから生成）は各ルートと呼び出せる主体を一覧にします。ARMOR-COMMON の OpenAPI は 223 パス・287 操作を記述し、欠けているルートがあるとテストが失敗します。主なもの：
+ルート表（`docs/ROUTES.md`、コードから生成）は各ルートと呼び出せる主体を一覧にします。ARMOR-COMMON の OpenAPI は 224 パス・288 操作を記述し、欠けているルートがあるとテストが失敗します。主なもの：
 
 | ルート | 認証 | 内容 |
 |---|---|---|
