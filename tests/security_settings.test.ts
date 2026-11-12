@@ -165,6 +165,9 @@ test("the voice service gets the policy of the server with every turn of audio",
     assert.equal((await call(running, cookie, "PUT", "/api/v1/security/settings", { "voice.silence_confirmation": "pin" })).status, 200);
     await turn();
     assert.deepEqual(JSON.parse(seen[2]!), { silence_confirmation: "pin" });
+    assert.equal((await call(running, cookie, "PUT", "/api/v1/security/settings", { "voice.silence_confirmation": "challenge" })).status, 200);
+    await turn();
+    assert.deepEqual(JSON.parse(seen[3]!), { silence_confirmation: "challenge" }, "the challenge mode reaches the voice service");
   } finally { await running.stop(); await new Promise<void>(resolve => gateway.close(() => resolve())); }
 });
 
@@ -249,6 +252,11 @@ test("the lock of the phone app is a closed list that starts as the person's own
   assert.throws(() => settings.update({ "client.device_lock": "sometimes" }), SecuritySettingsInvalid);
   assert.throws(() => settings.update({ "client.device_lock": true }), SecuritySettingsInvalid);
   assert.deepEqual(settings.update({ "client.device_lock": "always" }), { "client.device_lock": "always" });
+  // the silence confirmation: every step towards "off" is a loss, and challenge is the strictest (it is an accepted value, never the default)
+  assert.equal(SECURITY_DEFAULTS["voice.silence_confirmation"], "off");
+  assert.equal(lowers("voice.silence_confirmation", "double_turn", "challenge"), false);
+  assert.equal(lowers("voice.silence_confirmation", "challenge", "double_turn"), true);
+  assert.equal(lowers("voice.silence_confirmation", "challenge", "off"), true);
   assert.equal(lowers("client.device_lock", "user", "always"), false);
   assert.equal(lowers("client.device_lock", "always", "sensitive"), true);
   assert.equal(lowers("client.device_lock", "sensitive", "user"), true);

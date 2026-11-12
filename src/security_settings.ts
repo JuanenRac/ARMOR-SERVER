@@ -9,7 +9,7 @@
  *   alarm.mode_schedule          on | off                  the timetable of the arming modes changes the mode by itself (off, the default; it needs alarm.arming_modes)
  *   alarm.mode_schedule_lowers   on | off                  the timetable may go to a mode that defends less (off, the default: it only keeps or raises the defence, it can never disarm)
  *   alarm.mode_panel_sync        on | off                  choosing away, home or night also arms the alarm panels with the profile that goes with it (off, the default: the modes decide only what the server defends; it needs alarm.arming_modes)
- *   voice.silence_confirmation   off | pin | double_turn   what the voice assistant asks before silencing the alarm (sent to the voice service with every turn)
+ *   voice.silence_confirmation   off | pin | double_turn | challenge   what the voice assistant asks before silencing the alarm (sent to the voice service with every turn). challenge = a number the voice service draws, shown on the screen of the panel and never said aloud: only a panel that shows it can silence by voice, every other client (Studio, the phone) fails closed
  *   alarm.config_hash            on | off                  the panel binds its saved armed state to its zones and PIN and does not restore it if they changed (panel side)
  *   alarm.siren_fault_notice     on | off                  a warning in the alarm centre while a panel reports that the wiring of its siren is open, shorted or unreadable (on, the default; off: nothing is raised)
  *   server.zone_feed             on | off                  the server tells the panels the state of their Zigbee zones
@@ -59,7 +59,7 @@ import { durableRename } from "./durable.js";
 export const DISARM_PIN_VALUES = ["never", "if_set", "always"] as const;
 export const MODE_DOWNGRADE_VALUES = ["required", "not_required"] as const;
 export type ModeDowngradePin = typeof MODE_DOWNGRADE_VALUES[number];
-export const SILENCE_VALUES = ["off", "pin", "double_turn"] as const;
+export const SILENCE_VALUES = ["off", "pin", "double_turn", "challenge"] as const;   // from the loosest to the strictest: the loosening check reads the order
 export const DEVICE_LOCK_VALUES = ["user", "sensitive", "always"] as const;
 export const NVS_ENCRYPTION_VALUES = ["off", "secrets"] as const;
 export type NvsEncryption = typeof NVS_ENCRYPTION_VALUES[number];

@@ -819,6 +819,7 @@ export type VoiceTurnResult = {
   reply: string;
   audio?: string;
   audio_omitted?: "too_large";
+  challenge?: string;
 };
 
 export type ConnectionEvent = {

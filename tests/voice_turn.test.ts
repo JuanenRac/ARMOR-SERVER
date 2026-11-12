@@ -248,3 +248,21 @@ test("the two sizes can be changed in the settings, are held to the ceilings and
     assert.equal("voice.reply_audio_max_bytes" in stored, false);
   } finally { await running.stop(); await fake.close(); }
 });
+
+test("the number of the spoken challenge reaches the panel only when it is well formed", () => {
+  const gateway = (extra: Record<string, unknown>) => JSON.stringify({ heard: "silence", reply: "Say the number shown on the screen.", audio: PCM.toString("base64"), ...extra });
+  const binary = shapeReply(gateway({ challenge: "47" }), "binary", 200_000)!;
+  const parsed = parseVoiceTurnReply(binary.contentType, binary.body as Buffer, 200_000);
+  assert.deepEqual(parsed.result, { heard: "silence", reply: "Say the number shown on the screen.", challenge: "47" });
+  assert.ok(parsed.audio!.equals(PCM), "the number is on the screen, not in the sound");
+  assert.equal(JSON.parse(String(shapeReply(gateway({ challenge: "123456" }), "none", 200_000)!.body)).challenge, "123456");
+  // anything that is not two to six digits is dropped (a panel that gets no number cannot silence: it fails closed)
+  for (const bad of ["4", "1234567", "4a", "", " 47", 47, null, ["47"]]) {
+    assert.equal("challenge" in JSON.parse(String(shapeReply(gateway({ challenge: bad }), "none", 200_000)!.body)), false, String(bad));
+  }
+  // the reader of a binary answer agrees
+  const built = buildVoiceTurnReply({ heard: "a", reply: "b", challenge: "47" });
+  assert.equal(parseVoiceTurnReply(built.contentType, built.body, 200_000).result.challenge, "47");
+  const crooked = buildVoiceTurnReply({ heard: "a", reply: "b", challenge: "4x" });
+  assert.throws(() => parseVoiceTurnReply(crooked.contentType, crooked.body, 200_000), VoiceTurnError);
+});

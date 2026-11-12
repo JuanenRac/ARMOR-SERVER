@@ -10,7 +10,9 @@ export const VOICE_LANGUAGES = ["en", "es", "de", "fr", "it", "ja", "zh", "pt"] 
 export type VoiceTurnLanguage = typeof VOICE_LANGUAGES[number];
 export type ReplyAudio = "base64" | "binary" | "none";
 export type VoiceTurnMeta = { language: VoiceTurnLanguage; encoding: "pcm_s16le"; sample_rate: 16000; channels: 1; reply_audio?: ReplyAudio };
-export type VoiceTurnResult = { heard: string; reply: string; audio?: string; audio_omitted?: "too_large" };
+export type VoiceTurnResult = { heard: string; reply: string; audio?: string; audio_omitted?: "too_large"; challenge?: string };
+/** The number of the spoken challenge: two to six digits, shown on the screen of the panel and never said aloud. */
+export const CHALLENGE_PATTERN = /^[0-9]{2,6}$/;
 
 export const MAX_META_BYTES = 1024;
 export const MAX_PART_HEADER_BYTES = 512;
@@ -181,7 +183,8 @@ export function parseVoiceTurnReply(contentType: string, body: Buffer, maxAudioB
   try { loaded = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(part.data)); } catch { throw fail; }
   if (typeof loaded !== "object" || loaded === null || Array.isArray(loaded)) throw fail;
   const result = loaded as Record<string, unknown>;
-  if (Object.keys(result).some(key => key !== "heard" && key !== "reply" && key !== "audio_omitted")) throw fail;
+  if (Object.keys(result).some(key => key !== "heard" && key !== "reply" && key !== "audio_omitted" && key !== "challenge")) throw fail;
+  if (result.challenge !== undefined && (typeof result.challenge !== "string" || !CHALLENGE_PATTERN.test(result.challenge))) throw fail;
   if (typeof result.heard !== "string" || typeof result.reply !== "string" || result.heard.length > MAX_TEXT_CHARS || result.reply.length > MAX_TEXT_CHARS) throw fail;
   if (result.audio_omitted !== undefined && result.audio_omitted !== "too_large") throw fail;
   const audio = parts.find(item => item.name === "audio")?.data ?? null;
@@ -203,6 +206,8 @@ export function shapeReply(text: string, mode: Exclude<ReplyAudio, "base64">, ma
   if (typeof gateway.heard !== "string" || typeof gateway.reply !== "string") return null;
   if (gateway.audio !== undefined && (typeof gateway.audio !== "string" || !/^[A-Za-z0-9+/]*={0,2}$/.test(gateway.audio))) return null;
   const result: VoiceTurnResult = { heard: gateway.heard.slice(0, MAX_TEXT_CHARS), reply: gateway.reply.slice(0, MAX_TEXT_CHARS) };
+  // The number of the challenge goes on only when it is well formed; anything else is dropped, so a panel that gets no number cannot silence (it fails closed).
+  if (typeof gateway.challenge === "string" && CHALLENGE_PATTERN.test(gateway.challenge)) result.challenge = gateway.challenge;
   let audio: Buffer | undefined;
   if (mode === "binary" && typeof gateway.audio === "string" && gateway.audio.length) {
     const bytes = Buffer.from(gateway.audio, "base64");
