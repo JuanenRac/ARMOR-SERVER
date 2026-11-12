@@ -120,7 +120,7 @@ def validate_changelog_order() -> None:
         if key(newer) == key(older):
             fail(f"CHANGELOG.md line {older_line}: version {older} has two entries; make it one")
         if key(newer) < key(older):
-            fail(f"CHANGELOG.md line {line}: version {older} is listed after the older {newer}; newest first")
+            fail(f"CHANGELOG.md line {older_line}: version {older} is listed after the older {newer}; newest first")
 
 
 def validate_readme_version_prose(manifest: dict) -> None:
