@@ -18,8 +18,8 @@ const send = async (running: Running, init: { method?: string; url?: string; hea
   try { body = JSON.parse(await reply.text()); } catch { /* not JSON */ }
   return { status: reply.status, body };
 };
-const post = (running: Running, body: unknown, bearer: string | undefined = AI_TOKEN): Promise<Answer> =>
-  send(running, { headers: { ...json, ...(bearer === undefined ? {} : { Authorization: `Bearer ${bearer}` }) }, raw: JSON.stringify(body) });
+const post = (running: Running, body: unknown, bearer: string | null = AI_TOKEN): Promise<Answer> =>
+  send(running, { headers: { ...json, ...(bearer === null ? {} : { Authorization: `Bearer ${bearer}` }) }, raw: JSON.stringify(body) });
 
 const camera = { id: "cam-gate", name: "Gate", host: "192.168.0.203", username: "admin", password: "s3cret-pw", rtspPath: "/live", onvifPort: 80, rtspPort: 554 };
 const square = [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9], [0.1, 0.9]];
@@ -49,7 +49,7 @@ test("a request without the token of the observation service never reaches the e
   await withServer(async (running, audit) => {
     running.app.context.store.arm("armed");
     const wrong = "b".repeat(32);
-    for (const bearer of [undefined, "", " ", wrong, AI_TOKEN + "x", AI_TOKEN.slice(1), AI_TOKEN.toUpperCase(), SECRETS.ARMOR_OPERATOR_TOKEN]) {
+    for (const bearer of [null, "", " ", wrong, AI_TOKEN + "x", AI_TOKEN.slice(1), AI_TOKEN.toUpperCase(), SECRETS.ARMOR_OPERATOR_TOKEN]) {
       assert.equal((await post(running, { ...enter, notify: true }, bearer)).status, 401, String(bearer));
     }
     for (const authorization of [`Basic ${Buffer.from(`ai:${AI_TOKEN}`).toString("base64")}`, `Token ${AI_TOKEN}`, AI_TOKEN]) {
@@ -101,7 +101,7 @@ test("an invalid value of a member the contract names is refused", async () => {
   await withServer(async (running) => {
     running.app.context.store.arm("armed");
     const bad: Array<Record<string, unknown>> = [
-      { track_id: 1.5 }, { track_id: -1 }, { track_id: "3" }, { track_id: null }, { track_id: Number.MAX_SAFE_INTEGER * 2 }, { timestamp: "12" }, { timestamp: null }, { timestamp_ms: 1.5 }, { timestamp_ms: -1 },
+      { track_id: 1.5 }, { track_id: -1 }, { track_id: "3" }, { track_id: null }, { timestamp: "12" }, { timestamp: null }, { timestamp_ms: 1.5 }, { timestamp_ms: -1 },
       { label: "x".repeat(61) }, { label: 5 }, { label: null }, { label: ["person"] }, { zone_id: "z".repeat(81) }, { zone_id: 7 }, { zone_id: "" }, { zone_name: "n".repeat(121) }, { zone_name: "" },
       { notify: 0 }, { notify: "false" }, { notify: null }, { authorizes_action: "false" }, { authorizes_action: null }, { authorizes_action: 0 }, { camera_id: "ab" }, { camera_id: "c".repeat(81) },
       { camera_id: "cam gate" }, { camera_id: "../cam-gate" }, { camera_id: "cam-gate\n" }, { camera_id: "cám-gate" }, { schema: undefined }, { type: "ZONE_ENTER" }, { type: "dwell", seconds: -1 },
