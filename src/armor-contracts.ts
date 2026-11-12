@@ -791,6 +791,8 @@ export type NodeHealth = {
   rssi_dbm?: number;
   broker_reconnects: number;
   low_stack_tasks?: number;
+  stack_min_free?: number;
+  stack_min_task?: string;
   last_error?: string;
   control_state?: "running" | "paused" | "standby";
   control_since_ms?: number;
@@ -1177,6 +1179,30 @@ export type ServerAlert = {
   login_from?: string;
   login_country?: string;
   login_country_new?: true;
+};
+
+export type VisionEventVectors = {
+  track_id: number;
+  dx: number;
+  dy: number;
+  speed: number;
+};
+
+export type VisionEvent = {
+  schema: "armor.vision.event/v1" | "armor.vision.event/v2";
+  type: "alert" | "detection";
+  camera_id: string;
+  zone_id: string;
+  zone_name: string;
+  track_id: number;
+  label: string;
+  confidence: number;
+  box: number[];
+  timestamp: number;
+  timestamp_ms: number;
+  authorizes_action: false;
+  radar_tracks?: number;
+  vectors?: VisionEventVectors[];
 };
 
 export const MAX_TARGETS = 15;

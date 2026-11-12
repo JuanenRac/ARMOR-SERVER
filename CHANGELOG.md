@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The shared contract copies follow the new health report and the vision event:** the optional `stack_min_free` and `stack_min_task` of the node health report are accepted and passed on.
+
 - **Snapshots and recordings can be kept for different times:** `ARMOR_MEDIA_RETENTION_SNAPSHOT_DAYS` and `ARMOR_MEDIA_RETENTION_RECORDING_DAYS` (0 to 3650, default 0) give each kind of file its own age limit; 0 leaves the general `ARMOR_MEDIA_RETENTION_DAYS` in force, so nothing changes until one is set. Protected files are still never pruned. Documented in `docs/ENVIRONMENT.md`; tested with both limits, the fallback and an invalid value.
 
 - **The contract version of each node, live, in one answer:** `GET /api/v1/contract` (operator or a signed-in person) gives the version of the shared contracts this server speaks and, for every node that has reported, the version its firmware says it was checked against and where it stands (`current`, `older` - update its firmware, `newer`, or `unknown` - an older firmware that does not say it), with the count of each; a value that is not a version is shown as none. Nothing is stored and no secret is in the answer. Tests cover the comparison (numbers, not text; a missing fourth part is zero), the order, the totals and who may ask.
