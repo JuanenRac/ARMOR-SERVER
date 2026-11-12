@@ -67,6 +67,7 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/admin/updates` | administrator | `routes/maintenance.ts` |
 | POST | `/api/v1/admin/updates/:id/rollback` | administrator | `routes/maintenance.ts` |
 | DELETE | `/api/v1/admin/updates/history` | administrator | `routes/maintenance.ts` |
+| POST | `/api/v1/ai/activity-events` | AI service | `routes/ai.ts` |
 | GET | `/api/v1/ai/cameras/:id/frame` | AI service | `routes/ai.ts` |
 | GET | `/api/v1/ai/context` | AI service | `routes/ai.ts` |
 | POST | `/api/v1/ai/observations` | AI service | `routes/ai.ts` |

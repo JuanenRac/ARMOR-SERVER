@@ -131,6 +131,53 @@ export function parseVisionEvent(input: unknown): VisionEvent | undefined {
   };
 }
 
+/** The kinds of event the activity engine of ARMOR-VISION reports (zones and counting lines). */
+export const ACTIVITY_EVENT_TYPES = ["zone_enter", "zone_exit", "dwell", "loiter", "line_cross"] as const;
+export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[number];
+
+/**
+ * One event of the activity engine (armor.vision.activity/v1): an object entered, left, stayed in or loitered in a zone, or crossed a counting line. `notify: false` is set by the engine when the profile
+ * of the arming mode says the people the alarms go to are not told of it; the event is still recorded. It authorizes nothing (`authorizes_action` is always false).
+ */
+export type ActivityEvent = {
+  schema: "armor.vision.activity/v1"; type: ActivityEventType; camera_id: string; track_id: number; label: string; timestamp: number; timestamp_ms: number; authorizes_action: false;
+  zone_id?: string; zone_name?: string; seconds?: number; line_id?: string; direction?: "to_left" | "to_right"; notify?: boolean;
+};
+
+const ACTIVITY_EVENT_FIELDS = ["schema", "type", "camera_id", "track_id", "label", "timestamp", "timestamp_ms", "authorizes_action", "zone_id", "zone_name", "seconds", "line_id", "direction", "notify"];
+
+/** The activity event a service sent, checked field by field; undefined when it is not what it should be. A zone event names its zone, a line event its line and direction, and nothing else is let through. */
+export function parseActivityEvent(input: unknown): ActivityEvent | undefined {
+  if (!isRecord(input) || !Object.keys(input).every(key => ACTIVITY_EVENT_FIELDS.includes(key))) return undefined;
+  const item = input;
+  if (item.schema !== "armor.vision.activity/v1") return undefined;
+  if (typeof item.type !== "string" || !(ACTIVITY_EVENT_TYPES as readonly string[]).includes(item.type)) return undefined;
+  const type = item.type as ActivityEventType;
+  if (typeof item.camera_id !== "string" || !/^[A-Za-z0-9._-]{3,80}$/.test(item.camera_id)) return undefined;
+  if (typeof item.track_id !== "number" || !Number.isInteger(item.track_id) || item.track_id < 1) return undefined;
+  if (!text(item.label, 60)) return undefined;
+  if (typeof item.timestamp !== "number" || !Number.isFinite(item.timestamp) || item.timestamp < 0) return undefined;
+  if (typeof item.timestamp_ms !== "number" || !Number.isInteger(item.timestamp_ms) || item.timestamp_ms < 0) return undefined;
+  if (item.authorizes_action !== false) return undefined;
+  if (item.notify !== undefined && typeof item.notify !== "boolean") return undefined;
+  if (item.seconds !== undefined && !inRange(item.seconds, 0, 86_400 * 7)) return undefined;
+  if (type === "line_cross") {
+    if (!text(item.line_id, 80) || (item.direction !== "to_left" && item.direction !== "to_right")) return undefined;
+    if (item.zone_id !== undefined || item.zone_name !== undefined || item.seconds !== undefined) return undefined;
+  } else {
+    if (!text(item.zone_id, 80) || (item.zone_name !== undefined && !text(item.zone_name, 120))) return undefined;
+    if (item.line_id !== undefined || item.direction !== undefined) return undefined;
+    if (type !== "zone_enter" && item.seconds === undefined) return undefined;
+    if (type === "zone_enter" && item.seconds !== undefined) return undefined;
+  }
+  return {
+    schema: "armor.vision.activity/v1", type, camera_id: item.camera_id, track_id: item.track_id, label: item.label, timestamp: item.timestamp, timestamp_ms: item.timestamp_ms, authorizes_action: false,
+    ...(item.zone_id !== undefined ? { zone_id: item.zone_id as string } : {}), ...(item.zone_name !== undefined ? { zone_name: item.zone_name as string } : {}),
+    ...(item.seconds !== undefined ? { seconds: item.seconds as number } : {}), ...(item.line_id !== undefined ? { line_id: item.line_id as string } : {}),
+    ...(item.direction !== undefined ? { direction: item.direction as "to_left" | "to_right" } : {}), ...(item.notify !== undefined ? { notify: item.notify } : {}),
+  };
+}
+
 /** The observation a service sent, checked; undefined when it is not what it should be. */
 export function parseObservation(input: unknown): AiObservation | undefined {
   if (typeof input !== "object" || input === null) return undefined;

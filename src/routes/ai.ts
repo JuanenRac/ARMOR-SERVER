@@ -6,7 +6,7 @@
 import type { Express, Request } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
-import { AiError, FRAME_HEIGHT, FRAME_WIDTH, parseObservation, parseVisionEvent } from "../ai.js";
+import { AiError, FRAME_HEIGHT, FRAME_WIDTH, parseActivityEvent, parseObservation, parseVisionEvent } from "../ai.js";
 import { coveringNodes } from "../ai_cover.js";
 
 /** A camera that keeps seeing movement is one alarm per this long, not one for ever (the alarm of an observation is an event: it ends the moment it is raised and leaves the list when somebody acknowledges it). */
@@ -87,6 +87,32 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
     const watched = vault.get(event.camera_id);
     if (watched) void context.captureOnDetect.trigger(watched).catch(() => undefined);
     audit.record({ action: "ai.vision_event", outcome: "allowed", target: event.camera_id, detail: `alert ${event.label} in ${event.zone_id}${alarm ? ", alarm raised" : ", one is already open"}` });
+    return response.json({ raised: Boolean(alarm), ...(alarm ? { alarm_id: alarm.id } : { reason: "already_open" }) });
+  });
+
+  /**
+   * One event of the activity engine of ARMOR-VISION (a zone entered, left, stayed in or loitered in; a counting line crossed). It is always recorded in the audit. An entry, a stay or a loitering in a zone
+   * of kind `alert` raises an alarm, only while the system is armed and only when the event does not say `notify: false` (the profile of the arming mode watches the zone without telling the people the
+   * alarms go to); a zone the server does not know (one of the configuration of the service) and a `detection` zone are only recorded.
+   */
+  app.post("/api/v1/ai/activity-events", requireAi, (request, response) => {
+    const event = parseActivityEvent(request.body);
+    if (!event) return response.status(422).json({ error: "invalid_activity_event" });
+    if (!vault.get(event.camera_id)) return response.status(404).json({ error: "unknown_camera" });
+    const where = event.zone_id ? `zone ${event.zone_id}` : `line ${event.line_id}`;
+    const record = (outcome: string): void => audit.record({ action: "ai.activity_event", outcome: "allowed", target: event.camera_id, detail: `${event.type} ${event.label} in ${where}, ${outcome}` });
+    if (event.type === "line_cross" || event.type === "zone_exit") { record("recorded"); return response.json({ raised: false, reason: "recorded" }); }
+    const zone = context.detectionZones.get(event.camera_id).zones.find(item => item.id === event.zone_id);
+    if (!zone || zone.kind !== "alert") { record("recorded"); return response.json({ raised: false, reason: "recorded" }); }
+    if (event.notify === false) { record("not told, as the profile of the mode says"); return response.json({ raised: false, reason: "notify_off" }); }
+    if (store.snapshot().mode !== "armed") { record("disarmed"); return response.json({ raised: false, reason: "disarmed" }); }
+    const alarm = alarms.raise(`ai:camera:${event.camera_id}:activity:${zone.id}:${Math.floor(Date.now() / MOTION_WINDOW_MS)}`, {
+      source: { type: "camera", id: event.camera_id }, severity: "high", code: "camera_motion",
+      detail: { zone: zone.name, label: event.label, ...(event.seconds !== undefined ? { seconds: Math.round(event.seconds) } : {}) }, instant: true,
+    });
+    const watched = vault.get(event.camera_id);
+    if (watched) void context.captureOnDetect.trigger(watched).catch(() => undefined);
+    record(alarm ? "alarm raised" : "one is already open");
     return response.json({ raised: Boolean(alarm), ...(alarm ? { alarm_id: alarm.id } : { reason: "already_open" }) });
   });
 }
