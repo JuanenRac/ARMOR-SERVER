@@ -31,7 +31,7 @@ export type NodeHealthMessage = {
   heap_free: number; heap_min: number;
   /** The internal memory on its own (heap_free counts the external RAM too, so it never looks short on a board that has 8 MB of it); the three come together. */
   heap_internal_free?: number; heap_internal_min?: number; heap_internal_largest?: number; psram_free?: number;
-  link: (typeof HEALTH_LINKS)[number]; link_up: boolean; rssi_dbm?: number; broker_reconnects: number; low_stack_tasks?: number; last_error?: string;
+  link: (typeof HEALTH_LINKS)[number]; link_up: boolean; rssi_dbm?: number; broker_reconnects: number; low_stack_tasks?: number; /** The least stack left of any task, and the name of that task. */ stack_min_free?: number; stack_min_task?: string; last_error?: string;
   /** What remote control has done to the node (see node_control.ts): running, paused for a while or in standby, and the maintenance flag. Absent on a firmware that can not be controlled. */
   control_state?: ControlState; control_since_ms?: number; control_by?: string; control_until_s?: number; maintenance?: boolean; maintenance_until_s?: number;
   /** Why the last run ended, said only after a dirty start and only for the first ten minutes of the run. */
@@ -64,7 +64,7 @@ const REQUIRED = ["kind", "node_id", "timestamp_ms", "family", "firmware", "upti
 /** A report as the contract has it, with the rules that join fields: the least heap is never more than the heap free, a signal strength goes only with a Wi-Fi link that is up, no link is a link that is down. */
 export function parseNodeHealth(value: unknown): NodeHealthMessage {
   const body = record(value, "node health");
-  onlyKnown(body, [...REQUIRED, "board", "contract", "rssi_dbm", "low_stack_tasks", "last_error", ...INTERNAL, "psram_free", "control_state", "control_since_ms", "control_by", "control_until_s", "maintenance", "maintenance_until_s", "boot", "memory_gate", "coredump", "config_check", "sensors", "radar"], "node health");
+  onlyKnown(body, [...REQUIRED, "board", "contract", "rssi_dbm", "low_stack_tasks", "stack_min_free", "stack_min_task", "last_error", ...INTERNAL, "psram_free", "control_state", "control_since_ms", "control_by", "control_until_s", "maintenance", "maintenance_until_s", "boot", "memory_gate", "coredump", "config_check", "sensors", "radar"], "node health");
   checkAgainstContract("node_health", body);
   if ((body.heap_min as number) > (body.heap_free as number)) throw new Error("the least heap is never more than the heap free now");
   const told = INTERNAL.filter(key => key in body).length;
