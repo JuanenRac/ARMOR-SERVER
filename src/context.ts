@@ -37,6 +37,7 @@ import { AlarmStateSigner } from "./alarm_state_signature.js";
 import { CaptureOnDetect } from "./capture_on_detect.js";
 import { IgnoreZones } from "./ignore_zones.js";
 import { CountLines } from "./count_lines.js";
+import { DetectionZones } from "./detection_zones.js";
 import { FcmDevices, fcmChannel, parseServiceAccount } from "./push_fcm.js";
 import { GeoIpDatabase } from "./geoip.js";
 import { LoginCountries } from "./login_places.js";
@@ -194,6 +195,7 @@ export type AppContext = {
   ignoreZones: IgnoreZones;
   /** The counting lines drawn on each camera's picture. */
   countLines: CountLines;
+  detectionZones: DetectionZones;
   /** The Android phones that asked for push through Firebase; empty and unused unless ARMOR_FCM_SERVICE_ACCOUNT is set. */
   fcmDevices: FcmDevices;
   /** The country of an address, from the database the owner put on this machine (ARMOR_GEOIP_DB); null when there is none or it could not be read. */
@@ -451,6 +453,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const captureOnDetect = new CaptureOnDetect({ file: path.join(config.dataDir, "capture-on-detect.json"), audit, now: overrides.now, tools: { snapshot: camera => evidence.snapshot(camera), startRecording: camera => evidence.startRecording(camera), stopRecording: id => evidence.stopRecording(id), isRecording: id => evidence.isRecording(id) } });
   const ignoreZones = new IgnoreZones(path.join(config.dataDir, "camera-ignore-zones.json"));
   const countLines = new CountLines(path.join(config.dataDir, "camera-count-lines.json"));
+  const detectionZones = new DetectionZones(path.join(config.dataDir, "camera-detection-zones.json"));
   const zoneFeedSigner = new ZoneFeedSigner(path.join(config.dataDir, "zone-feed.key"));
   const alarmZoneFeed = new AlarmZoneFeed(path.join(config.dataDir, "alarm-zone-links.json"), { publish: (topic, payload) => { if (!alarmLink.publish) throw new Error("the MQTT broker is not connected"); alarmLink.publish(topic, payload); }, devices: () => devices.list(), now: overrides.now, warn,
     enabled: () => securitySettings.get("server.zone_feed"), signer: () => (securitySettings.get("server.zone_feed_signature") ? zoneFeedSigner : undefined),
@@ -605,7 +608,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    connections, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

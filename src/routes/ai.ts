@@ -29,7 +29,8 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
         const nodes = coveringNodes(site.get().site, camera.id);
         const ignore = context.ignoreZones.get(camera.id);
         const lines = context.countLines.get(camera.id);
-        return { id: camera.id, name: camera.name, ...(nodes ? { nodes } : {}), ...(ignore.length ? { ignore } : {}), ...(lines.length ? { lines } : {}) };
+        const detection = context.detectionZones.get(camera.id);
+        return { id: camera.id, name: camera.name, ...(nodes ? { nodes } : {}), ...(ignore.length ? { ignore } : {}), ...(lines.length ? { lines } : {}), ...(detection.zones.length ? { detection } : {}) };
       }),
     });
   });

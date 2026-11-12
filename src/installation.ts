@@ -52,7 +52,9 @@ export function buildBundle(context: AppContext, by: string): InstallationBundle
   const parts: Partial<Record<Part, unknown>> = {
     cameras: context.vault.list().map(camera => {
       const { hasCredentials: _has, liveVideoAvailable: _live, ...rest } = cameraPublic(camera, ffmpeg);
-      return rest;   // the username is kept (it is not a secret to the person who set it up); the password is not in the public view
+      // what is drawn on the picture of the camera travels with it: the parts to leave out, the counting lines, the detection zones and what each arming mode watches
+      const overlays = { ...(context.ignoreZones.get(camera.id).length ? { ignore_zones: context.ignoreZones.get(camera.id) } : {}), ...(context.countLines.get(camera.id).length ? { count_lines: context.countLines.get(camera.id) } : {}), ...(context.detectionZones.get(camera.id).zones.length ? { detection: context.detectionZones.get(camera.id) } : {}) };
+      return Object.keys(overlays).length ? { ...rest, overlays } : rest;   // the username is kept (it is not a secret to the person who set it up); the password is not in the public view
     }),
     site: context.site.get().site,
     electrical: context.electrical.get().site,
@@ -101,9 +103,15 @@ export function applyBundle(context: AppContext, bundle: InstallationBundle, wan
             const existing = typeof item.id === "string" ? context.vault.get(item.id) : undefined;
             if (existing) { kept += 1; continue; }
             // the form of a new camera: everything the file says, with no password (so no username either: a username needs its password)
-            const parsed: CameraConnection | null = parseCameraInput({ ...item, username: "", password: "" });
+            const { overlays, ...cameraItem } = item;
+            const parsed: CameraConnection | null = parseCameraInput({ ...cameraItem, username: "", password: "" });
             if (!parsed) { invalid += 1; continue; }
             context.vault.save(parsed);
+            if (isRecord(overlays)) {   // a part that does not pass its own check is left out; the camera is still added
+              try { if (overlays.ignore_zones !== undefined) context.ignoreZones.set(parsed.id, overlays.ignore_zones); } catch { /* left out */ }
+              try { if (overlays.count_lines !== undefined) context.countLines.set(parsed.id, overlays.count_lines); } catch { /* left out */ }
+              try { if (overlays.detection !== undefined) context.detectionZones.set(parsed.id, overlays.detection); } catch { /* left out */ }
+            }
             report.cameras_need_credentials.push(parsed.id);
             added += 1;
           }
@@ -206,7 +214,7 @@ export function previewBundle(context: AppContext, bundle: InstallationBundle, w
       switch (part) {
         case "cameras":
           if (!Array.isArray(content)) throw new Error("not a list");
-          report.applied.cameras = listLine(content, new Set(context.vault.list().map(camera => camera.id)), item => text(item.id), item => parseCameraInput({ ...item, username: "", password: "" }) !== null);
+          report.applied.cameras = listLine(content, new Set(context.vault.list().map(camera => camera.id)), item => text(item.id), item => parseCameraInput({ ...(({ overlays: _overlays, ...camera }) => camera)(item), username: "", password: "" }) !== null);
           break;
         case "site": case "electrical": case "network": case "alarm_design":
           if (!isRecord(content)) throw new Error("not a design");

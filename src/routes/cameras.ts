@@ -7,6 +7,7 @@
 import { CaptureSettingsInvalid } from "../capture_on_detect.js";
 import { IgnoreZonesInvalid } from "../ignore_zones.js";
 import { CountLinesInvalid } from "../count_lines.js";
+import { DetectionZonesInvalid } from "../detection_zones.js";
 import type { Express, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
@@ -74,6 +75,25 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
     }
   });
 
+  // The zones of detection of a camera (polygons with the labels they count) and what is watched in each arming mode, set by an administrator.
+  app.get("/api/v1/cameras/:id/detection-zones", requireOperator, (request, response) => {
+    const camera = withCamera(request, response);
+    if (!camera) return undefined;
+    return response.json({ camera_id: camera.id, ...context.detectionZones.get(camera.id) });
+  });
+  app.put("/api/v1/cameras/:id/detection-zones", context.requireAdmin, (request, response) => {
+    const camera = withCamera(request, response);
+    if (!camera) return undefined;
+    try {
+      const detection = context.detectionZones.set(camera.id, request.body);
+      audit.record({ actor: who(request), action: "camera.detection_zones", outcome: "allowed", target: camera.id, detail: `${detection.zones.length} zone(s), ${Object.keys(detection.profiles).length} profile(s)` });
+      return response.json({ camera_id: camera.id, ...detection });
+    } catch (error) {
+      if (error instanceof DetectionZonesInvalid) return response.status(400).json({ error: error.message });
+      throw error;
+    }
+  });
+
   // What the server keeps by itself when a camera sees something while the perimeter is armed (see ../capture_on_detect.ts): anybody who may look reads it, an administrator sets it.
   app.get("/api/v1/capture-settings", requireOperator, (_request, response) => response.json({ settings: context.captureOnDetect.get(), recent: context.captureOnDetect.recent() }));
   app.put("/api/v1/capture-settings", context.requireAdmin, (request, response) => {
@@ -114,6 +134,7 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
     vault.remove(camera.id);
     context.ignoreZones.forget(camera.id);
     context.countLines.forget(camera.id);
+    context.detectionZones.forget(camera.id);
     audit.record({ actor: who(request), action: "camera.remove", outcome: "allowed", target: camera.id });
     // Evidence is kept: removing a connection must never erase footage without a separate, explicit action.
     return response.sendStatus(204);

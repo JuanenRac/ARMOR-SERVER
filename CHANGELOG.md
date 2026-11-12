@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **Detection zones and a profile for each arming mode:** `GET` and `PUT /api/v1/cameras/{id}/detection-zones` keep up to sixteen polygons per camera (three to twelve corners that do not cross themselves, a name, alert or detection, the labels it counts, frames and seconds before it counts) and, for each of away, home, night and disarmed, which zones are watched, the sensitivity and whether it is told. A mode with no profile watches every zone. The observation service gets them in `GET /api/v1/ai/context` (`detection`), and the export of the installation now carries the parts to leave out, the counting lines and these zones with each camera, and an import brings them back with the camera.
+
 - **Switches for the local CA of the LAN and for the personal-data features of the vision service:** the security option `network.lan_ca` (off by default) lets an administrator download the public certificate of the local CA with `GET /api/v1/security/lan-ca` (the file named by `ARMOR_LAN_CA_FILE`; a file with a private key is never served). `vision.semantic_search`, `vision.plates` and `vision.faces` (off by default) cannot be turned on until their `_ack` setting says the privacy notice was read, and the notice cannot be taken back while the feature is on. Turning any of the four on is written in the audit trail as lowering the security.
 
 - **The shared contract copies follow the new health report and the vision event:** the optional `stack_min_free` and `stack_min_task` of the node health report are accepted and passed on.

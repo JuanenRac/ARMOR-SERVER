@@ -111,6 +111,8 @@ Every route the code registers, with who may call it and the file that registers
 | DELETE | `/api/v1/cameras/:id` | operator | `routes/cameras.ts` |
 | GET | `/api/v1/cameras/:id/count-lines` | operator | `routes/cameras.ts` |
 | PUT | `/api/v1/cameras/:id/count-lines` | administrator | `routes/cameras.ts` |
+| GET | `/api/v1/cameras/:id/detection-zones` | operator | `routes/cameras.ts` |
+| PUT | `/api/v1/cameras/:id/detection-zones` | administrator | `routes/cameras.ts` |
 | POST | `/api/v1/cameras/:id/discover-rtsp` | operator | `routes/cameras.ts` |
 | GET | `/api/v1/cameras/:id/ignore-zones` | operator | `routes/cameras.ts` |
 | PUT | `/api/v1/cameras/:id/ignore-zones` | administrator | `routes/cameras.ts` |
