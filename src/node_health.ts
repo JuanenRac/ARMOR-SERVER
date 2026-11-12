@@ -70,6 +70,7 @@ export function parseNodeHealth(value: unknown): NodeHealthMessage {
   const told = INTERNAL.filter(key => key in body).length;
   if (told !== 0 && told !== INTERNAL.length) throw new Error("the internal memory is told whole: heap_internal_free, heap_internal_min and heap_internal_largest together");
   if (told !== 0 && ((body.heap_internal_min as number) > (body.heap_internal_free as number) || (body.heap_internal_largest as number) > (body.heap_internal_free as number))) throw new Error("the least internal memory and its biggest block are never more than the internal memory free now");
+  if (("stack_min_free" in body) !== ("stack_min_task" in body)) throw new Error("the least stack left and the task that has it come together");
   if (body.link === "none" && body.link_up !== false) throw new Error("no link means a link that is down");
   if ("rssi_dbm" in body && !(body.link === "wifi" && body.link_up === true)) throw new Error("a signal strength goes only with a Wi-Fi link that is up");
   if ("boot" in body) parseBootReport(body.boot);
