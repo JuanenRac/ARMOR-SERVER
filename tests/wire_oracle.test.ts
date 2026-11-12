@@ -56,7 +56,9 @@ const clone = (value: unknown): unknown => JSON.parse(JSON.stringify(value)) as 
 /** What a schema can not say and the contract does (docs/CONTRACTS.md): a rule between two fields. The readers by hand refuse a document that breaks one even though each field is right. */
 const BETWEEN_FIELDS = new RegExp([
   "exactly when", "goes on an arm and on nothing else", "names a zone of the message", "a direction goes with a tripwire", "a signal strength goes only with",
-  "a token goes on", "a token is given only in the result", "belong to a restarting answer only", "the base of the profile is the mode", "says how long it was down but is not an end",
+  "a token goes on", "a token is given only in the result", "belong to a (restarting|armed) answer only", "the base of the profile is the mode", "says how long it was down but is not an end",
+  "an open zone must be a zone of the message", "a detail goes on the execute of diagnostics", "a delay and a slot go on the execute of a restart", "a core dump size and summary go with a core dump",
+  "the zone it came from goes with a path violation",
 ].join("|"));
 
 for (const [schema, read] of Object.entries(READERS)) {
