@@ -49,3 +49,25 @@ test("the CA route answers 404 while off, serves a public certificate when on, a
     } finally { await running.stop(); }
   }
 });
+
+test("the retention of snapshots and of recordings starts at the environment and an administrator changes each one on its own", async () => {
+  const store = settings();
+  assert.equal(store.effective["media.retention_snapshot_days"], 0);
+  assert.throws(() => store.update({ "media.retention_snapshot_days": 3651 }), SecuritySettingsInvalid);
+  assert.throws(() => store.update({ "media.retention_recording_days": -1 }), SecuritySettingsInvalid);
+  assert.throws(() => store.update({ "media.retention_recording_days": 1.5 }), SecuritySettingsInvalid);
+  assert.equal(lowers("media.retention_snapshot_days", 30, 3), false);
+  const running = await startServer({ ARMOR_MEDIA_RETENTION_SNAPSHOT_DAYS: "90" });
+  try {
+    const cookie = await studioCookie(running.base);
+    const headers = { cookie, "content-type": "application/json" };
+    const read = async () => (await (await fetch(`${running.base}/api/v1/security/settings`, { headers })).json() as { settings: Record<string, number> }).settings;
+    assert.equal((await read())["media.retention_snapshot_days"], 90, "where it starts");
+    assert.equal((await read())["media.retention_recording_days"], 0);
+    const put = await fetch(`${running.base}/api/v1/security/settings`, { method: "PUT", headers, body: JSON.stringify({ "media.retention_snapshot_days": 7, "media.retention_recording_days": 14 }) });
+    assert.equal(put.status, 200);
+    assert.equal((await read())["media.retention_snapshot_days"], 7);
+    assert.equal((await read())["media.retention_recording_days"], 14);
+    assert.equal((await fetch(`${running.base}/api/v1/security/settings`, { method: "PUT", headers, body: JSON.stringify({ "media.retention_snapshot_days": 99999 }) })).status, 400);
+  } finally { await running.stop(); }
+});

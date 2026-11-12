@@ -276,7 +276,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const securityChanged: { tell?: (changes: Record<string, unknown>) => void } = {};
   const securitySettings = new SecuritySettings(path.join(config.dataDir, "security-settings.json"), {
     environment: () => ({ "alarm.disarm_pin": config.disarmPinEnv, ...(config.visionServiceToken !== "" ? { "vision.service_token_set": true } : {}) }),
-    initial: { "voice.turn_max_bytes": config.voiceTurnMaxBytes, "voice.reply_audio_max_bytes": config.voiceReplyAudioMaxBytes, "summary.log_days": config.dailyLogDays, "summary.reading_every_s": config.dailyLogReadingEveryS, "summary.power_every_s": config.dailyLogPowerEveryS, "summary.false_alarm_s": config.dailyFalseAlarmS, "reports.timeout_s": config.reportTimeoutS, "reports.queue_max": config.reportQueueMax, "reports.requests_per_minute": config.reportRequestsPerMinute, "vision.service_url": config.visionServiceUrl },
+    initial: { "voice.turn_max_bytes": config.voiceTurnMaxBytes, "voice.reply_audio_max_bytes": config.voiceReplyAudioMaxBytes, "summary.log_days": config.dailyLogDays, "summary.reading_every_s": config.dailyLogReadingEveryS, "summary.power_every_s": config.dailyLogPowerEveryS, "summary.false_alarm_s": config.dailyFalseAlarmS, "reports.timeout_s": config.reportTimeoutS, "reports.queue_max": config.reportQueueMax, "reports.requests_per_minute": config.reportRequestsPerMinute, "vision.service_url": config.visionServiceUrl, "media.retention_snapshot_days": Math.round(config.mediaRetentionSnapshotMs / 86_400_000), "media.retention_recording_days": Math.round(config.mediaRetentionRecordingMs / 86_400_000) },
     onChange: changes => securityChanged.tell?.(changes),
   });
   const dailyLog = new DailyLog({
@@ -287,7 +287,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const alarmSounds = new SoundLibrary(path.join(config.dataDir, "alarm-sounds"));
   const spokenAlarms = new SpokenCache();
   const rtspProxy = () => securitySettings.get("media.rtsp_proxy");
-  const evidence = new EvidenceLibrary({ root: path.join(config.dataDir, "media"), proxy: rtspProxy, ffmpegPath: config.ffmpegPath, maxBytes: config.maxMediaBytes, retentionMs: config.mediaRetentionMs, retentionByKind: { snapshot: config.mediaRetentionSnapshotMs, recording: config.mediaRetentionRecordingMs }, warn });
+  const evidence = new EvidenceLibrary({ root: path.join(config.dataDir, "media"), proxy: rtspProxy, ffmpegPath: config.ffmpegPath, maxBytes: config.maxMediaBytes, retentionMs: config.mediaRetentionMs, retentionByKind: () => ({ snapshot: securitySettings.get("media.retention_snapshot_days") * 86_400_000, recording: securitySettings.get("media.retention_recording_days") * 86_400_000 }), warn });
   const relays = new RelayManager({ proxy: rtspProxy, ffmpegPath: config.ffmpegPath, maxRelays: config.maxMjpegRelays, fps: config.liveFps, width: config.liveWidth, lowFps: config.liveLowFps, lowWidth: config.liveLowWidth });
   const events = new EventLog({ file: path.join(config.dataDir, "events.log") });
   const clients = new ClientRegistry({ file: path.join(config.dataDir, "connections.json"), now: overrides.now });

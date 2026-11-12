@@ -21,7 +21,7 @@ export type MediaItem = { id: string; cameraId: string; kind: PublicMediaKind; f
 export type EvidenceOptions = {
   root: string; ffmpegPath: string; spawn?: typeof spawn; /** The setting media.rtsp_proxy, read each time a stream starts (default on). */ proxy?: () => boolean; maxBytes: number; retentionMs: number;
   /** A different age limit, in milliseconds, for one kind of file (ARMOR_MEDIA_RETENTION_SNAPSHOT_DAYS / _RECORDING_DAYS): snapshots are small and worth keeping longer than recordings, or the other way round. Missing or 0: the general `retentionMs` applies. */
-  retentionByKind?: Partial<Record<PublicMediaKind, number>>;
+  retentionByKind?: Partial<Record<PublicMediaKind, number>> | (() => Partial<Record<PublicMediaKind, number>>);
   /** Extra text for a failed recording's server log; never sent to a client. */
   warn?: (message: string) => void;
   /** The longest a recording is allowed to run (default one hour): one that nobody stops must not grow until the disk is full. */
@@ -127,7 +127,8 @@ export class EvidenceLibrary {
 
   /** The age limit that applies to one kind of file: its own when one was set, otherwise the general one (0: no age limit). */
   retentionFor(kind: PublicMediaKind): number {
-    const own = this.#options.retentionByKind?.[kind];
+    const byKind = this.#options.retentionByKind;
+    const own = (typeof byKind === "function" ? byKind() : byKind)?.[kind];
     return typeof own === "number" && Number.isFinite(own) && own > 0 ? own : this.#options.retentionMs;
   }
 

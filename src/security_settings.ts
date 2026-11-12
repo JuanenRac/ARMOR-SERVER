@@ -38,6 +38,7 @@
  *   vision.service_url           an http address            where the live ARMOR-VISION service listens (http://127.0.0.1:8765): the heat map is asked of it (ARMOR_VISION_SERVICE_URL is where it starts; empty: not set up)
  *   vision.service_token_set     on | off (read only)     whether the server holds a token for the vision service (ARMOR_VISION_SERVICE_TOKEN or ARMOR_VISION_SERVICE_TOKEN_FILE); the token itself is never shown or stored here
  *   vision.service_remote        on | off                   the service may be on another machine (off, the default: only a loopback address is used)
+ *   media.retention_snapshot_days / media.retention_recording_days   0 to 3650   how many days snapshots and recordings are kept, each kind on its own (0: the general limit ARMOR_MEDIA_RETENTION_DAYS applies; the environment variables ARMOR_MEDIA_RETENTION_SNAPSHOT_DAYS and _RECORDING_DAYS are where they start)
  *   summary.log_days             1 to 90                  the days the daily log keeps (the readings and the power the summary of a day uses; ARMOR_DAILY_LOG_DAYS is where it starts; 14)
  *   summary.reading_every_s      10 to 3600               the most often a reading of one sensor is logged (ARMOR_DAILY_LOG_READING_EVERY_S; 300)
  *   summary.power_every_s        5 to 3600                the most often the power of the house is logged (ARMOR_DAILY_LOG_POWER_EVERY_S; 60)
@@ -91,6 +92,8 @@ export function visionTokenInClear(remote: boolean, tokenHeld: boolean, url: str
 }
 /** How long the session of a trusted phone lasts, in hours. */
 export const TRUSTED_SESSION_H = { min: 1, max: 720, default: 72 } as const;
+/** How many days a snapshot and a recording are kept; 0 means the general limit (ARMOR_MEDIA_RETENTION_DAYS) applies. */
+export const MEDIA_RETENTION_DAYS = { min: 0, max: 3650, default: 0 } as const;
 export const SUMMARY_LOG_DAYS = { min: 1, max: 90, default: 14 } as const;
 export const SUMMARY_READING_EVERY_S = { min: 10, max: 3600, default: 300 } as const;
 export const SUMMARY_POWER_EVERY_S = { min: 5, max: 3600, default: 60 } as const;
@@ -118,6 +121,8 @@ export type SecuritySettingsValues = {
   "media.rtsp_proxy": boolean;
   "network.login_secure_only": boolean;
   "network.lan_ca": boolean;
+  "media.retention_snapshot_days": number;
+  "media.retention_recording_days": number;
   "vision.semantic_search": boolean;
   "vision.plates": boolean;
   "vision.faces": boolean;
@@ -175,6 +180,8 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "media.rtsp_proxy": true,
   "network.login_secure_only": false,
   "network.lan_ca": false,
+  "media.retention_snapshot_days": MEDIA_RETENTION_DAYS.default,
+  "media.retention_recording_days": MEDIA_RETENTION_DAYS.default,
   "vision.semantic_search": false,
   "vision.plates": false,
   "vision.faces": false,
@@ -218,7 +225,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
 /** The settings that are whole numbers, with the range each may take. */
 const NUMBER_RANGES: Partial<Record<keyof SecuritySettingsValues, { min: number; max: number }>> = { "voice.turn_max_bytes": VOICE_TURN_BYTES, "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES, "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S, "client.trusted_session_h": TRUSTED_SESSION_H,
   "summary.log_days": SUMMARY_LOG_DAYS, "summary.reading_every_s": SUMMARY_READING_EVERY_S, "summary.power_every_s": SUMMARY_POWER_EVERY_S, "summary.false_alarm_s": SUMMARY_FALSE_ALARM_S,
-  "reports.timeout_s": REPORT_TIMEOUT_S, "reports.queue_max": REPORT_QUEUE_MAX, "reports.requests_per_minute": REPORT_REQUESTS_PER_MINUTE };
+  "media.retention_snapshot_days": MEDIA_RETENTION_DAYS, "media.retention_recording_days": MEDIA_RETENTION_DAYS, "reports.timeout_s": REPORT_TIMEOUT_S, "reports.queue_max": REPORT_QUEUE_MAX, "reports.requests_per_minute": REPORT_REQUESTS_PER_MINUTE };
 
 /** The features of the second phase of the vision service that read personal data: each has a switch and an acknowledgement of its privacy notice. */
 export const VISION_PERSONAL_FEATURES = ["semantic_search", "plates", "faces"] as const;
@@ -327,6 +334,7 @@ export class SecuritySettings {
 export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boolean {
   if (key === "voice.multipart_turn" || key === "panel.live_events" || key === "alarm_audio.spoken" || key === "alarm_audio.custom_sounds") return false;   // a way in that is turned off is not a loss of protection; turning it on is the default way
   if (key === "summary.log_days" || key === "summary.reading_every_s" || key === "summary.power_every_s" || key === "summary.false_alarm_s") return false;   // what the summary of a day is made from: tuning, not a protection
+  if (key === "media.retention_snapshot_days" || key === "media.retention_recording_days") return false;   // how long evidence is kept: tuning, not a protection
   if (key === "voice.panic_cooldown_s") return false;   // how long one trigger keeps quiet: tuning, not a protection
   if (key === "reports.timeout_s" || key === "reports.queue_max" || key === "reports.requests_per_minute") return false;   // tuning of how much work the reports may cause, not a protection
   if (key === "voice.wake_word") return from === false && to === true;   // a panel that listens for its word all the time is the loss, even if the audio never leaves the house
