@@ -101,7 +101,7 @@ test("an invalid value of a member the contract names is refused", async () => {
   await withServer(async (running) => {
     running.app.context.store.arm("armed");
     const bad: Array<Record<string, unknown>> = [
-      { track_id: 1.5 }, { track_id: -1 }, { track_id: "3" }, { track_id: null }, { timestamp: "12" }, { timestamp: null }, { timestamp_ms: 1.5 }, { timestamp_ms: -1 },
+      { track_id: 1.5 }, { track_id: -1 }, { track_id: Number.MAX_SAFE_INTEGER + 1 }, { track_id: 1e300 }, { track_id: "3" }, { track_id: null }, { timestamp: "12" }, { timestamp: null }, { timestamp_ms: 1.5 }, { timestamp_ms: -1 },
       { label: "x".repeat(61) }, { label: 5 }, { label: null }, { label: ["person"] }, { zone_id: "z".repeat(81) }, { zone_id: 7 }, { zone_id: "" }, { zone_name: "n".repeat(121) }, { zone_name: "" },
       { notify: 0 }, { notify: "false" }, { notify: null }, { authorizes_action: "false" }, { authorizes_action: null }, { authorizes_action: 0 }, { camera_id: "ab" }, { camera_id: "c".repeat(81) },
       { camera_id: "cam gate" }, { camera_id: "../cam-gate" }, { camera_id: "cam-gate\n" }, { camera_id: "cám-gate" }, { schema: undefined }, { type: "ZONE_ENTER" }, { type: "dwell", seconds: -1 },
@@ -113,6 +113,15 @@ test("an invalid value of a member the contract names is refused", async () => {
     }
     assert.equal(running.app.context.alarms.active().length, 0);
   });
+});
+
+test("the largest track number that a JSON reader keeps exactly is taken and the next one is not", async () => {
+  await withServer(async (running) => {
+    assert.equal((await post(running, { ...enter, track_id: Number.MAX_SAFE_INTEGER })).status, 200);
+    assert.equal((await post(running, { ...enter, track_id: Number.MAX_SAFE_INTEGER + 1 })).status, 422);
+  });
+  assert.ok(parseActivityEvent({ ...enter, track_id: Number.MAX_SAFE_INTEGER }));
+  assert.equal(parseActivityEvent({ ...enter, track_id: Number.MAX_SAFE_INTEGER + 1 }), undefined);
 });
 
 test("a camera the server does not know is told so, with the case and the spelling of the name respected", async () => {

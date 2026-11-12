@@ -154,7 +154,7 @@ export function parseActivityEvent(input: unknown): ActivityEvent | undefined {
   if (typeof item.type !== "string" || !(ACTIVITY_EVENT_TYPES as readonly string[]).includes(item.type)) return undefined;
   const type = item.type as ActivityEventType;
   if (typeof item.camera_id !== "string" || !/^[A-Za-z0-9._-]{3,80}$/.test(item.camera_id)) return undefined;
-  if (typeof item.track_id !== "number" || !Number.isInteger(item.track_id) || item.track_id < 1) return undefined;
+  if (typeof item.track_id !== "number" || !Number.isInteger(item.track_id) || item.track_id < 1 || item.track_id > Number.MAX_SAFE_INTEGER) return undefined;
   if (!text(item.label, 60)) return undefined;
   if (typeof item.timestamp !== "number" || !Number.isFinite(item.timestamp) || item.timestamp < 0) return undefined;
   if (typeof item.timestamp_ms !== "number" || !Number.isInteger(item.timestamp_ms) || item.timestamp_ms < 0) return undefined;
