@@ -285,7 +285,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const alarmSounds = new SoundLibrary(path.join(config.dataDir, "alarm-sounds"));
   const spokenAlarms = new SpokenCache();
   const rtspProxy = () => securitySettings.get("media.rtsp_proxy");
-  const evidence = new EvidenceLibrary({ root: path.join(config.dataDir, "media"), proxy: rtspProxy, ffmpegPath: config.ffmpegPath, maxBytes: config.maxMediaBytes, retentionMs: config.mediaRetentionMs, warn });
+  const evidence = new EvidenceLibrary({ root: path.join(config.dataDir, "media"), proxy: rtspProxy, ffmpegPath: config.ffmpegPath, maxBytes: config.maxMediaBytes, retentionMs: config.mediaRetentionMs, retentionByKind: { snapshot: config.mediaRetentionSnapshotMs, recording: config.mediaRetentionRecordingMs }, warn });
   const relays = new RelayManager({ proxy: rtspProxy, ffmpegPath: config.ffmpegPath, maxRelays: config.maxMjpegRelays, fps: config.liveFps, width: config.liveWidth, lowFps: config.liveLowFps, lowWidth: config.liveLowWidth });
   const events = new EventLog({ file: path.join(config.dataDir, "events.log") });
   const clients = new ClientRegistry({ file: path.join(config.dataDir, "connections.json"), now: overrides.now });

@@ -109,6 +109,9 @@ export type ArmorConfig = {
   geoipDb: string | null;
   maxMediaBytes: number;
   mediaRetentionMs: number;
+  /** Their own age limit for snapshots and for recordings (ARMOR_MEDIA_RETENTION_SNAPSHOT_DAYS, ARMOR_MEDIA_RETENTION_RECORDING_DAYS); 0, the default: the general limit above applies. */
+  mediaRetentionSnapshotMs: number;
+  mediaRetentionRecordingMs: number;
   discoveryCidr: string | null;
   mqtt: { url: string; username?: string; password?: string; /** The authority pinned for an mqtts:// broker (ARMOR_MQTT_CA_FILE), when there is one. */ ca?: MqttCa } | null;
   /** Seconds without a message after which a field node is reported offline. */
@@ -511,6 +514,8 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     geoipDb: env.ARMOR_GEOIP_DB?.trim() ? path.resolve(env.ARMOR_GEOIP_DB.trim()) : null,
     maxMediaBytes: integer(env, "ARMOR_MEDIA_MAX_BYTES", 20 * 1024 ** 3, 64 * 1024 ** 2, Number.MAX_SAFE_INTEGER),
     mediaRetentionMs: integer(env, "ARMOR_MEDIA_RETENTION_DAYS", 30, 0, 3650) * 86_400_000,
+    mediaRetentionSnapshotMs: integer(env, "ARMOR_MEDIA_RETENTION_SNAPSHOT_DAYS", 0, 0, 3650) * 86_400_000,
+    mediaRetentionRecordingMs: integer(env, "ARMOR_MEDIA_RETENTION_RECORDING_DAYS", 0, 0, 3650) * 86_400_000,
     discoveryCidr: cidr,
     mqtt: mqttUrl ? { url: mqttUrl, username: env.ARMOR_MQTT_USERNAME?.trim() || undefined, password: env.ARMOR_MQTT_PASSWORD || undefined, ...(mqttCa ? { ca: mqttCa } : {}) } : null,
     nodeStaleAfterS: integer(env, "ARMOR_NODE_STALE_AFTER_S", 30, 5, 3600),

@@ -63,6 +63,21 @@ test("age-based retention deletes only expired unprotected files", async () => {
   assert.deepEqual((await lib.list()).map(item => item.file).sort(), ["held.jpg", "kept.jpg"]);
 });
 
+test("each kind of file can have its own age limit, and 0 falls back to the general one", async () => {
+  const lib = library({ retentionMs: 60 * 60_000, retentionByKind: { snapshot: 24 * 60 * 60_000, recording: 0 } });
+  assert.equal(lib.retentionFor("snapshot"), 24 * 60 * 60_000);
+  assert.equal(lib.retentionFor("recording"), 60 * 60_000);
+  put(lib, "cam-1", "snapshots", "old-but-kept.jpg", 10, 5 * 60 * 60_000);       // past the general hour, within the snapshot day
+  put(lib, "cam-1", "snapshots", "too-old.jpg", 10, 30 * 60 * 60_000);          // past the snapshot day
+  put(lib, "cam-1", "recordings", "recording-old.mp4", 10, 5 * 60 * 60_000);    // past the general hour: the recording has no limit of its own
+  put(lib, "cam-1", "recordings", "recording-new.mp4", 10, 60_000);
+  assert.equal(await lib.prune(), 2);
+  assert.deepEqual((await lib.list()).map(item => item.file).sort(), ["old-but-kept.jpg", "recording-new.mp4"]);
+  const plain = library({ retentionMs: 0, retentionByKind: { recording: Number.NaN } });
+  assert.equal(plain.retentionFor("recording"), 0);
+  assert.equal(plain.retentionFor("snapshot"), 0);
+});
+
 test("protection can be removed, and a protected file survives bulk deletion", async () => {
   const lib = library();
   put(lib, "cam-1", "snapshots", "a.jpg");
