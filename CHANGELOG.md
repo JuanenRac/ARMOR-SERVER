@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The check against the oracle of the contract knows every rule between fields:** the message that joins all the optional parts of a schema (valid for the schema, refused by the rules that join two fields) is read by the hand-written readers, and the test now lists the ten documented rules (a token only on an execute, a direction only with a tripwire, an event about a zone of the message, and the rest) instead of two, so a reader that refuses a message for another reason is still caught.
+
 ## [0.8.2.1] - The voice option `voice.silence_confirmation` takes a fourth value, `challenge` (off by default; the default stays `off`): the voice service draws a number of two digits that is not said aloud, the server hands it on as the field `challenge
 
 - **The voice option `voice.silence_confirmation` takes a fourth value, `challenge` (off by default; the default stays `off`):** the voice service draws a number of two digits that is not said aloud, the server hands it on as the field `challenge` of the spoken turn (in the JSON answer, in the `multipart/mixed` answer and in the answer with `reply_audio` `none`; anything that is not two to six digits is dropped) and only that number, said within a few seconds, silences the alarms. The panel shows the number on its screen. A client that cannot show it (Studio, the phone, a panel with older firmware) cannot silence by voice in this mode and asks for the signed confirmation on the written command, so it fails closed; going from `challenge` to any other value counts as lowering the protection. Tests for the shaping of the answer, the reader of the binary answer, the order of the values and the policy that reaches the voice service.

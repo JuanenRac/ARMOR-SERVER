@@ -54,7 +54,10 @@ const READERS: Record<string, (value: unknown) => unknown> = {
 const clone = (value: unknown): unknown => JSON.parse(JSON.stringify(value)) as unknown;
 
 /** What a schema can not say and the contract does (docs/CONTRACTS.md): a rule between two fields. The readers by hand refuse a document that breaks one even though each field is right. */
-const BETWEEN_FIELDS = /exactly when|goes on an arm and on nothing else/;
+const BETWEEN_FIELDS = new RegExp([
+  "exactly when", "goes on an arm and on nothing else", "names a zone of the message", "a direction goes with a tripwire", "a signal strength goes only with",
+  "a token goes on", "a token is given only in the result", "belong to a restarting answer only", "the base of the profile is the mode", "says how long it was down but is not an end",
+].join("|"));
 
 for (const [schema, read] of Object.entries(READERS)) {
   test(`the reader of ${schema} accepts every valid case of the oracle, but for the rules between fields`, { skip }, () => {
