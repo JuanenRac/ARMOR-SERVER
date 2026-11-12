@@ -7,7 +7,7 @@ import { addressBytes } from "../src/geoip.js";
 
 export type Prefix = { cidr: string; country: string };
 
-const str = (text: string): Buffer => {
+export const str = (text: string): Buffer => {
   const bytes = Buffer.from(text, "utf8");
   if (bytes.length >= 29) throw new Error("long strings are not needed in tests");
   return Buffer.concat([Buffer.from([(2 << 5) | bytes.length]), bytes]);
@@ -18,9 +18,10 @@ const uint = (type: 5 | 6, value: number): Buffer => {
   for (let index = 0; index < size; index += 1) out[size - 1 - index] = (value >>> (8 * index)) & 0xFF;
   return Buffer.concat([Buffer.from([(type << 5) | size]), out]);
 };
-const map = (pairs: Buffer[]): Buffer => Buffer.concat([Buffer.from([(7 << 5) | (pairs.length / 2)]), ...pairs]);
+export const map = (pairs: Buffer[]): Buffer => Buffer.concat([Buffer.from([(7 << 5) | (pairs.length / 2)]), ...pairs]);
 
-export function buildMmdb(prefixes: Prefix[], options: { ipVersion?: 4 | 6; recordBits?: 24 | 28 | 32 } = {}): Buffer {
+/** `extraMetadata` are pairs (key, value, key, value...) of encoded bytes added to the metadata map: the decoder of the data section walks all of them, which is how the tests reach every type of the format. */
+export function buildMmdb(prefixes: Prefix[], options: { ipVersion?: 4 | 6; recordBits?: 24 | 28 | 32; extraMetadata?: Buffer[] } = {}): Buffer {
   const ipVersion = options.ipVersion ?? 6;
   const recordBits = options.recordBits ?? 24;
   // data section: "country" first, then one map per country
@@ -69,6 +70,6 @@ export function buildMmdb(prefixes: Prefix[], options: { ipVersion?: 4 | 6; reco
     }
   });
   const metadata = map([str("binary_format_major_version"), uint(5, 2), str("binary_format_minor_version"), uint(5, 0), str("ip_version"), uint(5, ipVersion),
-    str("node_count"), uint(6, count), str("record_size"), uint(5, recordBits), str("database_type"), str("Test-Country")]);
+    str("node_count"), uint(6, count), str("record_size"), uint(5, recordBits), str("database_type"), str("Test-Country"), ...(options.extraMetadata ?? [])]);
   return Buffer.concat([tree, Buffer.alloc(16), ...data, Buffer.from("\xAB\xCD\xEFMaxMind.com", "latin1"), metadata]);
 }
