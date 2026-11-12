@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AiGateway, FRAME_BYTES, parseObservation } from "../src/ai.js";
+import { AiGateway, FRAME_BYTES, parseObservation, parseVisionEvent } from "../src/ai.js";
 import { alertMessageFor } from "../src/notify.js";
 import { SECRETS, startServer, type Running } from "./helpers.js";
 
@@ -113,4 +113,40 @@ test("a movement alarm of a camera is announced with its camera, and the camera 
   assert.equal(down, null, "the camera that stops answering is announced by its own event, not twice");
   assert.equal(parseObservation({ camera_id: "cam-gate", severity: "high", reasons: [], profile: "daylight", motion: 0.5, radar_tracks: 0 })?.severity, "high");
   assert.equal(parseObservation(null), undefined);
+});
+
+const visionEvent = { schema: "armor.vision.event/v1", type: "alert", camera_id: "cam-gate", zone_id: "driveway", zone_name: "Driveway", track_id: 3, label: "person", confidence: 0.87,
+  box: [0.1, 0.2, 0.3, 0.6], timestamp: 1000.5, timestamp_ms: 1000500, authorizes_action: false };
+
+test("a vision event raises an alarm only while armed, and one that only detects is recorded", async () => {
+  await withServer(Buffer.alloc(FRAME_BYTES, 9), async running => {
+    const withVectors = { ...visionEvent, schema: "armor.vision.event/v2", radar_tracks: 2, vectors: [{ track_id: 3, dx: 0.6, dy: -0.8, speed: 0.25 }] };
+    const disarmed = await call(running, "POST", "/api/v1/ai/vision-events", { bearer: AI_TOKEN, body: withVectors });
+    assert.deepEqual([disarmed.status, disarmed.body], [200, { raised: false, reason: "disarmed" }]);
+    const recorded = await call(running, "POST", "/api/v1/ai/vision-events", { bearer: AI_TOKEN, body: { ...visionEvent, type: "detection" } });
+    assert.deepEqual([recorded.status, recorded.body], [200, { raised: false, reason: "recorded" }]);
+    assert.equal(running.app.context.alarms.active().length, 0);
+
+    running.app.context.store.arm("armed");
+    const armed = await call(running, "POST", "/api/v1/ai/vision-events", { bearer: AI_TOKEN, body: withVectors });
+    assert.equal(armed.body.raised, true);
+    const [alarm] = running.app.context.alarms.active();
+    assert.deepEqual([alarm.code, alarm.severity, alarm.source], ["camera_motion", "high", { type: "camera", id: "cam-gate" }]);
+    assert.deepEqual([alarm.detail?.zone, alarm.detail?.label, alarm.detail?.radar_tracks, alarm.detail?.heading], ["Driveway", "person", 2, "0.60,-0.80"]);
+    assert.deepEqual((await call(running, "POST", "/api/v1/ai/vision-events", { bearer: AI_TOKEN, body: visionEvent })).body, { raised: false, reason: "already_open" });
+
+    for (const bad of [{ ...visionEvent, authorizes_action: true }, { ...visionEvent, schema: "armor.vision.event/v3" }, { ...visionEvent, box: [0.1, 0.2] }, { ...visionEvent, confidence: 2 },
+      { ...visionEvent, vectors: [{ track_id: 1, dx: 2, dy: 0, speed: 0 }] }, { ...visionEvent, picture: "AAAA" }]) {
+      assert.equal((await call(running, "POST", "/api/v1/ai/vision-events", { bearer: AI_TOKEN, body: bad })).status, 422);
+    }
+    assert.equal((await call(running, "POST", "/api/v1/ai/vision-events", { bearer: AI_TOKEN, body: { ...visionEvent, camera_id: "cam-nope" } })).status, 404);
+    assert.equal((await call(running, "POST", "/api/v1/ai/vision-events", { body: visionEvent })).status, 401);
+  });
+});
+
+test("parseVisionEvent keeps what the contract names and nothing else", () => {
+  assert.deepEqual(parseVisionEvent(visionEvent), visionEvent);
+  assert.equal(parseVisionEvent({ ...visionEvent, vectors: new Array(17).fill({ track_id: 1, dx: 0, dy: 0, speed: 0 }) }), undefined);
+  assert.equal(parseVisionEvent({ ...visionEvent, track_id: 0 }), undefined);
+  assert.equal(parseVisionEvent([visionEvent]), undefined);
 });

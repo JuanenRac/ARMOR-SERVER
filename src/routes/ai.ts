@@ -6,7 +6,7 @@
 import type { Express, Request } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
-import { AiError, FRAME_HEIGHT, FRAME_WIDTH, parseObservation } from "../ai.js";
+import { AiError, FRAME_HEIGHT, FRAME_WIDTH, parseObservation, parseVisionEvent } from "../ai.js";
 import { coveringNodes } from "../ai_cover.js";
 
 /** A camera that keeps seeing movement is one alarm per this long, not one for ever (the alarm of an observation is an event: it ends the moment it is raised and leaves the list when somebody acknowledges it). */
@@ -64,6 +64,28 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
     const watched = vault.get(observation.camera_id);
     if (watched) void context.captureOnDetect.trigger(watched).catch(() => undefined);
     audit.record({ action: "ai.observation", outcome: "allowed", target: observation.camera_id, detail: `${observation.severity}${alarm ? ", alarm raised" : ", one is already open"}` });
+    return response.json({ raised: Boolean(alarm), ...(alarm ? { alarm_id: alarm.id } : { reason: "already_open" }) });
+  });
+
+  /** One object that entered a zone, as ARMOR-VISION reports it. A zone of kind `alert` raises an alarm only while the system is armed, once per camera and zone until it is closed; a `detection` zone is only recorded in the audit. */
+  app.post("/api/v1/ai/vision-events", requireAi, (request, response) => {
+    const event = parseVisionEvent(request.body);
+    if (!event) return response.status(422).json({ error: "invalid_vision_event" });
+    if (!vault.get(event.camera_id)) return response.status(404).json({ error: "unknown_camera" });
+    if (event.type === "detection") {
+      audit.record({ action: "ai.vision_event", outcome: "allowed", target: event.camera_id, detail: `detection ${event.label} in ${event.zone_id}` });
+      return response.json({ raised: false, reason: "recorded" });
+    }
+    if (store.snapshot().mode !== "armed") return response.json({ raised: false, reason: "disarmed" });
+    const heading = event.vectors?.find(vector => vector.track_id === event.track_id);
+    const alarm = alarms.raise(`ai:camera:${event.camera_id}:zone:${event.zone_id}:${Math.floor(Date.now() / MOTION_WINDOW_MS)}`, {
+      source: { type: "camera", id: event.camera_id }, severity: "high", code: "camera_motion",
+      detail: { zone: event.zone_name, label: event.label, confidence: Math.round(event.confidence * 100), ...(event.radar_tracks !== undefined ? { radar_tracks: event.radar_tracks } : {}),
+        ...(heading ? { heading: `${heading.dx.toFixed(2)},${heading.dy.toFixed(2)}`, speed: heading.speed } : {}) }, instant: true,
+    });
+    const watched = vault.get(event.camera_id);
+    if (watched) void context.captureOnDetect.trigger(watched).catch(() => undefined);
+    audit.record({ action: "ai.vision_event", outcome: "allowed", target: event.camera_id, detail: `alert ${event.label} in ${event.zone_id}${alarm ? ", alarm raised" : ", one is already open"}` });
     return response.json({ raised: Boolean(alarm), ...(alarm ? { alarm_id: alarm.id } : { reason: "already_open" }) });
   });
 }

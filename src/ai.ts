@@ -80,6 +80,57 @@ function parseRegions(value: unknown): AiRegion[] | undefined {
   return out;
 }
 
+/** One followed object of a vision event: where it was heading (a unit direction in the picture, y downwards) and how fast, in pictures per second. */
+export type AiVector = { track_id: number; dx: number; dy: number; speed: number };
+
+/** The event of the vision service (ARMOR-COMMON vision_event.schema.json): one object that entered a zone. It authorizes nothing: `authorizes_action` is always false. */
+export type VisionEvent = {
+  schema: "armor.vision.event/v1" | "armor.vision.event/v2"; type: "alert" | "detection"; camera_id: string; zone_id: string; zone_name: string; track_id: number; label: string;
+  confidence: number; box: number[]; timestamp: number; timestamp_ms: number; authorizes_action: false; radar_tracks?: number; vectors?: AiVector[];
+};
+
+const VISION_EVENT_FIELDS = ["schema", "type", "camera_id", "zone_id", "zone_name", "track_id", "label", "confidence", "box", "timestamp", "timestamp_ms", "authorizes_action", "radar_tracks", "vectors"];
+const MAX_VECTORS = 16;
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+const inRange = (value: unknown, low: number, high: number): value is number => typeof value === "number" && Number.isFinite(value) && value >= low && value <= high;
+const text = (value: unknown, max: number): value is string => typeof value === "string" && value.length >= 1 && value.length <= max;
+
+function parseVectors(value: unknown): AiVector[] | undefined {
+  if (!Array.isArray(value) || value.length > MAX_VECTORS) return undefined;
+  const out: AiVector[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry) || !Object.keys(entry).every(key => ["track_id", "dx", "dy", "speed"].includes(key))) return undefined;
+    const { track_id, dx, dy, speed } = entry;
+    if (typeof track_id !== "number" || !Number.isInteger(track_id) || track_id < 1 || !inRange(dx, -1, 1) || !inRange(dy, -1, 1) || !inRange(speed, 0, 100)) return undefined;
+    out.push({ track_id, dx, dy, speed });
+  }
+  return out;
+}
+
+/** The vision event a service sent, checked field by field as the contract says; undefined when it is not what it should be. */
+export function parseVisionEvent(input: unknown): VisionEvent | undefined {
+  if (!isRecord(input) || !Object.keys(input).every(key => VISION_EVENT_FIELDS.includes(key))) return undefined;
+  const item = input;
+  if (item.schema !== "armor.vision.event/v1" && item.schema !== "armor.vision.event/v2") return undefined;
+  if (item.type !== "alert" && item.type !== "detection") return undefined;
+  if (typeof item.camera_id !== "string" || !/^[A-Za-z0-9._-]{3,80}$/.test(item.camera_id)) return undefined;
+  if (!text(item.zone_id, 80) || !text(item.zone_name, 120) || !text(item.label, 60)) return undefined;
+  if (typeof item.track_id !== "number" || !Number.isInteger(item.track_id) || item.track_id < 1) return undefined;
+  if (!inRange(item.confidence, 0, 1) || !Array.isArray(item.box) || item.box.length !== 4 || !item.box.every(v => inRange(v, 0, 1))) return undefined;
+  if (typeof item.timestamp !== "number" || !Number.isFinite(item.timestamp) || item.timestamp < 0) return undefined;
+  if (typeof item.timestamp_ms !== "number" || !Number.isInteger(item.timestamp_ms) || item.timestamp_ms < 0) return undefined;
+  if (item.authorizes_action !== false) return undefined;
+  if (item.radar_tracks !== undefined && (typeof item.radar_tracks !== "number" || !Number.isInteger(item.radar_tracks) || item.radar_tracks < 0 || item.radar_tracks > 1000)) return undefined;
+  const vectors = item.vectors === undefined ? undefined : parseVectors(item.vectors);
+  if (item.vectors !== undefined && vectors === undefined) return undefined;
+  return {
+    schema: item.schema, type: item.type, camera_id: item.camera_id, zone_id: item.zone_id, zone_name: item.zone_name, track_id: item.track_id, label: item.label, confidence: item.confidence,
+    box: item.box as number[], timestamp: item.timestamp, timestamp_ms: item.timestamp_ms, authorizes_action: false,
+    ...(item.radar_tracks !== undefined ? { radar_tracks: item.radar_tracks } : {}), ...(vectors !== undefined ? { vectors } : {}),
+  };
+}
+
 /** The observation a service sent, checked; undefined when it is not what it should be. */
 export function parseObservation(input: unknown): AiObservation | undefined {
   if (typeof input !== "object" || input === null) return undefined;
