@@ -125,6 +125,7 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/cameras/discover` | operator | `routes/cameras.ts` |
 | GET | `/api/v1/capture-settings` | operator | `routes/cameras.ts` |
 | PUT | `/api/v1/capture-settings` | administrator | `routes/cameras.ts` |
+| GET | `/api/v1/contract` | operator | `routes/node_health.ts` |
 | POST | `/api/v1/control/:mode` | none here | `routes/ingest.ts` |
 | GET | `/api/v1/devices` | operator | `routes/devices.ts` |
 | POST | `/api/v1/devices` | operator | `routes/devices.ts` |

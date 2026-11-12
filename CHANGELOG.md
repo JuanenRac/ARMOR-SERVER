@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The contract version of each node, live, in one answer:** `GET /api/v1/contract` (operator or a signed-in person) gives the version of the shared contracts this server speaks and, for every node that has reported, the version its firmware says it was checked against and where it stands (`current`, `older` - update its firmware, `newer`, or `unknown` - an older firmware that does not say it), with the count of each; a value that is not a version is shown as none. Nothing is stored and no secret is in the answer. Tests cover the comparison (numbers, not text; a missing fourth part is zero), the order, the totals and who may ask.
+
 - **The check against the oracle of the contract knows every rule between fields:** the message that joins all the optional parts of a schema (valid for the schema, refused by the rules that join two fields) is read by the hand-written readers, and the test now lists the ten documented rules (a token only on an execute, a direction only with a tripwire, an event about a zone of the message, and the rest) instead of two, so a reader that refuses a message for another reason is still caught.
 
 ## [0.8.2.1] - The voice option `voice.silence_confirmation` takes a fourth value, `challenge` (off by default; the default stays `off`): the voice service draws a number of two digits that is not said aloud, the server hands it on as the field `challenge

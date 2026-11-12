@@ -12,6 +12,8 @@ import { stampOf } from "../mqtt.js";
 import { ingestCaller } from "../http/node_token.js";
 import { HEALTH_LEVELS, parseNodeHealth, type HealthFamily, type NodeHealthView } from "../node_health.js";
 import { withoutSensorAddresses } from "../node_diag_contract.js";
+import { contractStatus } from "../contract_status.js";
+import { CONTRACT_VERSION } from "../contract_version.js";
 
 const NODE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
@@ -50,6 +52,9 @@ export function registerNodeHealthRoutes(app: Express, context: AppContext): voi
     const waiting = [...known.entries()].filter(([id]) => !reported.has(id)).map(([node_id, family]) => ({ node_id, family })).sort((a, b) => a.node_id.localeCompare(b.node_id));
     return response.json({ nodes, waiting, totals: nodeHealth.totals(), levels: HEALTH_LEVELS });
   });
+
+  // The version of the shared contracts each node says its firmware was checked against, beside the one this server speaks (GET /api/v1/contract): who is behind, who is ahead, who does not say.
+  app.get("/api/v1/contract", requireOperator, (_request, response) => response.json(contractStatus(CONTRACT_VERSION, nodeHealth.list())));
 
   // The newest events of the perimeter engine of the radar nodes, newest first (a node's own, or all): GET /api/v1/radar/events?node=radar-1&limit=50.
   app.get("/api/v1/radar/events", requireOperator, (request, response) => {
