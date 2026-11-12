@@ -48,6 +48,8 @@
  *   metrics.prometheus           on | off                 GET /metrics answers the numbers of the server in the Prometheus text form to the bearer token ARMOR_METRICS_TOKEN (off, the default, answers 404; with no token set it answers 404 too)
  *   heartbeat.enabled            on | off                 the server asks the address ARMOR_HEARTBEAT_URL every ARMOR_HEARTBEAT_INTERVAL_S seconds, so a service outside the house can tell the owner when the pings stop (off, the default)
  *   ingest.recording             on | off                 the server keeps a copy of what the nodes send (and why a message was refused) in a JSON-lines file the simulator can play again, with a size limit and rotation from ARMOR_INGEST_RECORD_MAX_BYTES and ARMOR_INGEST_RECORD_FILES (off, the default: nothing is written)
+ *   network.lan_ca              on | off                 an administrator may download the public certificate of the local CA that signs the HTTPS certificate of the LAN (GET /api/v1/security/lan-ca; the private key is never served; off, the default, answers 404)
+ *   vision.semantic_search / vision.plates / vision.faces   on | off   the three features of the second phase of ARMOR-VISION that read personal data (search by meaning, licence plates, faces); each is off by default and cannot be turned on until its acknowledgement setting (the same name plus _ack) says the privacy notice was read
  *   network.login_secure_only    on | off                 a stored device login is handed to a network node only when its request came over TLS or from this machine (off, the default: any request of the node)
  *
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
@@ -115,6 +117,13 @@ export type SecuritySettingsValues = {
   "server.alarm_state_signature": boolean;
   "media.rtsp_proxy": boolean;
   "network.login_secure_only": boolean;
+  "network.lan_ca": boolean;
+  "vision.semantic_search": boolean;
+  "vision.plates": boolean;
+  "vision.faces": boolean;
+  "vision.semantic_search_ack": boolean;
+  "vision.plates_ack": boolean;
+  "vision.faces_ack": boolean;
   "metrics.prometheus": boolean;
   "heartbeat.enabled": boolean;
   "ingest.recording": boolean;
@@ -165,6 +174,13 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "server.alarm_state_signature": false,
   "media.rtsp_proxy": true,
   "network.login_secure_only": false,
+  "network.lan_ca": false,
+  "vision.semantic_search": false,
+  "vision.plates": false,
+  "vision.faces": false,
+  "vision.semantic_search_ack": false,
+  "vision.plates_ack": false,
+  "vision.faces_ack": false,
   "metrics.prometheus": false,
   "heartbeat.enabled": false,
   "ingest.recording": false,
@@ -203,6 +219,9 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
 const NUMBER_RANGES: Partial<Record<keyof SecuritySettingsValues, { min: number; max: number }>> = { "voice.turn_max_bytes": VOICE_TURN_BYTES, "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES, "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S, "client.trusted_session_h": TRUSTED_SESSION_H,
   "summary.log_days": SUMMARY_LOG_DAYS, "summary.reading_every_s": SUMMARY_READING_EVERY_S, "summary.power_every_s": SUMMARY_POWER_EVERY_S, "summary.false_alarm_s": SUMMARY_FALSE_ALARM_S,
   "reports.timeout_s": REPORT_TIMEOUT_S, "reports.queue_max": REPORT_QUEUE_MAX, "reports.requests_per_minute": REPORT_REQUESTS_PER_MINUTE };
+
+/** The features of the second phase of the vision service that read personal data: each has a switch and an acknowledgement of its privacy notice. */
+export const VISION_PERSONAL_FEATURES = ["semantic_search", "plates", "faces"] as const;
 
 export class SecuritySettingsInvalid extends Error {
   constructor(message: string, readonly key?: string) { super(message); }
@@ -284,6 +303,10 @@ export class SecuritySettings {
     if (visionTokenInClear(after["vision.service_remote"] === true, after["vision.service_token_set"] === true, String(after["vision.service_url"] ?? ""))) {
       throw new SecuritySettingsInvalid("vision.service_url must be https when vision.service_remote is on and the server holds a token for the service: the token would travel in clear", "vision.service_url");
     }
+    // a feature that reads personal data cannot be on unless the privacy notice was acknowledged
+    for (const feature of VISION_PERSONAL_FEATURES) {
+      if (after[`vision.${feature}`] === true && after[`vision.${feature}_ack`] !== true) throw new SecuritySettingsInvalid(`vision.${feature} needs vision.${feature}_ack: read the privacy notice first`, `vision.${feature}`);
+    }
     for (const key of Object.keys(changes)) this.#explicit.add(key);
     this.#save(next as SecuritySettingsValues);
     this.#values = next as SecuritySettingsValues;
@@ -311,6 +334,8 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "admin.acl_relays") return from === false && to === true;   // letting Studio open the broker for the batteries or the alarm copy is the loss
   if (key === "vision.service_remote") return from === false && to === true;   // a service on another machine: the positions of the house travel over a network
   if (key === "vision.service_url") { const host = parseVisionServiceUrl(to)?.host; return host !== undefined && !isLoopbackHost(host) && to !== from; }   // pointing at another machine is the loss
+  if (key === "network.lan_ca" || key === "vision.semantic_search" || key === "vision.plates" || key === "vision.faces") return from === false && to === true;   // a CA to trust on the phones, or a feature that reads personal data: turning it on is the loss
+  if (key === "vision.semantic_search_ack" || key === "vision.plates_ack" || key === "vision.faces_ack") return false;   // reading a notice is not a loss of protection
   if (key === "summary.daily" || key === "vision.heatmap" || key === "metrics.prometheus" || key === "ingest.recording") return from === false && to === true;   // a report about what happens in the house is a way in for whoever may ask: turning it on is the loss
   if (key === "alarm.arming_modes" || key === "alarm.mode_schedule" || key === "alarm.mode_panel_sync") return false;   // a way of arming that is added or taken away: the protection of what is armed does not drop by it
   if (key === "alarm.mode_schedule_lowers") return from === false && to === true;   // letting a timetable defend less is the loss

@@ -2,9 +2,11 @@
  * The security options of the server, set from Studio by an administrator (see ../security_settings.ts), and the key a panel verifies the zone messages with.
  *   GET /api/v1/security/settings              the options in force, the stored ones, the defaults and the ones the environment fixes
  *   PUT /api/v1/security/settings              change one or more ({ "alarm.disarm_pin": "never", ... }); the audit trail says which ones lowered the security
+ *   GET /api/v1/security/lan-ca               the public certificate of the local CA of the LAN (PEM), for an administrator, while network.lan_ca is on and ARMOR_LAN_CA_FILE names it; never a key
  *   GET /api/v1/alarm/zone-feed/key/{node}  the key of one panel for the signature of its zone messages (an administrator who proved themselves again if they came from outside)
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
+import fs from "node:fs";
 import type { Express } from "express";
 import type { AppContext } from "../context.js";
 import { lowers, SECURITY_DEFAULTS, SecuritySettingsInvalid, type SecuritySettingKey } from "../security_settings.js";
@@ -32,6 +34,18 @@ export function registerSecurityRoutes(app: Express, context: AppContext): void 
       }
       return response.status(500).json({ error: "internal error" });
     }
+  });
+
+  app.get("/api/v1/security/lan-ca", requireAdmin, (_request, response) => {
+    if (!securitySettings.get("network.lan_ca")) return response.status(404).json({ error: "lan_ca_disabled" });
+    const file = context.config.lanCaFile;
+    let text = "";
+    try { text = file ? fs.readFileSync(file, "utf8") : ""; } catch { text = ""; }
+    // only a public certificate leaves the server: a file with a private key in it, or with anything but certificates, is refused
+    if (!/^-----BEGIN CERTIFICATE-----/.test(text.trim()) || /PRIVATE KEY/.test(text)) return response.status(404).json({ error: "lan_ca_unavailable" });
+    response.setHeader("Cache-Control", "no-store");
+    response.setHeader("Content-Disposition", 'attachment; filename="armor-lan-ca.crt"');
+    return response.type("application/x-pem-file").send(text);
   });
 
   app.get("/api/v1/alarm/zone-feed/key/:node", requireAdmin, requireElevated, (request, response) => {

@@ -219,6 +219,7 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/remote/check` | administrator | `routes/sessions.ts` |
 | GET | `/api/v1/rules` | operator | `routes/history.ts` |
 | PUT | `/api/v1/rules` | operator | `routes/history.ts` |
+| GET | `/api/v1/security/lan-ca` | administrator | `routes/security.ts` |
 | GET | `/api/v1/security/settings` | administrator | `routes/security.ts` |
 | PUT | `/api/v1/security/settings` | administrator, fresh proof of identity | `routes/security.ts` |
 | GET | `/api/v1/site` | operator | `routes/alarms.ts` |

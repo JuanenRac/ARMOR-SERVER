@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **Switches for the local CA of the LAN and for the personal-data features of the vision service:** the security option `network.lan_ca` (off by default) lets an administrator download the public certificate of the local CA with `GET /api/v1/security/lan-ca` (the file named by `ARMOR_LAN_CA_FILE`; a file with a private key is never served). `vision.semantic_search`, `vision.plates` and `vision.faces` (off by default) cannot be turned on until their `_ack` setting says the privacy notice was read, and the notice cannot be taken back while the feature is on. Turning any of the four on is written in the audit trail as lowering the security.
+
 - **The shared contract copies follow the new health report and the vision event:** the optional `stack_min_free` and `stack_min_task` of the node health report are accepted and passed on.
 
 - **Snapshots and recordings can be kept for different times:** `ARMOR_MEDIA_RETENTION_SNAPSHOT_DAYS` and `ARMOR_MEDIA_RETENTION_RECORDING_DAYS` (0 to 3650, default 0) give each kind of file its own age limit; 0 leaves the general `ARMOR_MEDIA_RETENTION_DAYS` in force, so nothing changes until one is set. Protected files are still never pruned. Documented in `docs/ENVIRONMENT.md`; tested with both limits, the fallback and an invalid value.
