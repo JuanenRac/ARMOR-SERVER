@@ -41,7 +41,7 @@
 | Función | Coordinador central de seguridad de la familia: nodos, alarmas, dispositivos, energía, cámaras, red |
 | Tecnología | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | Pruebas | 1115 (`npm test`: unitarias e integración HTTP completa) |
-| Contrato | 224 rutas HTTP, 288 operaciones (OpenAPI en ARMOR-COMMON), tabla de rutas en `docs/ROUTES.md` |
+| Contrato | 225 rutas HTTP, 289 operaciones (OpenAPI en ARMOR-COMMON), tabla de rutas en `docs/ROUTES.md` |
 | Escucha en | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Funciona en | El banco de la CM5 (como servicio, ver ARMOR-DEVOPS) o cualquier ordenador con Node.js |
 | En hardware real | El banco de pruebas de la CM5, en uso diario: un broker MQTT real, cámaras IP reales, un nodo radar real en una placa ESP32-S3, Studio, la app Android y los servicios de voz y observación contra él |
@@ -157,7 +157,7 @@ flowchart LR
 
 ## 🔌 Interfaces
 
-La tabla de rutas (`docs/ROUTES.md`, generada del código) lista cada ruta con quién puede llamarla; el fichero OpenAPI de ARMOR-COMMON describe 224 rutas y 288 operaciones, y una prueba falla si falta alguna. Las que más importan:
+La tabla de rutas (`docs/ROUTES.md`, generada del código) lista cada ruta con quién puede llamarla; el fichero OpenAPI de ARMOR-COMMON describe 225 rutas y 289 operaciones, y una prueba falla si falta alguna. Las que más importan:
 
 | Ruta | Autenticación | Qué hace |
 |---|---|---|

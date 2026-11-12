@@ -41,7 +41,7 @@
 | Role | Central security coordinator of the family: nodes, alarms, devices, energy, cameras, network |
 | Stack | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | Tests | 1115 (`npm test`: unit and full HTTP integration) |
-| Contract | 224 HTTP paths, 288 operations (OpenAPI in ARMOR-COMMON), route table in `docs/ROUTES.md` |
+| Contract | 225 HTTP paths, 289 operations (OpenAPI in ARMOR-COMMON), route table in `docs/ROUTES.md` |
 | Listens on | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Runs on | The CM5 test bench (as a service, see ARMOR-DEVOPS) or any computer with Node.js |
 | On real hardware | The CM5 test bench, in daily use: a real MQTT broker, real IP cameras, a real radar node on an ESP32-S3 board, Studio, the Android app and the voice and observation services against it |
@@ -157,7 +157,7 @@ flowchart LR
 
 ## 🔌 Interfaces
 
-The route table (`docs/ROUTES.md`, generated from the code) lists every route with who may call it; the OpenAPI file of ARMOR-COMMON describes 224 paths and 288 operations, and a test fails if a route is missing from it. The ones that matter most:
+The route table (`docs/ROUTES.md`, generated from the code) lists every route with who may call it; the OpenAPI file of ARMOR-COMMON describes 225 paths and 289 operations, and a test fails if a route is missing from it. The ones that matter most:
 
 | Route | Auth | What it does |
 |---|---|---|
