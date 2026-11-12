@@ -35,6 +35,7 @@
  *   login.country_alert          on | off                 a sign-in from outside the house from a country that person never signed in from before is told to the places the alarms go to (on, the default; it only acts when the server has a country database, ARMOR_GEOIP_DB)
  *   summary.daily                on | off                 administrators and operators may ask for the summary of a day (GET /api/v1/summary/daily, made by ARMOR-SERVER-AI from the alarms the server kept; off, the default, answers 404)
  *   vision.heatmap               on | off                 administrators and operators may ask for the activity heat map of a camera (GET /api/v1/vision/heatmap, made by ARMOR-VISION; positions only, never a picture; off, the default, answers 404)
+ *   vision.activity_events       on | off                 the server takes the activity events of ARMOR-VISION (POST /api/v1/ai/activity-events: every event is recorded, and an alert zone may raise an alarm unless the profile of the mode says not to tell; off, the default, answers { raised: false, reason: feature_off } and records nothing)
  *   vision.service_url           an http address            where the live ARMOR-VISION service listens (http://127.0.0.1:8765): the heat map is asked of it (ARMOR_VISION_SERVICE_URL is where it starts; empty: not set up)
  *   vision.service_token_set     on | off (read only)     whether the server holds a token for the vision service (ARMOR_VISION_SERVICE_TOKEN or ARMOR_VISION_SERVICE_TOKEN_FILE); the token itself is never shown or stored here
  *   vision.service_remote        on | off                   the service may be on another machine (off, the default: only a loopback address is used)
@@ -151,6 +152,7 @@ export type SecuritySettingsValues = {
   "alarm_audio.custom_sounds": boolean;
   "summary.daily": boolean;
   "vision.heatmap": boolean;
+  "vision.activity_events": boolean;
   "vision.service_url": string;
   "vision.service_remote": boolean;
   "vision.service_token_set": boolean;
@@ -210,6 +212,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "alarm_audio.custom_sounds": false,
   "summary.daily": false,
   "vision.heatmap": false,
+  "vision.activity_events": false,
   "vision.service_url": "",
   "vision.service_remote": false,
   "vision.service_token_set": false,
@@ -345,6 +348,7 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "network.lan_ca" || key === "vision.semantic_search" || key === "vision.plates" || key === "vision.faces") return from === false && to === true;   // a CA to trust on the phones, or a feature that reads personal data: turning it on is the loss
   if (key === "vision.semantic_search_ack" || key === "vision.plates_ack" || key === "vision.faces_ack") return false;   // reading a notice is not a loss of protection
   if (key === "summary.daily" || key === "vision.heatmap" || key === "metrics.prometheus" || key === "ingest.recording") return from === false && to === true;   // a report about what happens in the house is a way in for whoever may ask: turning it on is the loss
+  if (key === "vision.activity_events") return false;   // a source of alarms that is added: what is armed is not defended less by it
   if (key === "alarm.arming_modes" || key === "alarm.mode_schedule" || key === "alarm.mode_panel_sync") return false;   // a way of arming that is added or taken away: the protection of what is armed does not drop by it
   if (key === "alarm.mode_schedule_lowers") return from === false && to === true;   // letting a timetable defend less is the loss
   if (key === "alarm.mode_downgrade_pin") return from === "required" && to === "not_required";

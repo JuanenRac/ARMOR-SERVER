@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AiGateway, FRAME_BYTES, parseActivityEvent } from "../src/ai.js";
+import { SECURITY_DEFAULTS } from "../src/security_settings.js";
 import { SECRETS, startServer, type Running } from "./helpers.js";
 
 const AI_TOKEN = "a".repeat(32);
@@ -23,13 +24,14 @@ const zones = [
 
 const enter = { schema: "armor.vision.activity/v1", type: "zone_enter", camera_id: "cam-gate", track_id: 3, label: "person", timestamp: 12.5, timestamp_ms: 12500, authorizes_action: false, zone_id: "drive", zone_name: "Driveway" };
 
-async function withServer(run: (running: Running) => Promise<void>): Promise<void> {
+async function withServer(run: (running: Running) => Promise<void>, turnOn = true): Promise<void> {
   const fake = new AiGateway({ ffmpegPath: "/usr/bin/ffmpeg", run: async () => Buffer.alloc(FRAME_BYTES, 9) });
   const running = await startServer({ ARMOR_AI_TOKEN: AI_TOKEN }, { ai: fake });
   try {
     const configured = await call(running, "POST", "/api/v1/cameras/configure", { bearer: SECRETS.ARMOR_OPERATOR_TOKEN, body: camera });
     assert.ok(configured.status < 300, `configure: ${configured.status}`);
     running.app.context.detectionZones.set("cam-gate", { zones, profiles: {} });
+    if (turnOn) running.app.context.securitySettings.update({ "vision.activity_events": true });
     await run(running);
   } finally { await running.stop(); }
 }
@@ -92,4 +94,29 @@ test("parseActivityEvent keeps what the contract names and nothing else", () => 
   assert.equal(parseActivityEvent({ ...enter, label: "" }), undefined);
   assert.equal(parseActivityEvent([enter]), undefined);
   assert.equal(parseActivityEvent(null), undefined);
+});
+
+test("with the option vision.activity_events off, the default, an activity event is told so and nothing is raised", async () => {
+  await withServer(async running => {
+    const context = running.app.context;
+    assert.equal(context.securitySettings.get("vision.activity_events"), false);
+    context.store.arm("armed");
+    // not even a bad event, a camera that is not known or a body that is not the contract is read: the answer is the same
+    for (const body of [enter, { ...enter, notify: true }, { ...enter, camera_id: "cam-nope" }, { nonsense: true }]) {
+      assert.deepEqual((await post(running, body)).body, { raised: false, reason: "feature_off" });
+    }
+    assert.equal(context.alarms.active().length, 0);
+    // the token is still needed
+    assert.equal((await call(running, "POST", URL, { body: enter })).status, 401);
+    // turned on, the same event is taken
+    context.securitySettings.update({ "vision.activity_events": true });
+    assert.equal((await post(running, enter)).body.raised, true);
+    // turned off again, no more
+    context.securitySettings.update({ "vision.activity_events": false });
+    assert.deepEqual((await post(running, { ...enter, track_id: 9 })).body, { raised: false, reason: "feature_off" });
+  }, false);
+});
+
+test("the option vision.activity_events is off by default and turning it on is not a loss of protection", () => {
+  assert.equal(SECURITY_DEFAULTS["vision.activity_events"], false);
 });
