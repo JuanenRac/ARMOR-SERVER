@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The reader of the country database is tried with every type of its format:** the odd values (doubles, floats, booleans, bytes, big integers, arrays, maps inside maps, the long forms of the sizes) are put in the metadata of a made-up file and read, and the damaged ones (a wrong size, an unknown type, a string cut by the end of the file, a map that claims too much, a key that is not a string, pointers that lead outside the file, data nested too deep) are refused without reading outside the file.
+
 ## [0.8.2.2] - Vision events, detection zones and local LAN CA
 
 - **The track number of an activity event has a top:** `POST /api/v1/ai/activity-events` refuses a `track_id` above 9007199254740991, the largest whole number a JSON reader keeps exactly (the contract says so too). New tests of the route under abuse: a missing, wrong or misplaced token, a body that is broken, too big or not an object, members and values that are not in the contract, a camera that does not exist, zones of other kinds, a flood and a seeded fuzz of the reader of the event.
