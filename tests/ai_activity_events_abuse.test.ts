@@ -37,7 +37,7 @@ async function withServer(run: (running: Running, audit: Array<Record<string, un
     const configured = await send(running, { headers: { ...json, Authorization: `Bearer ${SECRETS.ARMOR_OPERATOR_TOKEN}` }, url: "/api/v1/cameras/configure", raw: JSON.stringify(camera) });
     assert.ok(configured.status < 300, `configure: ${configured.status}`);
     running.app.context.detectionZones.set("cam-gate", { zones, profiles: {} });
-    if (turnOn) running.app.context.securitySettings.update({ "vision.activity_events": true });
+    running.app.context.securitySettings.update({ "vision.activity_events": turnOn });
     audit.length = 0;
     await run(running, audit);
   } finally { await running.stop(); }
