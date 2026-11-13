@@ -23,6 +23,7 @@ import { TotpStore } from "./totp.js";
 import { TrustedDevices } from "./trusted_devices.js";
 import { EvidenceLibrary } from "./media/evidence.js";
 import { RelayManager, StreamTickets } from "./media/relay.js";
+import { AlarmCapture } from "./capture_on_alarm.js";
 import { CameraWatcher } from "./cameras/health.js";
 import { Escalator } from "./escalation.js";
 import { ElectricalEnergy } from "./electrical_energy.js";
@@ -307,6 +308,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
       reason === "expired" ? "session_expired" : reason === "logout" ? "logout" : "session_ended");
   };
   const knownNodes = new KnownNodes({ file: path.join(config.dataDir, "known-nodes.json"), now: overrides.now, warn });
+  const alarmCaptureHolder: { capture?: AlarmCapture } = {};
   const rules = new RulesFile(path.join(config.dataDir, "rules.json"), config.alertDwellMs, warn);
   // The other places the alarms go. The address of Telegram can only be changed by the environment, for the tests that stand in for it.
   const channels: NotifyChannel[] = [];
@@ -337,6 +339,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     if (!(event.type === "node" && event.to !== "online" && controlHolder.service?.isHeld(event.node_id))) notifier.notify(event, store.snapshot().mode);
     if (event.type === "mode") arming.modes?.storeChanged(event.mode === "armed");
     alarmRules.handleEvent(event);
+    alarmCaptureHolder.capture?.handle(event);
     if (event.type === "mode") automations.handleMode(event.mode);
   };
   const alarms = new AlarmCentre({ file: path.join(config.dataDir, "alarms.json"), onEvent: record, onRaised: alarm => automations.handleAlarm(alarm), warn });
@@ -463,6 +466,10 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   alarmRules.nodeIntruding = id => store.snapshot().nodes[id]?.alert_level === "high";
   const visionTimeline = new VisionTimeline({ file: path.join(config.dataDir, "vision-timeline.json"), enabled: () => securitySettings.get("vision.timeline"), days: () => securitySettings.get("vision.timeline_days"), maxEntries: config.visionTimelineMaxEntries, now: overrides.now });
   const captureOnDetect = new CaptureOnDetect({ file: path.join(config.dataDir, "capture-on-detect.json"), audit, now: overrides.now, tools: { snapshot: camera => evidence.snapshot(camera), startRecording: camera => evidence.startRecording(camera), stopRecording: id => evidence.stopRecording(id), isRecording: id => evidence.isRecording(id) } });
+  alarmCaptureHolder.capture = new AlarmCapture({
+    enabled: () => securitySettings.get("capture.on_alarm"), perMinute: () => securitySettings.get("capture.on_alarm_per_min"), site: () => site.get().site,
+    cameras: () => vault.list().flatMap(item => { const camera = vault.get(item.id); return camera ? [camera] : []; }), trigger: camera => captureOnDetect.trigger(camera), audit, now: overrides.now,
+  });
   const ignoreZones = new IgnoreZones(path.join(config.dataDir, "camera-ignore-zones.json"));
   const countLines = new CountLines(path.join(config.dataDir, "camera-count-lines.json"));
   const detectionZones = new DetectionZones(path.join(config.dataDir, "camera-detection-zones.json"));

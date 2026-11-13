@@ -60,6 +60,8 @@
  *   network.public_access       on | off                 requests from outside the house and the VPN are taken at all, and only over TLS with strong secrets (off, the default: every one is answered 403 public_access_off; see public_access.ts)
  *   vision.timeline              on | off                 the server keeps the events of the zones of the vision service in a review timeline with their evidence (GET /api/v1/vision/timeline; off, the default: nothing is kept)
  *   vision.timeline_days         1 to 3650                the days an entry of the timeline is kept (30)
+ *   capture.on_alarm            on | off                 when a node (or an alarm panel) raises a high alarm, the cameras that the site design says cover it take the photo and video of the capture settings (off, the default: only the vision service starts a capture)
+ *   capture.on_alarm_per_min    1 to 60                  the most captures one minute of alarms may start in all (6)
  *   network.login_secure_only    on | off                 a stored device login is handed to a network node only when its request came over TLS or from this machine (off, the default: any request of the node)
  *
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
@@ -103,6 +105,7 @@ export function visionTokenInClear(remote: boolean, tokenHeld: boolean, url: str
 export const TRUSTED_SESSION_H = { min: 1, max: 720, default: 72 } as const;
 /** How many days a snapshot and a recording are kept; 0 means the general limit (ARMOR_MEDIA_RETENTION_DAYS) applies. */
 export const MEDIA_RETENTION_DAYS = { min: 0, max: 3650, default: 0 } as const;
+export const CAPTURE_ON_ALARM_PER_MIN = { min: 1, max: 60, default: 6 } as const;
 export const VISION_TIMELINE_DAYS = { min: 1, max: 3650, default: 30 } as const;
 export const SUMMARY_LOG_DAYS = { min: 1, max: 90, default: 14 } as const;
 export const SUMMARY_READING_EVERY_S = { min: 10, max: 3600, default: 300 } as const;
@@ -174,6 +177,8 @@ export type SecuritySettingsValues = {
   "summary.log_days": number;
   "vision.timeline": boolean;
   "vision.timeline_days": number;
+  "capture.on_alarm": boolean;
+  "capture.on_alarm_per_min": number;
   "summary.reading_every_s": number;
   "summary.power_every_s": number;
   "summary.false_alarm_s": number;
@@ -242,6 +247,8 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "summary.log_days": SUMMARY_LOG_DAYS.default,
   "vision.timeline": false,
   "vision.timeline_days": VISION_TIMELINE_DAYS.default,
+  "capture.on_alarm": false,
+  "capture.on_alarm_per_min": CAPTURE_ON_ALARM_PER_MIN.default,
   "summary.reading_every_s": SUMMARY_READING_EVERY_S.default,
   "summary.power_every_s": SUMMARY_POWER_EVERY_S.default,
   "summary.false_alarm_s": SUMMARY_FALSE_ALARM_S.default,
@@ -252,7 +259,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
 
 /** The settings that are whole numbers, with the range each may take. */
 const NUMBER_RANGES: Partial<Record<keyof SecuritySettingsValues, { min: number; max: number }>> = { "voice.turn_max_bytes": VOICE_TURN_BYTES, "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES, "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S, "client.trusted_session_h": TRUSTED_SESSION_H,
-  "vision.timeline_days": VISION_TIMELINE_DAYS, "summary.log_days": SUMMARY_LOG_DAYS, "summary.reading_every_s": SUMMARY_READING_EVERY_S, "summary.power_every_s": SUMMARY_POWER_EVERY_S, "summary.false_alarm_s": SUMMARY_FALSE_ALARM_S,
+  "vision.timeline_days": VISION_TIMELINE_DAYS, "capture.on_alarm_per_min": CAPTURE_ON_ALARM_PER_MIN, "summary.log_days": SUMMARY_LOG_DAYS, "summary.reading_every_s": SUMMARY_READING_EVERY_S, "summary.power_every_s": SUMMARY_POWER_EVERY_S, "summary.false_alarm_s": SUMMARY_FALSE_ALARM_S,
   "media.retention_snapshot_days": MEDIA_RETENTION_DAYS, "media.retention_recording_days": MEDIA_RETENTION_DAYS, "reports.timeout_s": REPORT_TIMEOUT_S, "reports.queue_max": REPORT_QUEUE_MAX, "reports.requests_per_minute": REPORT_REQUESTS_PER_MINUTE };
 
 /** The features of the second phase of the vision service that read personal data: each has a switch and an acknowledgement of its privacy notice. */
@@ -373,6 +380,8 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "session.rotate_id") return from === true && to === false;   // a session id that no longer changes is a weaker one: turning it off is the loss
   if (key === "vision.service_remote") return from === false && to === true;   // a service on another machine: the positions of the house travel over a network
   if (key === "vision.service_url") { const host = parseVisionServiceUrl(to)?.host; return host !== undefined && !isLoopbackHost(host) && to !== from; }   // pointing at another machine is the loss
+  if (key === "capture.on_alarm_per_min") return false;   // tuning of how much evidence an alarm may start, not a protection
+  if (key === "capture.on_alarm") return from === false && to === true;   // cameras that record by themselves when an alarm sounds: more is kept about the house
   if (key === "vision.timeline" || key === "network.lan_ca" || key === "network.public_access" || key === "vision.semantic_search" || key === "vision.plates" || key === "vision.faces") return from === false && to === true;   // a CA to trust on the phones, or a feature that reads personal data: turning it on is the loss
   if (key === "vision.semantic_search_ack" || key === "vision.plates_ack" || key === "vision.faces_ack") return false;   // reading a notice is not a loss of protection
   if (key === "summary.daily" || key === "vision.heatmap" || key === "metrics.prometheus" || key === "ingest.recording") return from === false && to === true;   // a report about what happens in the house is a way in for whoever may ask: turning it on is the loss
