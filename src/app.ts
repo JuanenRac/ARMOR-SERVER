@@ -391,7 +391,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   let sweepFailing = false;
   const sweeper = setInterval(() => {
     try {
-      context.escalator.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.batteryWrite.sweep(); context.nodeControl.sweep(); context.diagnosticTokens.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.armingModes.tick(); context.reportSilentNodes(); context.networkNodes.sweep();
+      context.escalator.tick(); context.automations.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.batteryWrite.sweep(); context.nodeControl.sweep(); context.diagnosticTokens.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.armingModes.tick(); context.reportSilentNodes(); context.networkNodes.sweep();
       context.studioSessions.sweep(); context.operatorSessions.sweep(); context.connections.registry.tick(); context.nodeLife.flush();
       sweepFailing = false;
     } catch (error) {
