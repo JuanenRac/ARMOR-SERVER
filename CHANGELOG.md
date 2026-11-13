@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The Prometheus page counts the events of the vision service:** `armor_vision_events_total{kind,outcome}` (kind: `alert`, `detection` or `activity`; outcome: `raised` an alarm, `recorded` only, or `ignored` because the system was disarmed, an alarm was already open or the profile said not to tell) is counted in memory by `POST /api/v1/ai/vision-events` and `POST /api/v1/ai/activity-events`, every combination listed from the first scrape, so the page never grows with what a camera sees and holds no camera name or picture. It stays behind the same switch and token as the rest of the page. Tested in the text form, in the fixed order and through the routes, refused events not counted.
+
 - **The comparison with the shared contracts no longer skips silently where they are required:** when the CI asks for the contracts to be present and the checkout is missing, the conformance tests fail instead of being skipped.
 - **The reader of the country database is tried with every type of its format:** the odd values (doubles, floats, booleans, bytes, big integers, arrays, maps inside maps, the long forms of the sizes) are put in the metadata of a made-up file and read, and the damaged ones (a wrong size, an unknown type, a string cut by the end of the file, a map that claims too much, a key that is not a string, pointers that lead outside the file, data nested too deep) are refused without reading outside the file.
 

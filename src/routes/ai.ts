@@ -75,9 +75,10 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
     if (!vault.get(event.camera_id)) return response.status(404).json({ error: "unknown_camera" });
     if (event.type === "detection") {
       audit.record({ action: "ai.vision_event", outcome: "allowed", target: event.camera_id, detail: `detection ${event.label} in ${event.zone_id}` });
+      context.visionCounters.record("detection", "recorded");
       return response.json({ raised: false, reason: "recorded" });
     }
-    if (store.snapshot().mode !== "armed") return response.json({ raised: false, reason: "disarmed" });
+    if (store.snapshot().mode !== "armed") { context.visionCounters.record("alert", "ignored"); return response.json({ raised: false, reason: "disarmed" }); }
     const heading = event.vectors?.find(vector => vector.track_id === event.track_id);
     const alarm = alarms.raise(`ai:camera:${event.camera_id}:zone:${event.zone_id}:${Math.floor(Date.now() / MOTION_WINDOW_MS)}`, {
       source: { type: "camera", id: event.camera_id }, severity: "high", code: "camera_motion",
@@ -86,6 +87,7 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
     });
     const watched = vault.get(event.camera_id);
     if (watched) void context.captureOnDetect.trigger(watched).catch(() => undefined);
+    context.visionCounters.record("alert", alarm ? "raised" : "ignored");
     audit.record({ action: "ai.vision_event", outcome: "allowed", target: event.camera_id, detail: `alert ${event.label} in ${event.zone_id}${alarm ? ", alarm raised" : ", one is already open"}` });
     return response.json({ raised: Boolean(alarm), ...(alarm ? { alarm_id: alarm.id } : { reason: "already_open" }) });
   });
@@ -101,7 +103,8 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
     if (!event) return response.status(422).json({ error: "invalid_activity_event" });
     if (!vault.get(event.camera_id)) return response.status(404).json({ error: "unknown_camera" });
     const where = event.zone_id ? `zone ${event.zone_id}` : `line ${event.line_id}`;
-    const record = (outcome: string): void => audit.record({ action: "ai.activity_event", outcome: "allowed", target: event.camera_id, detail: `${event.type} ${event.label} in ${where}, ${outcome}` });
+    const record = (outcome: string): void => { context.visionCounters.record("activity", outcome === "alarm raised" ? "raised" : outcome === "recorded" ? "recorded" : "ignored"); note(outcome); };
+    const note = (outcome: string): void => audit.record({ action: "ai.activity_event", outcome: "allowed", target: event.camera_id, detail: `${event.type} ${event.label} in ${where}, ${outcome}` });
     if (event.type === "line_cross" || event.type === "zone_exit") { record("recorded"); return response.json({ raised: false, reason: "recorded" }); }
     const zone = context.detectionZones.get(event.camera_id).zones.find(item => item.id === event.zone_id);
     if (!zone || zone.kind !== "alert") { record("recorded"); return response.json({ raised: false, reason: "recorded" }); }
