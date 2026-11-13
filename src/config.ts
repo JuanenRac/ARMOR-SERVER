@@ -69,6 +69,8 @@ export type ArmorConfig = {
   dailyLogPowerEveryS: number;
   dailyFalseAlarmS: number;
   dailyLogMaxEvents: number;
+  /** The most entries of the review timeline of the vision service (ARMOR_VISION_TIMELINE_MAX_ENTRIES, 100 to 50000; 5000). */
+  visionTimelineMaxEntries: number;
   dailyLogMaxBytes: number;
   dailyLogSensors: string[];
   /** ARMOR_ALARM_SOUND_MAX_BYTES: the most samples a sound an administrator uploads for an alarm origin may have; 128000 bytes is 4 seconds of 16 kHz 16-bit mono. */
@@ -489,6 +491,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     dailyLogPowerEveryS: integer(env, "ARMOR_DAILY_LOG_POWER_EVERY_S", 60, 5, 3600),
     dailyFalseAlarmS: integer(env, "ARMOR_DAILY_FALSE_ALARM_S", 60, 0, 600),
     dailyLogMaxEvents: integer(env, "ARMOR_DAILY_LOG_MAX_EVENTS", 5000, 100, 50_000),
+    visionTimelineMaxEntries: integer(env, "ARMOR_VISION_TIMELINE_MAX_ENTRIES", 5000, 100, 50_000),
     dailyLogMaxBytes: integer(env, "ARMOR_DAILY_LOG_MAX_BYTES", 4 * 1024 * 1024, 65_536, 64 * 1024 * 1024),
     dailyLogSensors: dailyLogSensors(env),
     alarmSoundMaxBytes: integer(env, "ARMOR_ALARM_SOUND_MAX_BYTES", 128_000, 3_200, 256_000),
