@@ -27,6 +27,7 @@ import { RelayManager, StreamTickets } from "./media/relay.js";
 import { AlarmCapture } from "./capture_on_alarm.js";
 import { CameraWatcher } from "./cameras/health.js";
 import { Escalator } from "./escalation.js";
+import { BackupService } from "./backup.js";
 import { ElectricalEnergy } from "./electrical_energy.js";
 import { PtzController } from "./cameras/ptz.js";
 import { CommandSigner } from "./command_signature.js";
@@ -124,6 +125,7 @@ export type AppContext = {
   automations: AutomationEngine;
   /** Signs the critical commands and gives each node its own key (see command_signature.ts). */
   commandSigner: CommandSigner;
+  backup: BackupService;
   site: SiteStore;
   electrical: SiteStore;
   /** What the ARMOR-NODE-ELECTRICAL nodes measure on the house's network. */
@@ -314,6 +316,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const knownNodes = new KnownNodes({ file: path.join(config.dataDir, "known-nodes.json"), now: overrides.now, warn });
   const alarmCaptureHolder: { capture?: AlarmCapture } = {};
   const rules = new RulesFile(path.join(config.dataDir, "rules.json"), config.alertDwellMs, warn);
+  const backup = new BackupService({ dataDir: config.dataDir, stateDir: config.dataDir, now: overrides.now ? () => new Date(overrides.now!()) : undefined, onEvent: (action, outcome, detail) => { recordSystem({ category: "backup", action, outcome, subject: detail.slice(0, 60) }); } });
   // The other places the alarms go. The address of Telegram can only be changed by the environment, for the tests that stand in for it.
   const channels: NotifyChannel[] = [];
   if (config.telegram) channels.push(telegramChannel({ token: config.telegram.token, chatIds: config.telegram.chatIds, api: process.env.ARMOR_TELEGRAM_API || undefined }));
@@ -644,6 +647,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     balanceWatcher,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
+    backup,
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),
     commandSigner,
   };

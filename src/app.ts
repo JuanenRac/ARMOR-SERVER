@@ -56,6 +56,7 @@ import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerSecurityRoutes } from "./routes/security.js";
 import { registerTrustedDeviceRoutes } from "./routes/trusted_devices.js";
 import { registerAdminRoutes } from "./routes/admin.js";
+import { registerBackupRoutes } from "./routes/backup.js";
 import { registerFirmwareRoutes } from "./routes/firmware.js";
 import { registerNodePanelRoutes } from "./node_panel_proxy.js";
 import { buildPanelSummary, createPanelFeed, PANEL_HEARTBEAT_MS } from "./panel_feed.js";
@@ -203,6 +204,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerAlarmRoutes(app, context);
   registerSystemRoutes(app, context, version);
   registerAdminRoutes(app, context);
+  registerBackupRoutes(app, context);
   registerVisionTimelineRoutes(app, context);
   registerFirmwareRoutes(app, context);
   registerNodePanelRoutes(app, context);
@@ -409,6 +411,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     try {
       context.escalator.tick(); context.automations.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.batteryWrite.sweep(); context.nodeControl.sweep(); context.diagnosticTokens.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.armingModes.tick(); context.reportSilentNodes(); context.networkNodes.sweep();
       context.studioSessions.sweep(); context.operatorSessions.sweep(); context.connections.registry.tick(); context.nodeLife.flush();
+      void context.backup.tick(context.securitySettings.get("admin.backup"));
       sweepFailing = false;
     } catch (error) {
       if (!sweepFailing) console.warn("ARMOR_SWEEP=FAILED", error instanceof Error ? error.message : "unknown error");

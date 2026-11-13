@@ -7,6 +7,10 @@ Every route the code registers, with who may call it and the file that registers
 | PATCH | `/api/v1/account` | none here | `routes/users.ts` |
 | PUT | `/api/v1/account/panic-phrase` | none here | `routes/users.ts` |
 | PUT | `/api/v1/account/pin` | none here | `routes/users.ts` |
+| GET | `/api/v1/admin/backup` | administrator | `routes/backup.ts` |
+| PUT | `/api/v1/admin/backup` | administrator, fresh proof of identity | `routes/backup.ts` |
+| POST | `/api/v1/admin/backup/run` | administrator, fresh proof of identity | `routes/backup.ts` |
+| POST | `/api/v1/admin/backup/verify` | administrator | `routes/backup.ts` |
 | GET | `/api/v1/admin/console` | administrator | `routes/maintenance.ts` |
 | GET | `/api/v1/admin/console/jobs/:id` | administrator | `routes/maintenance.ts` |
 | POST | `/api/v1/admin/console/jobs/:id/cancel` | administrator | `routes/maintenance.ts` |
