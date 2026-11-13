@@ -21,6 +21,7 @@
  *   voice.multipart_turn         on | off                  the wall panel may send a spoken turn as multipart/form-data with the audio as raw bytes (off: only the older raw request is taken, a multipart one is answered 415)
  *   voice.wake_word             on | off                  the wall panel may send short chunks of audio to the voice gateway to hear its wake word (openWakeWord, on this machine, no cloud); off, the default: the route answers 403 and no audio is passed on
  *   admin.acl_relays             on | off                  Studio may ask the admin agent to open or close the two switches of the broker rules that no install turns on (the writing to the batteries of one solar node, and the signed copy of the alarm states); off, the default: the routes answer 403, and each change also needs the code of the authenticator and two confirmations
+ *   admin.require_masked_agent   on | off                  the file routes refuse (409 agent_not_masking) an environment file from a maintenance agent that does not say it hides the secrets itself (off, the default: an older agent is accepted and this server hides them)
  *   admin.field_http             on | off                  Studio may ask the admin agent to let the field network also reach the server's port over HTTP (the firewall switch field-http); off, the default: the routes answer 403, and each change also needs the code of the authenticator and a confirmation
  *   panel.live_events            on | off                  the wall panel may listen to the live channel (a WebSocket that carries the same small summary it can ask for; off: it asks every few seconds)
  *   client.device_lock           user | sensitive | always   what the phone app asks of the person with the lock of the phone itself (fingerprint, face or the phone's PIN): user = the phone's own switches decide, sensitive = also before arming, disarming and unlocking, always = also to open the app (it can only raise what a person chose, never lower it, and a phone with no lock at all is never shut out)
@@ -146,6 +147,7 @@ export type SecuritySettingsValues = {
   "voice.panic_cooldown_s": number;
   "admin.acl_relays": boolean;
   "admin.field_http": boolean;
+  "admin.require_masked_agent": boolean;
   "panel.live_events": boolean;
   "client.device_lock": DeviceLockPolicy;
   "client.trusted_devices": boolean;
@@ -209,6 +211,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S.default,
   "admin.acl_relays": false,
   "admin.field_http": false,
+  "admin.require_masked_agent": false,
   "panel.live_events": true,
   "client.device_lock": "user",
   "client.trusted_devices": false,
