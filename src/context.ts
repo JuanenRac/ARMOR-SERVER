@@ -30,6 +30,7 @@ import { Escalator } from "./escalation.js";
 import { BackupService } from "./backup.js";
 import { ElectricalEnergy } from "./electrical_energy.js";
 import { LoadShedding } from "./load_shedding.js";
+import { RolloutStore } from "./firmware_rollout.js";
 import { PtzController } from "./cameras/ptz.js";
 import { CommandSigner } from "./command_signature.js";
 import { EventLog, type ArmorEventBody } from "./events.js";
@@ -234,6 +235,8 @@ export type AppContext = {
   /** The solar inverters and batteries the gateway nodes report. */
   solar: SolarStore;
   loadShedding: LoadShedding;
+  /** The settings of the staged firmware rollout (the option admin.firmware_rollout turns them on). */
+  firmwareRollout: RolloutStore;
   /** The solar equipment an operator declared, kept in a file. */
   solarRegistry: SolarRegistry;
   balanceWatcher: BalanceWatcher;
@@ -505,6 +508,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     command: (id, command) => sendDeviceCommand(id, command), now: overrides.now,
     onEvent: entry => { audit.record({ action: `electrical.load_shedding.${entry.action}`, outcome: entry.action === "failed" ? "failed" : "allowed", target: entry.device, detail: `${entry.grid_w ?? "?"} W${entry.detail ? `, ${entry.detail}` : ""}` }); },
   });
+  const firmwareRollout = new RolloutStore(path.join(config.dataDir, "firmware-rollout.json"), warn);
   const ingestLog = new IngestLog(overrides.now);
   const ingestRecorder = new IngestRecorder({ dir: path.join(config.dataDir, "ingest-recording"), enabled: () => securitySettings.get("ingest.recording"), maxBytes: config.ingestRecordMaxBytes, maxFiles: config.ingestRecordFiles, now: overrides.now });
   ingestLog.tap = (topic, payload, accepted, reason) => ingestRecorder.record(topic, payload, accepted, reason);
@@ -648,7 +652,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   };
   return {
     ai: overrides.ai ?? new AiGateway({ ffmpegPath: config.ffmpegPath ?? "", proxy: rtspProxy }), requireAi,
-    firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
+    firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com", rollout: () => (securitySettings.get("admin.firmware_rollout") ? firmwareRollout.get() : null) }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
     live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
@@ -659,5 +663,6 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),
     commandSigner,
     loadShedding,
+    firmwareRollout,
   };
 }

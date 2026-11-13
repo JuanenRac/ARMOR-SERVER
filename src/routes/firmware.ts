@@ -7,12 +7,13 @@
 import express, { type Express, type Request } from "express";
 import type { AppContext } from "../context.js";
 import { FirmwareError, MAX_IMAGE_BYTES, NODE_KINDS, type NodeKind } from "../firmware.js";
+import { RolloutInvalid } from "../firmware_rollout.js";
 
 const PRIVATE_V4 = /^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})$/;
 const NODE_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 export function registerFirmwareRoutes(app: Express, context: AppContext): void {
-  const { firmware, audit, requireAdmin, studioUser } = context;
+  const { firmware, audit, requireAdmin, studioUser, firmwareRollout, securitySettings } = context;
   const actor = (request: Request) => studioUser(request)?.username;
   const body = (request: Request): Record<string, unknown> => (typeof request.body === "object" && request.body !== null && !Buffer.isBuffer(request.body) ? request.body as Record<string, unknown> : {});
   // A node's panel is on the local network, on port 80; the loopback address is for tests only (they set ARMOR_ADMIN_NODE_PORT).
@@ -67,6 +68,24 @@ export function registerFirmwareRoutes(app: Express, context: AppContext): void 
       audit.record({ action: "admin.firmware.start", outcome: "allowed", actor: actor(request), target: kind, detail: `${source}, ${targets.length} node(s)` });
       return response.status(202).json({ id: job.id });
     } catch (error) { const { status, error: code } = fail(error); return response.status(status).json({ error: code }); }
+  });
+
+  // The staged rollout (see ../firmware_rollout.ts): the settings can be saved while the option `admin.firmware_rollout` is off; a job follows them only when it is on.
+  app.get("/api/v1/admin/firmware/rollout", requireAdmin, (_request, response) => {
+    response.setHeader("Cache-Control", "no-store");
+    return response.json({ enabled: securitySettings.get("admin.firmware_rollout"), settings: firmwareRollout.get() });
+  });
+
+  app.put("/api/v1/admin/firmware/rollout", requireAdmin, context.requireElevated, (request, response) => {
+    try {
+      const settings = firmwareRollout.set(request.body);
+      audit.record({ action: "admin.firmware.rollout", outcome: "allowed", actor: actor(request), detail: `${settings.channel}, ${settings.percent} %, rollback ${settings.rollback ? "on" : "off"}, halt ${settings.halt_on_failure ? "on" : "off"}` });
+      return response.json({ enabled: securitySettings.get("admin.firmware_rollout"), settings });
+    } catch (error) {
+      if (error instanceof RolloutInvalid) { audit.record({ action: "admin.firmware.rollout", outcome: "denied", actor: actor(request), detail: error.code }); return response.status(422).json({ error: error.message, code: error.code }); }
+      audit.record({ action: "admin.firmware.rollout", outcome: "failed", actor: actor(request) });
+      return response.status(500).json({ error: "internal error" });
+    }
   });
 
   app.get("/api/v1/admin/firmware/jobs/:id", requireAdmin, (request, response) => {

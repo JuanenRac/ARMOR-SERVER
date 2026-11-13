@@ -26,6 +26,8 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/admin/firmware/jobs/:id` | administrator | `routes/firmware.ts` |
 | POST | `/api/v1/admin/firmware/probe` | administrator | `routes/firmware.ts` |
 | GET | `/api/v1/admin/firmware/releases/:kind` | administrator | `routes/firmware.ts` |
+| GET | `/api/v1/admin/firmware/rollout` | administrator | `routes/firmware.ts` |
+| PUT | `/api/v1/admin/firmware/rollout` | administrator, fresh proof of identity | `routes/firmware.ts` |
 | POST | `/api/v1/admin/firmware/uploads` | administrator | `routes/firmware.ts` |
 | GET | `/api/v1/admin/incident` | administrator | `routes/media.ts` |
 | POST | `/api/v1/admin/incident/verify` | administrator | `routes/media.ts` |
