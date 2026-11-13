@@ -26,6 +26,7 @@ import { CameraWatcher } from "./cameras/health.js";
 import { Escalator } from "./escalation.js";
 import { ElectricalEnergy } from "./electrical_energy.js";
 import { PtzController } from "./cameras/ptz.js";
+import { CommandSigner } from "./command_signature.js";
 import { EventLog, type ArmorEventBody } from "./events.js";
 import { AlarmCentre, AlarmRules } from "./alarms.js";
 import { AutomationEngine, type Action } from "./automations.js";
@@ -395,8 +396,10 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const network = new SiteStore(path.join(config.dataDir, "network.json"), () => new Date(), "network design");
   const alarmDesign = new SiteStore(path.join(config.dataDir, "alarm_design.json"), () => new Date(), "alarm design");
   const switchLink: AppContext["switchLink"] = {};
+  const commandSigner = new CommandSigner(path.join(config.dataDir, "command-signature.key"));
+  const signCommand = (command: Record<string, unknown>): Record<string, unknown> => (securitySettings.get("commands.require_sig") ? commandSigner.sign(command) : command);
   const electricalSwitching = new SwitchingService({
-    enabled: config.electricalSwitching, nodes: electricalNodes, audit, now: overrides.now,
+    enabled: config.electricalSwitching, nodes: electricalNodes, audit, now: overrides.now, sign: signCommand,
     publish: (topic, payload) => { if (!switchLink.publish) throw new Error("the MQTT broker is not connected"); switchLink.publish(topic, payload); },
   });
   const alarmStateSigner = new AlarmStateSigner(config.alarmStateKeyFile, overrides.now);
@@ -471,7 +474,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   };
   const panelSyncLink: { settled?: (record: import("./alarm_commands.js").AlarmRecord) => void; view?: () => unknown } = {};
   const alarmCommands = new AlarmCommands({
-    enabled: config.alarmCommands, nodes: alarmNodes, audit, now: overrides.now, onSettled: record => panelSyncLink.settled?.(record),
+    enabled: config.alarmCommands, nodes: alarmNodes, audit, now: overrides.now, sign: signCommand, onSettled: record => panelSyncLink.settled?.(record),
     publish: (topic, payload) => { if (!alarmLink.publish) throw new Error("the MQTT broker is not connected"); alarmLink.publish(topic, payload); },
   });
   const ingestLog = new IngestLog(overrides.now);

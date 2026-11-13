@@ -37,6 +37,8 @@ export type AlarmCommandsOptions = {
   /** Ids; injectable for tests. Sixteen lowercase hexadecimal digits. */
   random?: () => string;
   keepRecords?: number;
+  /** Signs a command before it is published (`commands.require_sig`); absent or returning it unchanged: no signature. A throw means the command is not sent. */
+  sign?: (command: Record<string, unknown>) => Record<string, unknown>;
   /** Told once for every command that ends: the node answered (accepted or refused) or the answer never came (refusal `timeout`). A throw in it never reaches the caller. */
   onSettled?: (record: AlarmRecord) => void;
 };
@@ -44,7 +46,7 @@ export type AlarmCommandsOptions = {
 type Pending = PendingAlarm & { startedMs: number };
 
 export class AlarmCommands {
-  readonly #options: Required<Omit<AlarmCommandsOptions, "nodes" | "publish" | "audit" | "onSettled">> & Pick<AlarmCommandsOptions, "nodes" | "publish" | "audit" | "onSettled">;
+  readonly #options: Required<Omit<AlarmCommandsOptions, "nodes" | "publish" | "audit" | "onSettled" | "sign">> & Pick<AlarmCommandsOptions, "nodes" | "publish" | "audit" | "onSettled" | "sign">;
   readonly #pending = new Map<string, Pending>();       // by command id
   readonly #records: AlarmRecord[] = [];
 
@@ -80,8 +82,13 @@ export class AlarmCommands {
     const now = this.#options.now();
     const id = this.#options.random();
     const command = { kind: "alarm_command", node_id: node, timestamp_ms: now, command_id: id, action, ...(action === "arm" ? { mode, ...(force ? { force: true } : {}), ...(profile ? { profile } : {}) } : {}) };
+    let payload: string;
+    try { payload = JSON.stringify(this.#options.sign ? this.#options.sign(command) : command); } catch (error) {
+      this.#options.audit.record({ action: "alarm.command", outcome: "failed", actor, target: node, detail: detail(`not signed: ${error instanceof Error ? error.message : "no key"}`) });
+      throw new AlarmCommandError("signing_unavailable", "the command could not be signed, so it was not sent", 503);
+    }
     try {
-      this.#options.publish(`armor/alarm/${node}/command`, JSON.stringify(command));
+      this.#options.publish(`armor/alarm/${node}/command`, payload);
     } catch (error) {
       this.#options.audit.record({ action: "alarm.command", outcome: "failed", actor, target: node, detail: detail(error instanceof Error ? error.message : "not sent") });
       throw new AlarmCommandError("mqtt_unavailable", "the command could not be sent: the broker is not connected", 503);
