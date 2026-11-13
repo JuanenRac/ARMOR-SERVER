@@ -29,6 +29,7 @@ import { CameraWatcher } from "./cameras/health.js";
 import { Escalator } from "./escalation.js";
 import { BackupService } from "./backup.js";
 import { ElectricalEnergy } from "./electrical_energy.js";
+import { LoadShedding } from "./load_shedding.js";
 import { PtzController } from "./cameras/ptz.js";
 import { CommandSigner } from "./command_signature.js";
 import { EventLog, type ArmorEventBody } from "./events.js";
@@ -232,6 +233,7 @@ export type AppContext = {
   requireAi: RequestHandler;
   /** The solar inverters and batteries the gateway nodes report. */
   solar: SolarStore;
+  loadShedding: LoadShedding;
   /** The solar equipment an operator declared, kept in a file. */
   solarRegistry: SolarRegistry;
   balanceWatcher: BalanceWatcher;
@@ -497,6 +499,12 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     enabled: config.alarmCommands, nodes: alarmNodes, audit, now: overrides.now, sign: signCommand, onSettled: record => panelSyncLink.settled?.(record),
     publish: (topic, payload) => { if (!alarmLink.publish) throw new Error("the MQTT broker is not connected"); alarmLink.publish(topic, payload); },
   });
+  const loadShedding = new LoadShedding({
+    file: path.join(config.dataDir, "load-shedding.json"), enabled: () => securitySettings.get("electrical.load_shedding"), gridW: () => electricalNodes.totals().grid_w,
+    device: id => { const device = devices.get(id); return device ? { exists: true, critical: device.risk === "critical" } : { exists: false, critical: false }; },
+    command: (id, command) => sendDeviceCommand(id, command), now: overrides.now,
+    onEvent: entry => { audit.record({ action: `electrical.load_shedding.${entry.action}`, outcome: entry.action === "failed" ? "failed" : "allowed", target: entry.device, detail: `${entry.grid_w ?? "?"} W${entry.detail ? `, ${entry.detail}` : ""}` }); },
+  });
   const ingestLog = new IngestLog(overrides.now);
   const ingestRecorder = new IngestRecorder({ dir: path.join(config.dataDir, "ingest-recording"), enabled: () => securitySettings.get("ingest.recording"), maxBytes: config.ingestRecordMaxBytes, maxFiles: config.ingestRecordFiles, now: overrides.now });
   ingestLog.tap = (topic, payload, accepted, reason) => ingestRecorder.record(topic, payload, accepted, reason);
@@ -650,5 +658,6 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     backup,
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),
     commandSigner,
+    loadShedding,
   };
 }
