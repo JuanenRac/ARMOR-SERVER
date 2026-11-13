@@ -33,6 +33,8 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
     const given = request.headers["x-armor-maint-totp"];
     return typeof given === "string" && /^\d{6}$/.test(given) ? { "X-Armor-Maint-Totp": given } : {};
   };
+  /** With admin.require_masked_agent on, the text of an environment file that comes from an agent that does not say it hides the secrets itself (`masked: true`) is not used or relayed: the secrets would reach this server in clear. */
+  const refusesUnmasked = (reply: AdminReply): boolean => context.securitySettings.get("admin.require_masked_agent") === true && reply.status < 300 && reply.body.format === "env" && reply.body.masked !== true;
   const body = (request: Request): Record<string, unknown> => (typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {});
 
   /** Ask the agent; if it is not configured or not answering, say so in the one way the console understands. */
@@ -85,6 +87,7 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
   app.get("/api/v1/admin/files/:id", requireAdmin, async (request, response) => {
     const reply = await ask(response, "GET", `/v1/files/${encodeURIComponent(String(request.params.id))}`);
     if (!reply) return;
+    if (refusesUnmasked(reply)) return response.status(409).json({ error: "agent_not_masking" });
     relay(response, reply, data => (data.format === "env" && typeof data.content === "string" ? { ...data, content: maskEnv(data.content), masked: true } : data));
   });
 
@@ -96,6 +99,7 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
       // A masked secret stays as it was: put the real value back before the file goes to the agent.
       const current = await ask(response, "GET", `/v1/files/${encodeURIComponent(id)}`);
       if (!current) return;
+      if (refusesUnmasked(current)) return response.status(409).json({ error: "agent_not_masking" });
       // An agent that hides the secrets itself (`masked: true`) keeps the originals and puts them back on its own side, so the text goes on as it is;
       // it never has to hand them to this server. An older agent still returns them, and then this server puts them back.
       if (current.body.masked !== true) {

@@ -418,3 +418,36 @@ test("the field-http switch of the firewall is off until the option is on, then 
     assert.doesNotMatch(audit, /654321|111111|123456/, "the code is never written down");
   } finally { await running.stop(); await agent.close(); }
 });
+
+test("with admin.require_masked_agent off an agent that does not hide the secrets is accepted, and on it is refused before any secret is relayed", async () => {
+  const old = await fakeAgent();   // an older agent: its answer does not say that it hides the secrets
+  const running = await startServer({ ARMOR_ADMIN_SOCKET: old.socket, ARMOR_ADMIN_TOKEN: TOKEN });
+  try {
+    const cookie = await studioCookie(running.base);
+    const settings = (await call(running, cookie, "GET", "/api/v1/security/settings")).body.settings as Record<string, unknown>;
+    assert.equal(settings["admin.require_masked_agent"], false, "off by default: nothing that worked before stops working");
+    const open = await call(running, cookie, "GET", "/api/v1/admin/files/server.env");
+    assert.equal(open.status, 200);
+    assert.doesNotMatch(String(open.body.content), /hunter2/, "this server hides the secrets itself when the agent does not");
+    assert.equal((await call(running, cookie, "PUT", "/api/v1/security/settings", { "admin.require_masked_agent": true })).status, 200);
+    const refused = await call(running, cookie, "GET", "/api/v1/admin/files/server.env");
+    assert.deepEqual([refused.status, refused.body], [409, { error: "agent_not_masking" }], "no content and no secret is relayed");
+    const before = old.seen.filter(item => item.method === "PUT").length;
+    assert.deepEqual((await call(running, cookie, "PUT", "/api/v1/admin/files/server.env", { content: `ARMOR_PORT=19090\nARMOR_STUDIO_PASSWORD=${MASK}\n` })).body, { error: "agent_not_masking" });
+    assert.equal(old.seen.filter(item => item.method === "PUT").length, before, "nothing is saved through an agent that would hand the originals to this server");
+    assert.equal((await call(running, cookie, "GET", "/api/v1/admin/files/mosquitto.conf")).status, 200, "a file with no secrets is still read");
+    const audit = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8");
+    assert.doesNotMatch(audit, /hunter2/);
+  } finally { await running.stop(); await old.close(); }
+  const modern = await fakeAgent({ hides: true });
+  const again = await startServer({ ARMOR_ADMIN_SOCKET: modern.socket, ARMOR_ADMIN_TOKEN: TOKEN });
+  try {
+    const cookie = await studioCookie(again.base);
+    assert.equal((await call(again, cookie, "PUT", "/api/v1/security/settings", { "admin.require_masked_agent": true })).status, 200);
+    const read = await call(again, cookie, "GET", "/api/v1/admin/files/server.env");
+    assert.equal(read.status, 200);
+    assert.equal(read.body.masked, true);
+    assert.doesNotMatch(String(read.body.content), /hunter2/);
+    assert.equal((await call(again, cookie, "PUT", "/api/v1/admin/files/server.env", { content: String(read.body.content).replace("18080", "19090") })).status, 200);
+  } finally { await again.stop(); await modern.close(); }
+});
