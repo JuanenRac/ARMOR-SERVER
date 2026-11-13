@@ -89,6 +89,8 @@ export type ArmorConfig = {
   /** A session that came from outside the house: how long it lives, how long it may sit unused, and how long a new proof of identity allows critical actions. */
   remoteSessionTtlMs: number;
   remoteIdleMs: number;
+  /** Failed sign-ins from outside the house that close an address (ARMOR_PUBLIC_LOGIN_ATTEMPTS, 3 to 20; 5) and the seconds they are counted in (ARMOR_PUBLIC_LOGIN_WINDOW_S, 60 to 86400; 900). */
+  publicLogin: { attempts: number; windowS: number };
   elevationMs: number;
   /** Tell the places the alarms go to when someone signs in from outside the house from a place that person had not signed in from before. */
   loginAlerts: boolean;
@@ -503,6 +505,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     totpPolicy: oneOf(env, "ARMOR_TOTP_REQUIRED", ["off", "remote", "always"] as const, "off"),
     remoteSessionTtlMs: integer(env, "ARMOR_REMOTE_SESSION_TTL_MS", 12 * 3_600_000, 60_000, 30 * 86_400_000),
     remoteIdleMs: integer(env, "ARMOR_REMOTE_IDLE_MS", 30 * 60_000, 60_000, 7 * 86_400_000),
+    publicLogin: { attempts: integer(env, "ARMOR_PUBLIC_LOGIN_ATTEMPTS", 5, 3, 20), windowS: integer(env, "ARMOR_PUBLIC_LOGIN_WINDOW_S", 900, 60, 86_400) },
     loginAlerts: env.ARMOR_LOGIN_ALERTS !== "0",
     elevationMs: integer(env, "ARMOR_ELEVATION_MS", 5 * 60_000, 30_000, 3_600_000),
     remotePolicy: oneOf(env, "ARMOR_REMOTE_POLICY", ["full", "operate", "view"] as const, "full"),

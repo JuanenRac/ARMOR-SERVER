@@ -52,6 +52,7 @@
  *   ingest.recording             on | off                 the server keeps a copy of what the nodes send (and why a message was refused) in a JSON-lines file the simulator can play again, with a size limit and rotation from ARMOR_INGEST_RECORD_MAX_BYTES and ARMOR_INGEST_RECORD_FILES (off, the default: nothing is written)
  *   network.lan_ca              on | off                 an administrator may download the public certificate of the local CA that signs the HTTPS certificate of the LAN (GET /api/v1/security/lan-ca; the private key is never served; off, the default, answers 404)
  *   vision.semantic_search / vision.plates / vision.faces   on | off   the three features of the second phase of ARMOR-VISION that read personal data (search by meaning, licence plates, faces); each is off by default and cannot be turned on until its acknowledgement setting (the same name plus _ack) says the privacy notice was read
+ *   network.public_access       on | off                 requests from outside the house and the VPN are taken at all, and only over TLS with strong secrets (off, the default: every one is answered 403 public_access_off; see public_access.ts)
  *   vision.timeline              on | off                 the server keeps the events of the zones of the vision service in a review timeline with their evidence (GET /api/v1/vision/timeline; off, the default: nothing is kept)
  *   vision.timeline_days         1 to 3650                the days an entry of the timeline is kept (30)
  *   network.login_secure_only    on | off                 a stored device login is handed to a network node only when its request came over TLS or from this machine (off, the default: any request of the node)
@@ -125,6 +126,7 @@ export type SecuritySettingsValues = {
   "media.rtsp_proxy": boolean;
   "network.login_secure_only": boolean;
   "network.lan_ca": boolean;
+  "network.public_access": boolean;
   "media.retention_snapshot_days": number;
   "media.retention_recording_days": number;
   "vision.semantic_search": boolean;
@@ -187,6 +189,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "media.rtsp_proxy": true,
   "network.login_secure_only": false,
   "network.lan_ca": false,
+  "network.public_access": false,
   "media.retention_snapshot_days": MEDIA_RETENTION_DAYS.default,
   "media.retention_recording_days": MEDIA_RETENTION_DAYS.default,
   "vision.semantic_search": false,
@@ -353,7 +356,7 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "admin.acl_relays") return from === false && to === true;   // letting Studio open the broker for the batteries or the alarm copy is the loss
   if (key === "vision.service_remote") return from === false && to === true;   // a service on another machine: the positions of the house travel over a network
   if (key === "vision.service_url") { const host = parseVisionServiceUrl(to)?.host; return host !== undefined && !isLoopbackHost(host) && to !== from; }   // pointing at another machine is the loss
-  if (key === "vision.timeline" || key === "network.lan_ca" || key === "vision.semantic_search" || key === "vision.plates" || key === "vision.faces") return from === false && to === true;   // a CA to trust on the phones, or a feature that reads personal data: turning it on is the loss
+  if (key === "vision.timeline" || key === "network.lan_ca" || key === "network.public_access" || key === "vision.semantic_search" || key === "vision.plates" || key === "vision.faces") return from === false && to === true;   // a CA to trust on the phones, or a feature that reads personal data: turning it on is the loss
   if (key === "vision.semantic_search_ack" || key === "vision.plates_ack" || key === "vision.faces_ack") return false;   // reading a notice is not a loss of protection
   if (key === "summary.daily" || key === "vision.heatmap" || key === "metrics.prometheus" || key === "ingest.recording") return from === false && to === true;   // a report about what happens in the house is a way in for whoever may ask: turning it on is the loss
   if (key === "vision.activity_events") return false;   // a source of alarms that is added: what is armed is not defended less by it

@@ -7,12 +7,13 @@ import path from "node:path";
 import cors from "cors";
 import express from "express";
 import rateLimit from "express-rate-limit";
+import { PublicLoginLimiter, decidePublicRequest, publicAccessProblems } from "./public_access.js";
 import fs from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { WebSocketServer } from "ws";
 import { createCoalescer } from "./ws_coalesce.js";
-import type { ArmorConfig } from "./config.js";
+import { isLoopbackHost, type ArmorConfig } from "./config.js";
 import { createContext, type AppContext, type ContextOverrides } from "./context.js";
 import { hasBearer } from "./http/auth.js";
 import { attachMqtt, stampOf } from "./mqtt.js";
@@ -138,6 +139,32 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     if (own || (config.remotePolicy === "operate" && !admin)) return next();
     context.audit.record({ action: "remote.policy", outcome: "denied", actor: context.studioUser(request)?.username, target: `${request.method} ${request.path}`, detail: config.remotePolicy });
     return response.status(403).json({ error: "this is only possible from the house or over the VPN", code: "remote_policy", needs: "vpn" });
+  });
+
+  // The port opened to the Internet (network.public_access, off by default): a request from outside the house is taken only when the option is on, over TLS and with strong secrets, and
+  // an address that fails to sign in too often is closed for a while. Requests from the house and the VPN are not touched.
+  const publicLimiter = new PublicLoginLimiter(config.publicLogin.attempts, config.publicLogin.windowS * 1000);
+  const publicFacts = { ownTls: config.tls !== null, controlTokenLength: config.controlToken.length, studioPasswordLength: config.studioPassword.length, cookieSecure: config.cookieSecure };
+  app.use((request, response, next) => {
+    // A server that listens on the loopback only can be reached through a local proxy and nothing else: there is no port to be opened to the Internet, so nothing is gated.
+    if (isLoopbackHost(config.host)) return next();
+    // Only a request that reached the port itself is in question: one that came through the reverse proxy of ARMOR_TRUST_PROXY (the documented door, which ends the TLS) carries the address
+    // of the client it forwards, so its address differs from the one of the connection; those keep working as they always did.
+    const peer = (request.socket.remoteAddress ?? "").replace(/^::ffff:/i, "");
+    const viaProxy = config.trustProxy !== false && (request.ip ?? "").replace(/^::ffff:/i, "") !== peer;
+    const remote = !viaProxy && context.originOfRequest(request) === "remote";
+    const decision = decidePublicRequest({ remote, secure: request.secure, enabled: context.securitySettings.get("network.public_access"), problems: publicAccessProblems(publicFacts) });
+    if (!decision.allow) {
+      context.audit.record({ action: "public_access", outcome: "denied", target: `${request.method} ${request.path}`, detail: `${decision.error} ${request.ip ?? ""}` });
+      return response.status(decision.status).json({ error: decision.error, ...(decision.problems ? { problems: decision.problems } : {}) });
+    }
+    if (remote && request.method === "POST" && /^\/api\/v1\/studio\/session(\/totp)?$/.test(request.path)) {
+      const address = request.ip ?? "";
+      const wait = publicLimiter.retryAfterS(address);
+      if (wait > 0) { response.set("Retry-After", String(wait)); return response.status(429).json({ error: "too many failed sign-ins from this address", code: "public_login_locked", retry_after_s: wait }); }
+      response.on("finish", () => { if (response.statusCode === 401) publicLimiter.fail(address); else if (response.statusCode < 400) publicLimiter.succeed(address); });
+    }
+    return next();
   });
 
   registerIngestRoutes(app, context, Date.now(), version);
