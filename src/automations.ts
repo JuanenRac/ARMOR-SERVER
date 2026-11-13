@@ -1,7 +1,10 @@
 /**
  * Automations: "when this happens, do that". A trigger is a device reaching a state, an alarm being raised, or the system being armed
  * or disarmed; it may be limited to one mode; its actions switch a device on or off (optionally for a while, then back) or send the
- * alarm notification. An automation can run at most a few times a minute, so a flapping sensor cannot make a light strobe or flood a phone.
+
+ * alarm notification. A trigger of the kind `schedule` (presence simulation, "vacation mode") fires once a day at a time of day moved by a random but repeatable amount (`jitter_min`,
+ * from a seed, so that a test and a log can say why it fired when it did), on the chosen days, and only while the security option `vacation.mode` is on and the system is armed in
+ * the mode away: it never runs at home. An automation can run at most a few times a minute, so a flapping sensor cannot make a light strobe or flood a phone.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import fs from "node:fs";
@@ -16,7 +19,9 @@ export type Trigger =
   /** `op` (numbers only): "eq" (the default) waits for the value, "gt" for it to go above `equals` and "lt" for it to go below: a temperature over 30, a battery under 20. */
   | { type: "device"; device_id: string; field: string; equals: boolean | number; op?: "eq" | "gt" | "lt" }
   | { type: "alarm"; severity?: Severity; source_type?: "node" | "camera" | "device" | "solar" | "electrical" | "network" | "alarm"; source_id?: string }
-  | { type: "mode"; mode: SecurityMode };
+  | { type: "mode"; mode: SecurityMode }
+  /** Once a day at `at` (HH:MM, the clock of the server) moved by up to `jitter_min` minutes either way, on `days` (0 = Sunday; all when absent), from `seed` (the id of the automation when absent). Only in vacation mode, armed away. */
+  | { type: "schedule"; at: string; days?: number[]; jitter_min?: number; seed?: string };
 export type Action = { type: "device"; device_id: string; command: "on" | "off" | "toggle"; /** Switch back after this many seconds. */ for_s?: number } | { type: "notify" };
 export type Automation = {
   id: string; name: string; enabled: boolean; trigger: Trigger; when_mode: "any" | SecurityMode; actions: Action[];
@@ -29,6 +34,29 @@ const AUTOMATION_ID = /^[a-z0-9][a-z0-9_-]{1,63}$/;
 const SEVERITIES: readonly string[] = ["critical", "high", "warning"];
 const FIELD = /^[a-z_]{2,20}$/;
 const ID = /^[A-Za-z0-9._-]{1,80}$/;
+export const MAX_JITTER_MIN = 120;
+/** A schedule fires only this long after its moment (a server that was down at that hour does not switch a light on at noon). */
+export const SCHEDULE_GRACE_MIN = 30;
+const TIME_OF_DAY = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const SEED = /^[A-Za-z0-9._-]{1,32}$/;
+
+/** A number from 0 up to 1 that depends only on the text (FNV-1a and a mixing step): the same seed and day give the same minute of jitter, on every machine. */
+export function seededUnit(text: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) { hash ^= text.charCodeAt(index); hash = Math.imul(hash, 0x01000193) >>> 0; }
+  hash = Math.imul(hash ^ (hash >>> 15), 0x2c1b3c6d) >>> 0;
+  hash = Math.imul(hash ^ (hash >>> 12), 0x297a2d39) >>> 0;
+  return ((hash ^ (hash >>> 15)) >>> 0) / 4294967296;
+}
+
+/** The minute of the day (0 to 1439) at which a schedule fires on a day, with its jitter. */
+export function scheduledMinute(trigger: { at: string; jitter_min?: number }, seed: string, day: string): number {
+  const match = TIME_OF_DAY.exec(trigger.at);
+  const base = match ? Number(match[1]) * 60 + Number(match[2]) : 0;
+  const jitter = trigger.jitter_min ?? 0;
+  const offset = jitter > 0 ? Math.round((seededUnit(`${seed}|${day}`) * 2 - 1) * jitter) : 0;
+  return Math.min(1439, Math.max(0, base + offset));
+}
 
 export class AutomationError extends Error {
   constructor(readonly code: string, message: string, readonly status: 400 | 404 | 409 = 400) { super(message); }
@@ -50,6 +78,23 @@ function cleanTrigger(raw: unknown): Trigger {
     if (t.source_type !== undefined && t.source_type !== "") { if (!["node", "camera", "device", "solar", "electrical", "network", "alarm"].includes(t.source_type as string)) throw new AutomationError("invalid_trigger", "unknown source"); trigger.source_type = t.source_type as NonNullable<Extract<Trigger, { type: "alarm" }>["source_type"]>; }
     if (typeof t.source_id === "string" && t.source_id) { if (!ID.test(t.source_id)) throw new AutomationError("invalid_trigger", "invalid source id"); trigger.source_id = t.source_id; }
     return trigger;
+  }
+  if (t.type === "schedule") {
+    if (typeof t.at !== "string" || !TIME_OF_DAY.test(t.at)) throw new AutomationError("invalid_trigger", "the schedule needs a time of day, HH:MM");
+    const out: Trigger = { type: "schedule", at: t.at };
+    if (t.days !== undefined) {
+      if (!Array.isArray(t.days) || t.days.length === 0 || t.days.length > 7 || !t.days.every(day => Number.isInteger(day) && day >= 0 && day <= 6)) throw new AutomationError("invalid_trigger", "the days are whole numbers from 0 (Sunday) to 6");
+      out.days = [...new Set(t.days as number[])].sort();
+    }
+    if (t.jitter_min !== undefined) {
+      if (typeof t.jitter_min !== "number" || !Number.isInteger(t.jitter_min) || t.jitter_min < 0 || t.jitter_min > MAX_JITTER_MIN) throw new AutomationError("invalid_trigger", `the jitter is a whole number of minutes from 0 to ${MAX_JITTER_MIN}`);
+      if (t.jitter_min > 0) out.jitter_min = t.jitter_min;
+    }
+    if (t.seed !== undefined && t.seed !== "") {
+      if (typeof t.seed !== "string" || !SEED.test(t.seed)) throw new AutomationError("invalid_trigger", "the seed is up to 32 letters, digits, dots, dashes or underscores");
+      out.seed = t.seed;
+    }
+    return out;
   }
   if (t.type === "mode" && (t.mode === "armed" || t.mode === "disarmed")) return { type: "mode", mode: t.mode };
   throw new AutomationError("invalid_trigger", "unknown kind of trigger");
@@ -73,6 +118,8 @@ export type AutomationOptions = {
   file: string;
   now?: () => Date;
   mode: () => SecurityMode;
+  /** Whether the schedules may run now: the option `vacation.mode` is on and the system is armed away. Absent: they never run. */
+  scheduling?: () => boolean;
   /** Runs one action. Rejections are caught and reported through `onResult`. */
   run: (action: Action, automation: Automation) => Promise<void>;
   onResult?: (automation: Automation, action: Action, ok: boolean, detail?: string) => void;
@@ -92,6 +139,8 @@ export class AutomationEngine {
   /** The "switch it back after N seconds" that are still to be done: kept in the file, so that a restart in between does not leave a siren or a light on for ever. */
   readonly #pending = new Map<string, PendingReversal>();
   #saveTimer: NodeJS.Timeout | undefined;
+  /** The day each schedule last ran on, so that it runs once a day (kept in memory: a restart the same day inside the grace could repeat it once). */
+  readonly #scheduledDay = new Map<string, string>();
 
   constructor(options: AutomationOptions) {
     this.#options = options;
@@ -253,5 +302,24 @@ export class AutomationEngine {
     if (alarm.silent) return;
     this.#fire(a => a.trigger.type === "alarm" && (!a.trigger.severity || a.trigger.severity === alarm.severity) && (!a.trigger.source_type || a.trigger.source_type === alarm.source.type) && (!a.trigger.source_id || a.trigger.source_id === alarm.source.id));
   }
+  /** Once a minute: runs the schedules whose moment of today has come (not more than the grace after it, and once a day). Returns how many were run. */
+  tick(): number {
+    if (!this.#options.scheduling?.()) return 0;
+    const now = this.#now();
+    const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const minute = now.getHours() * 60 + now.getMinutes();
+    let ran = 0;
+    this.#fire(automation => {
+      const trigger = automation.trigger;
+      if (trigger.type !== "schedule" || (trigger.days && !trigger.days.includes(now.getDay())) || this.#scheduledDay.get(automation.id) === day) return false;
+      const due = scheduledMinute(trigger, trigger.seed ?? automation.id, day);
+      if (minute < due || minute - due > SCHEDULE_GRACE_MIN) return false;
+      this.#scheduledDay.set(automation.id, day);
+      ran += 1;
+      return true;
+    });
+    return ran;
+  }
+
   handleMode(mode: SecurityMode): void { this.#fire(a => a.trigger.type === "mode" && a.trigger.mode === mode); }
 }

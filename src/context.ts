@@ -349,7 +349,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   });
   const sendDeviceCommand = (id: string, command: Command) => sendCommand(devices, id, command, { publish: (topic, payload) => { if (!deviceLink.publish) throw new Error("the MQTT broker is not connected"); deviceLink.publish(topic, payload); } });
   const automations: AutomationEngine = new AutomationEngine({
-    file: path.join(config.dataDir, "automations.json"), warn, mode: () => store.snapshot().mode,
+    file: path.join(config.dataDir, "automations.json"), warn, mode: () => store.snapshot().mode, scheduling: () => securitySettings.get("vacation.mode") && arming.modes?.current() === "away",
     run: async (action: Action, automation) => {
       if (action.type === "device") {
         // An automation never switches a critical circuit: that is a person, an administrator, with a confirmation (see routes/devices.ts).
