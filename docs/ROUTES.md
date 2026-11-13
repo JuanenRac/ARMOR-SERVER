@@ -27,6 +27,8 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/admin/incident/verify` | administrator | `routes/media.ts` |
 | GET | `/api/v1/admin/installation` | administrator | `routes/admin.ts` |
 | POST | `/api/v1/admin/installation` | administrator | `routes/admin.ts` |
+| GET | `/api/v1/admin/lan-ca` | administrator | `routes/admin.ts` |
+| POST | `/api/v1/admin/lan-ca` | administrator | `routes/admin.ts` |
 | GET | `/api/v1/admin/machine-update` | administrator | `routes/machine_update.ts` |
 | POST | `/api/v1/admin/machine-update/apply` | administrator, fresh proof of identity | `routes/machine_update.ts` |
 | GET | `/api/v1/admin/machine-update/jobs/:id` | administrator | `routes/machine_update.ts` |
@@ -283,6 +285,9 @@ Every route the code registers, with who may call it and the file that registers
 | DELETE | `/api/v1/users/:id/totp` | administrator, fresh proof of identity | `routes/sessions.ts` |
 | GET | `/api/v1/vision/counts` | operator | `routes/reports.ts` |
 | GET | `/api/v1/vision/heatmap` | operator | `routes/reports.ts` |
+| DELETE | `/api/v1/vision/timeline` | administrator | `routes/vision_timeline.ts` |
+| GET | `/api/v1/vision/timeline` | operator | `routes/vision_timeline.ts` |
+| DELETE | `/api/v1/vision/timeline/:id` | administrator | `routes/vision_timeline.ts` |
 | POST | `/api/v1/voice/command` | operator | `routes/voice.ts` |
 | POST | `/api/v1/voice/panic-check` | operator | `routes/voice.ts` |
 | GET | `/api/v1/voice/status` | operator | `routes/voice.ts` |

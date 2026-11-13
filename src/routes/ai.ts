@@ -104,6 +104,8 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
     const record = (outcome: string): void => audit.record({ action: "ai.activity_event", outcome: "allowed", target: event.camera_id, detail: `${event.type} ${event.label} in ${where}, ${outcome}` });
     if (event.type === "line_cross" || event.type === "zone_exit") { record("recorded"); return response.json({ raised: false, reason: "recorded" }); }
     const zone = context.detectionZones.get(event.camera_id).zones.find(item => item.id === event.zone_id);
+    // The review timeline (vision.timeline, off by default) keeps the events of the zones the server knows, with the evidence taken when it was an armed alert.
+    const entry = zone ? context.visionTimeline.add({ camera_id: event.camera_id, level: zone.kind === "alert" ? "alert" : "detection", zone_id: zone.id, zone_name: zone.name, label: event.label }) : null;
     if (!zone || zone.kind !== "alert") { record("recorded"); return response.json({ raised: false, reason: "recorded" }); }
     if (event.notify === false) { record("not told, as the profile of the mode says"); return response.json({ raised: false, reason: "notify_off" }); }
     if (store.snapshot().mode !== "armed") { record("disarmed"); return response.json({ raised: false, reason: "disarmed" }); }
@@ -112,7 +114,8 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
       detail: { zone: zone.name, label: event.label, ...(event.seconds !== undefined ? { seconds: Math.round(event.seconds) } : {}) }, instant: true,
     });
     const watched = vault.get(event.camera_id);
-    if (watched) void context.captureOnDetect.trigger(watched).catch(() => undefined);
+    if (entry && alarm) context.visionTimeline.setAlarm(entry.id, alarm.id);
+    if (watched) void context.captureOnDetect.trigger(watched).then(taken => { if (entry && taken) context.visionTimeline.setEvidence(entry.id, { snapshot_id: taken.snapshot_id ?? null, clip_id: taken.clip_id ?? null }); }).catch(() => undefined);
     record(alarm ? "alarm raised" : "one is already open");
     return response.json({ raised: Boolean(alarm), ...(alarm ? { alarm_id: alarm.id } : { reason: "already_open" }) });
   });
