@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The comparison with the shared contracts no longer skips silently where they are required:** when the CI asks for the contracts to be present and the checkout is missing, the conformance tests fail instead of being skipped.
 - **The reader of the country database is tried with every type of its format:** the odd values (doubles, floats, booleans, bytes, big integers, arrays, maps inside maps, the long forms of the sizes) are put in the metadata of a made-up file and read, and the damaged ones (a wrong size, an unknown type, a string cut by the end of the file, a map that claims too much, a key that is not a string, pointers that lead outside the file, data nested too deep) are refused without reading outside the file.
 
 ## [0.8.2.2] - Vision events, detection zones and local LAN CA

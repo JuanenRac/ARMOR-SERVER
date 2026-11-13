@@ -8,6 +8,8 @@ import { parseHealth, parseInfo, parseTelemetry } from "../src/contracts.js";
 
 const directory = path.resolve(import.meta.dirname, "..", "..", "ARMOR-COMMON", "conformance");
 const available = fs.existsSync(directory);
+// Where the contracts must be present (the CI sets this), a missing checkout fails instead of skipping every comparison.
+if (!available && process.env.ARMOR_REQUIRE_SIBLINGS) throw new Error("ARMOR_REQUIRE_SIBLINGS is set and ARMOR-COMMON/conformance is missing");
 
 type Vector = { name: string; valid: boolean; payload: unknown };
 const load = (kind: string): Vector[] => (JSON.parse(fs.readFileSync(path.join(directory, `${kind}.json`), "utf8")) as { vectors: Vector[] }).vectors;
