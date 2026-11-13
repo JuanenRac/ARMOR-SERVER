@@ -68,7 +68,9 @@ test("the tunnel address carries no login, and the camera gets a valid Digest an
   const tunnel = (await openRtspTunnel(cameraAt(camera.port)))!;
   try {
     assert.match(tunnel.url, /^rtsp:\/\/127\.0\.0\.1:\d+\/[A-Za-z0-9_-]{20,}$/);
-    assert.ok(!tunnel.url.includes(USER) && !tunnel.url.includes("@") && !tunnel.url.includes("pw"));
+    // the login is not in the address: look at what is before the random name of the tunnel (that name is random text and could hold any two letters by chance)
+    const withoutName = tunnel.url.replace(/\/[A-Za-z0-9_-]{20,}$/, "");
+    assert.ok(!withoutName.includes(USER) && !withoutName.includes("@") && !withoutName.includes("pw") && new URL(tunnel.url).username === "" && new URL(tunnel.url).password === "");
     const answer = await talk(tunnel.url, [`DESCRIBE ${tunnel.url} RTSP/1.0`, "CSeq: 1", "Accept: application/sdp"]);
     assert.match(answer.toString("latin1"), /^RTSP\/1\.0 200 OK/, "the 401 was answered inside the tunnel");
     assert.ok(answer.includes(PICTURE), "the picture goes through untouched");
