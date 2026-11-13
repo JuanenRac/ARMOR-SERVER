@@ -282,6 +282,38 @@ export class UserStore {
     return UserStore.#view(user);
   }
 
+  readonly #pinQueue = new Map<string, Promise<unknown>>();
+  /** The same check as verifyPin without holding the event loop: the two hashes are done off the main thread, and the attempts of one user go one after another (a lock per user), so that a burst of parallel tries cannot all be counted against the same state before the lockout is written. */
+  verifyPinLater(id: string, pin: unknown, nowMs: number = Date.now()): Promise<PinResult> {
+    const previous = this.#pinQueue.get(id) ?? Promise.resolve();
+    const run = previous.catch(() => undefined).then(() => this.#verifyPinNow(id, pin, nowMs));
+    const tail = run.catch(() => undefined);
+    this.#pinQueue.set(id, tail);
+    void tail.then(() => { if (this.#pinQueue.get(id) === tail) this.#pinQueue.delete(id); });
+    return run;
+  }
+
+  async #verifyPinNow(id: string, pin: unknown, nowMs: number): Promise<PinResult> {
+    const user = this.#users.find(item => item.id === id);
+    if (!user || !user.pin) return "none";
+    const tries = this.#pinTries.get(id) ?? { fails: 0, locks: 0, until: 0 };
+    if (nowMs < tries.until) return "locked";
+    const typed = typeof pin === "string" && pin.length <= 12 ? pin : "";
+    const matches = async (record: { salt: string; hash: string } | undefined): Promise<boolean> => {
+      const salt = Buffer.from(record?.salt ?? "AAAAAAAAAAAAAAAAAAAAAA==", "base64");
+      const expected = Buffer.from(record?.hash ?? Buffer.alloc(64).toString("base64"), "base64");
+      const actual = await hashLater(typed, salt);
+      return record !== undefined && typed !== "" && expected.length === actual.length && timingSafeEqual(expected, actual);
+    };
+    const [isPin, isDuress] = await Promise.all([matches(user.pin), matches(user.duress)]);
+    if (isPin || isDuress) { if (this.#pinTries.delete(id)) this.#savePinTries(); return isDuress ? "duress" : "ok"; }
+    tries.fails += 1;
+    if (tries.fails >= PIN_FAILS_BEFORE_LOCK) { tries.until = nowMs + PIN_LOCKS_MS[Math.min(tries.locks, PIN_LOCKS_MS.length - 1)]; tries.locks += 1; tries.fails = 0; }
+    this.#pinTries.set(id, tries);
+    this.#savePinTries();
+    return tries.until > nowMs ? "locked" : "bad";
+  }
+
   /** Checks a PIN typed to disarm. Three wrong ones in a row lock the user for a minute, then five, then fifteen, then an hour (the count survives a restart); a right one (either) clears the count. Takes the same work whichever PIN it is. */
   verifyPin(id: string, pin: unknown, nowMs: number = Date.now()): PinResult {
     const user = this.#users.find(item => item.id === id);

@@ -65,7 +65,7 @@ function gateContext(mode: "never" | "if_set" | "always", pin: Pin, env?: "alway
     config: { disarmPinEnv: env },
     securitySettings: { get: () => mode },
     audit: { record: (entry: Record<string, unknown>) => audit.push(entry) },
-    users: { verifyPin: () => pin, pinLockedFor: () => 42 },
+    users: { verifyPinLater: async () => pin, pinLockedFor: () => 42 },
   } as unknown as AppContext;
   return { context, audit };
 }
@@ -76,41 +76,41 @@ test("the disarm mode comes from the environment first and from the setting othe
   assert.equal(disarmPinMode(gateContext("always", "none", "if_set").context), "if_set");
 });
 
-test("a right PIN lets the disarm through and the duress PIN does too, flagged", () => {
-  assert.deepEqual(checkDisarm(gateContext("if_set", "ok").context, { id: "u" }, "1234", "a"), { allow: true, duress: false });
-  assert.deepEqual(checkDisarm(gateContext("if_set", "duress").context, { id: "u" }, "9999", "a"), { allow: true, duress: true });
+test("a right PIN lets the disarm through and the duress PIN does too, flagged", async () => {
+  assert.deepEqual(await checkDisarm(gateContext("if_set", "ok").context, { id: "u" }, "1234", "a"), { allow: true, duress: false });
+  assert.deepEqual(await checkDisarm(gateContext("if_set", "duress").context, { id: "u" }, "9999", "a"), { allow: true, duress: true });
 });
 
-test("a user without a PIN disarms in if_set and never, and is refused in always", () => {
-  assert.deepEqual(checkDisarm(gateContext("if_set", "none").context, { id: "u" }, undefined, "a"), { allow: true, duress: false });
-  assert.deepEqual(checkDisarm(gateContext("never", "none").context, { id: "u" }, undefined, "a"), { allow: true, duress: false });
+test("a user without a PIN disarms in if_set and never, and is refused in always", async () => {
+  assert.deepEqual(await checkDisarm(gateContext("if_set", "none").context, { id: "u" }, undefined, "a"), { allow: true, duress: false });
+  assert.deepEqual(await checkDisarm(gateContext("never", "none").context, { id: "u" }, undefined, "a"), { allow: true, duress: false });
   const { context, audit } = gateContext("always", "none");
-  const verdict = checkDisarm(context, { id: "u" }, undefined, "alice");
+  const verdict = await checkDisarm(context, { id: "u" }, undefined, "alice");
   assert.equal(verdict.allow, false);
   if (!verdict.allow) { assert.equal(verdict.status, 403); assert.equal(verdict.body.code, "pin_not_set"); }
   assert.deepEqual(audit.map(entry => [entry.action, entry.outcome, entry.detail]), [["control.disarm", "denied", "no pin set"]]);
 });
 
-test("a wrong PIN is refused with 403 and a locked user with 429 and the seconds left", () => {
+test("a wrong PIN is refused with 403 and a locked user with 429 and the seconds left", async () => {
   const wrong = gateContext("if_set", "bad");
-  const verdict = checkDisarm(wrong.context, { id: "u" }, "0000", "alice", "silence");
+  const verdict = await checkDisarm(wrong.context, { id: "u" }, "0000", "alice", "silence");
   assert.equal(verdict.allow, false);
   if (!verdict.allow) { assert.equal(verdict.status, 403); assert.equal(verdict.body.code, "wrong_pin"); }
   assert.equal(wrong.audit[0].action, "control.silence");
   const locked = gateContext("if_set", "locked");
-  const lockedVerdict = checkDisarm(locked.context, { id: "u" }, "0000", "alice");
+  const lockedVerdict = await checkDisarm(locked.context, { id: "u" }, "0000", "alice");
   assert.equal(lockedVerdict.allow, false);
   if (!lockedVerdict.allow) { assert.equal(lockedVerdict.status, 429); assert.equal(lockedVerdict.body.code, "pin_locked"); assert.equal(lockedVerdict.body.retry_after_s, 42); }
 });
 
-test("with the mode never a wrong PIN stops nothing", () => {
-  assert.deepEqual(checkDisarm(gateContext("never", "bad").context, { id: "u" }, "0000", "a"), { allow: true, duress: false });
-  assert.deepEqual(checkDisarm(gateContext("never", "locked").context, { id: "u" }, "0000", "a"), { allow: true, duress: false });
+test("with the mode never a wrong PIN stops nothing", async () => {
+  assert.deepEqual(await checkDisarm(gateContext("never", "bad").context, { id: "u" }, "0000", "a"), { allow: true, duress: false });
+  assert.deepEqual(await checkDisarm(gateContext("never", "locked").context, { id: "u" }, "0000", "a"), { allow: true, duress: false });
 });
 
-test("without a user nothing is checked and the mode always refuses", () => {
-  assert.deepEqual(checkDisarm(gateContext("if_set", "bad").context, undefined, "0000", "a"), { allow: true, duress: false });
-  assert.equal(checkDisarm(gateContext("always", "ok").context, undefined, "0000", "a").allow, false);
+test("without a user nothing is checked and the mode always refuses", async () => {
+  assert.deepEqual(await checkDisarm(gateContext("if_set", "bad").context, undefined, "0000", "a"), { allow: true, duress: false });
+  assert.equal((await checkDisarm(gateContext("always", "ok").context, undefined, "0000", "a")).allow, false);
 });
 
 // ---- voice_actions ----

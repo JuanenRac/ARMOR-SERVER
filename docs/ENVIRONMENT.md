@@ -93,6 +93,7 @@ Every setting is an environment variable (a `.env` file next to the server is re
 | `ARMOR_STUDIO_ORIGIN` |  | `http://127.0.0.1:5178,http://localhost:5178` | Stable, separate secret for AES-GCM camera credential storage. Rotating an operator/control token must not make configured camera passwords unreadable. |
 | `ARMOR_STUDIO_PASSWORD` |  | `replace-with-long-studio-password` | Required credentials for the Studio entry screen. Keep the populated values only in ignored .env; this example must remain non-secret. |
 | `ARMOR_STUDIO_RESET_PASSWORD` |  | `0` | 1 sets the password of the administrator to ARMOR_STUDIO_PASSWORD at every start (to recover a lost one); take it out afterwards. |
+| `ARMOR_STUDIO_SESSION_MAX_AGE_MS` | integer 3600000 to 365 * 86400000, default 30 * 86400000 |  |  |
 | `ARMOR_STUDIO_SESSION_TTL_MS` | integer 60000 to 30 * 86400000, default 7 * 86400000 |  |  |
 | `ARMOR_STUDIO_USERNAME` |  | `replace-with-studio-user` | Required credentials for the Studio entry screen. Keep the populated values only in ignored .env; this example must remain non-secret. |
 | `ARMOR_SUMMARY_MAX_BYTES` | integer 65536 to 64 * 1024 * 1024, default 4 * 1024 * 1024 | `4194304` | The most bytes the live vision service may answer for a heat map and the most the summary command may print (65536 to 67108864); an answer over them is refused as a failure of the report (502). |
