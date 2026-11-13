@@ -146,6 +146,17 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
     } catch { return response.status(503).json({ error: "voice_not_answering" }); }
   });
 
+  // The microphone of a phone: a signed-in operator or administrator (never a viewer, never the voice token, which a phone does not hold) speaks to the same turn as the wall panel. Off (403) until the security
+  // option voice.mobile_turn is turned on. The gateway keeps asking for the same confirmations as for the typed order (arming and disarming need a second turn, silencing follows voice.silence_confirmation).
+  const mobileGate = (request: Request, response: import("express").Response, next: import("express").NextFunction) => {
+    if (!context.securitySettings.get("voice.mobile_turn")) { audit.record({ action: "voice.turn", outcome: "denied", actor: studioUser(request)?.username, detail: "mobile_voice_disabled" }); return response.status(403).json({ error: "mobile_voice_disabled" }); }
+    const user = studioUser(request);
+    if (user && user.role === "viewer") return response.status(403).json({ error: "forbidden" });
+    if (!config.voice) return response.status(503).json({ error: "voice_unavailable" });
+    if (isMultipartForm(String(request.headers["content-type"] ?? "")) && !context.securitySettings.get("voice.multipart_turn")) return response.status(415).json({ error: "multipart_turn_disabled" });
+    return next();
+  };
+  app.post("/api/v1/voice/mobile-turn", turnLimit, requireOperator, mobileGate, readBody, turn);
   app.post("/api/v1/voice/turn", turnLimit, authorize, readBody, turn);
   app.post("/api/v1/voice/v1/turn", turnLimit, authorize, readBody, turn);
 

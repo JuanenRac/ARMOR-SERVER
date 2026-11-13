@@ -9,7 +9,7 @@ import { lowers, SECURITY_DEFAULTS } from "../src/security_settings.js";
 import {
   boundaryOf, buildVoiceTurnReply, buildVoiceTurnRequest, isMultipartForm, parseVoiceTurnReply, parseVoiceTurnRequest, shapeReply, VoiceTurnError, type VoiceTurnMeta,
 } from "../src/voice_turn.js";
-import { startServer, testConfig } from "./helpers.js";
+import { SECRETS, startServer, studioCookie, testConfig } from "./helpers.js";
 
 const TOKEN = "v".repeat(32);
 const META: VoiceTurnMeta = { language: "es", encoding: "pcm_s16le", sample_rate: 16000, channels: 1 };
@@ -265,4 +265,38 @@ test("the number of the spoken challenge reaches the panel only when it is well 
   assert.equal(parseVoiceTurnReply(built.contentType, built.body, 200_000).result.challenge, "47");
   const crooked = buildVoiceTurnReply({ heard: "a", reply: "b", challenge: "4x" });
   assert.throws(() => parseVoiceTurnReply(crooked.contentType, crooked.body, 200_000), VoiceTurnError);
+});
+
+test("the microphone of a phone: off by default, then a signed-in operator speaks to the same turn without holding the voice token", async () => {
+  assert.equal(SECURITY_DEFAULTS["voice.mobile_turn"], false);
+  assert.equal(lowers("voice.mobile_turn", false, true), true);
+  assert.equal(lowers("voice.mobile_turn", true, false), false);
+  const fake = await gateway();
+  const running = await startServer({ ARMOR_VOICE_URL: fake.url, ARMOR_VOICE_TOKEN: TOKEN });
+  try {
+    const route = "/api/v1/voice/mobile-turn";
+    const speak = (headers: Record<string, string>) => fetch(`${running.base}${route}`, { method: "POST", headers: { "Content-Type": "audio/L16;rate=16000", ...headers }, body: new Uint8Array(PCM) });
+    // nobody signed in: refused, whatever the option
+    assert.equal((await speak({})).status, 401);
+    // the voice token of the wall panel is not a session: it opens nothing here
+    assert.equal((await speak({ "X-Armor-Voice-Token": TOKEN })).status, 401);
+    const cookie = await studioCookie(running.base);
+    const asked = await speak({ cookie });
+    assert.deepEqual([asked.status, await asked.json()], [403, { error: "mobile_voice_disabled" }]);
+    assert.equal(fake.seen.length, 0, "nothing reached the gateway while the option was off");
+    // turned on by an administrator
+    assert.equal((await fetch(`${running.base}/api/v1/security/settings`, { method: "PUT", headers: { "Content-Type": "application/json", cookie }, body: JSON.stringify({ "voice.mobile_turn": true }) })).status, 200);
+    const heard = await speak({ cookie });
+    assert.deepEqual([heard.status, await heard.json()], [200, { heard: "status", reply: "all quiet", audio: PCM.toString("base64") }]);
+    assert.deepEqual([fake.seen[0]!.token, fake.seen[0]!.bytes, fake.seen[0]!.policy], [TOKEN, PCM.length, JSON.stringify({ silence_confirmation: "off" })], "the gateway gets the token of the server and the policy, as for the panel");
+    // an operator token also works (the app of an operator), an empty body and a multipart form without its option do not
+    assert.equal((await speak({ Authorization: `Bearer ${SECRETS.ARMOR_OPERATOR_TOKEN}` })).status, 200);
+    assert.equal((await fetch(`${running.base}${route}`, { method: "POST", headers: { "Content-Type": "audio/L16;rate=16000", cookie }, body: new Uint8Array(0) })).status, 411);
+    const form = buildVoiceTurnRequest(PCM, META);
+    running.app.context.securitySettings.update({ "voice.multipart_turn": false });
+    assert.equal((await fetch(`${running.base}${route}`, { method: "POST", headers: { "Content-Type": form.contentType, cookie }, body: new Uint8Array(form.body) })).status, 415);
+    // and the audit trail says what happened, without any word that was said
+    const audit = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8");
+    assert.match(audit, /mobile_voice_disabled/);
+  } finally { await running.stop(); await fake.close(); }
 });
