@@ -19,6 +19,7 @@
  *   voice.panic_phrase           on | off                  a user's secret panic phrase, said to the voice assistant, raises the silent duress alarm (off, the default: nobody's phrase is looked for)
  *   voice.panic_cooldown_s      10 to 3600               after a panic phrase, the seconds in which the same user's phrase raises nothing more (60)
  *   voice.multipart_turn         on | off                  the wall panel may send a spoken turn as multipart/form-data with the audio as raw bytes (off: only the older raw request is taken, a multipart one is answered 415)
+ *   voice.mobile_turn           on | off                  a phone of a signed-in operator or administrator may speak to the voice gateway through POST /api/v1/voice/mobile-turn (the microphone of the phone; off, the default, answers 403 mobile_voice_disabled; the spoken orders keep the same confirmations as the typed ones)
  *   voice.wake_word             on | off                  the wall panel may send short chunks of audio to the voice gateway to hear its wake word (openWakeWord, on this machine, no cloud); off, the default: the route answers 403 and no audio is passed on
  *   admin.acl_relays             on | off                  Studio may ask the admin agent to open or close the two switches of the broker rules that no install turns on (the writing to the batteries of one solar node, and the signed copy of the alarm states); off, the default: the routes answer 403, and each change also needs the code of the authenticator and two confirmations
  *   admin.field_http             on | off                  Studio may ask the admin agent to let the field network also reach the server's port over HTTP (the firewall switch field-http); off, the default: the routes answer 403, and each change also needs the code of the authenticator and a confirmation
@@ -142,6 +143,7 @@ export type SecuritySettingsValues = {
   "electrical.set_aside_old_readings": boolean;
   "voice.multipart_turn": boolean;
   "voice.wake_word": boolean;
+  "voice.mobile_turn": boolean;
   "voice.panic_phrase": boolean;
   "voice.panic_cooldown_s": number;
   "admin.acl_relays": boolean;
@@ -205,6 +207,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "electrical.set_aside_old_readings": true,
   "voice.multipart_turn": true,
   "voice.wake_word": false,
+  "voice.mobile_turn": false,
   "voice.panic_phrase": false,
   "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S.default,
   "admin.acl_relays": false,
@@ -351,7 +354,7 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "media.retention_snapshot_days" || key === "media.retention_recording_days") return false;   // how long evidence is kept: tuning, not a protection
   if (key === "voice.panic_cooldown_s") return false;   // how long one trigger keeps quiet: tuning, not a protection
   if (key === "reports.timeout_s" || key === "reports.queue_max" || key === "reports.requests_per_minute") return false;   // tuning of how much work the reports may cause, not a protection
-  if (key === "voice.wake_word") return from === false && to === true;   // a panel that listens for its word all the time is the loss, even if the audio never leaves the house
+  if (key === "voice.wake_word" || key === "voice.mobile_turn") return from === false && to === true;   // a panel that listens for its word all the time is the loss, even if the audio never leaves the house
   if (key === "admin.field_http") return from === false && to === true;   // letting Studio open the server's port to the field network is the loss
   if (key === "admin.acl_relays") return from === false && to === true;   // letting Studio open the broker for the batteries or the alarm copy is the loss
   if (key === "vision.service_remote") return from === false && to === true;   // a service on another machine: the positions of the house travel over a network
