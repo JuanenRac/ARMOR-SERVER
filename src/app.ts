@@ -56,12 +56,15 @@ import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerSecurityRoutes } from "./routes/security.js";
 import { registerTrustedDeviceRoutes } from "./routes/trusted_devices.js";
 import { registerAdminRoutes } from "./routes/admin.js";
+import { registerBackupRoutes } from "./routes/backup.js";
 import { registerFirmwareRoutes } from "./routes/firmware.js";
 import { registerNodePanelRoutes } from "./node_panel_proxy.js";
 import { buildPanelSummary, createPanelFeed, PANEL_HEARTBEAT_MS } from "./panel_feed.js";
 import { registerVoiceRoutes } from "./routes/voice.js";
 import { registerAlarmAudioRoutes } from "./routes/alarm_audio.js";
+import { registerLoadSheddingRoutes } from "./routes/load_shedding.js";
 import { registerReportRoutes } from "./routes/reports.js";
+import { registerEnergyBalanceRoutes } from "./routes/energy_balance.js";
 import { registerVisionTimelineRoutes } from "./routes/vision_timeline.js";
 import { registerAiRoutes } from "./routes/ai.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
@@ -202,12 +205,15 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerAlarmRoutes(app, context);
   registerSystemRoutes(app, context, version);
   registerAdminRoutes(app, context);
+  registerBackupRoutes(app, context);
   registerVisionTimelineRoutes(app, context);
   registerFirmwareRoutes(app, context);
   registerNodePanelRoutes(app, context);
   registerVoiceRoutes(app, context);
   registerAlarmAudioRoutes(app, context);
+  registerLoadSheddingRoutes(app, context);
   registerReportRoutes(app, context);
+  registerEnergyBalanceRoutes(app, context);
   registerAiRoutes(app, context);
   registerNotificationRoutes(app, context);
   registerHistoryRoutes(app, context);
@@ -284,6 +290,9 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     }
   }, 30_000);
   watchSockets.unref();
+  // Every five seconds: the balance of the house is looked at (nothing happens while its option is off).
+  const balanceTimer = setInterval(() => { context.balanceWatcher.tick(); }, 5_000);
+  balanceTimer.unref();
   // Once a second: an alarm or the energy can change without the state of the nodes changing, so the summary is looked at, and sent when it differs; every few seconds it is sent anyway, so
   // the panel can tell a quiet channel from a dead one. When the administrator turns the channel off, the panels that are on it are told (4403) and go back to asking.
   let lastBeat = 0;
@@ -295,6 +304,9 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     try { panelFeed.push(beat); } catch { /* one failed look at the summary never stops the next */ }
   }, 1_000);
   panelTimer.unref();
+  // Once a second: the load shedding looks at the grid draw (it does nothing while its option is off).
+  const sheddingTimer = setInterval(() => { void context.loadShedding.tick().catch(() => undefined); }, 1_000);
+  sheddingTimer.unref();
 
   const mqtt = config.mqtt ? attachMqtt(context.store, config.mqtt.url, config.mqtt.username, config.mqtt.password, context.ingestLog, config.mqtt.ca?.pem) : null;
   /** A message of a node that was refused: said in the log and kept (with the start of what was sent) for Studio's System menu. */
@@ -404,6 +416,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     try {
       context.escalator.tick(); context.automations.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.batteryWrite.sweep(); context.nodeControl.sweep(); context.diagnosticTokens.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.armingModes.tick(); context.reportSilentNodes(); context.networkNodes.sweep();
       context.studioSessions.sweep(); context.operatorSessions.sweep(); context.connections.registry.tick(); context.nodeLife.flush();
+      void context.backup.tick(context.securitySettings.get("admin.backup"));
       sweepFailing = false;
     } catch (error) {
       if (!sweepFailing) console.warn("ARMOR_SWEEP=FAILED", error instanceof Error ? error.message : "unknown error");
@@ -424,7 +437,9 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     close: async () => {
       clearInterval(sweeper);
       clearInterval(watchSockets);
+      clearInterval(balanceTimer);
       clearInterval(panelTimer);
+      clearInterval(sheddingTimer);
       clearInterval(historySaver);
       stateFeed.close();
       context.live.close();

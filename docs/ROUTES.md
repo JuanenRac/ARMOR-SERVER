@@ -7,6 +7,10 @@ Every route the code registers, with who may call it and the file that registers
 | PATCH | `/api/v1/account` | none here | `routes/users.ts` |
 | PUT | `/api/v1/account/panic-phrase` | none here | `routes/users.ts` |
 | PUT | `/api/v1/account/pin` | none here | `routes/users.ts` |
+| GET | `/api/v1/admin/backup` | administrator | `routes/backup.ts` |
+| PUT | `/api/v1/admin/backup` | administrator, fresh proof of identity | `routes/backup.ts` |
+| POST | `/api/v1/admin/backup/run` | administrator, fresh proof of identity | `routes/backup.ts` |
+| POST | `/api/v1/admin/backup/verify` | administrator | `routes/backup.ts` |
 | GET | `/api/v1/admin/console` | administrator | `routes/maintenance.ts` |
 | GET | `/api/v1/admin/console/jobs/:id` | administrator | `routes/maintenance.ts` |
 | POST | `/api/v1/admin/console/jobs/:id/cancel` | administrator | `routes/maintenance.ts` |
@@ -152,6 +156,8 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/diagnostics/tokens` | administrator | `routes/diagnostics.ts` |
 | POST | `/api/v1/diagnostics/tokens` | administrator | `routes/diagnostics.ts` |
 | DELETE | `/api/v1/diagnostics/tokens/:id` | administrator | `routes/diagnostics.ts` |
+| GET | `/api/v1/electrical/balance` | operator | `routes/energy_balance.ts` |
+| PUT | `/api/v1/electrical/balance` | administrator, fresh proof of identity | `routes/energy_balance.ts` |
 | GET | `/api/v1/electrical/design` | operator | `routes/alarms.ts` |
 | PUT | `/api/v1/electrical/design` | operator | `routes/alarms.ts` |
 | DELETE | `/api/v1/electrical/design/versions` | operator | `routes/alarms.ts` |
@@ -161,6 +167,8 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/electrical/devices` | operator | `routes/electrical.ts` |
 | GET | `/api/v1/electrical/energy` | operator | `routes/electrical.ts` |
 | GET | `/api/v1/electrical/history` | operator | `routes/electrical.ts` |
+| GET | `/api/v1/electrical/load-shedding` | operator | `routes/load_shedding.ts` |
+| PUT | `/api/v1/electrical/load-shedding` | administrator, fresh proof of identity | `routes/load_shedding.ts` |
 | GET | `/api/v1/electrical/readings` | operator | `routes/electrical.ts` |
 | POST | `/api/v1/electrical/readings` | none here | `routes/electrical.ts` |
 | POST | `/api/v1/electrical/switch` | administrator | `routes/electrical.ts` |

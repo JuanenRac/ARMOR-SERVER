@@ -18,6 +18,7 @@
  *   server.alarm_state_signature on | off                  the server publishes a signed copy of each alarm state it hears, so a reader on the broker (the safety zones of a HYDRA-UMC cell) can tell who sent it (off, the default)
  *   media.rtsp_proxy             on | off                  FFmpeg reads the cameras through the local tunnel (off: the camera login goes in its command line, visible to every user of the machine)
  *   voice.panic_phrase           on | off                  a user's secret panic phrase, said to the voice assistant, raises the silent duress alarm (off, the default: nobody's phrase is looked for)
+ *   electrical.balance         on | off                 the server works out the balance of the house from the solar plant and the grid (self-consumption, export, unexpected export, consumption anomalies; informing only; off, the default: the balance route answers 404 and nothing is watched)
  *   voice.panic_cooldown_s      10 to 3600               after a panic phrase, the seconds in which the same user's phrase raises nothing more (60)
  *   voice.multipart_turn         on | off                  the wall panel may send a spoken turn as multipart/form-data with the audio as raw bytes (off: only the older raw request is taken, a multipart one is answered 415)
  *   voice.mobile_turn           on | off                  a phone of a signed-in operator or administrator may speak to the voice gateway through POST /api/v1/voice/mobile-turn (the microphone of the phone; off, the default, answers 403 mobile_voice_disabled; the spoken orders keep the same confirmations as the typed ones)
@@ -29,8 +30,10 @@
  *   live.events                 on | off                 besides the whole state, the console channel (/api/v1/events) tells the consoles that an alarm, a device, the solar plant, the network or a design changed ({type, id, version} and nothing more; on, the default; off: the state only, as before)
  *   client.device_lock           user | sensitive | always   what the phone app asks of the person with the lock of the phone itself (fingerprint, face or the phone's PIN): user = the phone's own switches decide, sensitive = also before arming, disarming and unlocking, always = also to open the app (it can only raise what a person chose, never lower it, and a phone with no lock at all is never shut out)
  *   client.trusted_devices       on | off                  a phone may be registered as a trusted device (a key pair that stays in the phone) and renew its session by signing a one-time challenge instead of typing the password and the code again (off, the default: nothing is registered or accepted)
+ *   admin.backup                on | off                 an administrator may set up encrypted, scheduled backups of the data directory and make or prove one (the /api/v1/admin/backup routes; off, the default: they answer 403 backup_disabled and nothing is scheduled)
  *   client.trusted_session_h     1 to 720                 how long the session handed to a trusted phone lasts, in hours (72)
  *   nodes.nvs_encryption         off | secrets            the alarm nodes keep only the secrets they store (passwords, token, keys) encrypted in their flash (told in the policy message; off, the default, tells nothing)
+ *   electrical.load_shedding    on | off                 when the grid draw is over the limit of the settings, the devices an administrator listed as not critical are switched off one at a time, and on again once the draw is well under it (off, the default: nothing is ever shed; see load_shedding.ts)
  *   voice.turn_max_bytes         3200 to 1920000          the most audio one spoken turn of the wall panel may carry (the environment's ARMOR_VOICE_TURN_MAX_BYTES is where it starts)
  *   voice.reply_audio_max_bytes  3200 to 1000000          the most spoken answer handed on to the panel in the binary form (ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES is where it starts)
  *   alarm_audio.spoken           on | off                  the wall panel may ask for an alarm to be said out loud (origin, severity and what it is, made by the voice gateway; off, the default, answers 404)
@@ -155,6 +158,7 @@ export type SecuritySettingsValues = {
   "voice.mobile_turn": boolean;
   "vacation.mode": boolean;
   "voice.panic_phrase": boolean;
+  "electrical.balance": boolean;
   "voice.panic_cooldown_s": number;
   "admin.acl_relays": boolean;
   "admin.field_http": boolean;
@@ -162,8 +166,10 @@ export type SecuritySettingsValues = {
   "live.events": boolean;
   "client.device_lock": DeviceLockPolicy;
   "client.trusted_devices": boolean;
+  "admin.backup": boolean;
   "client.trusted_session_h": number;
   "nodes.nvs_encryption": NvsEncryption;
+  "electrical.load_shedding": boolean;
   "voice.turn_max_bytes": number;
   "voice.reply_audio_max_bytes": number;
   "alarm_audio.spoken": boolean;
@@ -225,6 +231,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "voice.mobile_turn": false,
   "vacation.mode": false,
   "voice.panic_phrase": false,
+  "electrical.balance": false,
   "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S.default,
   "admin.acl_relays": false,
   "admin.field_http": false,
@@ -232,8 +239,10 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "live.events": true,
   "client.device_lock": "user",
   "client.trusted_devices": false,
+  "admin.backup": false,
   "client.trusted_session_h": TRUSTED_SESSION_H.default,
   "nodes.nvs_encryption": "off",
+  "electrical.load_shedding": false,
   "voice.turn_max_bytes": VOICE_TURN_BYTES.default,
   "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES.default,
   "alarm_audio.spoken": false,
@@ -375,9 +384,11 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "reports.timeout_s" || key === "reports.queue_max" || key === "reports.requests_per_minute") return false;   // tuning of how much work the reports may cause, not a protection
   if (key === "vacation.mode") return false;   // lights that switch by themselves when nobody is home: a convenience that adds no way in
   if (key === "voice.wake_word" || key === "voice.mobile_turn") return from === false && to === true;   // a panel that listens for its word all the time is the loss, even if the audio never leaves the house
+  if (key === "admin.backup") return from === false && to === true;   // a copy of everything the server keeps, written where it is asked: turning it on is the loss
   if (key === "admin.field_http") return from === false && to === true;   // letting Studio open the server's port to the field network is the loss
   if (key === "admin.acl_relays") return from === false && to === true;   // letting Studio open the broker for the batteries or the alarm copy is the loss
   if (key === "session.rotate_id") return from === true && to === false;   // a session id that no longer changes is a weaker one: turning it off is the loss
+  if (key === "electrical.balance") return false;   // it only reads and informs
   if (key === "vision.service_remote") return from === false && to === true;   // a service on another machine: the positions of the house travel over a network
   if (key === "vision.service_url") { const host = parseVisionServiceUrl(to)?.host; return host !== undefined && !isLoopbackHost(host) && to !== from; }   // pointing at another machine is the loss
   if (key === "capture.on_alarm_per_min") return false;   // tuning of how much evidence an alarm may start, not a protection
@@ -391,6 +402,7 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "alarm.mode_schedule_lowers") return from === false && to === true;   // letting a timetable defend less is the loss
   if (key === "alarm.mode_downgrade_pin") return from === "required" && to === "not_required";
   if (key === "voice.turn_max_bytes" || key === "voice.reply_audio_max_bytes") return typeof from === "number" && typeof to === "number" && to > from;   // a larger turn costs the server more memory and time
+  if (key === "electrical.load_shedding") return false;   // a convenience that only switches off what the administrator listed, and switches it back on: no way in
   if (key === "alarm.disarm_pin") return DISARM_PIN_VALUES.indexOf(to as DisarmPinMode) < DISARM_PIN_VALUES.indexOf(from as DisarmPinMode);
   if (key === "voice.silence_confirmation") return SILENCE_VALUES.indexOf(to as SilenceConfirmation) < SILENCE_VALUES.indexOf(from as SilenceConfirmation);
   if (key === "nodes.nvs_encryption") return from === "secrets" && to === "off";
