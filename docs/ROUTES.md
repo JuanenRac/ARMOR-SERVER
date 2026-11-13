@@ -161,6 +161,8 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/electrical/devices` | operator | `routes/electrical.ts` |
 | GET | `/api/v1/electrical/energy` | operator | `routes/electrical.ts` |
 | GET | `/api/v1/electrical/history` | operator | `routes/electrical.ts` |
+| GET | `/api/v1/electrical/load-shedding` | operator | `routes/load_shedding.ts` |
+| PUT | `/api/v1/electrical/load-shedding` | administrator, fresh proof of identity | `routes/load_shedding.ts` |
 | GET | `/api/v1/electrical/readings` | operator | `routes/electrical.ts` |
 | POST | `/api/v1/electrical/readings` | none here | `routes/electrical.ts` |
 | POST | `/api/v1/electrical/switch` | administrator | `routes/electrical.ts` |

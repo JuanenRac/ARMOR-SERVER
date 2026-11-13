@@ -31,6 +31,7 @@
  *   client.trusted_devices       on | off                  a phone may be registered as a trusted device (a key pair that stays in the phone) and renew its session by signing a one-time challenge instead of typing the password and the code again (off, the default: nothing is registered or accepted)
  *   client.trusted_session_h     1 to 720                 how long the session handed to a trusted phone lasts, in hours (72)
  *   nodes.nvs_encryption         off | secrets            the alarm nodes keep only the secrets they store (passwords, token, keys) encrypted in their flash (told in the policy message; off, the default, tells nothing)
+ *   electrical.load_shedding    on | off                 when the grid draw is over the limit of the settings, the devices an administrator listed as not critical are switched off one at a time, and on again once the draw is well under it (off, the default: nothing is ever shed; see load_shedding.ts)
  *   voice.turn_max_bytes         3200 to 1920000          the most audio one spoken turn of the wall panel may carry (the environment's ARMOR_VOICE_TURN_MAX_BYTES is where it starts)
  *   voice.reply_audio_max_bytes  3200 to 1000000          the most spoken answer handed on to the panel in the binary form (ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES is where it starts)
  *   alarm_audio.spoken           on | off                  the wall panel may ask for an alarm to be said out loud (origin, severity and what it is, made by the voice gateway; off, the default, answers 404)
@@ -164,6 +165,7 @@ export type SecuritySettingsValues = {
   "client.trusted_devices": boolean;
   "client.trusted_session_h": number;
   "nodes.nvs_encryption": NvsEncryption;
+  "electrical.load_shedding": boolean;
   "voice.turn_max_bytes": number;
   "voice.reply_audio_max_bytes": number;
   "alarm_audio.spoken": boolean;
@@ -234,6 +236,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "client.trusted_devices": false,
   "client.trusted_session_h": TRUSTED_SESSION_H.default,
   "nodes.nvs_encryption": "off",
+  "electrical.load_shedding": false,
   "voice.turn_max_bytes": VOICE_TURN_BYTES.default,
   "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES.default,
   "alarm_audio.spoken": false,
@@ -391,6 +394,7 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "alarm.mode_schedule_lowers") return from === false && to === true;   // letting a timetable defend less is the loss
   if (key === "alarm.mode_downgrade_pin") return from === "required" && to === "not_required";
   if (key === "voice.turn_max_bytes" || key === "voice.reply_audio_max_bytes") return typeof from === "number" && typeof to === "number" && to > from;   // a larger turn costs the server more memory and time
+  if (key === "electrical.load_shedding") return false;   // a convenience that only switches off what the administrator listed, and switches it back on: no way in
   if (key === "alarm.disarm_pin") return DISARM_PIN_VALUES.indexOf(to as DisarmPinMode) < DISARM_PIN_VALUES.indexOf(from as DisarmPinMode);
   if (key === "voice.silence_confirmation") return SILENCE_VALUES.indexOf(to as SilenceConfirmation) < SILENCE_VALUES.indexOf(from as SilenceConfirmation);
   if (key === "nodes.nvs_encryption") return from === "secrets" && to === "off";

@@ -61,6 +61,7 @@ import { registerNodePanelRoutes } from "./node_panel_proxy.js";
 import { buildPanelSummary, createPanelFeed, PANEL_HEARTBEAT_MS } from "./panel_feed.js";
 import { registerVoiceRoutes } from "./routes/voice.js";
 import { registerAlarmAudioRoutes } from "./routes/alarm_audio.js";
+import { registerLoadSheddingRoutes } from "./routes/load_shedding.js";
 import { registerReportRoutes } from "./routes/reports.js";
 import { registerVisionTimelineRoutes } from "./routes/vision_timeline.js";
 import { registerAiRoutes } from "./routes/ai.js";
@@ -207,6 +208,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerNodePanelRoutes(app, context);
   registerVoiceRoutes(app, context);
   registerAlarmAudioRoutes(app, context);
+  registerLoadSheddingRoutes(app, context);
   registerReportRoutes(app, context);
   registerAiRoutes(app, context);
   registerNotificationRoutes(app, context);
@@ -295,6 +297,9 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     try { panelFeed.push(beat); } catch { /* one failed look at the summary never stops the next */ }
   }, 1_000);
   panelTimer.unref();
+  // Once a second: the load shedding looks at the grid draw (it does nothing while its option is off).
+  const sheddingTimer = setInterval(() => { void context.loadShedding.tick().catch(() => undefined); }, 1_000);
+  sheddingTimer.unref();
 
   const mqtt = config.mqtt ? attachMqtt(context.store, config.mqtt.url, config.mqtt.username, config.mqtt.password, context.ingestLog, config.mqtt.ca?.pem) : null;
   /** A message of a node that was refused: said in the log and kept (with the start of what was sent) for Studio's System menu. */
@@ -425,6 +430,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       clearInterval(sweeper);
       clearInterval(watchSockets);
       clearInterval(panelTimer);
+      clearInterval(sheddingTimer);
       clearInterval(historySaver);
       stateFeed.close();
       context.live.close();
