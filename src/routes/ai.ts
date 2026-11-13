@@ -91,7 +91,7 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
   });
 
   /**
-   * One event of the activity engine of ARMOR-VISION (a zone entered, left, stayed in or loitered in; a counting line crossed). While the option `vision.activity_events` is off (the default) nothing is read and the answer is `{ raised: false, reason: feature_off }`, noted in the audit. On, it is recorded in the audit. An entry, a stay or a loitering in a zone
+   * One event of the activity engine of ARMOR-VISION (a zone entered, left, stayed in or loitered in; a counting line crossed). While the option `vision.activity_events` is off (it is on by default) nothing is read and the answer is `{ raised: false, reason: feature_off }`, noted in the audit. On, it is recorded in the audit. An entry, a stay or a loitering in a zone
    * of kind `alert` raises an alarm, only while the system is armed and only when the event does not say `notify: false` (the profile of the arming mode watches the zone without telling the people the
    * alarms go to); a zone the server does not know (one of the configuration of the service) and a `detection` zone are only recorded.
    */
