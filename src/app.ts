@@ -13,7 +13,7 @@ import { createServer, type IncomingMessage, type Server } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { WebSocketServer } from "ws";
 import { createCoalescer } from "./ws_coalesce.js";
-import type { ArmorConfig } from "./config.js";
+import { isLoopbackHost, type ArmorConfig } from "./config.js";
 import { createContext, type AppContext, type ContextOverrides } from "./context.js";
 import { hasBearer } from "./http/auth.js";
 import { attachMqtt, stampOf } from "./mqtt.js";
@@ -143,9 +143,15 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   // The port opened to the Internet (network.public_access, off by default): a request from outside the house is taken only when the option is on, over TLS and with strong secrets, and
   // an address that fails to sign in too often is closed for a while. Requests from the house and the VPN are not touched.
   const publicLimiter = new PublicLoginLimiter(config.publicLogin.attempts, config.publicLogin.windowS * 1000);
-  const publicFacts = { ownTls: config.tls !== null, proxyTls: config.trustProxy !== false && config.cookieSecure && config.tls === null, controlTokenLength: config.controlToken.length, studioPasswordLength: config.studioPassword.length, cookieSecure: config.cookieSecure };
+  const publicFacts = { ownTls: config.tls !== null, controlTokenLength: config.controlToken.length, studioPasswordLength: config.studioPassword.length, cookieSecure: config.cookieSecure };
   app.use((request, response, next) => {
-    const remote = context.originOfRequest(request) === "remote";
+    // A server that listens on the loopback only can be reached through a local proxy and nothing else: there is no port to be opened to the Internet, so nothing is gated.
+    if (isLoopbackHost(config.host)) return next();
+    // Only a request that reached the port itself is in question: one that came through the reverse proxy of ARMOR_TRUST_PROXY (the documented door, which ends the TLS) carries the address
+    // of the client it forwards, so its address differs from the one of the connection; those keep working as they always did.
+    const peer = (request.socket.remoteAddress ?? "").replace(/^::ffff:/i, "");
+    const viaProxy = config.trustProxy !== false && (request.ip ?? "").replace(/^::ffff:/i, "") !== peer;
+    const remote = !viaProxy && context.originOfRequest(request) === "remote";
     const decision = decidePublicRequest({ remote, secure: request.secure, enabled: context.securitySettings.get("network.public_access"), problems: publicAccessProblems(publicFacts) });
     if (!decision.allow) {
       context.audit.record({ action: "public_access", outcome: "denied", target: `${request.method} ${request.path}`, detail: `${decision.error} ${request.ip ?? ""}` });

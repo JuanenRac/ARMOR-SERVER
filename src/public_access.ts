@@ -2,17 +2,16 @@
  * Hardening of the server when its port is opened to the Internet (router port forwarding). Nothing here opens a port: it decides what a request from outside the house may do.
  *
  *   - The Studio option `network.public_access` (off, the default) lets requests from outside the house in at all. Off, every one of them is answered 403 `public_access_off`.
- *   - Even when it is on, a request from outside must have come over TLS (the server's own certificate, or a reverse proxy that is named in ARMOR_TRUST_PROXY and says https),
+ *   - It concerns requests that reach the port itself (a router forwarding it). A request through the reverse proxy of ARMOR_TRUST_PROXY, the documented door, is not touched.
+ *   - Even when it is on, such a request must have come over TLS (the server's own certificate),
  *     and the server must have strong secrets (control token of 32 characters or more, sign-in password of 12 or more); if not, the answer is 403 `public_access_unsafe` with the reasons.
  *   - Failed sign-ins from outside are counted by address: ARMOR_PUBLIC_LOGIN_ATTEMPTS failures inside ARMOR_PUBLIC_LOGIN_WINDOW_S seconds close that address with 429 until the window passes.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 
 export interface PublicAccessFacts {
-  /** The server has its own HTTPS listener. */
+  /** The server has its own HTTPS listener (a request that reaches the port itself needs it; behind a reverse proxy this check does not apply). */
   ownTls: boolean;
-  /** ARMOR_PUBLIC_ORIGIN is an https address and a proxy is trusted: a reverse proxy ends the TLS. */
-  proxyTls: boolean;
   controlTokenLength: number;
   studioPasswordLength: number;
   cookieSecure: boolean;
@@ -24,7 +23,7 @@ export const MIN_PUBLIC_PASSWORD_LENGTH = 12;
 /** Why the server must not take requests from the Internet yet (empty: nothing in the way). The codes are stable: Studio and the guide name them. */
 export function publicAccessProblems(facts: PublicAccessFacts): string[] {
   const problems: string[] = [];
-  if (!facts.ownTls && !facts.proxyTls) problems.push("tls_missing");
+  if (!facts.ownTls) problems.push("tls_missing");
   if (facts.controlTokenLength < MIN_PUBLIC_TOKEN_LENGTH) problems.push("control_token_short");
   if (facts.studioPasswordLength < MIN_PUBLIC_PASSWORD_LENGTH) problems.push("password_short");
   if (!facts.cookieSecure) problems.push("cookie_not_secure");
