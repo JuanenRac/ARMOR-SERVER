@@ -121,6 +121,8 @@ export type AppContext = {
   /** The levels at which batteries and inverters raise alarms (editable from Studio). */
   energyAlarms: EnergyAlarmStore;
   automations: AutomationEngine;
+  /** Signs the critical commands and gives each node its own key (see command_signature.ts). */
+  commandSigner: CommandSigner;
   site: SiteStore;
   electrical: SiteStore;
   /** What the ARMOR-NODE-ELECTRICAL nodes measure on the house's network. */
@@ -406,7 +408,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const alarmDesign = new SiteStore(path.join(config.dataDir, "alarm_design.json"), () => new Date(), "alarm design");
   const switchLink: AppContext["switchLink"] = {};
   const commandSigner = new CommandSigner(path.join(config.dataDir, "command-signature.key"));
-  const signCommand = (command: Record<string, unknown>): Record<string, unknown> => (securitySettings.get("commands.require_sig") ? commandSigner.sign(command) : command);
+  const signCommand = (command: Record<string, unknown>): string => (securitySettings.get("commands.require_sig") ? commandSigner.sign(command) : JSON.stringify(command));
   const electricalSwitching = new SwitchingService({
     enabled: config.electricalSwitching, nodes: electricalNodes, audit, now: overrides.now, sign: signCommand,
     publish: (topic, payload) => { if (!switchLink.publish) throw new Error("the MQTT broker is not connected"); switchLink.publish(topic, payload); },
@@ -631,5 +633,6 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),
+    commandSigner,
   };
 }

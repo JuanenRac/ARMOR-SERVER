@@ -47,7 +47,10 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
     const id = String(request.params.id);
     if (!/^[a-z0-9][a-z0-9:._-]{0,63}$/.test(id)) return response.status(422).json({ error: "invalid_node_id" });
     audit.record({ action: "node.token.read", outcome: "allowed", actor: studioUser(request)?.username, target: id });
-    return response.json({ node_id: id, token: nodeTokenFor(config.ingestToken, id), strict: config.ingestStrict });
+    // While commands.require_sig is on, the node is also given the key it checks the signature of the commands with (its own, derived from the master key, which never leaves the server).
+    const commandKey = context.securitySettings.get("commands.require_sig") && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(id) ? context.commandSigner.nodeKey(id) : undefined;
+    response.set("Cache-Control", "private, no-store");
+    return response.json({ node_id: id, token: nodeTokenFor(config.ingestToken, id), strict: config.ingestStrict, ...(commandKey ? { command_key: commandKey } : {}) });
   });
 
   app.get("/api/v1/admin/status", requireAdmin, async (_request, response) => {

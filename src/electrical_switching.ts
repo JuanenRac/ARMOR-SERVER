@@ -42,8 +42,8 @@ export type SwitchingOptions = {
   /** Ids and the like; injectable for tests. */
   random?: () => string;
   keepRecords?: number;
-  /** Signs a command before it is published (`commands.require_sig`); absent: no signature. A throw means the command is not sent. */
-  sign?: (command: Record<string, unknown>) => Record<string, unknown>;
+  /** Makes the payload to publish with the signature (`commands.require_sig`); absent: the command as plain JSON. A throw means the command is not sent. */
+  sign?: (command: Record<string, unknown>) => string;
 };
 
 type Pending = PendingSwitch & { startedMs: number };
@@ -99,7 +99,7 @@ export class SwitchingService {
     const id = this.#options.random();
     const command = { kind: "electrical_command", node_id: node, timestamp_ms: now, command_id: id, switch: target, action, ...(token ? { token } : {}) };
     let payload: string;
-    try { payload = JSON.stringify(this.#options.sign ? this.#options.sign(command) : command); } catch (error) {
+    try { payload = this.#options.sign ? this.#options.sign(command) : JSON.stringify(command); } catch (error) {
       this.#options.audit.record({ action: "electrical.switch", outcome: "failed", actor, target: key, detail: `${action}: not signed: ${error instanceof Error ? error.message : "no key"}` });
       throw new SwitchingError("signing_unavailable", "the command could not be signed, so it was not sent", 503);
     }
