@@ -35,6 +35,7 @@ export type ArmorConfig = {
   /** Reset the seed administrator's password from ARMOR_STUDIO_PASSWORD at start-up (recovery of a forgotten password). */
   resetStudioPassword: boolean;
   studioSessionTtlMs: number;
+  studioSessionMaxAgeMs: number;
   operatorSessionTtlMs: number;
   /** ARMOR_VOICE_TURN_MAX_BYTES: the most audio one spoken turn of the wall panel may carry (raw or in the binary form); 480000 bytes is 15 seconds of 16 kHz 16-bit mono. */
   voiceTurnMaxBytes: number;
@@ -471,6 +472,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     cameraKeyIsFallback: !configuredKey,
     studioUsername, studioPassword, passwordMinLength: isLoopbackHost(effectiveHost) ? 8 : 12, resetStudioPassword: env.ARMOR_STUDIO_RESET_PASSWORD === "1",
     studioSessionTtlMs: integer(env, "ARMOR_STUDIO_SESSION_TTL_MS", 7 * 86_400_000, 60_000, 30 * 86_400_000),
+    studioSessionMaxAgeMs: integer(env, "ARMOR_STUDIO_SESSION_MAX_AGE_MS", 30 * 86_400_000, 3_600_000, 365 * 86_400_000),
     operatorSessionTtlMs: integer(env, "ARMOR_OPERATOR_SESSION_TTL_MS", 28_800_000, 60_000, 7 * 86_400_000),
     voiceTurnMaxBytes: integer(env, "ARMOR_VOICE_TURN_MAX_BYTES", 480_000, 3_200, 1_920_000),
     voiceReplyAudioMaxBytes: integer(env, "ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES", 200_000, 3_200, 1_000_000),

@@ -37,7 +37,7 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
   // ---- the mode, from Studio ----
   // Disarming asks for the PIN of the signed-in user (always when the user has one; and, with ARMOR_DISARM_PIN=required, a user without one cannot disarm). The duress PIN disarms like
   // the right one and raises a critical alarm that tells the other places, in silence. Three wrong PINs lock the user for a minute, then five, then fifteen, then an hour.
-  app.post("/api/v1/mode", requireOperator, (request, response) => {
+  app.post("/api/v1/mode", requireOperator, async (request, response) => {
     const input = body(request), mode = input.mode, user = studioUser(request);
     if (mode !== "armed" && mode !== "disarmed" && mode !== "away" && mode !== "home" && mode !== "night") return response.status(400).json({ error: "the mode is armed, disarmed, away, home or night", code: "invalid_mode" });
     if ("confirm_unassigned" in input && typeof input.confirm_unassigned !== "boolean") return response.status(400).json({ error: "confirm_unassigned is true or false", code: "invalid_request" });
@@ -46,7 +46,7 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
     if (!armingModes.enabled && (mode === "home" || mode === "night")) return response.status(400).json({ error: "the arming modes are not turned on in this server: arm away, or disarm", code: "modes_disabled" });
     const target = mode === "armed" ? "away" : mode;
     if (target === "disarmed") {
-      const verdict = checkDisarm(context, user, input.pin, actor(request));
+      const verdict = await checkDisarm(context, user, input.pin, actor(request));
       if (!verdict.allow) return response.status(verdict.status).json(verdict.body);
       if (verdict.duress) {
         audit.record({ action: "control.disarm", outcome: "allowed", actor: actor(request), detail: "duress" });
@@ -71,7 +71,7 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
     }
     // Going to a mode that defends less takes away protection that was in force: it needs what a disarm needs (the PIN, its lockout and its duress PIN), unless the administrator turned that off.
     if (plan.lowers && context.securitySettings.get("alarm.mode_downgrade_pin") === "required") {
-      const verdict = checkDisarm(context, user, input.pin, actor(request), "mode");
+      const verdict = await checkDisarm(context, user, input.pin, actor(request), "mode");
       if (!verdict.allow) return response.status(verdict.status).json(verdict.body);
       if (verdict.duress) { audit.record({ action: "control.mode", outcome: "allowed", actor: actor(request), detail: `${what} (duress)` }); alarms.raiseDuress(actor(request)); }
     }
@@ -91,12 +91,12 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
    * the panel types the PIN of the panel's account (the body carries `pin`) it counts as verified: the PIN is checked under the same lockout as a disarm, a wrong one is refused
    * and nothing is acknowledged, and the duress PIN acknowledges without verifying (it must look like any other).
    */
-  const verifiedAck = (request: express.Request, response: express.Response): boolean | undefined => {
+  const verifiedAck = async (request: express.Request, response: express.Response): Promise<boolean | undefined> => {
     const user = studioUser(request);
     if (user?.role !== "panel") return true;
     const pin = (request.body as { pin?: unknown } | undefined)?.pin;
     if (pin === undefined) return false;
-    const result = context.users.verifyPin(user.id, pin);
+    const result = await context.users.verifyPinLater(user.id, pin);
     if (result === "ok") return true;
     if (result === "duress" || result === "none") return false;
     audit.record({ action: "alarm.acknowledge", outcome: "denied", actor: actor(request), detail: result === "locked" ? "pin locked" : "wrong pin" });
@@ -104,15 +104,15 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
     else response.status(403).json({ error: "the PIN is not right", code: "wrong_pin" });
     return undefined;
   };
-  app.post("/api/v1/alarms/acknowledge", requireOperator, (request, response) => {
-    const verified = verifiedAck(request, response);
+  app.post("/api/v1/alarms/acknowledge", requireOperator, async (request, response) => {
+    const verified = await verifiedAck(request, response);
     if (verified === undefined) return undefined;
     const count = alarms.acknowledgeAll(actor(request), { verified });
     audit.record({ action: "alarm.acknowledge", outcome: "allowed", actor: actor(request), detail: `all (${count})` });
     return response.json({ acknowledged: count });
   });
-  app.post("/api/v1/alarms/:id/acknowledge", requireOperator, (request, response) => {
-    const verified = verifiedAck(request, response);
+  app.post("/api/v1/alarms/:id/acknowledge", requireOperator, async (request, response) => {
+    const verified = await verifiedAck(request, response);
     if (verified === undefined) return undefined;
     const alarm = alarms.acknowledge(String(request.params.id), actor(request), { ...sees(request), verified });
     if (!alarm) return response.status(404).json({ error: "no such alarm", code: "not_found" });

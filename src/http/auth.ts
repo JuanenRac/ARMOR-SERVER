@@ -43,6 +43,10 @@ export type SessionOptions = {
   file?: string;
   /** A session that came from outside the house is asked to be used: with no request for this long it ends (milliseconds; none when absent). */
   remoteIdleMs?: number;
+  /** The longest a session lives from the moment it was opened, however much it is used (milliseconds; none when absent): renewing never takes it past this. */
+  maxAgeMs?: number;
+  /** Asked when a session is renewed: true gives the session a new id (and cookie) and keeps the old one working for a short grace, so two requests in flight do not sign the person out. */
+  rotateIds?: () => boolean;
   /** Told when a session ends for a reason other than the person asking for a new one: it ran out (`expired`), the person signed out (`logout`) or it was ended from the list of sessions (`revoked`). */
   onEnd?: (ended: EndedSession, reason: "expired" | "logout" | "revoked") => void;
 };
@@ -55,12 +59,17 @@ export type SessionMeta = { origin?: "local" | "remote"; ip?: string; agent?: st
 type SessionRecord = { expiry: number; userId?: string; origin?: "local" | "remote"; ip?: string; agent?: string; created?: number; lastSeen?: number; ttlMs?: number; elevatedUntil?: number };
 export type SessionView = { id: string; created: number; last_seen: number; origin: "local" | "remote"; ip: string; agent: string; current: boolean };
 
+/** How long the id a session had before a rotation keeps working (milliseconds). */
+const ROTATION_GRACE_MS = 30_000;
+
 /** What is stored and looked up: never the cookie value itself. */
 const keyOf = (id: string): string => createHash("sha256").update(id).digest("hex");
 
 /** In-memory sessions: random ids, absolute expiry, a hard cap and lazy pruning. */
 export class SessionStore {
   readonly #sessions = new Map<string, SessionRecord>();
+  /** Ids replaced by a rotation, still accepted until the time shown (they point at the new key). */
+  readonly #grace = new Map<string, { key: string; until: number }>();
   readonly #options: SessionOptions;
   readonly #now: () => number;
 
@@ -114,9 +123,25 @@ export class SessionStore {
     const now = this.#now(), idle = this.#options.remoteIdleMs;
     let changed = false;
     for (const [key, session] of this.#sessions) {
-      if (session.expiry <= now || (idle && session.origin === "remote" && now - (session.lastSeen ?? session.created ?? 0) > idle)) { this.#drop(key, session, "expired"); changed = true; }
+      if (session.expiry <= now || this.#tooOld(session, now) || (idle && session.origin === "remote" && now - (session.lastSeen ?? session.created ?? 0) > idle)) { this.#drop(key, session, "expired"); changed = true; }
+    for (const [old, moved] of this.#grace) if (moved.until <= now) this.#grace.delete(old);
     }
     if (changed) this.#save();
+  }
+
+  /** The key a request's id stands for: itself, or the one that replaced it a moment ago. */
+  #real(key: string | undefined): string | undefined {
+    if (!key || this.#sessions.has(key)) return key;
+    const moved = this.#grace.get(key);
+    if (!moved) return key;
+    if (moved.until <= this.#now()) { this.#grace.delete(key); return key; }
+    return moved.key;
+  }
+
+  /** True when the session has lived its absolute maximum, however recently it was used. */
+  #tooOld(session: SessionRecord, now: number): boolean {
+    const cap = this.#options.maxAgeMs;
+    return !!cap && session.created !== undefined && now - session.created >= cap;
   }
 
   #drop(key: string, session: SessionRecord, reason: "expired" | "logout" | "revoked"): void {
@@ -134,7 +159,7 @@ export class SessionStore {
 
   #prune(): void {
     const now = this.#now();
-    for (const [id, session] of this.#sessions) if (session.expiry <= now) this.#drop(id, session, "expired");
+    for (const [id, session] of this.#sessions) if (session.expiry <= now || this.#tooOld(session, now)) this.#drop(id, session, "expired");
     const capacity = this.#options.capacity ?? 256;
     // The oldest sessions go first, so a flood of logins cannot grow memory without bound.
     while (this.#sessions.size >= capacity) this.#sessions.delete(this.#sessions.keys().next().value!);
@@ -146,7 +171,8 @@ export class SessionStore {
     const id = randomBytes(32).toString("base64url");
     const ttlMs = meta.ttlMs ?? this.#options.ttlMs;
     const now = this.#now();
-    const expiresAt = now + ttlMs;
+    const cap = this.#options.maxAgeMs;
+    const expiresAt = cap ? Math.min(now + ttlMs, now + cap) : now + ttlMs;
     this.#sessions.set(keyOf(id), { expiry: expiresAt, userId, origin: meta.origin, ip: meta.ip?.slice(0, 64), agent: meta.agent?.slice(0, 120), created: now, lastSeen: now, ...(meta.ttlMs ? { ttlMs: meta.ttlMs } : {}) });
     this.#save();
     response.cookie(this.#options.cookieName, id, {
@@ -157,10 +183,10 @@ export class SessionStore {
 
   has(request: HeaderSource): boolean {
     const id = requestCookies(request)[this.#options.cookieName];
-    const key = id ? keyOf(id) : undefined;
+    const key = this.#real(id ? keyOf(id) : undefined);
     const session = key ? this.#sessions.get(key) : undefined;
     const idle = this.#options.remoteIdleMs;
-    if (!session || session.expiry <= this.#now() || (idle && session.origin === "remote" && this.#now() - (session.lastSeen ?? session.created ?? 0) > idle)) {
+    if (!session || session.expiry <= this.#now() || this.#tooOld(session, this.#now()) || (idle && session.origin === "remote" && this.#now() - (session.lastSeen ?? session.created ?? 0) > idle)) {
       if (key && session) { this.#drop(key, session, "expired"); this.#save(); }
       else if (key && this.#sessions.delete(key)) this.#save();
       return false;
@@ -170,7 +196,7 @@ export class SessionStore {
 
   #current(request: HeaderSource): { key: string; session: SessionRecord } | undefined {
     const id = requestCookies(request)[this.#options.cookieName];
-    const key = id ? keyOf(id) : undefined;
+    const key = this.#real(id ? keyOf(id) : undefined);
     const session = key && this.has(request) ? this.#sessions.get(key) : undefined;
     return key && session ? { key, session } : undefined;
   }
@@ -204,18 +230,30 @@ export class SessionStore {
    */
   renew(request: HeaderSource, response: Response): boolean {
     const id = requestCookies(request)[this.#options.cookieName];
-    const session = id ? this.#sessions.get(keyOf(id)) : undefined;
+    const key = this.#real(id ? keyOf(id) : undefined);
+    const session = key ? this.#sessions.get(key) : undefined;
     const now = this.#now();
-    if (!id || !session || session.expiry <= now) return false;
+    if (!id || !key || !session || session.expiry <= now || this.#tooOld(session, now)) return false;
     const idle = this.#options.remoteIdleMs;
     if (idle && session.origin === "remote" && now - (session.lastSeen ?? session.created ?? 0) > idle) return false;   // gone: has() ends it
     session.lastSeen = now;
     const ttlMs = session.ttlMs ?? this.#options.ttlMs;
     if (session.expiry - now > ttlMs / 2) return false;
-    session.expiry = now + ttlMs;
+    const cap = this.#options.maxAgeMs;
+    const until = cap && session.created !== undefined ? Math.min(now + ttlMs, session.created + cap) : now + ttlMs;
+    if (until <= session.expiry) return false;   // already at the absolute maximum: nothing more to give
+    session.expiry = until;
+    let cookieId = id;
+    if (this.#options.rotateIds?.() === true) {
+      cookieId = randomBytes(32).toString("base64url");
+      const fresh = keyOf(cookieId);
+      this.#sessions.set(fresh, session);
+      this.#sessions.delete(key);
+      this.#grace.set(keyOf(id), { key: fresh, until: now + ROTATION_GRACE_MS });
+    }
     this.#save();
-    response.cookie(this.#options.cookieName, id, {
-      httpOnly: true, sameSite: "strict", secure: this.#options.secure, maxAge: ttlMs, path: this.#options.cookiePath,
+    response.cookie(this.#options.cookieName, cookieId, {
+      httpOnly: true, sameSite: "strict", secure: this.#options.secure, maxAge: until - now, path: this.#options.cookiePath,
     });
     return true;
   }
@@ -227,20 +265,21 @@ export class SessionStore {
 
   /** The user a valid session belongs to. */
   userId(request: HeaderSource): string | undefined {
-    return this.has(request) ? this.#sessions.get(keyOf(requestCookies(request)[this.#options.cookieName]))?.userId : undefined;
+    return this.has(request) ? this.#sessions.get(this.#real(keyOf(requestCookies(request)[this.#options.cookieName]))!)?.userId : undefined;
   }
 
   /** End every session of a user, except the one making this request (so changing your own password does not sign you out). */
   revokeUser(userId: string, keep?: HeaderSource): void {
-    const cookie = keep ? requestCookies(keep)[this.#options.cookieName] : undefined, kept = cookie ? keyOf(cookie) : undefined;
+    const cookie = keep ? requestCookies(keep)[this.#options.cookieName] : undefined, kept = cookie ? this.#real(keyOf(cookie)) : undefined;
     for (const [key, session] of this.#sessions) if (session.userId === userId && key !== kept) this.#drop(key, session, "revoked");
     this.#save();
   }
 
   close(request: HeaderSource, response: Response): void {
     const id = requestCookies(request)[this.#options.cookieName];
-    const session = id ? this.#sessions.get(keyOf(id)) : undefined;
-    if (id && session) { this.#drop(keyOf(id), session, "logout"); this.#save(); }
+    const key = this.#real(id ? keyOf(id) : undefined);
+    const session = key ? this.#sessions.get(key) : undefined;
+    if (key && session) { this.#drop(key, session, "logout"); this.#save(); }
     response.clearCookie(this.#options.cookieName, { path: this.#options.cookiePath });
   }
 }

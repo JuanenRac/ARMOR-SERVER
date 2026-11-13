@@ -53,6 +53,7 @@
  *   ingest.recording             on | off                 the server keeps a copy of what the nodes send (and why a message was refused) in a JSON-lines file the simulator can play again, with a size limit and rotation from ARMOR_INGEST_RECORD_MAX_BYTES and ARMOR_INGEST_RECORD_FILES (off, the default: nothing is written)
  *   network.lan_ca              on | off                 an administrator may download the public certificate of the local CA that signs the HTTPS certificate of the LAN (GET /api/v1/security/lan-ca; the private key is never served; off, the default, answers 404)
  *   vision.semantic_search / vision.plates / vision.faces   on | off   the three features of the second phase of ARMOR-VISION that read personal data (search by meaning, licence plates, faces); each is off by default and cannot be turned on until its acknowledgement setting (the same name plus _ack) says the privacy notice was read
+ *   session.rotate_id           on | off                 a session in use gets a new id (and cookie) each time it is renewed, and the old id keeps working for 30 seconds (off, the default: the id lasts as long as the session)
  *   network.public_access       on | off                 requests from outside the house and the VPN are taken at all, and only over TLS with strong secrets (off, the default: every one is answered 403 public_access_off; see public_access.ts)
  *   vision.timeline              on | off                 the server keeps the events of the zones of the vision service in a review timeline with their evidence (GET /api/v1/vision/timeline; off, the default: nothing is kept)
  *   vision.timeline_days         1 to 3650                the days an entry of the timeline is kept (30)
@@ -127,6 +128,7 @@ export type SecuritySettingsValues = {
   "media.rtsp_proxy": boolean;
   "network.login_secure_only": boolean;
   "network.lan_ca": boolean;
+  "session.rotate_id": boolean;
   "network.public_access": boolean;
   "media.retention_snapshot_days": number;
   "media.retention_recording_days": number;
@@ -191,6 +193,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "media.rtsp_proxy": true,
   "network.login_secure_only": false,
   "network.lan_ca": false,
+  "session.rotate_id": false,
   "network.public_access": false,
   "media.retention_snapshot_days": MEDIA_RETENTION_DAYS.default,
   "media.retention_recording_days": MEDIA_RETENTION_DAYS.default,
@@ -357,6 +360,7 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "voice.wake_word" || key === "voice.mobile_turn") return from === false && to === true;   // a panel that listens for its word all the time is the loss, even if the audio never leaves the house
   if (key === "admin.field_http") return from === false && to === true;   // letting Studio open the server's port to the field network is the loss
   if (key === "admin.acl_relays") return from === false && to === true;   // letting Studio open the broker for the batteries or the alarm copy is the loss
+  if (key === "session.rotate_id") return from === true && to === false;   // a session id that no longer changes is a weaker one: turning it off is the loss
   if (key === "vision.service_remote") return from === false && to === true;   // a service on another machine: the positions of the house travel over a network
   if (key === "vision.service_url") { const host = parseVisionServiceUrl(to)?.host; return host !== undefined && !isLoopbackHost(host) && to !== from; }   // pointing at another machine is the loss
   if (key === "vision.timeline" || key === "network.lan_ca" || key === "network.public_access" || key === "vision.semantic_search" || key === "vision.plates" || key === "vision.faces") return from === false && to === true;   // a CA to trust on the phones, or a feature that reads personal data: turning it on is the loss

@@ -11,12 +11,12 @@ export type DisarmVerdict = { allow: true; duress: boolean } | { allow: false; s
 export const disarmPinMode = (context: AppContext): "never" | "if_set" | "always" => context.config.disarmPinEnv ?? context.securitySettings.get("alarm.disarm_pin");
 
 /** `what` is only for the audit trail: silencing a siren is as sensitive as disarming, so it asks for the same PIN under the same lockout. */
-export function checkDisarm(context: AppContext, user: { id: string } | undefined, pin: unknown, actor: string, what: "disarm" | "silence" | "mode" = "disarm"): DisarmVerdict {
+export async function checkDisarm(context: AppContext, user: { id: string } | undefined, pin: unknown, actor: string, what: "disarm" | "silence" | "mode" = "disarm"): Promise<DisarmVerdict> {
   const { audit, users } = context;
   const mode = disarmPinMode(context);
   // `never`: no PIN is asked, so a wrong or missing one stops nothing. The duress PIN is the exception: it is still recognised when it is typed, so that it keeps raising its silent alarm.
   const typed = typeof pin === "string" && pin !== "";
-  const result = !user ? "none" : mode === "never" && !typed ? "none" : users.verifyPin(user.id, pin);
+  const result = !user ? "none" : mode === "never" && !typed ? "none" : await users.verifyPinLater(user.id, pin);
   if (mode === "never" && (result === "bad" || result === "locked")) return { allow: true, duress: false };
   if (result === "locked") {
     audit.record({ action: `control.${what}`, outcome: "denied", actor, detail: "pin locked" });

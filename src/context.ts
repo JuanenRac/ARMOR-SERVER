@@ -265,7 +265,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   // The name of a session cookie depends on whether the server speaks HTTPS: a browser that once met this server over HTTPS keeps its Secure cookie for the
   // host, and a page over plain HTTP is not allowed to replace a Secure cookie of the same name - the login seemed to work and then nothing stuck (found for real
   // after the HTTPS trial was undone). Different names for the two cases cannot shadow each other.
-  const studioSessions = new SessionStore({ cookieName: config.cookieSecure ? "__Host-armor_studio_sid" : "armor_studio_sid", cookiePath: "/", ttlMs: config.studioSessionTtlMs, secure: config.cookieSecure, file: path.join(config.dataDir, "sessions.json"), remoteIdleMs: config.remoteIdleMs, onEnd: (info, reason) => ended.tell?.(info, reason) });
+  const studioSessions = new SessionStore({ cookieName: config.cookieSecure ? "__Host-armor_studio_sid" : "armor_studio_sid", cookiePath: "/", ttlMs: config.studioSessionTtlMs, secure: config.cookieSecure, file: path.join(config.dataDir, "sessions.json"), remoteIdleMs: config.remoteIdleMs, maxAgeMs: config.studioSessionMaxAgeMs, rotateIds: () => securitySettings.get("session.rotate_id") === true, onEnd: (info, reason) => ended.tell?.(info, reason) });
   const operatorSessions = new SessionStore({ cookieName: config.cookieSecure ? "__Secure-armor_operator_sid" : "armor_operator_sid", cookiePath: "/api/v1", ttlMs: config.operatorSessionTtlMs, secure: config.cookieSecure });
   if (config.cameraKeyIsFallback) warn("ARMOR_CAMERA_CONFIG_KEY is not set; using the migration fallback derived from ARMOR_CONTROL_TOKEN");
   const vault = new CameraVault({
