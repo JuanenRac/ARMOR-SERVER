@@ -11,6 +11,7 @@
  *   alarm.mode_panel_sync        on | off                  choosing away, home or night also arms the alarm panels with the profile that goes with it (off, the default: the modes decide only what the server defends; it needs alarm.arming_modes)
  *   voice.silence_confirmation   off | pin | double_turn | challenge   what the voice assistant asks before silencing the alarm (sent to the voice service with every turn). challenge = a number the voice service draws, shown on the screen of the panel and never said aloud: only a panel that shows it can silence by voice, every other client (Studio, the phone) fails closed
  *   alarm.config_hash            on | off                  the panel binds its saved armed state to its zones and PIN and does not restore it if they changed (panel side)
+ *   commands.require_sig        on | off                 the critical commands (alarm_command, electrical_command) are published with a nonce and an HMAC-SHA256 signature of this installation, so that neither the broker nor another identity on it can forge or replay one (off, the default: unsigned, as before; the nodes verify it once their firmware holds the key)
  *   alarm.siren_fault_notice     on | off                  a warning in the alarm centre while a panel reports that the wiring of its siren is open, shorted or unreadable (on, the default; off: nothing is raised)
  *   server.zone_feed             on | off                  the server tells the panels the state of their Zigbee zones
  *   server.zone_feed_signature   on | off                  every zone message is signed, so a panel can tell it came from this server
@@ -122,6 +123,7 @@ export type SecuritySettingsValues = {
   "alarm.mode_schedule_lowers": boolean;
   "alarm.mode_panel_sync": boolean;
   "alarm.config_hash": boolean;
+  "commands.require_sig": boolean;
   "alarm.siren_fault_notice": boolean;
   "server.zone_feed": boolean;
   "server.zone_feed_signature": boolean;
@@ -188,6 +190,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "alarm.mode_schedule_lowers": false,
   "alarm.mode_panel_sync": false,
   "alarm.config_hash": true,
+  "commands.require_sig": false,
   "alarm.siren_fault_notice": true,
   "server.zone_feed": true,
   "server.zone_feed_signature": true,
@@ -371,6 +374,7 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "vision.semantic_search_ack" || key === "vision.plates_ack" || key === "vision.faces_ack") return false;   // reading a notice is not a loss of protection
   if (key === "summary.daily" || key === "vision.heatmap" || key === "metrics.prometheus" || key === "ingest.recording") return from === false && to === true;   // a report about what happens in the house is a way in for whoever may ask: turning it on is the loss
   if (key === "vision.activity_events") return from === true && to === false;   // on by default: a source of alarms that is taken away defends less
+  if (key === "commands.require_sig") return from === true && to === false;   // signed commands that are given up defend less
   if (key === "alarm.arming_modes" || key === "alarm.mode_schedule" || key === "alarm.mode_panel_sync") return false;   // a way of arming that is added or taken away: the protection of what is armed does not drop by it
   if (key === "alarm.mode_schedule_lowers") return from === false && to === true;   // letting a timetable defend less is the loss
   if (key === "alarm.mode_downgrade_pin") return from === "required" && to === "not_required";
