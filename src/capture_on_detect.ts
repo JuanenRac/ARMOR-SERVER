@@ -68,7 +68,7 @@ export type CaptureOptions = {
   sleep?: (ms: number) => Promise<void>;
 };
 
-export type CaptureRecord = { camera_id: string; at: string; photos: number; video: boolean };
+export type CaptureRecord = { camera_id: string; at: string; photos: number; video: boolean; snapshot_id?: string; clip_id?: string };
 
 export class CaptureOnDetect {
   #settings: CaptureSettings = { ...DEFAULT_CAPTURE };
@@ -112,8 +112,8 @@ export class CaptureOnDetect {
     this.#lastAt.set(camera.id, now);
     const record: CaptureRecord = { camera_id: camera.id, at: new Date(now).toISOString(), photos: 0, video: false };
     try {
-      const recording = settings.video && !this.options.tools.isRecording(camera.id) ? this.#record(camera, settings.video_seconds).then(done => { record.video = done; }) : Promise.resolve();
-      const photos = settings.photo ? this.#photos(camera, settings).then(count => { record.photos = count; }) : Promise.resolve();
+      const recording = settings.video && !this.options.tools.isRecording(camera.id) ? this.#record(camera, settings.video_seconds).then(done => { record.video = done.ok; if (done.id) record.clip_id = done.id; }) : Promise.resolve();
+      const photos = settings.photo ? this.#photos(camera, settings).then(done => { record.photos = done.count; if (done.first) record.snapshot_id = done.first; }) : Promise.resolve();
       await Promise.all([recording, photos]);
     } finally { this.#busy.delete(camera.id); }
     this.#recent.unshift(record);
@@ -122,18 +122,19 @@ export class CaptureOnDetect {
     return record;
   }
 
-  async #photos(camera: CameraConnection, settings: CaptureSettings): Promise<number> {
+  async #photos(camera: CameraConnection, settings: CaptureSettings): Promise<{ count: number; first?: string }> {
     let taken = 0;
+    let first: string | undefined;
     for (let index = 0; index < settings.photo_count; index += 1) {
       if (index > 0) await this.#sleep(settings.photo_interval_s * 1000);
-      try { await this.options.tools.snapshot(camera); taken += 1; } catch { /* a photo that fails is skipped: the next one may work */ }
+      try { const shot = await this.options.tools.snapshot(camera); taken += 1; first ??= shot?.id; } catch { /* a photo that fails is skipped: the next one may work */ }
     }
-    return taken;
+    return { count: taken, first };
   }
 
-  async #record(camera: CameraConnection, seconds: number): Promise<boolean> {
-    try { await this.options.tools.startRecording(camera); } catch { return false; }
+  async #record(camera: CameraConnection, seconds: number): Promise<{ ok: boolean; id?: string }> {
+    try { await this.options.tools.startRecording(camera); } catch { return { ok: false }; }
     await this.#sleep(seconds * 1000);
-    try { await this.options.tools.stopRecording(camera.id); return true; } catch { return false; }
+    try { const clip = await this.options.tools.stopRecording(camera.id); return { ok: true, id: clip?.id }; } catch { return { ok: false }; }
   }
 }

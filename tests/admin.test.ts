@@ -46,6 +46,11 @@ async function fakeAgent(options: { status?: boolean; rotation?: boolean; hides?
         fieldHttp = body.state === "on";
         return send(200, { ok: true, state: body.state, installed: true, field_http: fieldHttp, approval: "totp" });
       }
+      if (request.method === "GET" && url === "/v1/lan-ca") return send(200, { installed: true, enabled: true, authority: { days_left: 3000, sha256: "AA:BB" }, certificate: { days_left: 12, sha256: "CC:DD" }, renew_days: 30, expiring: ["certificate"], approval: "totp" });
+      if (request.method === "POST" && url === "/v1/lan-ca") {
+        if (!String(request.headers["x-armor-maint-totp"] ?? "")) return send(401, { error: "totp_required" });
+        return send(200, { ok: true, action: body.action, devices_must_reinstall: body.action === "rotate" });
+      }
       if (request.method === "GET" && url === "/v1/mqtt/accounts") return send(200, { accounts: accounts.map(user => ({ user, role: "field-node", manageable: true, topics: [] })) });
       if (request.method === "POST" && url === "/v1/mqtt/accounts") {
         const user = `${body.role === "node" ? "field-node" : String(body.role)}-${String(body.name)}`;
@@ -355,6 +360,33 @@ test("the two switches of the broker rules are off until an administrator turns 
     assert.match(audit, /acl_relays_disabled/);
     assert.match(audit, /battery-write on/);
     assert.doesNotMatch(audit, /654321|111111|123456/, "the code is never written down");
+  } finally { await running.stop(); await agent.close(); }
+});
+
+test("the orders for the local authority of the LAN are off until the option is on, then need a confirmation and the code of the authenticator, and the expiry reaches the console", async () => {
+  const agent = await fakeAgent();
+  const running = await startServer({ ARMOR_ADMIN_SOCKET: agent.socket, ARMOR_ADMIN_TOKEN: TOKEN });
+  try {
+    const cookie = await studioCookie(running.base);
+    const order = (input: Record<string, unknown>, code?: string) => fetch(`${running.base}/api/v1/admin/lan-ca`, { method: "POST", headers: { ...json, cookie, ...(code ? { "X-Armor-Maint-Totp": code } : {}) }, body: JSON.stringify(input) }).then(async answer => ({ status: answer.status, body: await answer.json() as Record<string, any> }));
+    const good = { action: "rotate", ip: "192.168.0.180", names: ["armor.lan"], confirm: true, confirm_text: "lan-ca" };
+    assert.deepEqual((await call(running, cookie, "GET", "/api/v1/admin/lan-ca")).body, { enabled: false });
+    assert.deepEqual([(await order(good, "123456")).body.error, agent.seen.some(item => item.url.includes("lan-ca"))], ["lan_ca_disabled", false], "off: the agent is not even asked");
+    assert.equal((await call(running, cookie, "PUT", "/api/v1/security/settings", { "network.lan_ca": true })).status, 200);
+    assert.deepEqual((await order({ ...good, action: "burn" }, "123456")).body, { error: "invalid_action" });
+    assert.deepEqual((await order({ ...good, ip: "192.168.0.1; id" }, "123456")).body, { error: "invalid_ip" });
+    assert.deepEqual((await order({ ...good, confirm: false }, "123456")).body, { error: "confirmation_required" });
+    assert.deepEqual((await order({ ...good, confirm_text: "other" }, "123456")).body, { error: "confirmation_mismatch" });
+    assert.equal(agent.seen.some(item => item.url.includes("lan-ca")), false, "no refusal here reaches the agent");
+    const status = await call(running, cookie, "GET", "/api/v1/admin/lan-ca");
+    assert.deepEqual([status.body.enabled, status.body.expiring, status.body.renew_days], [true, ["certificate"], 30]);
+    const refused = await order(good);
+    assert.deepEqual([refused.status, refused.body.error], [403, "totp_required"]);
+    const done = await order(good, "654321");
+    assert.deepEqual([done.status, done.body.ok, done.body.devices_must_reinstall], [200, true, true]);
+    const audit = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8");
+    assert.match(audit, /admin\.lan_ca/);
+    assert.doesNotMatch(audit, /654321|123456/, "the code is never written down");
   } finally { await running.stop(); await agent.close(); }
 });
 
