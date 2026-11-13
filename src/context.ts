@@ -34,6 +34,7 @@ import { sendCommand, type Command } from "./devices/commands.js";
 import { isTriggered } from "./devices/catalog.js";
 import { AlarmZoneFeed, ZoneFeedSigner } from "./alarm_zone_feed.js";
 import { AlarmStateSigner } from "./alarm_state_signature.js";
+import { VisionTimeline } from "./vision_timeline.js";
 import { CaptureOnDetect } from "./capture_on_detect.js";
 import { IgnoreZones } from "./ignore_zones.js";
 import { CountLines } from "./count_lines.js";
@@ -191,6 +192,7 @@ export type AppContext = {
   alarmZoneFeed: AlarmZoneFeed;
   /** The photos and the video taken by themselves when a camera sees something while the perimeter is armed. */
   captureOnDetect: CaptureOnDetect;
+  visionTimeline: VisionTimeline;
   /** The parts of each camera's picture that the observation service does not look at. */
   ignoreZones: IgnoreZones;
   /** The counting lines drawn on each camera's picture. */
@@ -450,6 +452,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   alarmRules.held = node => nodeControl.isHeld(node);
   alarmRules.nodeUp = id => { const node = store.snapshot().nodes[id]; return node ? node.online && !node.stale : false; };
   alarmRules.nodeIntruding = id => store.snapshot().nodes[id]?.alert_level === "high";
+  const visionTimeline = new VisionTimeline({ file: path.join(config.dataDir, "vision-timeline.json"), enabled: () => securitySettings.get("vision.timeline"), days: () => securitySettings.get("vision.timeline_days"), maxEntries: config.visionTimelineMaxEntries, now: overrides.now });
   const captureOnDetect = new CaptureOnDetect({ file: path.join(config.dataDir, "capture-on-detect.json"), audit, now: overrides.now, tools: { snapshot: camera => evidence.snapshot(camera), startRecording: camera => evidence.startRecording(camera), stopRecording: id => evidence.stopRecording(id), isRecording: id => evidence.isRecording(id) } });
   const ignoreZones = new IgnoreZones(path.join(config.dataDir, "camera-ignore-zones.json"));
   const countLines = new CountLines(path.join(config.dataDir, "camera-count-lines.json"));
@@ -608,7 +611,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),
