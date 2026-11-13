@@ -30,6 +30,7 @@
  *   live.events                 on | off                 besides the whole state, the console channel (/api/v1/events) tells the consoles that an alarm, a device, the solar plant, the network or a design changed ({type, id, version} and nothing more; on, the default; off: the state only, as before)
  *   client.device_lock           user | sensitive | always   what the phone app asks of the person with the lock of the phone itself (fingerprint, face or the phone's PIN): user = the phone's own switches decide, sensitive = also before arming, disarming and unlocking, always = also to open the app (it can only raise what a person chose, never lower it, and a phone with no lock at all is never shut out)
  *   client.trusted_devices       on | off                  a phone may be registered as a trusted device (a key pair that stays in the phone) and renew its session by signing a one-time challenge instead of typing the password and the code again (off, the default: nothing is registered or accepted)
+ *   admin.firmware_rollout      on | off                 a firmware job from GitHub follows the staged rollout of the settings (/api/v1/admin/firmware/rollout): the channel stable or beta, a percent of the nodes at a time, and the way back for a node that does not come back (off, the default: a job updates every node it was given with the latest release)
  *   admin.backup                on | off                 an administrator may set up encrypted, scheduled backups of the data directory and make or prove one (the /api/v1/admin/backup routes; off, the default: they answer 403 backup_disabled and nothing is scheduled)
  *   client.trusted_session_h     1 to 720                 how long the session handed to a trusted phone lasts, in hours (72)
  *   nodes.nvs_encryption         off | secrets            the alarm nodes keep only the secrets they store (passwords, token, keys) encrypted in their flash (told in the policy message; off, the default, tells nothing)
@@ -167,6 +168,7 @@ export type SecuritySettingsValues = {
   "client.device_lock": DeviceLockPolicy;
   "client.trusted_devices": boolean;
   "admin.backup": boolean;
+  "admin.firmware_rollout": boolean;
   "client.trusted_session_h": number;
   "nodes.nvs_encryption": NvsEncryption;
   "electrical.load_shedding": boolean;
@@ -240,6 +242,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "client.device_lock": "user",
   "client.trusted_devices": false,
   "admin.backup": false,
+  "admin.firmware_rollout": false,
   "client.trusted_session_h": TRUSTED_SESSION_H.default,
   "nodes.nvs_encryption": "off",
   "electrical.load_shedding": false,
@@ -384,6 +387,7 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "reports.timeout_s" || key === "reports.queue_max" || key === "reports.requests_per_minute") return false;   // tuning of how much work the reports may cause, not a protection
   if (key === "vacation.mode") return false;   // lights that switch by themselves when nobody is home: a convenience that adds no way in
   if (key === "voice.wake_word" || key === "voice.mobile_turn") return from === false && to === true;   // a panel that listens for its word all the time is the loss, even if the audio never leaves the house
+  if (key === "admin.firmware_rollout") return false;   // it only makes an update gentler: fewer nodes at a time, and a way back
   if (key === "admin.backup") return from === false && to === true;   // a copy of everything the server keeps, written where it is asked: turning it on is the loss
   if (key === "admin.field_http") return from === false && to === true;   // letting Studio open the server's port to the field network is the loss
   if (key === "admin.acl_relays") return from === false && to === true;   // letting Studio open the broker for the batteries or the alarm copy is the loss
