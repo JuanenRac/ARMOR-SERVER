@@ -7,6 +7,7 @@ import path from "node:path";
 import cors from "cors";
 import express from "express";
 import rateLimit from "express-rate-limit";
+import { PublicLoginLimiter, decidePublicRequest, publicAccessProblems } from "./public_access.js";
 import fs from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
@@ -137,6 +138,26 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     if (own || (config.remotePolicy === "operate" && !admin)) return next();
     context.audit.record({ action: "remote.policy", outcome: "denied", actor: context.studioUser(request)?.username, target: `${request.method} ${request.path}`, detail: config.remotePolicy });
     return response.status(403).json({ error: "this is only possible from the house or over the VPN", code: "remote_policy", needs: "vpn" });
+  });
+
+  // The port opened to the Internet (network.public_access, off by default): a request from outside the house is taken only when the option is on, over TLS and with strong secrets, and
+  // an address that fails to sign in too often is closed for a while. Requests from the house and the VPN are not touched.
+  const publicLimiter = new PublicLoginLimiter(config.publicLogin.attempts, config.publicLogin.windowS * 1000);
+  const publicFacts = { ownTls: config.tls !== null, proxyTls: config.trustProxy !== false && config.cookieSecure && config.tls === null, controlTokenLength: config.controlToken.length, studioPasswordLength: config.studioPassword.length, cookieSecure: config.cookieSecure };
+  app.use((request, response, next) => {
+    const remote = context.originOfRequest(request) === "remote";
+    const decision = decidePublicRequest({ remote, secure: request.secure, enabled: context.securitySettings.get("network.public_access"), problems: publicAccessProblems(publicFacts) });
+    if (!decision.allow) {
+      context.audit.record({ action: "public_access", outcome: "denied", target: `${request.method} ${request.path}`, detail: `${decision.error} ${request.ip ?? ""}` });
+      return response.status(decision.status).json({ error: decision.error, ...(decision.problems ? { problems: decision.problems } : {}) });
+    }
+    if (remote && request.method === "POST" && /^\/api\/v1\/studio\/session(\/totp)?$/.test(request.path)) {
+      const address = request.ip ?? "";
+      const wait = publicLimiter.retryAfterS(address);
+      if (wait > 0) { response.set("Retry-After", String(wait)); return response.status(429).json({ error: "too many failed sign-ins from this address", code: "public_login_locked", retry_after_s: wait }); }
+      response.on("finish", () => { if (response.statusCode === 401) publicLimiter.fail(address); else if (response.statusCode < 400) publicLimiter.succeed(address); });
+    }
+    return next();
   });
 
   registerIngestRoutes(app, context, Date.now(), version);
