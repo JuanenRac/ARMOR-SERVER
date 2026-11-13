@@ -26,6 +26,7 @@ import { RelayManager, StreamTickets } from "./media/relay.js";
 import { AlarmCapture } from "./capture_on_alarm.js";
 import { CameraWatcher } from "./cameras/health.js";
 import { Escalator } from "./escalation.js";
+import { BackupService } from "./backup.js";
 import { ElectricalEnergy } from "./electrical_energy.js";
 import { PtzController } from "./cameras/ptz.js";
 import { CommandSigner } from "./command_signature.js";
@@ -123,6 +124,7 @@ export type AppContext = {
   automations: AutomationEngine;
   /** Signs the critical commands and gives each node its own key (see command_signature.ts). */
   commandSigner: CommandSigner;
+  backup: BackupService;
   site: SiteStore;
   electrical: SiteStore;
   /** What the ARMOR-NODE-ELECTRICAL nodes measure on the house's network. */
@@ -312,6 +314,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const knownNodes = new KnownNodes({ file: path.join(config.dataDir, "known-nodes.json"), now: overrides.now, warn });
   const alarmCaptureHolder: { capture?: AlarmCapture } = {};
   const rules = new RulesFile(path.join(config.dataDir, "rules.json"), config.alertDwellMs, warn);
+  const backup = new BackupService({ dataDir: config.dataDir, stateDir: config.dataDir, now: overrides.now ? () => new Date(overrides.now!()) : undefined, onEvent: (action, outcome, detail) => { recordSystem({ category: "backup", action, outcome, subject: detail.slice(0, 60) }); } });
   // The other places the alarms go. The address of Telegram can only be changed by the environment, for the tests that stand in for it.
   const channels: NotifyChannel[] = [];
   if (config.telegram) channels.push(telegramChannel({ token: config.telegram.token, chatIds: config.telegram.chatIds, api: process.env.ARMOR_TELEGRAM_API || undefined }));
@@ -632,6 +635,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
+    backup,
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),
     commandSigner,
   };
