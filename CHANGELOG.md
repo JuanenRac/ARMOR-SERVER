@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **An administrator can have the local authority of the LAN made, renewed or replaced from the console:** `GET /api/v1/admin/lan-ca` (days left of the authority and of the certificate, and which are within `renew_days` of their end) and `POST /api/v1/admin/lan-ca` (`action` setup, renew or rotate, for a private address, with a confirmation and the one-time code of the authenticator) go through the admin agent; both answer as off until the option `network.lan_ca` is on, and the key of the authority never leaves the machine. Tests with a stand-in agent.
 - **The comparison with the shared contracts no longer skips silently where they are required:** when the CI asks for the contracts to be present and the checkout is missing, the conformance tests fail instead of being skipped.
 - **The reader of the country database is tried with every type of its format:** the odd values (doubles, floats, booleans, bytes, big integers, arrays, maps inside maps, the long forms of the sizes) are put in the metadata of a made-up file and read, and the damaged ones (a wrong size, an unknown type, a string cut by the end of the file, a map that claims too much, a key that is not a string, pointers that lead outside the file, data nested too deep) are refused without reading outside the file.
 

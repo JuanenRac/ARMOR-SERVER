@@ -18,6 +18,8 @@ Every route the code registers, with who may call it and the file that registers
 | PUT | `/api/v1/admin/files/:id` | administrator | `routes/admin.ts` |
 | GET | `/api/v1/admin/firewall` | administrator | `routes/admin.ts` |
 | POST | `/api/v1/admin/firewall/field-http` | administrator | `routes/admin.ts` |
+| GET | `/api/v1/admin/lan-ca` | administrator | `routes/admin.ts` |
+| POST | `/api/v1/admin/lan-ca` | administrator | `routes/admin.ts` |
 | POST | `/api/v1/admin/firmware/jobs` | administrator, fresh proof of identity | `routes/firmware.ts` |
 | GET | `/api/v1/admin/firmware/jobs/:id` | administrator | `routes/firmware.ts` |
 | POST | `/api/v1/admin/firmware/probe` | administrator | `routes/firmware.ts` |
