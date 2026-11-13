@@ -18,8 +18,6 @@ Every route the code registers, with who may call it and the file that registers
 | PUT | `/api/v1/admin/files/:id` | administrator | `routes/admin.ts` |
 | GET | `/api/v1/admin/firewall` | administrator | `routes/admin.ts` |
 | POST | `/api/v1/admin/firewall/field-http` | administrator | `routes/admin.ts` |
-| GET | `/api/v1/admin/lan-ca` | administrator | `routes/admin.ts` |
-| POST | `/api/v1/admin/lan-ca` | administrator | `routes/admin.ts` |
 | POST | `/api/v1/admin/firmware/jobs` | administrator, fresh proof of identity | `routes/firmware.ts` |
 | GET | `/api/v1/admin/firmware/jobs/:id` | administrator | `routes/firmware.ts` |
 | POST | `/api/v1/admin/firmware/probe` | administrator | `routes/firmware.ts` |
@@ -29,6 +27,8 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/admin/incident/verify` | administrator | `routes/media.ts` |
 | GET | `/api/v1/admin/installation` | administrator | `routes/admin.ts` |
 | POST | `/api/v1/admin/installation` | administrator | `routes/admin.ts` |
+| GET | `/api/v1/admin/lan-ca` | administrator | `routes/admin.ts` |
+| POST | `/api/v1/admin/lan-ca` | administrator | `routes/admin.ts` |
 | GET | `/api/v1/admin/machine-update` | administrator | `routes/machine_update.ts` |
 | POST | `/api/v1/admin/machine-update/apply` | administrator, fresh proof of identity | `routes/machine_update.ts` |
 | GET | `/api/v1/admin/machine-update/jobs/:id` | administrator | `routes/machine_update.ts` |
