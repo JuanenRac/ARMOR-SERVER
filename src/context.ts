@@ -12,6 +12,7 @@ import { AiGateway } from "./ai.js";
 import { SecuritySettings } from "./security_settings.js";
 import { createAuditLog, type AuditLog } from "./audit.js";
 import { CameraVault } from "./cameras/vault.js";
+import { LiveNotices } from "./live_events.js";
 import { DiscoveryGate } from "./cameras/discovery.js";
 import { cameraPublic, cameraView, type CameraConnection } from "./cameras/model.js";
 import type { ArmorConfig } from "./config.js";
@@ -192,6 +193,8 @@ export type AppContext = {
   alarmZoneFeed: AlarmZoneFeed;
   /** The photos and the video taken by themselves when a camera sees something while the perimeter is armed. */
   captureOnDetect: CaptureOnDetect;
+  /** The notices of the console channel: something changed (see live_events.ts). */
+  live: LiveNotices;
   visionTimeline: VisionTimeline;
   /** The parts of each camera's picture that the observation service does not look at. */
   ignoreZones: IgnoreZones;
@@ -321,10 +324,13 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const controlHolder: { service?: NodeControlService } = {};
   // Everything that happens goes through one place: written to the history, announced, checked for alarms, offered to the automations.
   const arming: { modes?: ArmingModes } = {};
+  const live = new LiveNotices({ enabled: () => securitySettings.get("live.events") });
   const record = (body: ArmorEventBody): void => {
     // A silent alarm (a duress disarm) is told to the places nobody at the panel can see and is NOT written in the history that every console reads.
     if (body.type === "alarm" && body.silent) { notifier.notify({ ...body, id: 0, at: new Date().toISOString() }, store.snapshot().mode); return; }
     const event = events.append(body);
+    if (event.type === "alarm") live.notify("alarm", event.alarm_id, event.id);
+    else if (event.type === "device") live.notify("device", event.device_id, event.id);
     if (event.type === "node") { if (event.to === "online") nodeLife.report(event.node_id); else nodeLife.gone(event.node_id); }
     // A node that is being restarted on purpose, or is in maintenance, is not news to wake anybody for (it stays in the history).
     if (!(event.type === "node" && event.to !== "online" && controlHolder.service?.isHeld(event.node_id))) notifier.notify(event, store.snapshot().mode);
@@ -381,7 +387,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   };
   const networkNodes = new NetworkStore({
     now: overrides.now, notes: networkNotes, outagesFile: path.join(config.dataDir, "network-outages.json"),
-    onMessage: message => { knownNodes.seen("network", message.node_id); alarmRules.handleNetwork(message); },
+    onMessage: message => { knownNodes.seen("network", message.node_id); alarmRules.handleNetwork(message); live.notify("network", message.node_id); },
     onEvent: (node, event) => {
       alarmRules.handleNetworkEvent(node, event, id => networkNotes.isTrusted(id), id => describeNetworkDevice(node, id));
       // A device somebody asked to be told about came onto the network: say so once.
@@ -478,7 +484,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const ingestRecorder = new IngestRecorder({ dir: path.join(config.dataDir, "ingest-recording"), enabled: () => securitySettings.get("ingest.recording"), maxBytes: config.ingestRecordMaxBytes, maxFiles: config.ingestRecordFiles, now: overrides.now });
   ingestLog.tap = (topic, payload, accepted, reason) => ingestRecorder.record(topic, payload, accepted, reason);
   const solarRegistry = new SolarRegistry(path.join(config.dataDir, "solar-devices.json"), overrides.now ? () => new Date(overrides.now!()) : undefined);
-  const solar = new SolarStore({ now: overrides.now, onMessage: message => { knownNodes.seen("solar", `${message.node_id}/${message.device}`); alarmRules.handleSolar(message); }, onStale: (node, device, stale) => alarmRules.handleSolarStale(node, device, stale) });
+  const solar = new SolarStore({ now: overrides.now, onMessage: message => { live.notify("solar", `${message.node_id}/${message.device}`); knownNodes.seen("solar", `${message.node_id}/${message.device}`); alarmRules.handleSolar(message); }, onStale: (node, device, stale) => alarmRules.handleSolarStale(node, device, stale) });
   const batteryLink: AppContext["batteryLink"] = {};
   const batteryWrite = new BatteryWriteService({
     enabled: config.batteryWrite, solar, audit, now: overrides.now, file: path.join(config.dataDir, "battery_ops.json"),
@@ -611,7 +617,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),

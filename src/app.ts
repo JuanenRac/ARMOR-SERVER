@@ -13,6 +13,7 @@ import { createServer, type IncomingMessage, type Server } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { WebSocketServer } from "ws";
 import { createCoalescer } from "./ws_coalesce.js";
+import type { LiveNotice } from "./live_events.js";
 import { isLoopbackHost, type ArmorConfig } from "./config.js";
 import { createContext, type AppContext, type ContextOverrides } from "./context.js";
 import { hasBearer } from "./http/auth.js";
@@ -93,11 +94,21 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   const WS_WINDOW_MS = 150;
   const stateFeed = createCoalescer<SystemState>(sendState, WS_WINDOW_MS);
   const broadcast = (state: SystemState) => stateFeed.push(state);
+  /** The notices of the console channel (live_events.ts) go to the same sockets as the state, with the same rule for a client that is too far behind. */
+  const sendNotice = (notice: LiveNotice) => {
+    const line = JSON.stringify(notice);
+    for (const client of clients.clients) {
+      if (client.readyState !== client.OPEN) continue;
+      if (client.bufferedAmount > MAX_BUFFERED_BYTES) { client.terminate(); continue; }
+      client.send(line);
+    }
+  };
   /** Who each open socket was admitted as. A session can end while the socket stays open (the user was removed, their role or password changed, the session expired). */
   const admitted = new WeakMap<object, { reader: ReturnType<typeof headerReader>; viaToken: boolean; alive: boolean }>();
   const panelAdmitted = new WeakMap<object, { reader: ReturnType<typeof headerReader>; alive: boolean }>();
   const context = createContext(config, { ...overrides, broadcast });
   const app = express();
+  context.live.attach(sendNotice);
   app.disable("x-powered-by");
   // Behind a reverse proxy the client is whoever the proxy says in X-Forwarded-For - but only a proxy that was named (ARMOR_TRUST_PROXY) is believed.
   if (config.trustProxy !== false) app.set("trust proxy", config.trustProxy);
@@ -416,6 +427,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       clearInterval(panelTimer);
       clearInterval(historySaver);
       stateFeed.close();
+      context.live.close();
       context.systemMonitor.stop();
       context.heartbeat.stop();
       saveHistory();

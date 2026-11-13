@@ -24,6 +24,7 @@
  *   admin.acl_relays             on | off                  Studio may ask the admin agent to open or close the two switches of the broker rules that no install turns on (the writing to the batteries of one solar node, and the signed copy of the alarm states); off, the default: the routes answer 403, and each change also needs the code of the authenticator and two confirmations
  *   admin.field_http             on | off                  Studio may ask the admin agent to let the field network also reach the server's port over HTTP (the firewall switch field-http); off, the default: the routes answer 403, and each change also needs the code of the authenticator and a confirmation
  *   panel.live_events            on | off                  the wall panel may listen to the live channel (a WebSocket that carries the same small summary it can ask for; off: it asks every few seconds)
+ *   live.events                 on | off                 besides the whole state, the console channel (/api/v1/events) tells the consoles that an alarm, a device, the solar plant, the network or a design changed ({type, id, version} and nothing more; on, the default; off: the state only, as before)
  *   client.device_lock           user | sensitive | always   what the phone app asks of the person with the lock of the phone itself (fingerprint, face or the phone's PIN): user = the phone's own switches decide, sensitive = also before arming, disarming and unlocking, always = also to open the app (it can only raise what a person chose, never lower it, and a phone with no lock at all is never shut out)
  *   client.trusted_devices       on | off                  a phone may be registered as a trusted device (a key pair that stays in the phone) and renew its session by signing a one-time challenge instead of typing the password and the code again (off, the default: nothing is registered or accepted)
  *   client.trusted_session_h     1 to 720                 how long the session handed to a trusted phone lasts, in hours (72)
@@ -151,6 +152,7 @@ export type SecuritySettingsValues = {
   "admin.acl_relays": boolean;
   "admin.field_http": boolean;
   "panel.live_events": boolean;
+  "live.events": boolean;
   "client.device_lock": DeviceLockPolicy;
   "client.trusted_devices": boolean;
   "client.trusted_session_h": number;
@@ -216,6 +218,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "admin.acl_relays": false,
   "admin.field_http": false,
   "panel.live_events": true,
+  "live.events": true,
   "client.device_lock": "user",
   "client.trusted_devices": false,
   "client.trusted_session_h": TRUSTED_SESSION_H.default,
@@ -351,7 +354,7 @@ export class SecuritySettings {
 
 /** True when the new value lowers security compared with the old one (the audit trail and Studio say so). */
 export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boolean {
-  if (key === "voice.multipart_turn" || key === "panel.live_events" || key === "alarm_audio.spoken" || key === "alarm_audio.custom_sounds") return false;   // a way in that is turned off is not a loss of protection; turning it on is the default way
+  if (key === "voice.multipart_turn" || key === "panel.live_events" || key === "live.events" || key === "alarm_audio.spoken" || key === "alarm_audio.custom_sounds") return false;   // a way in that is turned off is not a loss of protection; turning it on is the default way
   if (key === "vision.timeline_days") return typeof from === "number" && typeof to === "number" && to > from;   // keeping what happened for longer is the loss
   if (key === "summary.log_days" || key === "summary.reading_every_s" || key === "summary.power_every_s" || key === "summary.false_alarm_s") return false;   // what the summary of a day is made from: tuning, not a protection
   if (key === "media.retention_snapshot_days" || key === "media.retention_recording_days") return false;   // how long evidence is kept: tuning, not a protection
