@@ -114,6 +114,16 @@ A wall panel acknowledges the alarms with `POST /api/v1/alarms/acknowledge`. The
 
 It carries nothing the panel cannot ask for and takes nothing: whatever the client sends closes the socket (1003), a client that falls 64 KB behind is dropped, and a session that ends closes it with 4401. The whole state of the installation stays on `/api/v1/events`, which a panel account may not open. Arming, disarming and acknowledging go through the same routes as before.
 
+## The consoles' live channel
+
+`/api/v1/events` (a WebSocket, admitted with an operator session or the control token) sends the whole state, `{"type":"state","state":{...}}`, whenever something changes. Besides it, while the security option `live.events` is on (the default), it sends one small notice when something a console may be showing changed:
+
+```
+{"type":"alarm","id":"alm-00012","version":431}
+```
+
+`type` is `alarm`, `device`, `solar` (`id` is `node/device`), `network` (a network node) or `design` (`id` is `site`, `electrical`, `network` or `alarm`). A notice carries no reading, name or detail, and a silent alarm is never announced: the console asks the route it is allowed to read for the thing itself. `version` grows with every notice of the server (for a design it is the revision that was saved), so a client that sees a gap reads everything again. A burst about the same thing is one notice per 150 ms. A client that does not know a type ignores it, and polling stays as the slow safety net; with `live.events` off the channel carries the state only.
+
 ## Spoken turns
 
 The wall panel sends one spoken turn to `POST /api/v1/voice/turn` (or `/api/v1/voice/v1/turn`) with the voice token in `X-Armor-Voice-Token`; the server passes the audio to the voice gateway on this machine (raw 16 kHz 16-bit mono PCM, the language and the silence policy in headers, as always). There are two forms of request, told apart by the `Content-Type`:

@@ -195,6 +195,7 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
     const input = body(request);
     try {
       const saved = site.save(input.site, input.revision, actor(request));
+      context.live.notify("design", "site", saved.revision);
       return response.json({ revision: saved.revision, updated_at: saved.updated_at, updated_by: saved.updated_by });
     } catch (error) {
       if (error instanceof SiteConflict) return response.status(409).json({ error: "the site was changed by someone else", code: "conflict", current: error.current });
@@ -230,6 +231,7 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
     const input = body(request);
     try {
       const saved = electrical.save(input.electrical, input.revision, actor(request));
+      context.live.notify("design", "electrical", saved.revision);
       audit.record({ action: "electrical.save", outcome: "allowed", actor: actor(request), detail: `revision ${saved.revision}` });
       return response.json({ revision: saved.revision, updated_at: saved.updated_at, updated_by: saved.updated_by });
     } catch (error) {
