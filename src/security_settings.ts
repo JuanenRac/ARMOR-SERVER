@@ -18,6 +18,7 @@
  *   server.alarm_state_signature on | off                  the server publishes a signed copy of each alarm state it hears, so a reader on the broker (the safety zones of a HYDRA-UMC cell) can tell who sent it (off, the default)
  *   media.rtsp_proxy             on | off                  FFmpeg reads the cameras through the local tunnel (off: the camera login goes in its command line, visible to every user of the machine)
  *   voice.panic_phrase           on | off                  a user's secret panic phrase, said to the voice assistant, raises the silent duress alarm (off, the default: nobody's phrase is looked for)
+ *   electrical.balance         on | off                 the server works out the balance of the house from the solar plant and the grid (self-consumption, export, unexpected export, consumption anomalies; informing only; off, the default: the balance route answers 404 and nothing is watched)
  *   voice.panic_cooldown_s      10 to 3600               after a panic phrase, the seconds in which the same user's phrase raises nothing more (60)
  *   voice.multipart_turn         on | off                  the wall panel may send a spoken turn as multipart/form-data with the audio as raw bytes (off: only the older raw request is taken, a multipart one is answered 415)
  *   voice.mobile_turn           on | off                  a phone of a signed-in operator or administrator may speak to the voice gateway through POST /api/v1/voice/mobile-turn (the microphone of the phone; off, the default, answers 403 mobile_voice_disabled; the spoken orders keep the same confirmations as the typed ones)
@@ -155,6 +156,7 @@ export type SecuritySettingsValues = {
   "voice.mobile_turn": boolean;
   "vacation.mode": boolean;
   "voice.panic_phrase": boolean;
+  "electrical.balance": boolean;
   "voice.panic_cooldown_s": number;
   "admin.acl_relays": boolean;
   "admin.field_http": boolean;
@@ -225,6 +227,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "voice.mobile_turn": false,
   "vacation.mode": false,
   "voice.panic_phrase": false,
+  "electrical.balance": false,
   "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S.default,
   "admin.acl_relays": false,
   "admin.field_http": false,
@@ -378,6 +381,7 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "admin.field_http") return from === false && to === true;   // letting Studio open the server's port to the field network is the loss
   if (key === "admin.acl_relays") return from === false && to === true;   // letting Studio open the broker for the batteries or the alarm copy is the loss
   if (key === "session.rotate_id") return from === true && to === false;   // a session id that no longer changes is a weaker one: turning it off is the loss
+  if (key === "electrical.balance") return false;   // it only reads and informs
   if (key === "vision.service_remote") return from === false && to === true;   // a service on another machine: the positions of the house travel over a network
   if (key === "vision.service_url") { const host = parseVisionServiceUrl(to)?.host; return host !== undefined && !isLoopbackHost(host) && to !== from; }   // pointing at another machine is the loss
   if (key === "capture.on_alarm_per_min") return false;   // tuning of how much evidence an alarm may start, not a protection

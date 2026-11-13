@@ -152,6 +152,8 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/diagnostics/tokens` | administrator | `routes/diagnostics.ts` |
 | POST | `/api/v1/diagnostics/tokens` | administrator | `routes/diagnostics.ts` |
 | DELETE | `/api/v1/diagnostics/tokens/:id` | administrator | `routes/diagnostics.ts` |
+| GET | `/api/v1/electrical/balance` | operator | `routes/energy_balance.ts` |
+| PUT | `/api/v1/electrical/balance` | administrator, fresh proof of identity | `routes/energy_balance.ts` |
 | GET | `/api/v1/electrical/design` | operator | `routes/alarms.ts` |
 | PUT | `/api/v1/electrical/design` | operator | `routes/alarms.ts` |
 | DELETE | `/api/v1/electrical/design/versions` | operator | `routes/alarms.ts` |

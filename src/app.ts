@@ -62,6 +62,7 @@ import { buildPanelSummary, createPanelFeed, PANEL_HEARTBEAT_MS } from "./panel_
 import { registerVoiceRoutes } from "./routes/voice.js";
 import { registerAlarmAudioRoutes } from "./routes/alarm_audio.js";
 import { registerReportRoutes } from "./routes/reports.js";
+import { registerEnergyBalanceRoutes } from "./routes/energy_balance.js";
 import { registerVisionTimelineRoutes } from "./routes/vision_timeline.js";
 import { registerAiRoutes } from "./routes/ai.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
@@ -208,6 +209,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerVoiceRoutes(app, context);
   registerAlarmAudioRoutes(app, context);
   registerReportRoutes(app, context);
+  registerEnergyBalanceRoutes(app, context);
   registerAiRoutes(app, context);
   registerNotificationRoutes(app, context);
   registerHistoryRoutes(app, context);
@@ -284,6 +286,9 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     }
   }, 30_000);
   watchSockets.unref();
+  // Every five seconds: the balance of the house is looked at (nothing happens while its option is off).
+  const balanceTimer = setInterval(() => { context.balanceWatcher.tick(); }, 5_000);
+  balanceTimer.unref();
   // Once a second: an alarm or the energy can change without the state of the nodes changing, so the summary is looked at, and sent when it differs; every few seconds it is sent anyway, so
   // the panel can tell a quiet channel from a dead one. When the administrator turns the channel off, the panels that are on it are told (4403) and go back to asking.
   let lastBeat = 0;
@@ -424,6 +429,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     close: async () => {
       clearInterval(sweeper);
       clearInterval(watchSockets);
+      clearInterval(balanceTimer);
       clearInterval(panelTimer);
       clearInterval(historySaver);
       stateFeed.close();

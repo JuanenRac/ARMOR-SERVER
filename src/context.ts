@@ -20,6 +20,7 @@ import { hasBearer, SessionStore, type EndedSession, type HeaderSource } from ".
 import { UserStore, type PublicUser } from "./users.js";
 import { classify, type Origin } from "./origin.js";
 import { TotpStore } from "./totp.js";
+import { BalanceWatcher } from "./energy_balance.js";
 import { TrustedDevices } from "./trusted_devices.js";
 import { EvidenceLibrary } from "./media/evidence.js";
 import { RelayManager, StreamTickets } from "./media/relay.js";
@@ -231,6 +232,7 @@ export type AppContext = {
   solar: SolarStore;
   /** The solar equipment an operator declared, kept in a file. */
   solarRegistry: SolarRegistry;
+  balanceWatcher: BalanceWatcher;
   /** What the broker and the ingest routes handed over: taken, refused and ignored fields per topic. */
   ingestLog: IngestLog;
   /** The optional copy of the node traffic (ingest_recorder.ts): writes only while the option ingest.recording is on. */
@@ -498,6 +500,15 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const solarRegistry = new SolarRegistry(path.join(config.dataDir, "solar-devices.json"), overrides.now ? () => new Date(overrides.now!()) : undefined);
   const solar = new SolarStore({ now: overrides.now, onMessage: message => { live.notify("solar", `${message.node_id}/${message.device}`); knownNodes.seen("solar", `${message.node_id}/${message.device}`); alarmRules.handleSolar(message); }, onStale: (node, device, stale) => alarmRules.handleSolarStale(node, device, stale) });
   const batteryLink: AppContext["batteryLink"] = {};
+  const balanceWatcher = new BalanceWatcher({
+    file: path.join(config.dataDir, "energy-balance.json"), enabled: () => securitySettings.get("electrical.balance"), now: overrides.now,
+    inputs: () => { const totals = solar.totals(), grid = electricalNodes.totals(); return { production_w: totals.inverters > totals.stale ? totals.pv_w : null, battery_w: totals.battery_w, grid_w: grid.grid_w, load_w: totals.inverters > totals.stale ? totals.load_w : null }; },
+    history: (node, channel, minutes) => electricalNodes.history(node, channel, minutes), nodes: () => electricalNodes.list().filter(view => !view.stale).map(view => ({ node_id: view.node_id, channels: view.reading.channels })),
+    report: (finding, active) => {
+      if (!active) { alarms.clear(finding.key); return; }
+      alarms.raise(finding.key, { source: { type: "electrical", id: finding.source }, severity: "warning", code: finding.code, detail: finding.detail });
+    },
+  });
   const batteryWrite = new BatteryWriteService({
     enabled: config.batteryWrite, solar, audit, now: overrides.now, file: path.join(config.dataDir, "battery_ops.json"),
     publish: (topic, payload) => { if (!batteryLink.publish) throw new Error("the MQTT broker is not connected"); batteryLink.publish(topic, payload); },
@@ -631,6 +642,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
     live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
+    balanceWatcher,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),
     commandSigner,
