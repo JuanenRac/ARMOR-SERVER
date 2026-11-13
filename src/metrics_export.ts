@@ -7,12 +7,15 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { IngestEntry } from "./ingest_log.js";
 import type { MetricsSample } from "./system_metrics.js";
+import type { VisionCountRow } from "./vision_counters.js";
 
 export type MetricsInput = {
   sample: MetricsSample;
   nodes: Array<{ online: boolean }>;
   activeAlarms: number;
   ingest: readonly IngestEntry[];
+  /** The events of the vision service counted so far; without it the page has no vision series. */
+  vision?: readonly VisionCountRow[];
   version: string;
   startedMs: number;
   nowMs: number;
@@ -44,6 +47,7 @@ export function renderPrometheus(input: MetricsInput): string {
   family("armor_disk_total_bytes", "Size of each disk.", "gauge", sample.disks.map(item => [`{mount="${label(item.mount)}"}`, item.total] as [string, number]));
   family("armor_ingest_accepted_total", "Messages taken, per topic.", "counter", input.ingest.map(item => [`{topic="${label(item.topic)}"}`, item.accepted] as [string, number]));
   family("armor_ingest_rejected_total", "Messages refused, per topic.", "counter", input.ingest.map(item => [`{topic="${label(item.topic)}"}`, item.rejected] as [string, number]));
+  if (input.vision) family("armor_vision_events_total", "Events of the vision service taken, by kind and by what was done with them.", "counter", input.vision.map(item => [`{kind="${label(item.kind)}",outcome="${label(item.outcome)}"}`, item.count] as [string, number]));
   return `${lines.join("\n")}\n`;
 }
 
