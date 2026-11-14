@@ -278,3 +278,16 @@ test("the DNS block of the public part is read strictly", () => {
   for (const dns of [{ name: "home.example.net", addresses: [] } as unknown, { name: "", addresses: [], matches: true }, { name: "x", addresses: [""], matches: true }, { name: "x", addresses: ["1.1.1.1", ""], matches: true }, { name: "x", addresses: ["1.1.1.1"], matches: "yes" }, { name: "x", addresses: Array(9).fill("1.1.1.1"), matches: true }, { name: "x", addresses: [], matches: true, ttl: 5 }])
     assert.throws(() => parseNetworkMessage(message({ public: { ...good, dns: dns as never } })), Error);
 });
+
+test("the findings of the network node: a risky port and a second DHCP server", () => {
+  assert.doesNotThrow(() => parseNetworkMessage(message({ events: [event({ id: "f1", kind: "risky_port", port: 23, recommendation: "close_telnet" })] })));
+  assert.doesNotThrow(() => parseNetworkMessage(message({ events: [{ id: "f2", kind: "rogue_dhcp", at_ms: 1, server: "192.168.0.77", recommendation: "find_the_dhcp_server" }] })));
+  const refused: Record<string, NetworkMessage> = {
+    "a risky port with no port": message({ events: [event({ id: "f3", kind: "risky_port" })] }),
+    "a DHCP server with no server": message({ events: [{ id: "f4", kind: "rogue_dhcp", at_ms: 1 }] }),
+    "a DHCP server about a device": message({ events: [{ id: "f5", kind: "rogue_dhcp", at_ms: 1, server: "192.168.0.77", device_id: router.id }] }),
+    "a server on another kind": message({ events: [event({ id: "f6", server: "192.168.0.77" })] }),
+    "a recommendation on another kind": message({ events: [event({ id: "f7", recommendation: "close_telnet" })] }),
+  };
+  for (const [name, item] of Object.entries(refused)) assert.throws(() => parseNetworkMessage(item), Error, name);
+});

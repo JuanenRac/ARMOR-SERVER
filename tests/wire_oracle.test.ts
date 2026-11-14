@@ -59,6 +59,7 @@ const BETWEEN_FIELDS = new RegExp([
   "a token goes on", "a token is given only in the result", "belong to a (restarting|armed) answer only", "the base of the profile is the mode", "says how long it was down but is not an end",
   "an open zone must be a zone of the message", "a detail goes on the execute of diagnostics", "a delay and a slot go on the execute of a restart", "a core dump size and summary go with a core dump",
   "the zone it came from goes with a path violation",
+  "names a server but is not about a DHCP server", "carries a recommendation but is not a finding", "is about a DHCP server (and names none|, not a device)",
 ].join("|"));
 
 for (const [schema, read] of Object.entries(READERS)) {
