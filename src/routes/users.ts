@@ -62,6 +62,7 @@ export function registerUserRoutes(app: Express, context: AppContext): void {
       studioSessions.revokeUser(id);
       if (target) { context.fcmDevices.removeUser(target.username); context.loginCountries.forget(target.id); }
       context.trustedDevices.removeUser(id);
+      context.presence.remove(id);
       audit.record({ action: "user.delete", outcome: "allowed", actor: actor?.username, target: target?.username });
       return response.sendStatus(204);
     } catch (error) {

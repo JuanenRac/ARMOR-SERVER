@@ -77,6 +77,7 @@ import { FileStatePersistence } from "./persistence.js";
 import { RulesFile } from "./rules.js";
 import { ArmorStore, type SystemState } from "./store.js";
 import { PreferencesStore } from "./preferences.js";
+import { PresenceStore } from "./presence.js";
 import { IngestLog } from "./ingest_log.js";
 import { IngestRecorder } from "./ingest_recorder.js";
 import { DiagnosticTokens } from "./diagnostic_tokens.js";
@@ -119,6 +120,7 @@ export type AppContext = {
   users: UserStore;
   /** Language, theme and the saved weather place, kept per account rather than per browser or address. */
   preferences: PreferencesStore;
+  presence: PresenceStore;
   devices: DeviceRegistry;
   alarms: AlarmCentre;
   alarmRules: AlarmRules;
@@ -598,6 +600,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     minPasswordLength: config.passwordMinLength, resetSeedPassword: config.resetStudioPassword, warn,
   });
   const preferences = new PreferencesStore(path.join(config.dataDir, "preferences.json"));
+  const presence = new PresenceStore(path.join(config.dataDir, "presence.json"));
   const studioUser = (request: HeaderSource): PublicUser | undefined => { const id = studioSessions.userId(request); return id ? users.get(id) : undefined; };
   // A wall panel's account is of the `panel` role: it is not an operator. It may only do what a wall panel does: read the summary, change the mode and acknowledge the alarms.
   const panelRoutes = new Set(["GET /api/v1/panel/summary", "POST /api/v1/mode", "POST /api/v1/alarms/acknowledge", "GET /api/v1/alarm-audio/spoken"]);
@@ -657,7 +660,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com", rollout: () => (securitySettings.get("admin.firmware_rollout") ? firmwareRollout.get() : null) }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, presence, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     balanceWatcher,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),

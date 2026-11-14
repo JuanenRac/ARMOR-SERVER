@@ -230,6 +230,9 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/preferences` | none here | `routes/preferences.ts` |
 | PUT | `/api/v1/preferences` | none here | `routes/preferences.ts` |
 | GET | `/api/v1/preflight` | operator | `routes/system.ts` |
+| GET | `/api/v1/presence` | administrator | `routes/presence.ts` |
+| GET | `/api/v1/presence/me` | operator | `routes/presence.ts` |
+| PUT | `/api/v1/presence/me` | operator | `routes/presence.ts` |
 | DELETE | `/api/v1/push/register` | operator | `routes/push.ts` |
 | POST | `/api/v1/push/register` | operator | `routes/push.ts` |
 | GET | `/api/v1/push/status` | administrator | `routes/push.ts` |
