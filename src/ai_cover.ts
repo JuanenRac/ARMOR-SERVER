@@ -44,7 +44,8 @@ function poseOf(item: Sized, size: { width: number; depth: number }): PlanPose |
   const x = numeric(item.x), y = numeric(item.y), heading = numeric(item.heading);
   // The way it faces is needed: a guess would put every track on the wrong side of the picture, so a device that does not say it has no pose.
   if (x === undefined || y === undefined || heading === undefined) return undefined;
-  return { x_mm: Math.round(x / 100 * size.width * 1000), y_mm: Math.round(y / 100 * size.depth * 1000), yaw_deg: heading };
+  // The designer of Studio keeps x and y as a percentage of the work area with y counted from the TOP of the drawing, and the heading in degrees anticlockwise from east. The plan of the pose has y up (north) and the yaw clockwise from +y, so y is turned over and the heading becomes 90 minus itself.
+  return { x_mm: Math.round(x / 100 * size.width * 1000), y_mm: Math.round((100 - y) / 100 * size.depth * 1000), yaw_deg: (((90 - heading) % 360) + 360) % 360 };
 }
 
 /** The pose, the field of view (degrees) and the reach (millimetres) of a camera from the design; each part is absent when the design does not give it. */
