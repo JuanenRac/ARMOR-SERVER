@@ -80,7 +80,7 @@ function serveSession(client: Socket, target: TunnelTarget, proxyBase: string, r
     upstream.write(Buffer.concat([Buffer.from(`${lines.join("\r\n")}\r\n\r\n`, "latin1"), request.body]));
   };
 
-  client.on("data", chunk => {
+  client.on("data", (chunk: Buffer) => {
     try {
       for (const unit of fromClient.push(chunk)) {
         if (unit.kind === "frame") { relay(upstream, client, unit.raw); continue; }
@@ -106,7 +106,7 @@ function serveSession(client: Socket, target: TunnelTarget, proxyBase: string, r
     } catch { destroy(); }
   });
 
-  upstream.on("data", chunk => {
+  upstream.on("data", (chunk: Buffer) => {
     try {
       for (const unit of fromCamera.push(chunk)) {
         if (unit.kind === "frame") { relay(client, upstream, unit.raw); continue; }

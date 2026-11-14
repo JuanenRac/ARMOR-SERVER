@@ -25,7 +25,7 @@ async function broker(): Promise<Broker> {
       }
       if (packet.cmd === "pingreq") socket.write(mqttPacket.generate({ cmd: "pingresp" } as never, { protocolVersion: 5 }));
     });
-    socket.on("data", chunk => parser.parse(chunk));
+    socket.on("data", (chunk: Buffer) => parser.parse(chunk));
     socket.on("error", () => undefined);
     socket.on("close", () => sockets.delete(socket));
   });

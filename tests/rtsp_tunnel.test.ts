@@ -21,7 +21,7 @@ function fakeCamera(mode: "digest" | "basic" = "digest") {
   const nonce = "abcdef0123456789";
   const server = net.createServer(socket => {
     let buffer = "";
-    socket.on("data", chunk => {
+    socket.on("data", (chunk: Buffer) => {
       buffer += chunk.toString("latin1");
       for (let end = buffer.indexOf("\r\n\r\n"); end >= 0; end = buffer.indexOf("\r\n\r\n")) {
         const head = buffer.slice(0, end); buffer = buffer.slice(end + 4);
@@ -58,7 +58,7 @@ const talk = (url: string, lines: string[]) => new Promise<Buffer>((resolve, rej
   const chunks: Buffer[] = [];
   const done = () => { clearTimeout(timer); socket.destroy(); resolve(Buffer.concat(chunks)); };
   const timer = setTimeout(done, 3000);
-  socket.on("data", chunk => { chunks.push(chunk); if (Buffer.concat(chunks).includes(PICTURE) || /^RTSP\/1\.0 401/.test(Buffer.concat(chunks).toString("latin1"))) done(); });
+  socket.on("data", (chunk: Buffer) => { chunks.push(chunk); if (Buffer.concat(chunks).includes(PICTURE) || /^RTSP\/1\.0 401/.test(Buffer.concat(chunks).toString("latin1"))) done(); });
   socket.on("close", done);
   socket.on("error", error => { clearTimeout(timer); reject(error); });
 });
