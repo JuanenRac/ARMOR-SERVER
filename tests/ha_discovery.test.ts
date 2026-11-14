@@ -94,3 +94,27 @@ test("it is off unless asked for, and its prefix must be one word", () => {
   assert.deepEqual(readConfig({ ...base, ARMOR_HA_DISCOVERY: "1", ARMOR_HA_DISCOVERY_PREFIX: "ha" } as NodeJS.ProcessEnv).haDiscovery, { prefix: "ha" });
   assert.throws(() => readConfig({ ...base, ARMOR_HA_DISCOVERY_PREFIX: "home/assistant" } as NodeJS.ProcessEnv), /one word/);
 });
+
+test("what a unit says beyond the basics is described too, and only when it said it", () => {
+  const rich: SolarDeviceView = {
+    ...inverter, device: "axpert-2",
+    reading: { ...inverter.reading, pv2_w: 300, pv2_v: 120, pv2_a: 2.5, bus_v: 380, total_out_w: 900, ratings: { out_rating_w: 5000, out_rating_va: 5000, max_charge_a: 60 } } as SolarDeviceView["reading"],
+  };
+  const full: SolarDeviceView = {
+    ...stack, device: "us3000-2",
+    reading: { ...stack.reading, cell_max_v: 3.4, cycles: 120, balancing: 2, protecting: false } as SolarDeviceView["reading"],
+  };
+  const byTopic = new Map(discoveryMessages("homeassistant", [rich, full, inverter, stack], [], []).map(message => [message.topic, JSON.parse(message.payload) as Record<string, unknown>]));
+  assert.equal(byTopic.get("homeassistant/sensor/armor_solar_1_axpert_2_pv2_w/config")!.value_template, "{{ value_json.pv2_w }}");
+  assert.equal(byTopic.get("homeassistant/sensor/armor_solar_1_axpert_2_rating_out_rating_w/config")!.value_template, "{{ value_json.ratings.out_rating_w }}");
+  assert.equal(byTopic.get("homeassistant/sensor/armor_solar_1_axpert_2_rating_max_charge_a/config")!.unit_of_measurement, "A");
+  assert.equal(byTopic.has("homeassistant/sensor/armor_solar_1_axpert_2_rating_out_rating_v/config"), false);   // it did not say it
+  assert.equal(byTopic.get("homeassistant/sensor/armor_solar_1_us3000_2_cycles/config")!.state_class, "total_increasing");
+  assert.equal(byTopic.get("homeassistant/binary_sensor/armor_solar_1_us3000_2_protecting/config")!.device_class, "problem");
+  assert.equal(byTopic.get("homeassistant/sensor/armor_solar_1_us3000_2_balancing/config")!.value_template, "{{ value_json.balancing }}");
+  // a unit that said none of it gets none of it
+  for (const topic of byTopic.keys()) {
+    if (topic.includes("axpert_1_")) assert.equal(/pv2|rating|bus_v|total_out/.test(topic), false);
+    if (topic.includes("us3000_1_")) assert.equal(/cell_max|cycles|balancing|protecting/.test(topic), false);
+  }
+});
