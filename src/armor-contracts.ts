@@ -1061,11 +1061,13 @@ export type NetworkDevice = {
 
 export type NetworkEvent = {
   id: string;
-  kind: "new_device" | "device_online" | "device_offline" | "ip_changed" | "arp_conflict" | "port_opened" | "port_closed" | "internet_down" | "internet_up" | "gateway_down" | "gateway_up";
+  kind: "new_device" | "device_online" | "device_offline" | "ip_changed" | "arp_conflict" | "port_opened" | "port_closed" | "internet_down" | "internet_up" | "gateway_down" | "gateway_up" | "risky_port" | "rogue_dhcp";
   at_ms: number;
   device_id?: string;
   port?: number;
   outage_s?: number;
+  server?: string;
+  recommendation?: string;
   detail?: string;
 };
 
