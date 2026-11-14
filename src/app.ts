@@ -63,6 +63,7 @@ import { buildPanelSummary, createPanelFeed, PANEL_HEARTBEAT_MS } from "./panel_
 import { registerVoiceRoutes } from "./routes/voice.js";
 import { registerPanicGestureRoutes } from "./routes/panic_gesture.js";
 import { registerEnrolmentRoutes } from "./routes/enrolment.js";
+import { registerPresenceRoutes } from "./routes/presence.js";
 import { registerAlarmAudioRoutes } from "./routes/alarm_audio.js";
 import { registerLoadSheddingRoutes } from "./routes/load_shedding.js";
 import { registerReportRoutes } from "./routes/reports.js";
@@ -207,6 +208,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerAlarmRoutes(app, context);
   registerPanicGestureRoutes(app, context);
   registerEnrolmentRoutes(app, context);
+  registerPresenceRoutes(app, context);
   registerSystemRoutes(app, context, version);
   registerAdminRoutes(app, context);
   registerBackupRoutes(app, context);
