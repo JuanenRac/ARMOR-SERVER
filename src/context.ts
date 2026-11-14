@@ -44,6 +44,7 @@ import { AlarmStateSigner } from "./alarm_state_signature.js";
 import { VisionTimeline } from "./vision_timeline.js";
 import { CaptureOnDetect } from "./capture_on_detect.js";
 import { IgnoreZones } from "./ignore_zones.js";
+import { IgnoreProposals } from "./ignore_proposals.js";
 import { CountLines } from "./count_lines.js";
 import { DetectionZones } from "./detection_zones.js";
 import { FcmDevices, fcmChannel, parseServiceAccount } from "./push_fcm.js";
@@ -77,7 +78,9 @@ import { FileStatePersistence } from "./persistence.js";
 import { RulesFile } from "./rules.js";
 import { ArmorStore, type SystemState } from "./store.js";
 import { PreferencesStore } from "./preferences.js";
+import { PresenceStore } from "./presence.js";
 import { IngestLog } from "./ingest_log.js";
+import { VisionCounters } from "./vision_counters.js";
 import { IngestRecorder } from "./ingest_recorder.js";
 import { DiagnosticTokens } from "./diagnostic_tokens.js";
 import { NodeDiagnosticsStore } from "./node_diagnostics.js";
@@ -119,6 +122,7 @@ export type AppContext = {
   users: UserStore;
   /** Language, theme and the saved weather place, kept per account rather than per browser or address. */
   preferences: PreferencesStore;
+  presence: PresenceStore;
   devices: DeviceRegistry;
   alarms: AlarmCentre;
   alarmRules: AlarmRules;
@@ -207,6 +211,8 @@ export type AppContext = {
   visionTimeline: VisionTimeline;
   /** The parts of each camera's picture that the observation service does not look at. */
   ignoreZones: IgnoreZones;
+  /** The areas to ignore that the observation service proposes while the setting ai.learn is on, waiting for an administrator. */
+  ignoreProposals: IgnoreProposals;
   /** The counting lines drawn on each camera's picture. */
   countLines: CountLines;
   detectionZones: DetectionZones;
@@ -242,6 +248,8 @@ export type AppContext = {
   balanceWatcher: BalanceWatcher;
   /** What the broker and the ingest routes handed over: taken, refused and ignored fields per topic. */
   ingestLog: IngestLog;
+  /** How many events of the vision service were taken, by kind and by what was done with each (counters of the Prometheus page). */
+  visionCounters: VisionCounters;
   /** The optional copy of the node traffic (ingest_recorder.ts): writes only while the option ingest.recording is on. */
   ingestRecorder: IngestRecorder;
   /** The MQTT side of devices: set once the broker client exists. */
@@ -483,6 +491,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     cameras: () => vault.list().flatMap(item => { const camera = vault.get(item.id); return camera ? [camera] : []; }), trigger: camera => captureOnDetect.trigger(camera), audit, now: overrides.now,
   });
   const ignoreZones = new IgnoreZones(path.join(config.dataDir, "camera-ignore-zones.json"));
+  const ignoreProposals = new IgnoreProposals(path.join(config.dataDir, "camera-ignore-proposals.json"));
   const countLines = new CountLines(path.join(config.dataDir, "camera-count-lines.json"));
   const detectionZones = new DetectionZones(path.join(config.dataDir, "camera-detection-zones.json"));
   const zoneFeedSigner = new ZoneFeedSigner(path.join(config.dataDir, "zone-feed.key"));
@@ -510,6 +519,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   });
   const firmwareRollout = new RolloutStore(path.join(config.dataDir, "firmware-rollout.json"), warn);
   const ingestLog = new IngestLog(overrides.now);
+  const visionCounters = new VisionCounters();
   const ingestRecorder = new IngestRecorder({ dir: path.join(config.dataDir, "ingest-recording"), enabled: () => securitySettings.get("ingest.recording"), maxBytes: config.ingestRecordMaxBytes, maxFiles: config.ingestRecordFiles, now: overrides.now });
   ingestLog.tap = (topic, payload, accepted, reason) => ingestRecorder.record(topic, payload, accepted, reason);
   const solarRegistry = new SolarRegistry(path.join(config.dataDir, "solar-devices.json"), overrides.now ? () => new Date(overrides.now!()) : undefined);
@@ -598,6 +608,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     minPasswordLength: config.passwordMinLength, resetSeedPassword: config.resetStudioPassword, warn,
   });
   const preferences = new PreferencesStore(path.join(config.dataDir, "preferences.json"));
+  const presence = new PresenceStore(path.join(config.dataDir, "presence.json"));
   const studioUser = (request: HeaderSource): PublicUser | undefined => { const id = studioSessions.userId(request); return id ? users.get(id) : undefined; };
   // A wall panel's account is of the `panel` role: it is not an operator. It may only do what a wall panel does: read the summary, change the mode and acknowledge the alarms.
   const panelRoutes = new Set(["GET /api/v1/panel/summary", "POST /api/v1/mode", "POST /api/v1/alarms/acknowledge", "GET /api/v1/alarm-audio/spoken"]);
@@ -657,7 +668,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com", rollout: () => (securitySettings.get("admin.firmware_rollout") ? firmwareRollout.get() : null) }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, ignoreProposals, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, presence, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays, visionCounters,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     balanceWatcher,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),

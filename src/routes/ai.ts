@@ -7,7 +7,7 @@ import type { Express, Request } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { AiError, FRAME_HEIGHT, FRAME_WIDTH, parseActivityEvent, parseObservation, parseVisionEvent } from "../ai.js";
-import { coveringNodes } from "../ai_cover.js";
+import { cameraGeometry, coveringNodes, nodeGeometry, trackPoints } from "../ai_cover.js";
 
 /** A camera that keeps seeing movement is one alarm per this long, not one for ever (the alarm of an observation is an event: it ends the moment it is raised and leaves the list when somebody acknowledges it). */
 const MOTION_WINDOW_MS = 5 * 60_000;
@@ -23,14 +23,20 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
     const state = store.snapshot();
     response.json({
       mode: state.mode,
-      nodes: Object.entries(state.nodes).map(([id, node]) => ({ id, online: node.online, targets: node.target_count, lux: node.lux })),
+      // The two options the service follows (both off by default): where each radar track falls in a picture, and the study of the pictures that proposes areas to ignore.
+      options: { spatial: context.securitySettings.get("ai.spatial"), learn: context.securitySettings.get("ai.learn") },
+      // `pose` and `track_points` only when the site design places the node's radar and says which way it faces; the observation service then judges where each track falls in a camera's picture.
+      nodes: Object.entries(state.nodes).map(([id, node]) => {
+        const geometry = nodeGeometry(site.get().site, id);
+        return { id, online: node.online, targets: node.target_count, lux: node.lux, ...(geometry ? { pose: geometry.pose, ...(node.targets.length ? { track_points: trackPoints(node.targets, geometry.mirror) } : {}) } : {}) };
+      }),
       // `nodes`: the radar nodes that cover each camera in the site design (absent when the design cannot say: every node then counts).
       cameras: vault.list().filter(camera => Boolean(camera.rtspPath && camera.secrets?.username && camera.secrets.password)).map(camera => {
         const nodes = coveringNodes(site.get().site, camera.id);
         const ignore = context.ignoreZones.get(camera.id);
         const lines = context.countLines.get(camera.id);
         const detection = context.detectionZones.get(camera.id);
-        return { id: camera.id, name: camera.name, ...(nodes ? { nodes } : {}), ...(ignore.length ? { ignore } : {}), ...(lines.length ? { lines } : {}), ...(detection.zones.length ? { detection } : {}) };
+        return { id: camera.id, name: camera.name, ...cameraGeometry(site.get().site, camera.id), ...(nodes ? { nodes } : {}), ...(ignore.length ? { ignore } : {}), ...(lines.length ? { lines } : {}), ...(detection.zones.length ? { detection } : {}) };
       }),
     });
   });
@@ -75,9 +81,10 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
     if (!vault.get(event.camera_id)) return response.status(404).json({ error: "unknown_camera" });
     if (event.type === "detection") {
       audit.record({ action: "ai.vision_event", outcome: "allowed", target: event.camera_id, detail: `detection ${event.label} in ${event.zone_id}` });
+      context.visionCounters.record("detection", "recorded");
       return response.json({ raised: false, reason: "recorded" });
     }
-    if (store.snapshot().mode !== "armed") return response.json({ raised: false, reason: "disarmed" });
+    if (store.snapshot().mode !== "armed") { context.visionCounters.record("alert", "ignored"); return response.json({ raised: false, reason: "disarmed" }); }
     const heading = event.vectors?.find(vector => vector.track_id === event.track_id);
     const alarm = alarms.raise(`ai:camera:${event.camera_id}:zone:${event.zone_id}:${Math.floor(Date.now() / MOTION_WINDOW_MS)}`, {
       source: { type: "camera", id: event.camera_id }, severity: "high", code: "camera_motion",
@@ -86,6 +93,7 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
     });
     const watched = vault.get(event.camera_id);
     if (watched) void context.captureOnDetect.trigger(watched).catch(() => undefined);
+    context.visionCounters.record("alert", alarm ? "raised" : "ignored");
     audit.record({ action: "ai.vision_event", outcome: "allowed", target: event.camera_id, detail: `alert ${event.label} in ${event.zone_id}${alarm ? ", alarm raised" : ", one is already open"}` });
     return response.json({ raised: Boolean(alarm), ...(alarm ? { alarm_id: alarm.id } : { reason: "already_open" }) });
   });
@@ -101,7 +109,8 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
     if (!event) return response.status(422).json({ error: "invalid_activity_event" });
     if (!vault.get(event.camera_id)) return response.status(404).json({ error: "unknown_camera" });
     const where = event.zone_id ? `zone ${event.zone_id}` : `line ${event.line_id}`;
-    const record = (outcome: string): void => audit.record({ action: "ai.activity_event", outcome: "allowed", target: event.camera_id, detail: `${event.type} ${event.label} in ${where}, ${outcome}` });
+    const record = (outcome: string): void => { context.visionCounters.record("activity", outcome === "alarm raised" ? "raised" : outcome === "recorded" ? "recorded" : "ignored"); note(outcome); };
+    const note = (outcome: string): void => audit.record({ action: "ai.activity_event", outcome: "allowed", target: event.camera_id, detail: `${event.type} ${event.label} in ${where}, ${outcome}` });
     if (event.type === "line_cross" || event.type === "zone_exit") { record("recorded"); return response.json({ raised: false, reason: "recorded" }); }
     const zone = context.detectionZones.get(event.camera_id).zones.find(item => item.id === event.zone_id);
     // The review timeline (vision.timeline, off by default) keeps the events of the zones the server knows, with the evidence taken when it was an armed alert.

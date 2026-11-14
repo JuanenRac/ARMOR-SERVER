@@ -21,7 +21,9 @@ export type Trigger =
   | { type: "alarm"; severity?: Severity; source_type?: "node" | "camera" | "device" | "solar" | "electrical" | "network" | "alarm"; source_id?: string }
   | { type: "mode"; mode: SecurityMode }
   /** Once a day at `at` (HH:MM, the clock of the server) moved by up to `jitter_min` minutes either way, on `days` (0 = Sunday; all when absent), from `seed` (the id of the automation when absent). Only in vacation mode, armed away. */
-  | { type: "schedule"; at: string; days?: number[]; jitter_min?: number; seed?: string };
+  | { type: "schedule"; at: string; days?: number[]; jitter_min?: number; seed?: string }
+  /** Fires when the sum of the words "home" and "away" that the phones told the server becomes this one (option `presence.by_user`; see presence.ts). */
+  | { type: "presence"; state: "everyone_away" | "someone_home" };
 export type Action = { type: "device"; device_id: string; command: "on" | "off" | "toggle"; /** Switch back after this many seconds. */ for_s?: number } | { type: "notify" };
 export type Automation = {
   id: string; name: string; enabled: boolean; trigger: Trigger; when_mode: "any" | SecurityMode; actions: Action[];
@@ -95,6 +97,10 @@ function cleanTrigger(raw: unknown): Trigger {
       out.seed = t.seed;
     }
     return out;
+  }
+  if (t.type === "presence") {
+    if (t.state !== "everyone_away" && t.state !== "someone_home") throw new AutomationError("invalid_trigger", "the presence trigger waits for everyone_away or someone_home");
+    return { type: "presence", state: t.state };
   }
   if (t.type === "mode" && (t.mode === "armed" || t.mode === "disarmed")) return { type: "mode", mode: t.mode };
   throw new AutomationError("invalid_trigger", "unknown kind of trigger");
@@ -320,6 +326,9 @@ export class AutomationEngine {
     });
     return ran;
   }
+
+  /** The sum of the words of home or away became `state`: the automations that wait for it run (the caller only calls this while the option is on and the sum changed). */
+  handlePresence(state: "everyone_away" | "someone_home"): void { this.#fire(a => a.trigger.type === "presence" && a.trigger.state === state); }
 
   handleMode(mode: SecurityMode): void { this.#fire(a => a.trigger.type === "mode" && a.trigger.mode === mode); }
 }

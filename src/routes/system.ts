@@ -63,7 +63,7 @@ export function registerSystemRoutes(app: Express, context: AppContext, version:
     if (!context.securitySettings.get("metrics.prometheus") || !config.metricsToken) return void response.status(404).json({ error: "metrics_disabled" });
     if (!metricsTokenOk(request.header("authorization"), config.metricsToken)) return void response.status(401).set("WWW-Authenticate", "Bearer").json({ error: "unauthorized" });
     response.type("text/plain; version=0.0.4; charset=utf-8").send(renderPrometheus({
-      sample: systemMonitor.current, nodes: Object.values(store.snapshot().nodes), activeAlarms: alarms.active().length, ingest: context.ingestLog.list(), version, startedMs, nowMs: Date.now(),
+      sample: systemMonitor.current, nodes: Object.values(store.snapshot().nodes), activeAlarms: alarms.active().length, ingest: context.ingestLog.list(), vision: context.visionCounters.rows(), version, startedMs, nowMs: Date.now(),
     }));
   });
 
