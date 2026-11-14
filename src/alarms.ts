@@ -666,6 +666,11 @@ export class AlarmRules {
    * or a device that went away ends the one about it. Being offline or online again is news for the list of events, not an alarm.
    */
   handleNetworkEvent(node: string, event: NetworkEvent, isKnown: (deviceId: string) => boolean, describe: (deviceId: string) => Record<string, unknown> = () => ({})): void {
+    if (event.kind === "rogue_dhcp" && event.server) {
+      // A second DHCP server is a finding about the network, not about a device: the alarm is one per node and server and waits to be acknowledged.
+      this.centre.raise(`network:${node}:dhcp:${event.server}`, { source: { type: "network", id: node }, severity: "high", code: "network_rogue_dhcp", detail: { node, server: event.server, recommendation: event.recommendation ?? "", found_at: new Date(event.at_ms).toISOString() } });
+      return;
+    }
     if (!event.device_id) return;
     const id = `${node}/${event.device_id}`, source: AlarmSource = { type: "network", id }, base = `network:${id}`;
     const facts = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({ node, ...describe(event.device_id!), ...extra });
@@ -673,7 +678,8 @@ export class AlarmRules {
     if (event.kind === "new_device" && !isKnown(event.device_id)) this.centre.raise(`${base}:new`, { source, severity: "warning", code: "network_new_device", detail: facts({ first_seen: new Date(event.at_ms).toISOString() }) });
     else if (event.kind === "arp_conflict") this.centre.raise(`${base}:arp`, { source, severity: "high", code: "network_arp_conflict", detail: facts(conflict ? { mac_now: conflict[1].toLowerCase(), mac_before: conflict[2].toLowerCase() } : { what_happened: event.detail ?? "" }) });
     else if (event.kind === "port_opened" && event.port !== undefined) this.centre.raise(`${base}:port:${event.port}`, { source, severity: RISKY_PORTS.has(event.port) ? "high" : "warning", code: "network_port_opened", detail: facts({ port: event.port, risky: RISKY_PORTS.has(event.port), opened_at: new Date(event.at_ms).toISOString() }) });
-    else if (event.kind === "port_closed" && event.port !== undefined) this.centre.clear(`${base}:port:${event.port}`);
+    else if (event.kind === "risky_port" && event.port !== undefined) this.centre.raise(`${base}:risky:${event.port}`, { source, severity: "high", code: "network_risky_port", detail: facts({ port: event.port, recommendation: event.recommendation ?? "", found_at: new Date(event.at_ms).toISOString() }) });
+    else if (event.kind === "port_closed" && event.port !== undefined) { this.centre.clear(`${base}:port:${event.port}`); this.centre.clear(`${base}:risky:${event.port}`); }
     else if (event.kind === "device_offline") this.centre.clear(`${base}:arp`);
   }
 

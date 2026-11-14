@@ -12,6 +12,8 @@ type Words = {
   radar: string; radarNone: string; radarNoNodes: string; solar: string; solarBattery: string; solarNone: string;
   electrical: string; electricalFeeds: string; electricalNone: string; network: string; networkNone: string; time: string; help: string;
   lightsOn: string; lightsOff: string; lightsNone: string; lightsFailed: string;
+  /** Which camera saw movement last: {0} is its name and {1} the minutes since; none when no camera alarm is on record. */
+  lastCamera: string; lastCameraNone: string;
   /** The internet: up, degraded, down, lan_down, unknown. */
   internet: readonly [string, string, string, string, string];
 };
@@ -26,6 +28,7 @@ const WORDS: Record<VoiceLanguage, Words> = {
     network: "Internet is {0}. {1} device(s) on the network.", networkNone: "The network node does not report.", time: "It is {0}.",
     help: "I can arm and disarm the system, tell the state, the alarms, the nodes, the cameras, the radars, the solar system, the consumption, the network and the time, turn the lights on and off, and silence the alarm.",
     lightsOn: "{0} light(s) turned on.", lightsOff: "{0} light(s) turned off.", lightsNone: "There are no lights set up.", lightsFailed: " {0} could not be reached.",
+    lastCamera: "{0} saw movement {1} minute(s) ago.", lastCameraNone: "No camera has seen movement lately.",
     internet: ["working", "slow", "down", "unreachable, the local network is down", "unknown"],
   },
   es: {
@@ -37,6 +40,7 @@ const WORDS: Record<VoiceLanguage, Words> = {
     network: "Internet está {0}. {1} dispositivo(s) en la red.", networkNone: "El nodo de red no informa.", time: "Son las {0}.",
     help: "Puedo armar y desarmar el sistema, decirte el estado, las alarmas, los nodos, las cámaras, los radares, el sistema solar, el consumo, la red y la hora, encender y apagar las luces, y silenciar la alarma.",
     lightsOn: "{0} luz/luces encendida(s).", lightsOff: "{0} luz/luces apagada(s).", lightsNone: "No hay luces configuradas.", lightsFailed: " {0} no han respondido.",
+    lastCamera: "{0} vio movimiento hace {1} minuto(s).", lastCameraNone: "Ninguna cámara ha visto movimiento últimamente.",
     internet: ["funcionando", "lento", "caído", "inalcanzable, la red local está caída", "desconocido"],
   },
   de: {
@@ -48,6 +52,7 @@ const WORDS: Record<VoiceLanguage, Words> = {
     network: "Das Internet ist {0}. {1} Gerät(e) im Netzwerk.", networkNone: "Der Netzwerkknoten meldet sich nicht.", time: "Es ist {0}.",
     help: "Ich kann das System scharf- und entschärfen, den Status, die Alarme, die Knoten, die Kameras, die Radare, die Solaranlage, den Verbrauch, das Netzwerk und die Uhrzeit sagen, das Licht ein- und ausschalten und den Alarm stummschalten.",
     lightsOn: "{0} Licht(er) eingeschaltet.", lightsOff: "{0} Licht(er) ausgeschaltet.", lightsNone: "Es sind keine Lichter eingerichtet.", lightsFailed: " {0} waren nicht erreichbar.",
+    lastCamera: "{0} hat vor {1} Minute(n) Bewegung gesehen.", lastCameraNone: "Keine Kamera hat zuletzt Bewegung gesehen.",
     internet: ["in Betrieb", "langsam", "ausgefallen", "nicht erreichbar, das lokale Netzwerk ist ausgefallen", "unbekannt"],
   },
   fr: {
@@ -59,6 +64,7 @@ const WORDS: Record<VoiceLanguage, Words> = {
     network: "Internet est {0}. {1} appareil(s) sur le réseau.", networkNone: "Le nœud réseau ne donne pas de nouvelles.", time: "Il est {0}.",
     help: "Je peux armer et désarmer le système, dire l'état, les alarmes, les nœuds, les caméras, les radars, le solaire, la consommation, le réseau et l'heure, allumer et éteindre les lumières, et faire taire l'alarme.",
     lightsOn: "{0} lumière(s) allumée(s).", lightsOff: "{0} lumière(s) éteinte(s).", lightsNone: "Aucune lumière n'est configurée.", lightsFailed: " {0} n'ont pas répondu.",
+    lastCamera: "{0} a vu du mouvement il y a {1} minute(s).", lastCameraNone: "Aucune caméra n'a vu de mouvement récemment.",
     internet: ["en marche", "lent", "coupé", "injoignable, le réseau local est coupé", "inconnu"],
   },
   it: {
@@ -70,6 +76,7 @@ const WORDS: Record<VoiceLanguage, Words> = {
     network: "Internet è {0}. {1} dispositivo/i sulla rete.", networkNone: "Il nodo di rete non riferisce.", time: "Sono le {0}.",
     help: "Posso armare e disarmare il sistema, dirti lo stato, gli allarmi, i nodi, le telecamere, i radar, il solare, il consumo, la rete e l'ora, accendere e spegnere le luci e silenziare l'allarme.",
     lightsOn: "{0} luce/i accesa/e.", lightsOff: "{0} luce/i spenta/e.", lightsNone: "Non ci sono luci configurate.", lightsFailed: " {0} non hanno risposto.",
+    lastCamera: "{0} ha visto movimento {1} minuto/i fa.", lastCameraNone: "Nessuna telecamera ha visto movimento di recente.",
     internet: ["funzionante", "lento", "interrotto", "irraggiungibile, la rete locale è interrotta", "sconosciuto"],
   },
   ja: {
@@ -81,6 +88,7 @@ const WORDS: Record<VoiceLanguage, Words> = {
     network: "インターネットは{0}です。ネットワーク上の機器は{1}台です。", networkNone: "ネットワークノードが報告していません。", time: "{0}です。",
     help: "システムの警備開始と解除、状態、アラーム、ノード、カメラ、レーダー、ソーラー、電力消費、ネットワーク、時刻をお答えし、照明の点灯と消灯、アラームの停止ができます。",
     lightsOn: "{0}個の照明をつけました。", lightsOff: "{0}個の照明を消しました。", lightsNone: "照明は設定されていません。", lightsFailed: " {0}個は応答しませんでした。",
+    lastCamera: "{0} が {1} 分前に動きを検知しました。", lastCameraNone: "最近動きを検知したカメラはありません。",
     internet: ["正常", "低速", "停止中", "到達不能（ローカルネットワークが停止中）", "不明"],
   },
   pt: {
@@ -92,6 +100,7 @@ const WORDS: Record<VoiceLanguage, Words> = {
     network: "A internet está {0}. {1} dispositivo(s) na rede.", networkNone: "O nó de rede não reporta.", time: "São {0}.",
     help: "Posso armar e desarmar o sistema, dizer o estado, os alarmes, os nós, as câmaras, os radares, o solar, o consumo, a rede e a hora, ligar e desligar as luzes e silenciar o alarme.",
     lightsOn: "{0} luz(es) ligada(s).", lightsOff: "{0} luz(es) desligada(s).", lightsNone: "Não há luzes configuradas.", lightsFailed: " {0} não responderam.",
+    lastCamera: "{0} viu movimento há {1} minuto(s).", lastCameraNone: "Nenhuma câmara viu movimento recentemente.",
     internet: ["a funcionar", "lenta", "em baixo", "inalcançável, a rede local está em baixo", "desconhecido"],
   },
   zh: {
@@ -103,6 +112,7 @@ const WORDS: Record<VoiceLanguage, Words> = {
     network: "互联网{0}。网络中有 {1} 台设备。", networkNone: "网络节点没有上报。", time: "现在是 {0}。",
     help: "我可以布防和撤防系统，告诉你状态、报警、节点、摄像头、雷达、太阳能、用电、网络和时间，开关灯，以及静音报警。",
     lightsOn: "已打开 {0} 盏灯。", lightsOff: "已关闭 {0} 盏灯。", lightsNone: "没有配置灯。", lightsFailed: " {0} 盏无响应。",
+    lastCamera: "{0} 在 {1} 分钟前看到了动静。", lastCameraNone: "最近没有摄像头看到动静。",
     internet: ["正常", "缓慢", "已断开", "无法到达，本地网络已断开", "未知"],
   },
 };
@@ -115,7 +125,7 @@ export type VoiceActionContext = Pick<AppContext, "store" | "alarms" | "cameraWa
 export type ActionResult = { speech: string; result: Record<string, unknown> };
 
 /** The commands of the gateway that this file answers; the others (arm, disarm, status, silence) are carried out in routes/voice.ts. */
-export const ANSWERED_HERE = new Set(["alarms", "nodes", "cameras", "radar", "solar", "electrical", "network", "time", "help", "lights_on", "lights_off"]);
+export const ANSWERED_HERE = new Set(["alarms", "nodes", "cameras", "radar", "solar", "electrical", "network", "time", "help", "last_camera", "lights_on", "lights_off"]);
 
 export async function carryOut(intent: string, language: VoiceLanguage, context: VoiceActionContext, actor: string, now: Date = new Date()): Promise<ActionResult | undefined> {
   const words = WORDS[language];
@@ -165,6 +175,15 @@ export async function carryOut(intent: string, language: VoiceLanguage, context:
       return { speech: fill(words.time, text), result: { time: text } };
     }
     case "help": return { speech: words.help, result: {} };
+    case "last_camera": {
+      // The latest alarm that a camera raised for movement, active or already dealt with (a silent alarm is not told by voice, as everywhere else).
+      const seen = [...context.alarms.active(), ...context.alarms.recent(50)].filter(alarm => alarm.source.type === "camera" && alarm.code === "camera_motion");
+      const latest = seen.sort((a, b) => Date.parse(b.raised_at) - Date.parse(a.raised_at))[0];
+      if (!latest) return { speech: words.lastCameraNone, result: { camera: null } };
+      const name = context.vault.list().find(camera => camera.id === latest.source.id)?.name ?? latest.source.id;
+      const minutes = Math.max(0, Math.floor((now.getTime() - Date.parse(latest.raised_at)) / 60000));
+      return { speech: fill(words.lastCamera, name, minutes), result: { camera: latest.source.id, minutes_ago: minutes } };
+    }
     case "lights_on":
     case "lights_off": {
       const command = intent === "lights_on" ? "on" : "off";

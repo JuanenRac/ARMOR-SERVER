@@ -65,7 +65,7 @@ function gateContext(mode: "never" | "if_set" | "always", pin: Pin, env?: "alway
     config: { disarmPinEnv: env },
     securitySettings: { get: () => mode },
     audit: { record: (entry: Record<string, unknown>) => audit.push(entry) },
-    users: { verifyPin: () => pin, pinLockedFor: () => 42 },
+    users: { verifyPinLater: async () => pin, pinLockedFor: () => 42 },
   } as unknown as AppContext;
   return { context, audit };
 }
@@ -76,41 +76,41 @@ test("the disarm mode comes from the environment first and from the setting othe
   assert.equal(disarmPinMode(gateContext("always", "none", "if_set").context), "if_set");
 });
 
-test("a right PIN lets the disarm through and the duress PIN does too, flagged", () => {
-  assert.deepEqual(checkDisarm(gateContext("if_set", "ok").context, { id: "u" }, "1234", "a"), { allow: true, duress: false });
-  assert.deepEqual(checkDisarm(gateContext("if_set", "duress").context, { id: "u" }, "9999", "a"), { allow: true, duress: true });
+test("a right PIN lets the disarm through and the duress PIN does too, flagged", async () => {
+  assert.deepEqual(await checkDisarm(gateContext("if_set", "ok").context, { id: "u" }, "1234", "a"), { allow: true, duress: false });
+  assert.deepEqual(await checkDisarm(gateContext("if_set", "duress").context, { id: "u" }, "9999", "a"), { allow: true, duress: true });
 });
 
-test("a user without a PIN disarms in if_set and never, and is refused in always", () => {
-  assert.deepEqual(checkDisarm(gateContext("if_set", "none").context, { id: "u" }, undefined, "a"), { allow: true, duress: false });
-  assert.deepEqual(checkDisarm(gateContext("never", "none").context, { id: "u" }, undefined, "a"), { allow: true, duress: false });
+test("a user without a PIN disarms in if_set and never, and is refused in always", async () => {
+  assert.deepEqual(await checkDisarm(gateContext("if_set", "none").context, { id: "u" }, undefined, "a"), { allow: true, duress: false });
+  assert.deepEqual(await checkDisarm(gateContext("never", "none").context, { id: "u" }, undefined, "a"), { allow: true, duress: false });
   const { context, audit } = gateContext("always", "none");
-  const verdict = checkDisarm(context, { id: "u" }, undefined, "alice");
+  const verdict = await checkDisarm(context, { id: "u" }, undefined, "alice");
   assert.equal(verdict.allow, false);
   if (!verdict.allow) { assert.equal(verdict.status, 403); assert.equal(verdict.body.code, "pin_not_set"); }
   assert.deepEqual(audit.map(entry => [entry.action, entry.outcome, entry.detail]), [["control.disarm", "denied", "no pin set"]]);
 });
 
-test("a wrong PIN is refused with 403 and a locked user with 429 and the seconds left", () => {
+test("a wrong PIN is refused with 403 and a locked user with 429 and the seconds left", async () => {
   const wrong = gateContext("if_set", "bad");
-  const verdict = checkDisarm(wrong.context, { id: "u" }, "0000", "alice", "silence");
+  const verdict = await checkDisarm(wrong.context, { id: "u" }, "0000", "alice", "silence");
   assert.equal(verdict.allow, false);
   if (!verdict.allow) { assert.equal(verdict.status, 403); assert.equal(verdict.body.code, "wrong_pin"); }
   assert.equal(wrong.audit[0].action, "control.silence");
   const locked = gateContext("if_set", "locked");
-  const lockedVerdict = checkDisarm(locked.context, { id: "u" }, "0000", "alice");
+  const lockedVerdict = await checkDisarm(locked.context, { id: "u" }, "0000", "alice");
   assert.equal(lockedVerdict.allow, false);
   if (!lockedVerdict.allow) { assert.equal(lockedVerdict.status, 429); assert.equal(lockedVerdict.body.code, "pin_locked"); assert.equal(lockedVerdict.body.retry_after_s, 42); }
 });
 
-test("with the mode never a wrong PIN stops nothing", () => {
-  assert.deepEqual(checkDisarm(gateContext("never", "bad").context, { id: "u" }, "0000", "a"), { allow: true, duress: false });
-  assert.deepEqual(checkDisarm(gateContext("never", "locked").context, { id: "u" }, "0000", "a"), { allow: true, duress: false });
+test("with the mode never a wrong PIN stops nothing", async () => {
+  assert.deepEqual(await checkDisarm(gateContext("never", "bad").context, { id: "u" }, "0000", "a"), { allow: true, duress: false });
+  assert.deepEqual(await checkDisarm(gateContext("never", "locked").context, { id: "u" }, "0000", "a"), { allow: true, duress: false });
 });
 
-test("without a user nothing is checked and the mode always refuses", () => {
-  assert.deepEqual(checkDisarm(gateContext("if_set", "bad").context, undefined, "0000", "a"), { allow: true, duress: false });
-  assert.equal(checkDisarm(gateContext("always", "ok").context, undefined, "0000", "a").allow, false);
+test("without a user nothing is checked and the mode always refuses", async () => {
+  assert.deepEqual(await checkDisarm(gateContext("if_set", "bad").context, undefined, "0000", "a"), { allow: true, duress: false });
+  assert.equal((await checkDisarm(gateContext("always", "ok").context, undefined, "0000", "a")).allow, false);
 });
 
 // ---- voice_actions ----
@@ -120,7 +120,7 @@ function voiceContext(overrides: Record<string, unknown> = {}, lights: Light[] =
   const sent: string[] = [];
   const audit: Array<Record<string, unknown>> = [];
   const base = {
-    alarms: { active: () => [] as Array<{ severity: string }> },
+    alarms: { active: () => [] as Array<{ severity: string }>, recent: () => [] as Array<{ severity: string }> },
     store: { snapshot: () => ({ nodes: {} as Record<string, { online: boolean; target_count: number }> }) },
     vault: { list: () => [] as Array<{ id: string; name: string }> },
     cameraWatcher: { snapshot: () => [] as Array<{ id: string; status: string }> },
@@ -135,7 +135,7 @@ function voiceContext(overrides: Record<string, unknown> = {}, lights: Light[] =
 }
 
 test("the commands answered here are the closed list and an unknown one is left to the caller", async () => {
-  assert.deepEqual([...ANSWERED_HERE].sort(), ["alarms", "cameras", "electrical", "help", "lights_off", "lights_on", "network", "nodes", "radar", "solar", "time"]);
+  assert.deepEqual([...ANSWERED_HERE].sort(), ["alarms", "cameras", "electrical", "help", "last_camera", "lights_off", "lights_on", "network", "nodes", "radar", "solar", "time"]);
   assert.equal(await carryOut("arm", "en", voiceContext().context, "a"), undefined);
 });
 
@@ -234,4 +234,24 @@ test("the time and the help come without touching the state", async () => {
   assert.match(answer!.speech, /^It is .+\.$/);
   assert.equal(typeof answer!.result.time, "string");
   assert.match((await carryOut("help", "pt", voiceContext().context, "a"))!.speech, /^Posso armar/);
+});
+
+test("which camera saw movement last is answered from the latest camera alarm, active or already dealt with, with the name of the camera", async () => {
+  const motion = (id: string, raised_at: string) => ({ source: { type: "camera", id }, code: "camera_motion", severity: "high", raised_at });
+  const now = new Date("2026-01-01T10:30:00Z");
+  const context = voiceContext({
+    alarms: { active: () => [motion("cam-a", "2026-01-01T10:00:00Z"), { source: { type: "node", id: "radar" }, code: "intrusion", severity: "high", raised_at: "2026-01-01T10:29:00Z" }],
+              recent: () => [motion("cam-b", "2026-01-01T10:20:00Z")] },
+    vault: { list: () => [{ id: "cam-b", name: "Garage" }, { id: "cam-a", name: "Gate" }] },
+  }).context;
+  const answer = await carryOut("last_camera", "en", context, "a", now);
+  assert.equal(answer?.speech, "Garage saw movement 10 minute(s) ago.");
+  assert.deepEqual(answer?.result, { camera: "cam-b", minutes_ago: 10 });
+  assert.match((await carryOut("last_camera", "es", context, "a", now))?.speech ?? "", /^Garage vio movimiento hace 10 minuto/);
+  // an alarm of a camera that is no longer in the vault is told by its id; with no camera alarm at all the answer says so
+  const unnamed = voiceContext({ alarms: { active: () => [motion("cam-x", "2026-01-01T10:29:30Z")], recent: () => [] } }).context;
+  assert.equal((await carryOut("last_camera", "en", unnamed, "a", now))?.speech, "cam-x saw movement 0 minute(s) ago.");
+  const none = await carryOut("last_camera", "en", voiceContext().context, "a", now);
+  assert.equal(none?.speech, "No camera has seen movement lately.");
+  assert.deepEqual(none?.result, { camera: null });
 });

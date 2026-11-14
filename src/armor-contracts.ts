@@ -256,6 +256,24 @@ export type ElectricalResult = {
   token?: string;
 };
 
+export type SolarAlert = {
+  code: "soc_low" | "cell_over_voltage" | "temperature_high" | "temperature_low";
+  device: string;
+};
+
+export type SolarSystem = {
+  kind: "system";
+  node_id: string;
+  timestamp_ms: number;
+  inverters: number;
+  batteries: number;
+  pv_w?: number;
+  load_w?: number;
+  soc_percent?: number;
+  balance_w?: number;
+  alerts: SolarAlert[];
+};
+
 export type SolarBatteryStage = {
   id: string;
   index: number;
@@ -1061,11 +1079,13 @@ export type NetworkDevice = {
 
 export type NetworkEvent = {
   id: string;
-  kind: "new_device" | "device_online" | "device_offline" | "ip_changed" | "arp_conflict" | "port_opened" | "port_closed" | "internet_down" | "internet_up" | "gateway_down" | "gateway_up";
+  kind: "new_device" | "device_online" | "device_offline" | "ip_changed" | "arp_conflict" | "port_opened" | "port_closed" | "internet_down" | "internet_up" | "gateway_down" | "gateway_up" | "risky_port" | "rogue_dhcp";
   at_ms: number;
   device_id?: string;
   port?: number;
   outage_s?: number;
+  server?: string;
+  recommendation?: string;
   detail?: string;
 };
 

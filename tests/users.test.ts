@@ -368,3 +368,19 @@ test("a user who had a panic phrase before the permission existed keeps it, and 
   assert.equal(reread.matchesPanicPhrase(operator.id, "The blue heron flies at midnight!"), true);
   assert.equal(reread.byName("admin")?.panicPhraseAllowed, true, "a value that is not a boolean is dropped, and the administrator is allowed as by default");
 });
+
+test("the PIN check that does not hold the event loop counts attempts one by one, even when they arrive together", async () => {
+  const users = new UserStore({ file: path.join(tempDir(), "users.json"), seed: { username: "admin", password: "correct-horse-battery" }, minPasswordLength: 8 });
+  const id = users.list()[0].id;
+  users.setPin(id, "4321", "1111");
+  const now = 5_000_000;
+  assert.equal(await users.verifyPinLater(id, "4321", now), "ok");
+  assert.equal(await users.verifyPinLater(id, "1111", now), "duress");
+  assert.equal(await users.verifyPinLater("nobody", "4321", now), "none");
+  // Six wrong tries sent at once: three are "bad"/"locked" in order, and the lock is in force for the right PIN too.
+  const burst = await Promise.all(Array.from({ length: 6 }, () => users.verifyPinLater(id, "0000", now)));
+  assert.deepEqual(burst, ["bad", "bad", "locked", "locked", "locked", "locked"]);
+  assert.equal(await users.verifyPinLater(id, "4321", now + 1_000), "locked");
+  assert.equal(await users.verifyPinLater(id, "4321", now + 61_000), "ok");
+  assert.equal(users.verifyPin(id, "0000", now + 61_000), "bad", "the sync check shares the same count");
+});

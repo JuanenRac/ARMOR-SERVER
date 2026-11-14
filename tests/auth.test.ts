@@ -76,3 +76,47 @@ test("a session in use is renewed once half of its life has gone, and one nobody
   assert.equal(store.has(request), false);
   assert.equal(store.renew(request, fakeResponse().response), false);
 });
+
+test("a session in use never lives past its absolute maximum, however often it is renewed", () => {
+  let now = 1_000_000;
+  const store = new SessionStore({ cookieName: "s", cookiePath: "/", ttlMs: 60_000, secure: false, maxAgeMs: 150_000 }, () => now);
+  const { response, calls } = fakeResponse();
+  store.open(response, "user-1");
+  const request = requestWith({ cookie: `s=${calls[0].value}` });
+  now += 40_000;
+  assert.equal(store.renew(request, fakeResponse().response), true);   // ends at 100 s
+  now += 40_000;
+  assert.equal(store.renew(request, fakeResponse().response), true);   // would be 140 s, the cap is 150 s
+  now += 30_000;                                                       // 110 s old
+  assert.equal(store.renew(request, fakeResponse().response), true);   // gets the 40 s left, no more
+  now += 39_000;
+  assert.equal(store.has(request), true);
+  assert.equal(store.renew(request, fakeResponse().response), false, "nothing left to give");
+  now += 2_000;                                                        // 151 s old
+  assert.equal(store.has(request), false, "the cap ends it though it was in use");
+});
+
+test("with rotation on, a renewal gives a new id and the old one still works for a short grace only", () => {
+  let now = 1_000_000;
+  let rotate = true;
+  const store = new SessionStore({ cookieName: "s", cookiePath: "/", ttlMs: 60_000, secure: false, rotateIds: () => rotate }, () => now);
+  const { response, calls } = fakeResponse();
+  store.open(response, "user-1");
+  const oldRequest = requestWith({ cookie: `s=${calls[0].value}` });
+  now += 40_000;
+  const renewed = fakeResponse();
+  assert.equal(store.renew(oldRequest, renewed.response), true);
+  const fresh = requestWith({ cookie: `s=${renewed.calls[0].value}` });
+  assert.notEqual(renewed.calls[0].value, calls[0].value, "a different id");
+  assert.equal(store.size, 1, "one session, not two");
+  assert.equal(store.has(fresh), true);
+  assert.equal(store.userId(oldRequest), "user-1", "a request already in flight with the old id is not signed out");
+  now += 31_000;
+  assert.equal(store.has(oldRequest), false, "after the grace the old id is dead");
+  assert.equal(store.has(fresh), true);
+  rotate = false;
+  now += 25_000;
+  const plain = fakeResponse();
+  assert.equal(store.renew(fresh, plain.response), true);
+  assert.equal(plain.calls[0].value, renewed.calls[0].value, "with the switch off the id stays");
+});

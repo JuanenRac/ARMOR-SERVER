@@ -183,6 +183,7 @@ export function registerNetworkRoutes(app: Express, context: AppContext): void {
     const input = body(request);
     try {
       const saved = network.save(input.network, input.revision, actor(request));
+      context.live.notify("design", "network", saved.revision);
       audit.record({ action: "network.save", outcome: "allowed", actor: actor(request), detail: `revision ${saved.revision}` });
       return response.json({ revision: saved.revision, updated_at: saved.updated_at, updated_by: saved.updated_by });
     } catch (error) {
