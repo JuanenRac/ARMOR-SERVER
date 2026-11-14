@@ -178,6 +178,8 @@ export class ArmingModes {
   #current: ArmingMode = "disarmed";
   #exit: { until: number; from: ArmingMode; handle: unknown } | undefined;
   #delayed = new Map<string, unknown>();
+  /** When each pending entry delay ends (ms), by the same key as #delayed. */
+  #due = new Map<string, number>();
   #lastTick = "";
   readonly #o: ArmingOptions;
   readonly #now: () => number;
@@ -321,17 +323,29 @@ export class ArmingModes {
 
   later(key: string, ms: number, run: () => void): void {
     if (this.#delayed.has(key)) return;   // a second opening of the same door does not extend the wait
-    const handle = this.#timers.set(() => { this.#delayed.delete(key); run(); }, ms);
+    const handle = this.#timers.set(() => { this.#delayed.delete(key); this.#due.delete(key); run(); }, ms);
     this.#delayed.set(key, handle);
+    this.#due.set(key, this.#now() + ms);
   }
 
   cancelLater(): void {
     for (const handle of this.#delayed.values()) this.#timers.clear(handle);
     this.#delayed.clear();
+    this.#due.clear();
   }
 
   /** Whether an exit delay is running, and when it ends (ms); for the answer to a client. */
   exitUntil(): number | undefined { return this.#exit && this.#now() < this.#exit.until ? this.#exit.until : undefined; }
+
+  /** The countdown that is running, for the wall panel: the exit delay after arming, or the soonest entry delay of a door that opened; none when nothing waits. */
+  countdown(): { phase: "exit" | "entry"; remaining_s: number } | undefined {
+    const now = this.#now();
+    const exit = this.exitUntil();
+    if (exit !== undefined) return { phase: "exit", remaining_s: Math.max(0, Math.ceil((exit - now) / 1000)) };
+    let soonest: number | undefined;
+    for (const due of this.#due.values()) if (due > now && (soonest === undefined || due < soonest)) soonest = due;
+    return soonest === undefined ? undefined : { phase: "entry", remaining_s: Math.max(0, Math.ceil((soonest - now) / 1000)) };
+  }
 
   // ---- the timetable ----
 

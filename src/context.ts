@@ -603,6 +603,8 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const panelRoutes = new Set(["GET /api/v1/panel/summary", "POST /api/v1/mode", "POST /api/v1/alarms/acknowledge", "GET /api/v1/alarm-audio/spoken"]);
   // and the sound uploaded for an origin (one path per origin, so the list is closed)
   const panelSoundRoute = /^GET \/api\/v1\/alarm-audio\/sounds\/(device|solar|electrical|network|alarm|other)$/;
+  // and, only while the administrator has turned the option on, the check before arming and a still picture of a camera (read only)
+  const panelOptionalRoute = (key: string): boolean => (key === "GET /api/v1/preflight" && securitySettings.get("panel.preflight")) || (/^GET \/api\/v1\/cameras\/[^/]+\/snapshot$/.test(key) && securitySettings.get("panel.camera_view"));
   const operatorAuthorized = (request: HeaderSource): boolean => {
     if (hasBearer(request, config.operatorToken) || operatorSessions.has(request)) return true;
     const user = studioUser(request);
@@ -623,7 +625,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
       return response.status(403).json({ error: "this account can only look" });
     }
     if (panel?.role === "panel") {
-      if (panelRoutes.has(`${request.method} ${request.path}`) || panelSoundRoute.test(`${request.method} ${request.path}`)) return next();
+      if (panelRoutes.has(`${request.method} ${request.path}`) || panelSoundRoute.test(`${request.method} ${request.path}`) || panelOptionalRoute(`${request.method} ${request.path}`)) return next();
       audit.record({ action: "panel.access", outcome: "denied", actor: panel.username, target: `${request.method} ${request.path}` });
       return response.status(403).json({ error: "this account only serves a wall panel" });
     }

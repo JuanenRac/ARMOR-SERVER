@@ -28,6 +28,8 @@
  *   admin.acl_relays             on | off                  Studio may ask the admin agent to open or close the two switches of the broker rules that no install turns on (the writing to the batteries of one solar node, and the signed copy of the alarm states); off, the default: the routes answer 403, and each change also needs the code of the authenticator and two confirmations
  *   admin.field_http             on | off                  Studio may ask the admin agent to let the field network also reach the server's port over HTTP (the firewall switch field-http); off, the default: the routes answer 403, and each change also needs the code of the authenticator and a confirmation
  *   panel.live_events            on | off                  the wall panel may listen to the live channel (a WebSocket that carries the same small summary it can ask for; off: it asks every few seconds)
+ *   panel.preflight              on | off                  the account of a wall panel may read the check before arming (GET /api/v1/preflight) to show what is wrong when the person presses Arm (off, the default: it answers 403 and the panel arms as before)
+ *   panel.camera_view            on | off                  the account of a wall panel may read a still picture of a camera (GET /api/v1/cameras/:id/snapshot), at most one every two seconds for each camera (off, the default: it answers 403)
  *   live.events                 on | off                 besides the whole state, the console channel (/api/v1/events) tells the consoles that an alarm, a device, the solar plant, the network or a design changed ({type, id, version} and nothing more; on, the default; off: the state only, as before)
  *   client.device_lock           user | sensitive | always   what the phone app asks of the person with the lock of the phone itself (fingerprint, face or the phone's PIN): user = the phone's own switches decide, sensitive = also before arming, disarming and unlocking, always = also to open the app (it can only raise what a person chose, never lower it, and a phone with no lock at all is never shut out)
  *   client.trusted_devices       on | off                  a phone may be registered as a trusted device (a key pair that stays in the phone) and renew its session by signing a one-time challenge instead of typing the password and the code again (off, the default: nothing is registered or accepted)
@@ -166,6 +168,8 @@ export type SecuritySettingsValues = {
   "admin.acl_relays": boolean;
   "admin.field_http": boolean;
   "panel.live_events": boolean;
+  "panel.preflight": boolean;
+  "panel.camera_view": boolean;
   "live.events": boolean;
   "client.device_lock": DeviceLockPolicy;
   "client.trusted_devices": boolean;
@@ -241,6 +245,8 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "admin.acl_relays": false,
   "admin.field_http": false,
   "panel.live_events": true,
+  "panel.preflight": false,
+  "panel.camera_view": false,
   "live.events": true,
   "client.device_lock": "user",
   "client.trusted_devices": false,
@@ -391,6 +397,7 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "reports.timeout_s" || key === "reports.queue_max" || key === "reports.requests_per_minute") return false;   // tuning of how much work the reports may cause, not a protection
   if (key === "vacation.mode") return false;   // lights that switch by themselves when nobody is home: a convenience that adds no way in
   if (key === "voice.wake_word" || key === "voice.mobile_turn") return from === false && to === true;   // a panel that listens for its word all the time is the loss, even if the audio never leaves the house
+  if (key === "panel.preflight" || key === "panel.camera_view") return from === false && to === true;   // letting the account of a wall panel read more than the summary is the loss
   if (key === "admin.firmware_rollout") return false;   // it only makes an update gentler: fewer nodes at a time, and a way back
   if (key === "admin.backup") return from === false && to === true;   // a copy of everything the server keeps, written where it is asked: turning it on is the loss
   if (key === "admin.field_http") return from === false && to === true;   // letting Studio open the server's port to the field network is the loss
