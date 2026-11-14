@@ -17,6 +17,7 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/admin/console/lock` | administrator | `routes/maintenance.ts` |
 | POST | `/api/v1/admin/console/run` | administrator | `routes/maintenance.ts` |
 | POST | `/api/v1/admin/console/unlock` | administrator | `routes/maintenance.ts` |
+| POST | `/api/v1/admin/enrolment-code` | administrator, fresh proof of identity | `routes/enrolment.ts` |
 | GET | `/api/v1/admin/files` | administrator | `routes/admin.ts` |
 | GET | `/api/v1/admin/files/:id` | administrator | `routes/admin.ts` |
 | PUT | `/api/v1/admin/files/:id` | administrator | `routes/admin.ts` |
@@ -177,6 +178,7 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/electrical/readings` | none here | `routes/electrical.ts` |
 | POST | `/api/v1/electrical/switch` | administrator | `routes/electrical.ts` |
 | GET | `/api/v1/electrical/switching` | operator | `routes/electrical.ts` |
+| GET | `/api/v1/enrolment/:code` | none here | `routes/enrolment.ts` |
 | POST | `/api/v1/health` | none here | `routes/ingest.ts` |
 | DELETE | `/api/v1/history` | administrator | `routes/history.ts` |
 | GET | `/api/v1/history` | operator | `routes/history.ts` |
