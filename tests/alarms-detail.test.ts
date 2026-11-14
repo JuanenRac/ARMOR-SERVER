@@ -129,3 +129,20 @@ test("arming looks at what was already wrong: a node that is silent, a camera th
     assert.deepEqual(codes, ["door_open", "node_down"], "armed with a node down and a door open");
   } finally { await running.stop(); }
 });
+
+test("the findings of the network node raise one alarm each and a closed port ends the risky one", () => {
+  const alarms = centre();
+  const rules = new AlarmRules(alarms, () => "disarmed");
+  const describe = (id: string) => ({ device: "Camera of the garage", ip: "192.168.0.211", mac: id });
+  rules.handleNetworkEvent("n1", { id: "r1", kind: "risky_port", at_ms: 1_790_000_000_000, device_id: "aa:bb:cc:00:00:01", port: 23, recommendation: "close_telnet" }, () => false, describe);
+  rules.handleNetworkEvent("n1", { id: "r2", kind: "rogue_dhcp", at_ms: 1_790_000_000_000, server: "192.168.0.77", recommendation: "find_the_dhcp_server" }, () => false, describe);
+  rules.handleNetworkEvent("n1", { id: "r3", kind: "rogue_dhcp", at_ms: 1_790_000_000_500, server: "192.168.0.77" }, () => false, describe);
+  const byCode = Object.fromEntries(alarms.active().map(alarm => [alarm.code, alarm.detail]));
+  assert.equal(byCode.network_risky_port?.port, 23);
+  assert.equal(byCode.network_risky_port?.recommendation, "close_telnet");
+  assert.equal(byCode.network_risky_port?.device, "Camera of the garage");
+  assert.equal(byCode.network_rogue_dhcp?.server, "192.168.0.77");
+  assert.equal(alarms.active().filter(alarm => alarm.code === "network_rogue_dhcp").length, 1, "the same server is one alarm");
+  rules.handleNetworkEvent("n1", { id: "r4", kind: "port_closed", at_ms: 1_790_000_001_000, device_id: "aa:bb:cc:00:00:01", port: 23 }, () => false, describe);
+  assert.ok(alarms.active().find(alarm => alarm.code === "network_risky_port")?.cleared_at, "the cause ended: the alarm waits to be acknowledged");
+});

@@ -18,7 +18,7 @@ export const DEVICE_KINDS = ["router", "computer", "phone", "tv", "printer", "ca
 export type DeviceKind = NonNullable<Generated.NetworkDevice["kind"]>;
 export const INTERNET_STATES = ["up", "degraded", "down", "lan_down", "unknown"] as const;
 export type InternetState = Generated.NetworkInternet["state"];
-export const EVENT_KINDS = ["new_device", "device_online", "device_offline", "ip_changed", "arp_conflict", "port_opened", "port_closed", "internet_down", "internet_up", "gateway_down", "gateway_up"] as const;
+export const EVENT_KINDS = ["new_device", "device_online", "device_offline", "ip_changed", "arp_conflict", "port_opened", "port_closed", "internet_down", "internet_up", "gateway_down", "gateway_up", "risky_port", "rogue_dhcp"] as const;
 export type NetworkEventKind = Generated.NetworkEvent["kind"];
 const INTERNET_EVENTS: readonly string[] = ["internet_down", "internet_up", "gateway_down", "gateway_up"];
 
@@ -79,9 +79,14 @@ function checkNetworkRules(body: Record<string, unknown>): { devices: NetworkDev
     events.forEach((event, index) => {
       const internet = INTERNET_EVENTS.includes(event.kind);
       if (internet && ("device_id" in event || "port" in event)) throw new Error(`event ${index} is about the internet, not a device or a port`);
-      if (!internet && !("device_id" in event)) throw new Error(`event ${index} is about a device and names none`);
+      if (event.kind === "rogue_dhcp") {
+        if ("device_id" in event || "port" in event) throw new Error(`event ${index} is about a DHCP server, not a device or a port`);
+        if (!("server" in event)) throw new Error(`event ${index} is about a DHCP server and names none`);
+      } else if ("server" in event) throw new Error(`event ${index} names a server but is not about a DHCP server`);
+      else if (!internet && !("device_id" in event)) throw new Error(`event ${index} is about a device and names none`);
+      if ("recommendation" in event && event.kind !== "risky_port" && event.kind !== "rogue_dhcp") throw new Error(`event ${index} carries a recommendation but is not a finding`);
       if ("outage_s" in event && event.kind !== "internet_up" && event.kind !== "gateway_up") throw new Error(`event ${index} says how long it was down but is not an end`);
-      if ((event.kind === "port_opened" || event.kind === "port_closed") && !("port" in event)) throw new Error(`event ${index} is about a port and names none`);
+      if ((event.kind === "port_opened" || event.kind === "port_closed" || event.kind === "risky_port") && !("port" in event)) throw new Error(`event ${index} is about a port and names none`);
     });
     if (new Set(events.map(event => event.id)).size !== events.length) throw new Error("an event id must appear once");
   }
@@ -103,7 +108,7 @@ export function parseNetworkMessage(value: unknown): NetworkMessage {
   }
   onlyKnownEach(body.devices, ["id", "ip", "mac", "randomized_mac", "vendor", "hostname", "kind", "os", "online", "first_seen_ms", "last_seen_ms", "latency_ms", "ports", "services"], "device");
   if (Array.isArray(body.devices)) for (const device of body.devices) if (device && typeof device === "object") onlyKnownEach((device as Record<string, unknown>).ports, ["port", "proto", "service", "banner"], "port");
-  onlyKnownEach(body.events, ["id", "kind", "at_ms", "device_id", "port", "outage_s", "detail"], "event");
+  onlyKnownEach(body.events, ["id", "kind", "at_ms", "device_id", "port", "outage_s", "server", "recommendation", "detail"], "event");
   onlyKnownIn(body.scan, ["last_ms", "hosts", "duration_ms"], "scan");
   const publicInfo = body.public as Record<string, unknown> | undefined;
   onlyKnownIn(publicInfo, ["ip", "hostname", "city", "region", "country", "org", "timezone", "checked_ms", "changed_ms", "dns"], "public");
