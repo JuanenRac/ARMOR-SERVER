@@ -60,6 +60,7 @@ const BETWEEN_FIELDS = new RegExp([
   "an open zone must be a zone of the message", "a detail goes on the execute of diagnostics", "a delay and a slot go on the execute of a restart", "a core dump size and summary go with a core dump",
   "the zone it came from goes with a path violation",
   "names a server but is not about a DHCP server", "carries a recommendation but is not a finding", "is about a DHCP server (and names none|, not a device)",
+  "answer carries (state|diagnostics)", "the internal memory is told whole",
 ].join("|"));
 
 for (const [schema, read] of Object.entries(READERS)) {
