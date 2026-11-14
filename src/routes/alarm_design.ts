@@ -36,6 +36,7 @@ export function registerAlarmDesignRoutes(app: Express, context: AppContext): vo
     const input = body(request);
     try {
       const saved = alarmDesign.save(input.alarm_design, input.revision, actor(request));
+      context.live.notify("design", "alarm", saved.revision);
       audit.record({ action: "alarm_design.save", outcome: "allowed", actor: actor(request), detail: `revision ${saved.revision}` });
       return response.json({ revision: saved.revision, updated_at: saved.updated_at, updated_by: saved.updated_by });
     } catch (error) {

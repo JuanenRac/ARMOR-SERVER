@@ -12,6 +12,7 @@ import { AiGateway } from "./ai.js";
 import { SecuritySettings } from "./security_settings.js";
 import { createAuditLog, type AuditLog } from "./audit.js";
 import { CameraVault } from "./cameras/vault.js";
+import { LiveNotices } from "./live_events.js";
 import { DiscoveryGate } from "./cameras/discovery.js";
 import { cameraPublic, cameraView, type CameraConnection } from "./cameras/model.js";
 import type { ArmorConfig } from "./config.js";
@@ -19,13 +20,19 @@ import { hasBearer, SessionStore, type EndedSession, type HeaderSource } from ".
 import { UserStore, type PublicUser } from "./users.js";
 import { classify, type Origin } from "./origin.js";
 import { TotpStore } from "./totp.js";
+import { BalanceWatcher } from "./energy_balance.js";
 import { TrustedDevices } from "./trusted_devices.js";
 import { EvidenceLibrary } from "./media/evidence.js";
 import { RelayManager, StreamTickets } from "./media/relay.js";
+import { AlarmCapture } from "./capture_on_alarm.js";
 import { CameraWatcher } from "./cameras/health.js";
 import { Escalator } from "./escalation.js";
+import { BackupService } from "./backup.js";
 import { ElectricalEnergy } from "./electrical_energy.js";
+import { LoadShedding } from "./load_shedding.js";
+import { RolloutStore } from "./firmware_rollout.js";
 import { PtzController } from "./cameras/ptz.js";
+import { CommandSigner } from "./command_signature.js";
 import { EventLog, type ArmorEventBody } from "./events.js";
 import { AlarmCentre, AlarmRules } from "./alarms.js";
 import { AutomationEngine, type Action } from "./automations.js";
@@ -34,8 +41,10 @@ import { sendCommand, type Command } from "./devices/commands.js";
 import { isTriggered } from "./devices/catalog.js";
 import { AlarmZoneFeed, ZoneFeedSigner } from "./alarm_zone_feed.js";
 import { AlarmStateSigner } from "./alarm_state_signature.js";
+import { VisionTimeline } from "./vision_timeline.js";
 import { CaptureOnDetect } from "./capture_on_detect.js";
 import { IgnoreZones } from "./ignore_zones.js";
+import { IgnoreProposals } from "./ignore_proposals.js";
 import { CountLines } from "./count_lines.js";
 import { DetectionZones } from "./detection_zones.js";
 import { FcmDevices, fcmChannel, parseServiceAccount } from "./push_fcm.js";
@@ -69,6 +78,7 @@ import { FileStatePersistence } from "./persistence.js";
 import { RulesFile } from "./rules.js";
 import { ArmorStore, type SystemState } from "./store.js";
 import { PreferencesStore } from "./preferences.js";
+import { PresenceStore } from "./presence.js";
 import { IngestLog } from "./ingest_log.js";
 import { VisionCounters } from "./vision_counters.js";
 import { IngestRecorder } from "./ingest_recorder.js";
@@ -112,12 +122,16 @@ export type AppContext = {
   users: UserStore;
   /** Language, theme and the saved weather place, kept per account rather than per browser or address. */
   preferences: PreferencesStore;
+  presence: PresenceStore;
   devices: DeviceRegistry;
   alarms: AlarmCentre;
   alarmRules: AlarmRules;
   /** The levels at which batteries and inverters raise alarms (editable from Studio). */
   energyAlarms: EnergyAlarmStore;
   automations: AutomationEngine;
+  /** Signs the critical commands and gives each node its own key (see command_signature.ts). */
+  commandSigner: CommandSigner;
+  backup: BackupService;
   site: SiteStore;
   electrical: SiteStore;
   /** What the ARMOR-NODE-ELECTRICAL nodes measure on the house's network. */
@@ -192,8 +206,13 @@ export type AppContext = {
   alarmZoneFeed: AlarmZoneFeed;
   /** The photos and the video taken by themselves when a camera sees something while the perimeter is armed. */
   captureOnDetect: CaptureOnDetect;
+  /** The notices of the console channel: something changed (see live_events.ts). */
+  live: LiveNotices;
+  visionTimeline: VisionTimeline;
   /** The parts of each camera's picture that the observation service does not look at. */
   ignoreZones: IgnoreZones;
+  /** The areas to ignore that the observation service proposes while the setting ai.learn is on, waiting for an administrator. */
+  ignoreProposals: IgnoreProposals;
   /** The counting lines drawn on each camera's picture. */
   countLines: CountLines;
   detectionZones: DetectionZones;
@@ -221,8 +240,12 @@ export type AppContext = {
   requireAi: RequestHandler;
   /** The solar inverters and batteries the gateway nodes report. */
   solar: SolarStore;
+  loadShedding: LoadShedding;
+  /** The settings of the staged firmware rollout (the option admin.firmware_rollout turns them on). */
+  firmwareRollout: RolloutStore;
   /** The solar equipment an operator declared, kept in a file. */
   solarRegistry: SolarRegistry;
+  balanceWatcher: BalanceWatcher;
   /** What the broker and the ingest routes handed over: taken, refused and ignored fields per topic. */
   ingestLog: IngestLog;
   /** How many events of the vision service were taken, by kind and by what was done with each (counters of the Prometheus page). */
@@ -266,7 +289,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   // The name of a session cookie depends on whether the server speaks HTTPS: a browser that once met this server over HTTPS keeps its Secure cookie for the
   // host, and a page over plain HTTP is not allowed to replace a Secure cookie of the same name - the login seemed to work and then nothing stuck (found for real
   // after the HTTPS trial was undone). Different names for the two cases cannot shadow each other.
-  const studioSessions = new SessionStore({ cookieName: config.cookieSecure ? "__Host-armor_studio_sid" : "armor_studio_sid", cookiePath: "/", ttlMs: config.studioSessionTtlMs, secure: config.cookieSecure, file: path.join(config.dataDir, "sessions.json"), remoteIdleMs: config.remoteIdleMs, onEnd: (info, reason) => ended.tell?.(info, reason) });
+  const studioSessions = new SessionStore({ cookieName: config.cookieSecure ? "__Host-armor_studio_sid" : "armor_studio_sid", cookiePath: "/", ttlMs: config.studioSessionTtlMs, secure: config.cookieSecure, file: path.join(config.dataDir, "sessions.json"), remoteIdleMs: config.remoteIdleMs, maxAgeMs: config.studioSessionMaxAgeMs, rotateIds: () => securitySettings.get("session.rotate_id") === true, onEnd: (info, reason) => ended.tell?.(info, reason) });
   const operatorSessions = new SessionStore({ cookieName: config.cookieSecure ? "__Secure-armor_operator_sid" : "armor_operator_sid", cookiePath: "/api/v1", ttlMs: config.operatorSessionTtlMs, secure: config.cookieSecure });
   if (config.cameraKeyIsFallback) warn("ARMOR_CAMERA_CONFIG_KEY is not set; using the migration fallback derived from ARMOR_CONTROL_TOKEN");
   const vault = new CameraVault({
@@ -304,7 +327,9 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
       reason === "expired" ? "session_expired" : reason === "logout" ? "logout" : "session_ended");
   };
   const knownNodes = new KnownNodes({ file: path.join(config.dataDir, "known-nodes.json"), now: overrides.now, warn });
+  const alarmCaptureHolder: { capture?: AlarmCapture } = {};
   const rules = new RulesFile(path.join(config.dataDir, "rules.json"), config.alertDwellMs, warn);
+  const backup = new BackupService({ dataDir: config.dataDir, stateDir: config.dataDir, now: overrides.now ? () => new Date(overrides.now!()) : undefined, onEvent: (action, outcome, detail) => { recordSystem({ category: "backup", action, outcome, subject: detail.slice(0, 60) }); } });
   // The other places the alarms go. The address of Telegram can only be changed by the environment, for the tests that stand in for it.
   const channels: NotifyChannel[] = [];
   if (config.telegram) channels.push(telegramChannel({ token: config.telegram.token, chatIds: config.telegram.chatIds, api: process.env.ARMOR_TELEGRAM_API || undefined }));
@@ -322,15 +347,19 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const controlHolder: { service?: NodeControlService } = {};
   // Everything that happens goes through one place: written to the history, announced, checked for alarms, offered to the automations.
   const arming: { modes?: ArmingModes } = {};
+  const live = new LiveNotices({ enabled: () => securitySettings.get("live.events") });
   const record = (body: ArmorEventBody): void => {
     // A silent alarm (a duress disarm) is told to the places nobody at the panel can see and is NOT written in the history that every console reads.
     if (body.type === "alarm" && body.silent) { notifier.notify({ ...body, id: 0, at: new Date().toISOString() }, store.snapshot().mode); return; }
     const event = events.append(body);
+    if (event.type === "alarm") live.notify("alarm", event.alarm_id, event.id);
+    else if (event.type === "device") live.notify("device", event.device_id, event.id);
     if (event.type === "node") { if (event.to === "online") nodeLife.report(event.node_id); else nodeLife.gone(event.node_id); }
     // A node that is being restarted on purpose, or is in maintenance, is not news to wake anybody for (it stays in the history).
     if (!(event.type === "node" && event.to !== "online" && controlHolder.service?.isHeld(event.node_id))) notifier.notify(event, store.snapshot().mode);
     if (event.type === "mode") arming.modes?.storeChanged(event.mode === "armed");
     alarmRules.handleEvent(event);
+    alarmCaptureHolder.capture?.handle(event);
     if (event.type === "mode") automations.handleMode(event.mode);
   };
   const alarms = new AlarmCentre({ file: path.join(config.dataDir, "alarms.json"), onEvent: record, onRaised: alarm => automations.handleAlarm(alarm), warn });
@@ -350,7 +379,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   });
   const sendDeviceCommand = (id: string, command: Command) => sendCommand(devices, id, command, { publish: (topic, payload) => { if (!deviceLink.publish) throw new Error("the MQTT broker is not connected"); deviceLink.publish(topic, payload); } });
   const automations: AutomationEngine = new AutomationEngine({
-    file: path.join(config.dataDir, "automations.json"), warn, mode: () => store.snapshot().mode,
+    file: path.join(config.dataDir, "automations.json"), warn, mode: () => store.snapshot().mode, scheduling: () => securitySettings.get("vacation.mode") && arming.modes?.current() === "away",
     run: async (action: Action, automation) => {
       if (action.type === "device") {
         // An automation never switches a critical circuit: that is a person, an administrator, with a confirmation (see routes/devices.ts).
@@ -382,7 +411,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   };
   const networkNodes = new NetworkStore({
     now: overrides.now, notes: networkNotes, outagesFile: path.join(config.dataDir, "network-outages.json"),
-    onMessage: message => { knownNodes.seen("network", message.node_id); alarmRules.handleNetwork(message); },
+    onMessage: message => { knownNodes.seen("network", message.node_id); alarmRules.handleNetwork(message); live.notify("network", message.node_id); },
     onEvent: (node, event) => {
       alarmRules.handleNetworkEvent(node, event, id => networkNotes.isTrusted(id), id => describeNetworkDevice(node, id));
       // A device somebody asked to be told about came onto the network: say so once.
@@ -396,8 +425,10 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const network = new SiteStore(path.join(config.dataDir, "network.json"), () => new Date(), "network design");
   const alarmDesign = new SiteStore(path.join(config.dataDir, "alarm_design.json"), () => new Date(), "alarm design");
   const switchLink: AppContext["switchLink"] = {};
+  const commandSigner = new CommandSigner(path.join(config.dataDir, "command-signature.key"));
+  const signCommand = (command: Record<string, unknown>): string => (securitySettings.get("commands.require_sig") ? commandSigner.sign(command) : JSON.stringify(command));
   const electricalSwitching = new SwitchingService({
-    enabled: config.electricalSwitching, nodes: electricalNodes, audit, now: overrides.now,
+    enabled: config.electricalSwitching, nodes: electricalNodes, audit, now: overrides.now, sign: signCommand,
     publish: (topic, payload) => { if (!switchLink.publish) throw new Error("the MQTT broker is not connected"); switchLink.publish(topic, payload); },
   });
   const alarmStateSigner = new AlarmStateSigner(config.alarmStateKeyFile, overrides.now);
@@ -453,8 +484,14 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   alarmRules.held = node => nodeControl.isHeld(node);
   alarmRules.nodeUp = id => { const node = store.snapshot().nodes[id]; return node ? node.online && !node.stale : false; };
   alarmRules.nodeIntruding = id => store.snapshot().nodes[id]?.alert_level === "high";
+  const visionTimeline = new VisionTimeline({ file: path.join(config.dataDir, "vision-timeline.json"), enabled: () => securitySettings.get("vision.timeline"), days: () => securitySettings.get("vision.timeline_days"), maxEntries: config.visionTimelineMaxEntries, now: overrides.now });
   const captureOnDetect = new CaptureOnDetect({ file: path.join(config.dataDir, "capture-on-detect.json"), audit, now: overrides.now, tools: { snapshot: camera => evidence.snapshot(camera), startRecording: camera => evidence.startRecording(camera), stopRecording: id => evidence.stopRecording(id), isRecording: id => evidence.isRecording(id) } });
+  alarmCaptureHolder.capture = new AlarmCapture({
+    enabled: () => securitySettings.get("capture.on_alarm"), perMinute: () => securitySettings.get("capture.on_alarm_per_min"), site: () => site.get().site,
+    cameras: () => vault.list().flatMap(item => { const camera = vault.get(item.id); return camera ? [camera] : []; }), trigger: camera => captureOnDetect.trigger(camera), audit, now: overrides.now,
+  });
   const ignoreZones = new IgnoreZones(path.join(config.dataDir, "camera-ignore-zones.json"));
+  const ignoreProposals = new IgnoreProposals(path.join(config.dataDir, "camera-ignore-proposals.json"));
   const countLines = new CountLines(path.join(config.dataDir, "camera-count-lines.json"));
   const detectionZones = new DetectionZones(path.join(config.dataDir, "camera-detection-zones.json"));
   const zoneFeedSigner = new ZoneFeedSigner(path.join(config.dataDir, "zone-feed.key"));
@@ -471,16 +508,32 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   };
   const panelSyncLink: { settled?: (record: import("./alarm_commands.js").AlarmRecord) => void; view?: () => unknown } = {};
   const alarmCommands = new AlarmCommands({
-    enabled: config.alarmCommands, nodes: alarmNodes, audit, now: overrides.now, onSettled: record => panelSyncLink.settled?.(record),
+    enabled: config.alarmCommands, nodes: alarmNodes, audit, now: overrides.now, sign: signCommand, onSettled: record => panelSyncLink.settled?.(record),
     publish: (topic, payload) => { if (!alarmLink.publish) throw new Error("the MQTT broker is not connected"); alarmLink.publish(topic, payload); },
   });
+  const loadShedding = new LoadShedding({
+    file: path.join(config.dataDir, "load-shedding.json"), enabled: () => securitySettings.get("electrical.load_shedding"), gridW: () => electricalNodes.totals().grid_w,
+    device: id => { const device = devices.get(id); return device ? { exists: true, critical: device.risk === "critical" } : { exists: false, critical: false }; },
+    command: (id, command) => sendDeviceCommand(id, command), now: overrides.now,
+    onEvent: entry => { audit.record({ action: `electrical.load_shedding.${entry.action}`, outcome: entry.action === "failed" ? "failed" : "allowed", target: entry.device, detail: `${entry.grid_w ?? "?"} W${entry.detail ? `, ${entry.detail}` : ""}` }); },
+  });
+  const firmwareRollout = new RolloutStore(path.join(config.dataDir, "firmware-rollout.json"), warn);
   const ingestLog = new IngestLog(overrides.now);
   const visionCounters = new VisionCounters();
   const ingestRecorder = new IngestRecorder({ dir: path.join(config.dataDir, "ingest-recording"), enabled: () => securitySettings.get("ingest.recording"), maxBytes: config.ingestRecordMaxBytes, maxFiles: config.ingestRecordFiles, now: overrides.now });
   ingestLog.tap = (topic, payload, accepted, reason) => ingestRecorder.record(topic, payload, accepted, reason);
   const solarRegistry = new SolarRegistry(path.join(config.dataDir, "solar-devices.json"), overrides.now ? () => new Date(overrides.now!()) : undefined);
-  const solar = new SolarStore({ now: overrides.now, onMessage: message => { knownNodes.seen("solar", `${message.node_id}/${message.device}`); alarmRules.handleSolar(message); }, onStale: (node, device, stale) => alarmRules.handleSolarStale(node, device, stale) });
+  const solar = new SolarStore({ now: overrides.now, onMessage: message => { live.notify("solar", `${message.node_id}/${message.device}`); knownNodes.seen("solar", `${message.node_id}/${message.device}`); alarmRules.handleSolar(message); }, onStale: (node, device, stale) => alarmRules.handleSolarStale(node, device, stale) });
   const batteryLink: AppContext["batteryLink"] = {};
+  const balanceWatcher = new BalanceWatcher({
+    file: path.join(config.dataDir, "energy-balance.json"), enabled: () => securitySettings.get("electrical.balance"), now: overrides.now,
+    inputs: () => { const totals = solar.totals(), grid = electricalNodes.totals(); return { production_w: totals.inverters > totals.stale ? totals.pv_w : null, battery_w: totals.battery_w, grid_w: grid.grid_w, load_w: totals.inverters > totals.stale ? totals.load_w : null }; },
+    history: (node, channel, minutes) => electricalNodes.history(node, channel, minutes), nodes: () => electricalNodes.list().filter(view => !view.stale).map(view => ({ node_id: view.node_id, channels: view.reading.channels })),
+    report: (finding, active) => {
+      if (!active) { alarms.clear(finding.key); return; }
+      alarms.raise(finding.key, { source: { type: "electrical", id: finding.source }, severity: "warning", code: finding.code, detail: finding.detail });
+    },
+  });
   const batteryWrite = new BatteryWriteService({
     enabled: config.batteryWrite, solar, audit, now: overrides.now, file: path.join(config.dataDir, "battery_ops.json"),
     publish: (topic, payload) => { if (!batteryLink.publish) throw new Error("the MQTT broker is not connected"); batteryLink.publish(topic, payload); },
@@ -555,11 +608,14 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     minPasswordLength: config.passwordMinLength, resetSeedPassword: config.resetStudioPassword, warn,
   });
   const preferences = new PreferencesStore(path.join(config.dataDir, "preferences.json"));
+  const presence = new PresenceStore(path.join(config.dataDir, "presence.json"));
   const studioUser = (request: HeaderSource): PublicUser | undefined => { const id = studioSessions.userId(request); return id ? users.get(id) : undefined; };
   // A wall panel's account is of the `panel` role: it is not an operator. It may only do what a wall panel does: read the summary, change the mode and acknowledge the alarms.
   const panelRoutes = new Set(["GET /api/v1/panel/summary", "POST /api/v1/mode", "POST /api/v1/alarms/acknowledge", "GET /api/v1/alarm-audio/spoken"]);
   // and the sound uploaded for an origin (one path per origin, so the list is closed)
   const panelSoundRoute = /^GET \/api\/v1\/alarm-audio\/sounds\/(device|solar|electrical|network|alarm|other)$/;
+  // and, only while the administrator has turned the option on, the check before arming and a still picture of a camera (read only)
+  const panelOptionalRoute = (key: string): boolean => (key === "GET /api/v1/preflight" && securitySettings.get("panel.preflight")) || (/^GET \/api\/v1\/cameras\/[^/]+\/snapshot$/.test(key) && securitySettings.get("panel.camera_view"));
   const operatorAuthorized = (request: HeaderSource): boolean => {
     if (hasBearer(request, config.operatorToken) || operatorSessions.has(request)) return true;
     const user = studioUser(request);
@@ -580,7 +636,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
       return response.status(403).json({ error: "this account can only look" });
     }
     if (panel?.role === "panel") {
-      if (panelRoutes.has(`${request.method} ${request.path}`) || panelSoundRoute.test(`${request.method} ${request.path}`)) return next();
+      if (panelRoutes.has(`${request.method} ${request.path}`) || panelSoundRoute.test(`${request.method} ${request.path}`) || panelOptionalRoute(`${request.method} ${request.path}`)) return next();
       audit.record({ action: "panel.access", outcome: "denied", actor: panel.username, target: `${request.method} ${request.path}` });
       return response.status(403).json({ error: "this account only serves a wall panel" });
     }
@@ -609,12 +665,17 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   };
   return {
     ai: overrides.ai ?? new AiGateway({ ffmpegPath: config.ffmpegPath ?? "", proxy: rtspProxy }), requireAi,
-    firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com" }),
+    firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com", rollout: () => (securitySettings.get("admin.firmware_rollout") ? firmwareRollout.get() : null) }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, visionCounters, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays,
+    live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, ignoreProposals, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, presence, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays, visionCounters,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
+    balanceWatcher,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
+    backup,
     viewCamera: camera => cameraView(camera, Boolean(config.ffmpegPath)),
+    commandSigner,
+    loadShedding,
+    firmwareRollout,
   };
 }

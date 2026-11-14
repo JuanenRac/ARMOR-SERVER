@@ -35,6 +35,7 @@ export type ArmorConfig = {
   /** Reset the seed administrator's password from ARMOR_STUDIO_PASSWORD at start-up (recovery of a forgotten password). */
   resetStudioPassword: boolean;
   studioSessionTtlMs: number;
+  studioSessionMaxAgeMs: number;
   operatorSessionTtlMs: number;
   /** ARMOR_VOICE_TURN_MAX_BYTES: the most audio one spoken turn of the wall panel may carry (raw or in the binary form); 480000 bytes is 15 seconds of 16 kHz 16-bit mono. */
   voiceTurnMaxBytes: number;
@@ -69,6 +70,8 @@ export type ArmorConfig = {
   dailyLogPowerEveryS: number;
   dailyFalseAlarmS: number;
   dailyLogMaxEvents: number;
+  /** The most entries of the review timeline of the vision service (ARMOR_VISION_TIMELINE_MAX_ENTRIES, 100 to 50000; 5000). */
+  visionTimelineMaxEntries: number;
   dailyLogMaxBytes: number;
   dailyLogSensors: string[];
   /** ARMOR_ALARM_SOUND_MAX_BYTES: the most samples a sound an administrator uploads for an alarm origin may have; 128000 bytes is 4 seconds of 16 kHz 16-bit mono. */
@@ -87,6 +90,8 @@ export type ArmorConfig = {
   /** A session that came from outside the house: how long it lives, how long it may sit unused, and how long a new proof of identity allows critical actions. */
   remoteSessionTtlMs: number;
   remoteIdleMs: number;
+  /** Failed sign-ins from outside the house that close an address (ARMOR_PUBLIC_LOGIN_ATTEMPTS, 3 to 20; 5) and the seconds they are counted in (ARMOR_PUBLIC_LOGIN_WINDOW_S, 60 to 86400; 900). */
+  publicLogin: { attempts: number; windowS: number };
   elevationMs: number;
   /** Tell the places the alarms go to when someone signs in from outside the house from a place that person had not signed in from before. */
   loginAlerts: boolean;
@@ -467,6 +472,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     cameraKeyIsFallback: !configuredKey,
     studioUsername, studioPassword, passwordMinLength: isLoopbackHost(effectiveHost) ? 8 : 12, resetStudioPassword: env.ARMOR_STUDIO_RESET_PASSWORD === "1",
     studioSessionTtlMs: integer(env, "ARMOR_STUDIO_SESSION_TTL_MS", 7 * 86_400_000, 60_000, 30 * 86_400_000),
+    studioSessionMaxAgeMs: integer(env, "ARMOR_STUDIO_SESSION_MAX_AGE_MS", 30 * 86_400_000, 3_600_000, 365 * 86_400_000),
     operatorSessionTtlMs: integer(env, "ARMOR_OPERATOR_SESSION_TTL_MS", 28_800_000, 60_000, 7 * 86_400_000),
     voiceTurnMaxBytes: integer(env, "ARMOR_VOICE_TURN_MAX_BYTES", 480_000, 3_200, 1_920_000),
     voiceReplyAudioMaxBytes: integer(env, "ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES", 200_000, 3_200, 1_000_000),
@@ -489,6 +495,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     dailyLogPowerEveryS: integer(env, "ARMOR_DAILY_LOG_POWER_EVERY_S", 60, 5, 3600),
     dailyFalseAlarmS: integer(env, "ARMOR_DAILY_FALSE_ALARM_S", 60, 0, 600),
     dailyLogMaxEvents: integer(env, "ARMOR_DAILY_LOG_MAX_EVENTS", 5000, 100, 50_000),
+    visionTimelineMaxEntries: integer(env, "ARMOR_VISION_TIMELINE_MAX_ENTRIES", 5000, 100, 50_000),
     dailyLogMaxBytes: integer(env, "ARMOR_DAILY_LOG_MAX_BYTES", 4 * 1024 * 1024, 65_536, 64 * 1024 * 1024),
     dailyLogSensors: dailyLogSensors(env),
     alarmSoundMaxBytes: integer(env, "ARMOR_ALARM_SOUND_MAX_BYTES", 128_000, 3_200, 256_000),
@@ -500,6 +507,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     totpPolicy: oneOf(env, "ARMOR_TOTP_REQUIRED", ["off", "remote", "always"] as const, "off"),
     remoteSessionTtlMs: integer(env, "ARMOR_REMOTE_SESSION_TTL_MS", 12 * 3_600_000, 60_000, 30 * 86_400_000),
     remoteIdleMs: integer(env, "ARMOR_REMOTE_IDLE_MS", 30 * 60_000, 60_000, 7 * 86_400_000),
+    publicLogin: { attempts: integer(env, "ARMOR_PUBLIC_LOGIN_ATTEMPTS", 5, 3, 20), windowS: integer(env, "ARMOR_PUBLIC_LOGIN_WINDOW_S", 900, 60, 86_400) },
     loginAlerts: env.ARMOR_LOGIN_ALERTS !== "0",
     elevationMs: integer(env, "ARMOR_ELEVATION_MS", 5 * 60_000, 30_000, 3_600_000),
     remotePolicy: oneOf(env, "ARMOR_REMOTE_POLICY", ["full", "operate", "view"] as const, "full"),

@@ -30,3 +30,14 @@ The server can be reached from the Internet only through ONE door: a reverse pro
 ## Trusted phones
 
 With `client.trusted_devices` on (Studio, Security; off by default) a phone can hold a key pair that never leaves it and renew its session without the password and the code: it registers the public half (`POST /api/v1/devices/trust`, once, signed in and, from outside the house, after proving itself again), and later asks `POST /api/v1/devices/trust/challenge` for a one-time value and answers `POST /api/v1/devices/trust/session` with its signature. The session lasts `client.trusted_session_h` hours (72 by default). A stolen phone is ended with `DELETE /api/v1/devices/trust/{id}` (the person, or an administrator) and removing the user ends all of theirs; ending a phone does not end the sessions it already opened, which follow the normal limits.
+
+## Opening the port to the Internet
+
+This concerns a server that listens on the network (`ARMOR_HOST` is not the loopback) and receives requests that reach its port itself. A server on the loopback behind a reverse proxy (the door described above), and every request that arrives through the proxy named in `ARMOR_TRUST_PROXY`, are not touched. If the router forwards port 18080 to the server, turn on the Studio option `network.public_access` (Configuration > Security; **off by default**, and turning it on asks for a new proof of identity). While it is off every request from outside the house and the VPN is answered `403 public_access_off`; requests from the house are never touched.
+
+With it on, a request from outside is still refused unless:
+
+* it came over TLS, with the server's own certificate (`TLS_CERT_PATH`, `TLS_KEY_PATH`): otherwise `403 tls_required`;
+* the server has strong secrets and its own TLS: a control token of at least 32 characters, a sign-in password of at least 12 and a Secure cookie: otherwise `403 public_access_unsafe` with the reasons in `problems` (`tls_missing`, `control_token_short`, `password_short`, `cookie_not_secure`).
+
+An address that fails to sign in `ARMOR_PUBLIC_LOGIN_ATTEMPTS` times (5 by default, 3 to 20) inside `ARMOR_PUBLIC_LOGIN_WINDOW_S` seconds (900 by default) is answered `429 public_login_locked` with `Retry-After` until the oldest failure leaves the window; another address is not affected. Every refusal is recorded in the audit trail. The checklist to follow before opening the port is in the ARMOR-DEVOPS guide `PUBLIC_ACCESS.md`.

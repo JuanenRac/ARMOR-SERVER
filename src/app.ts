@@ -7,12 +7,14 @@ import path from "node:path";
 import cors from "cors";
 import express from "express";
 import rateLimit from "express-rate-limit";
+import { PublicLoginLimiter, decidePublicRequest, publicAccessProblems } from "./public_access.js";
 import fs from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { WebSocketServer } from "ws";
 import { createCoalescer } from "./ws_coalesce.js";
-import type { ArmorConfig } from "./config.js";
+import type { LiveNotice } from "./live_events.js";
+import { isLoopbackHost, type ArmorConfig } from "./config.js";
 import { createContext, type AppContext, type ContextOverrides } from "./context.js";
 import { hasBearer } from "./http/auth.js";
 import { attachMqtt, stampOf } from "./mqtt.js";
@@ -54,13 +56,21 @@ import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerSecurityRoutes } from "./routes/security.js";
 import { registerTrustedDeviceRoutes } from "./routes/trusted_devices.js";
 import { registerAdminRoutes } from "./routes/admin.js";
+import { registerBackupRoutes } from "./routes/backup.js";
 import { registerFirmwareRoutes } from "./routes/firmware.js";
 import { registerNodePanelRoutes } from "./node_panel_proxy.js";
 import { buildPanelSummary, createPanelFeed, PANEL_HEARTBEAT_MS } from "./panel_feed.js";
 import { registerVoiceRoutes } from "./routes/voice.js";
+import { registerPanicGestureRoutes } from "./routes/panic_gesture.js";
+import { registerEnrolmentRoutes } from "./routes/enrolment.js";
+import { registerPresenceRoutes } from "./routes/presence.js";
 import { registerAlarmAudioRoutes } from "./routes/alarm_audio.js";
+import { registerLoadSheddingRoutes } from "./routes/load_shedding.js";
 import { registerReportRoutes } from "./routes/reports.js";
+import { registerEnergyBalanceRoutes } from "./routes/energy_balance.js";
+import { registerVisionTimelineRoutes } from "./routes/vision_timeline.js";
 import { registerAiRoutes } from "./routes/ai.js";
+import { registerIgnoreProposalRoutes } from "./routes/ignore_proposals.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
 import { registerSystemRoutes } from "./routes/system.js";
 import { registerUserRoutes } from "./routes/users.js";
@@ -91,11 +101,21 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   const WS_WINDOW_MS = 150;
   const stateFeed = createCoalescer<SystemState>(sendState, WS_WINDOW_MS);
   const broadcast = (state: SystemState) => stateFeed.push(state);
+  /** The notices of the console channel (live_events.ts) go to the same sockets as the state, with the same rule for a client that is too far behind. */
+  const sendNotice = (notice: LiveNotice) => {
+    const line = JSON.stringify(notice);
+    for (const client of clients.clients) {
+      if (client.readyState !== client.OPEN) continue;
+      if (client.bufferedAmount > MAX_BUFFERED_BYTES) { client.terminate(); continue; }
+      client.send(line);
+    }
+  };
   /** Who each open socket was admitted as. A session can end while the socket stays open (the user was removed, their role or password changed, the session expired). */
   const admitted = new WeakMap<object, { reader: ReturnType<typeof headerReader>; viaToken: boolean; alive: boolean }>();
   const panelAdmitted = new WeakMap<object, { reader: ReturnType<typeof headerReader>; alive: boolean }>();
   const context = createContext(config, { ...overrides, broadcast });
   const app = express();
+  context.live.attach(sendNotice);
   app.disable("x-powered-by");
   // Behind a reverse proxy the client is whoever the proxy says in X-Forwarded-For - but only a proxy that was named (ARMOR_TRUST_PROXY) is believed.
   if (config.trustProxy !== false) app.set("trust proxy", config.trustProxy);
@@ -139,6 +159,32 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     return response.status(403).json({ error: "this is only possible from the house or over the VPN", code: "remote_policy", needs: "vpn" });
   });
 
+  // The port opened to the Internet (network.public_access, off by default): a request from outside the house is taken only when the option is on, over TLS and with strong secrets, and
+  // an address that fails to sign in too often is closed for a while. Requests from the house and the VPN are not touched.
+  const publicLimiter = new PublicLoginLimiter(config.publicLogin.attempts, config.publicLogin.windowS * 1000);
+  const publicFacts = { ownTls: config.tls !== null, controlTokenLength: config.controlToken.length, studioPasswordLength: config.studioPassword.length, cookieSecure: config.cookieSecure };
+  app.use((request, response, next) => {
+    // A server that listens on the loopback only can be reached through a local proxy and nothing else: there is no port to be opened to the Internet, so nothing is gated.
+    if (isLoopbackHost(config.host)) return next();
+    // Only a request that reached the port itself is in question: one that came through the reverse proxy of ARMOR_TRUST_PROXY (the documented door, which ends the TLS) carries the address
+    // of the client it forwards, so its address differs from the one of the connection; those keep working as they always did.
+    const peer = (request.socket.remoteAddress ?? "").replace(/^::ffff:/i, "");
+    const viaProxy = config.trustProxy !== false && (request.ip ?? "").replace(/^::ffff:/i, "") !== peer;
+    const remote = !viaProxy && context.originOfRequest(request) === "remote";
+    const decision = decidePublicRequest({ remote, secure: request.secure, enabled: context.securitySettings.get("network.public_access"), problems: publicAccessProblems(publicFacts) });
+    if (!decision.allow) {
+      context.audit.record({ action: "public_access", outcome: "denied", target: `${request.method} ${request.path}`, detail: `${decision.error} ${request.ip ?? ""}` });
+      return response.status(decision.status).json({ error: decision.error, ...(decision.problems ? { problems: decision.problems } : {}) });
+    }
+    if (remote && request.method === "POST" && /^\/api\/v1\/studio\/session(\/totp)?$/.test(request.path)) {
+      const address = request.ip ?? "";
+      const wait = publicLimiter.retryAfterS(address);
+      if (wait > 0) { response.set("Retry-After", String(wait)); return response.status(429).json({ error: "too many failed sign-ins from this address", code: "public_login_locked", retry_after_s: wait }); }
+      response.on("finish", () => { if (response.statusCode === 401) publicLimiter.fail(address); else if (response.statusCode < 400) publicLimiter.succeed(address); });
+    }
+    return next();
+  });
+
   registerIngestRoutes(app, context, Date.now(), version);
   registerSessionRoutes(app, context);
   registerSecurityRoutes(app, context);
@@ -161,14 +207,22 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerMaintenanceRoutes(app, context);
   registerMachineUpdateRoutes(app, context);
   registerAlarmRoutes(app, context);
+  registerPanicGestureRoutes(app, context);
+  registerEnrolmentRoutes(app, context);
+  registerPresenceRoutes(app, context);
   registerSystemRoutes(app, context, version);
   registerAdminRoutes(app, context);
+  registerBackupRoutes(app, context);
+  registerVisionTimelineRoutes(app, context);
   registerFirmwareRoutes(app, context);
   registerNodePanelRoutes(app, context);
   registerVoiceRoutes(app, context);
   registerAlarmAudioRoutes(app, context);
+  registerLoadSheddingRoutes(app, context);
   registerReportRoutes(app, context);
+  registerEnergyBalanceRoutes(app, context);
   registerAiRoutes(app, context);
+  registerIgnoreProposalRoutes(app, context);
   registerNotificationRoutes(app, context);
   registerHistoryRoutes(app, context);
   registerCameraRoutes(app, context);
@@ -244,6 +298,9 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     }
   }, 30_000);
   watchSockets.unref();
+  // Every five seconds: the balance of the house is looked at (nothing happens while its option is off).
+  const balanceTimer = setInterval(() => { context.balanceWatcher.tick(); }, 5_000);
+  balanceTimer.unref();
   // Once a second: an alarm or the energy can change without the state of the nodes changing, so the summary is looked at, and sent when it differs; every few seconds it is sent anyway, so
   // the panel can tell a quiet channel from a dead one. When the administrator turns the channel off, the panels that are on it are told (4403) and go back to asking.
   let lastBeat = 0;
@@ -255,6 +312,9 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     try { panelFeed.push(beat); } catch { /* one failed look at the summary never stops the next */ }
   }, 1_000);
   panelTimer.unref();
+  // Once a second: the load shedding looks at the grid draw (it does nothing while its option is off).
+  const sheddingTimer = setInterval(() => { void context.loadShedding.tick().catch(() => undefined); }, 1_000);
+  sheddingTimer.unref();
 
   const mqtt = config.mqtt ? attachMqtt(context.store, config.mqtt.url, config.mqtt.username, config.mqtt.password, context.ingestLog, config.mqtt.ca?.pem) : null;
   /** A message of a node that was refused: said in the log and kept (with the start of what was sent) for Studio's System menu. */
@@ -362,8 +422,9 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   let sweepFailing = false;
   const sweeper = setInterval(() => {
     try {
-      context.escalator.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.batteryWrite.sweep(); context.nodeControl.sweep(); context.diagnosticTokens.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.armingModes.tick(); context.reportSilentNodes(); context.networkNodes.sweep();
+      context.escalator.tick(); context.automations.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.batteryWrite.sweep(); context.nodeControl.sweep(); context.diagnosticTokens.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.armingModes.tick(); context.reportSilentNodes(); context.networkNodes.sweep();
       context.studioSessions.sweep(); context.operatorSessions.sweep(); context.connections.registry.tick(); context.nodeLife.flush();
+      void context.backup.tick(context.securitySettings.get("admin.backup"));
       sweepFailing = false;
     } catch (error) {
       if (!sweepFailing) console.warn("ARMOR_SWEEP=FAILED", error instanceof Error ? error.message : "unknown error");
@@ -384,9 +445,12 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     close: async () => {
       clearInterval(sweeper);
       clearInterval(watchSockets);
+      clearInterval(balanceTimer);
       clearInterval(panelTimer);
+      clearInterval(sheddingTimer);
       clearInterval(historySaver);
       stateFeed.close();
+      context.live.close();
       context.systemMonitor.stop();
       context.heartbeat.stop();
       saveHistory();

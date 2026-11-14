@@ -240,6 +240,14 @@ def test_project(project: Path, manifest: dict[str, object]) -> None:
             raise RuntimeError("Swift is required to run the tests of ArmorCore")
         else:
             report("SWIFT_TESTS=SKIPPED no Swift toolchain on this machine (they run in CI)")
+    elif name == "ARMOR-WATCH":
+        # the contract of the messages is checked in Python (no watch needed); the Kotlin core is tested wherever the Gradle wrapper can run (CI)
+        unit_tests(project)
+        wrapper = "gradlew.bat" if os.name == "nt" and (project / "gradlew.bat").is_file() else ("./gradlew" if (project / "gradlew").is_file() else None)
+        if wrapper and (os.environ.get("ARMOR_REQUIRE_GRADLE") or os.environ.get("CI")):
+            command(project, [wrapper, "test"])
+        else:
+            report("WATCH_KOTLIN_TESTS=SKIPPED the Kotlin core is tested in CI (CI runs it; set ARMOR_REQUIRE_GRADLE=1 to run it here)")
     elif name == "ARMOR-HARDWARE":
         unit_tests(project)
         openscad = check_tool("openscad", "OpenSCAD is required to validate the parametric enclosure")
@@ -555,7 +563,7 @@ def run_project(project: Path, manifest: dict[str, object]) -> None:
         command(project, [NPM, "run", "dev"], environment)
     elif name == "ARMOR-DEVOPS":
         command(project, ["docker", "compose", "up", "--build"])
-    elif name in {"ARMOR-NODE-RADAR", "ARMOR-NODE-SOLAR", "ARMOR-NODE-ELECTRICAL", "ARMOR-NODE-ALARM", "ARMOR-NODE-HMI", "ARMOR-ANDROID-CONTROL", "ARMOR-IOS-CONTROL", "ARMOR-HARDWARE", "ARMOR-DOCS", "ARMOR-UPDATER"}:
+    elif name in {"ARMOR-NODE-RADAR", "ARMOR-NODE-SOLAR", "ARMOR-NODE-ELECTRICAL", "ARMOR-NODE-ALARM", "ARMOR-NODE-HMI", "ARMOR-ANDROID-CONTROL", "ARMOR-IOS-CONTROL", "ARMOR-HARDWARE", "ARMOR-DOCS", "ARMOR-UPDATER", "ARMOR-WATCH"}:
         print(f"{name} has no safe generic runtime command. Use build-test to validate it, then follow its project documentation for hardware or IDE deployment.")
     else:
         raise RuntimeError(f"no run rule registered for {name}")

@@ -47,7 +47,10 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
     const id = String(request.params.id);
     if (!/^[a-z0-9][a-z0-9:._-]{0,63}$/.test(id)) return response.status(422).json({ error: "invalid_node_id" });
     audit.record({ action: "node.token.read", outcome: "allowed", actor: studioUser(request)?.username, target: id });
-    return response.json({ node_id: id, token: nodeTokenFor(config.ingestToken, id), strict: config.ingestStrict });
+    // While commands.require_sig is on, the node is also given the key it checks the signature of the commands with (its own, derived from the master key, which never leaves the server).
+    const commandKey = context.securitySettings.get("commands.require_sig") && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(id) ? context.commandSigner.nodeKey(id) : undefined;
+    response.set("Cache-Control", "private, no-store");
+    return response.json({ node_id: id, token: nodeTokenFor(config.ingestToken, id), strict: config.ingestStrict, ...(commandKey ? { command_key: commandKey } : {}) });
   });
 
   app.get("/api/v1/admin/status", requireAdmin, async (_request, response) => {
@@ -163,6 +166,32 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
     const reply = await ask(response, "POST", "/v1/firewall/field-http", { state: input.state }, sensitive(request));
     if (!reply) return;
     audit.record({ action: "admin.firewall", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: "field-http", detail: `${String(input.state)}${reply.status < 300 ? "" : ` ${String(reply.body.error ?? reply.status)}`}` });
+    response.setHeader("Cache-Control", "no-store");
+    relay(response, reply);
+  });
+
+  // The local authority of the LAN (ARMOR-DEVOPS scripts/armor_lan_cert.py), made, renewed or replaced through the admin agent. Off unless the option network.lan_ca is on; the agent wants the one-time
+  // code of the maintenance authenticator for every order, and the key of the authority never leaves its folder.
+  app.get("/api/v1/admin/lan-ca", requireAdmin, async (_request, response) => {
+    if (!context.securitySettings.get("network.lan_ca")) return response.json({ enabled: false });
+    const reply = await ask(response, "GET", "/v1/lan-ca");
+    if (reply) relay(response, reply, data => ({ ...data, enabled: true }));
+  });
+
+  app.post("/api/v1/admin/lan-ca", requireAdmin, async (request, response) => {
+    const input = body(request);
+    const refuse = (status: number, error: string) => {
+      audit.record({ action: "admin.lan_ca", outcome: "denied", actor: actor(request), target: "lan-ca", detail: error });
+      return response.status(status).json({ error });
+    };
+    if (!context.securitySettings.get("network.lan_ca")) return refuse(403, "lan_ca_disabled");
+    if (input.action !== "setup" && input.action !== "renew" && input.action !== "rotate") return refuse(422, "invalid_action");
+    if (typeof input.ip !== "string" || !/^\d{1,3}(\.\d{1,3}){3}$/.test(input.ip)) return refuse(422, "invalid_ip");
+    if (input.confirm !== true) return refuse(422, "confirmation_required");
+    if (input.confirm_text !== "lan-ca") return refuse(422, "confirmation_mismatch");
+    const reply = await ask(response, "POST", "/v1/lan-ca", { action: input.action, ip: input.ip, names: Array.isArray(input.names) ? input.names : [] }, sensitive(request));
+    if (!reply) return;
+    audit.record({ action: "admin.lan_ca", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: "lan-ca", detail: `${String(input.action)}${reply.status < 300 ? "" : ` ${String(reply.body.error ?? reply.status)}`}` });
     response.setHeader("Cache-Control", "no-store");
     relay(response, reply);
   });

@@ -41,7 +41,7 @@
 | Role | Central security coordinator of the family: nodes, alarms, devices, energy, cameras, network |
 | Stack | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | Tests | 1152 (`npm test`: unit and full HTTP integration) |
-| Contract | 229 HTTP paths, 294 operations (OpenAPI in ARMOR-COMMON), route table in `docs/ROUTES.md` |
+| Contract | 247 HTTP paths, 320 operations (OpenAPI in ARMOR-COMMON), route table in `docs/ROUTES.md` |
 | Listens on | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Runs on | The CM5 test bench (as a service, see ARMOR-DEVOPS) or any computer with Node.js |
 | On real hardware | The CM5 test bench, in daily use: a real MQTT broker, real IP cameras, a real radar node on an ESP32-S3 board, Studio, the Android app and the voice and observation services against it |
@@ -157,7 +157,7 @@ flowchart LR
 
 ## 🔌 Interfaces
 
-The route table (`docs/ROUTES.md`, generated from the code) lists every route with who may call it; the OpenAPI file of ARMOR-COMMON describes 229 paths and 294 operations, and a test fails if a route is missing from it. The ones that matter most:
+The route table (`docs/ROUTES.md`, generated from the code) lists every route with who may call it; the OpenAPI file of ARMOR-COMMON describes 247 paths and 320 operations, and a test fails if a route is missing from it. The ones that matter most:
 
 | Route | Auth | What it does |
 |---|---|---|
@@ -321,6 +321,7 @@ README and texts exist in English, Spanish, French, Italian, German, Chinese, Ja
 * **[ARMOR-STUDIO](https://github.com/JuanenRac/ARMOR-STUDIO)** - Web console: cameras, radar, alarms, solar energy and the 2D/3D site designer
 * **[ARMOR-ANDROID-CONTROL](https://github.com/JuanenRac/ARMOR-ANDROID-CONTROL)** - Android operator client with a live 2D/3D radar
 * **[ARMOR-IOS-CONTROL](https://github.com/JuanenRac/ARMOR-IOS-CONTROL)** - iPhone operator client
+* **[ARMOR-WATCH](https://github.com/JuanenRac/ARMOR-WATCH)** - Minimal watch client: alarm notices and alarm confirmation
 * **[ARMOR-SERVER-AI](https://github.com/JuanenRac/ARMOR-SERVER-AI)** - Visual inference policy that explains its decisions and never actuates
 * **[ARMOR-VISION](https://github.com/JuanenRac/ARMOR-VISION)** - Camera zones, masks and detection rules for the Jetson Orin NX
 * **[ARMOR-VOICE-AI](https://github.com/JuanenRac/ARMOR-VOICE-AI)** - Offline voice intents with a confirmation that cannot be forged

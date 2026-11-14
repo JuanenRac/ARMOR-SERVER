@@ -56,7 +56,7 @@ export function registerAlarmNodeRoutes(app: Express, context: AppContext): void
 
   // A command to one node: {"node", "action": "arm" | "disarm" | "silence", "mode": "away" | "stay" (on an arm), "force": boolean (on an arm), "profile": the id of an arming profile (on an arm; its base is the mode, which may then be left out)}. Answered 202 with the command id (the node's
   // answer arrives later in /commands); a refusal is 4xx with a code. A disarm or a silence needs the PIN of the signed-in user (see disarm_gate.ts); the PIN is checked here and never sent to the node.
-  app.post("/api/v1/alarm/command", requireAdmin, commandLimit, (request, response) => {
+  app.post("/api/v1/alarm/command", requireAdmin, commandLimit, async (request, response) => {
     const body = typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {};
     const node = typeof body.node === "string" ? body.node : "";
     const known = ["node", "action", "mode", "force", "pin", "profile"];
@@ -74,7 +74,7 @@ export function registerAlarmNodeRoutes(app: Express, context: AppContext): void
     const user = studioUser(request);
     if (body.action === "disarm" || body.action === "silence") {
       // The panel itself does not ask for a PIN of a disarm (or a silence) that comes from the server (the broker, the node's own setting and this server must all have said yes): this server does.
-      const verdict = checkDisarm(context, user, body.pin, user?.username ?? "administrator", body.action);
+      const verdict = await checkDisarm(context, user, body.pin, user?.username ?? "administrator", body.action);
       if (!verdict.allow) return response.status(verdict.status).json(verdict.body);
       if (verdict.duress) context.alarms.raiseDuress(user?.username ?? "administrator");
     }

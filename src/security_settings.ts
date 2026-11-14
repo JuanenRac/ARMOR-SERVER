@@ -11,22 +11,37 @@
  *   alarm.mode_panel_sync        on | off                  choosing away, home or night also arms the alarm panels with the profile that goes with it (off, the default: the modes decide only what the server defends; it needs alarm.arming_modes)
  *   voice.silence_confirmation   off | pin | double_turn | challenge   what the voice assistant asks before silencing the alarm (sent to the voice service with every turn). challenge = a number the voice service draws, shown on the screen of the panel and never said aloud: only a panel that shows it can silence by voice, every other client (Studio, the phone) fails closed
  *   alarm.config_hash            on | off                  the panel binds its saved armed state to its zones and PIN and does not restore it if they changed (panel side)
+ *   commands.require_sig        on | off                 the critical commands (alarm_command, electrical_command) are published with a nonce and an HMAC-SHA256 signature of this installation, so that neither the broker nor another identity on it can forge or replay one (off, the default: unsigned, as before; the nodes verify it once their firmware holds the key)
  *   alarm.siren_fault_notice     on | off                  a warning in the alarm centre while a panel reports that the wiring of its siren is open, shorted or unreadable (on, the default; off: nothing is raised)
  *   server.zone_feed             on | off                  the server tells the panels the state of their Zigbee zones
  *   server.zone_feed_signature   on | off                  every zone message is signed, so a panel can tell it came from this server
  *   server.alarm_state_signature on | off                  the server publishes a signed copy of each alarm state it hears, so a reader on the broker (the safety zones of a HYDRA-UMC cell) can tell who sent it (off, the default)
  *   media.rtsp_proxy             on | off                  FFmpeg reads the cameras through the local tunnel (off: the camera login goes in its command line, visible to every user of the machine)
  *   voice.panic_phrase           on | off                  a user's secret panic phrase, said to the voice assistant, raises the silent duress alarm (off, the default: nobody's phrase is looked for)
+ *   electrical.balance         on | off                 the server works out the balance of the house from the solar plant and the grid (self-consumption, export, unexpected export, consumption anomalies; informing only; off, the default: the balance route answers 404 and nothing is watched)
+ *   client.panic_gesture        on | off                 the hidden gesture of the apps (a long press on the logo, or five quick touches) raises the silent duress alarm of the signed-in person (POST /api/v1/alarm/panic-gesture; off, the default: the route answers 404 and the apps do not offer the gesture)
+ *   client.enrolment_code       on | off                 an administrator may ask for a code of one use and five minutes for the QR that sets up an app on a phone (POST /api/v1/admin/enrolment-code), and a phone reads the address and the fingerprint of the local authority with it (GET /api/v1/enrolment/{code}); the code carries no secret and opens no session (off, the default: both routes answer 404)
+ *   ai.spatial                  on | off                 the observation service judges where each radar track falls in a camera's picture, from the places the site design gives the radars and cameras (off, the default: a radar track anywhere in the area a camera covers counts for that camera); it is told in the context (options.spatial)
+ *   ai.learn                    on | off                 the observation service may study the pictures of the cameras while the system is disarmed and propose parts of the picture to ignore (POST /api/v1/ai/ignore-proposals); nothing is applied until an administrator accepts a proposal (off, the default: proposals are not kept)
+ *   presence.by_user            on | off                 a signed-in person's phone may tell the server only the word home or away (PUT /api/v1/presence/me; the position never leaves the phone), and the automations with a presence trigger follow the sum (off, the default: the routes answer 404 and the trigger never fires)
  *   voice.panic_cooldown_s      10 to 3600               after a panic phrase, the seconds in which the same user's phrase raises nothing more (60)
  *   voice.multipart_turn         on | off                  the wall panel may send a spoken turn as multipart/form-data with the audio as raw bytes (off: only the older raw request is taken, a multipart one is answered 415)
+ *   voice.mobile_turn           on | off                  a phone of a signed-in operator or administrator may speak to the voice gateway through POST /api/v1/voice/mobile-turn (the microphone of the phone; off, the default, answers 403 mobile_voice_disabled; the spoken orders keep the same confirmations as the typed ones)
+ *   vacation.mode               on | off                 the presence simulation: the automations with a schedule trigger (a time of day with a random, repeatable jitter) run, only while the system is armed away (off, the default: no schedule ever runs)
  *   voice.wake_word             on | off                  the wall panel may send short chunks of audio to the voice gateway to hear its wake word (openWakeWord, on this machine, no cloud); off, the default: the route answers 403 and no audio is passed on
  *   admin.acl_relays             on | off                  Studio may ask the admin agent to open or close the two switches of the broker rules that no install turns on (the writing to the batteries of one solar node, and the signed copy of the alarm states); off, the default: the routes answer 403, and each change also needs the code of the authenticator and two confirmations
  *   admin.field_http             on | off                  Studio may ask the admin agent to let the field network also reach the server's port over HTTP (the firewall switch field-http); off, the default: the routes answer 403, and each change also needs the code of the authenticator and a confirmation
  *   panel.live_events            on | off                  the wall panel may listen to the live channel (a WebSocket that carries the same small summary it can ask for; off: it asks every few seconds)
+ *   panel.preflight              on | off                  the account of a wall panel may read the check before arming (GET /api/v1/preflight) to show what is wrong when the person presses Arm (off, the default: it answers 403 and the panel arms as before)
+ *   panel.camera_view            on | off                  the account of a wall panel may read a still picture of a camera (GET /api/v1/cameras/:id/snapshot), at most one every two seconds for each camera (off, the default: it answers 403)
+ *   live.events                 on | off                 besides the whole state, the console channel (/api/v1/events) tells the consoles that an alarm, a device, the solar plant, the network or a design changed ({type, id, version} and nothing more; on, the default; off: the state only, as before)
  *   client.device_lock           user | sensitive | always   what the phone app asks of the person with the lock of the phone itself (fingerprint, face or the phone's PIN): user = the phone's own switches decide, sensitive = also before arming, disarming and unlocking, always = also to open the app (it can only raise what a person chose, never lower it, and a phone with no lock at all is never shut out)
  *   client.trusted_devices       on | off                  a phone may be registered as a trusted device (a key pair that stays in the phone) and renew its session by signing a one-time challenge instead of typing the password and the code again (off, the default: nothing is registered or accepted)
+ *   admin.firmware_rollout      on | off                 a firmware job from GitHub follows the staged rollout of the settings (/api/v1/admin/firmware/rollout): the channel stable or beta, a percent of the nodes at a time, and the way back for a node that does not come back (off, the default: a job updates every node it was given with the latest release)
+ *   admin.backup                on | off                 an administrator may set up encrypted, scheduled backups of the data directory and make or prove one (the /api/v1/admin/backup routes; off, the default: they answer 403 backup_disabled and nothing is scheduled)
  *   client.trusted_session_h     1 to 720                 how long the session handed to a trusted phone lasts, in hours (72)
  *   nodes.nvs_encryption         off | secrets            the alarm nodes keep only the secrets they store (passwords, token, keys) encrypted in their flash (told in the policy message; off, the default, tells nothing)
+ *   electrical.load_shedding    on | off                 when the grid draw is over the limit of the settings, the devices an administrator listed as not critical are switched off one at a time, and on again once the draw is well under it (off, the default: nothing is ever shed; see load_shedding.ts)
  *   voice.turn_max_bytes         3200 to 1920000          the most audio one spoken turn of the wall panel may carry (the environment's ARMOR_VOICE_TURN_MAX_BYTES is where it starts)
  *   voice.reply_audio_max_bytes  3200 to 1000000          the most spoken answer handed on to the panel in the binary form (ARMOR_VOICE_REPLY_AUDIO_MAX_BYTES is where it starts)
  *   alarm_audio.spoken           on | off                  the wall panel may ask for an alarm to be said out loud (origin, severity and what it is, made by the voice gateway; off, the default, answers 404)
@@ -35,7 +50,7 @@
  *   login.country_alert          on | off                 a sign-in from outside the house from a country that person never signed in from before is told to the places the alarms go to (on, the default; it only acts when the server has a country database, ARMOR_GEOIP_DB)
  *   summary.daily                on | off                 administrators and operators may ask for the summary of a day (GET /api/v1/summary/daily, made by ARMOR-SERVER-AI from the alarms the server kept; off, the default, answers 404)
  *   vision.heatmap               on | off                 administrators and operators may ask for the activity heat map of a camera (GET /api/v1/vision/heatmap, made by ARMOR-VISION; positions only, never a picture; off, the default, answers 404)
- *   vision.activity_events       on | off                 the server takes the activity events of ARMOR-VISION (POST /api/v1/ai/activity-events: every event is recorded, and an alert zone may raise an alarm unless the profile of the mode says not to tell; off, the default, answers { raised: false, reason: feature_off } and records nothing)
+ *   vision.activity_events       on | off                 the server takes the activity events of ARMOR-VISION (POST /api/v1/ai/activity-events: every event is recorded, and an alert zone may raise an alarm unless the profile of the mode says not to tell; on by default; off answers { raised: false, reason: feature_off } and records nothing, and turning it off is a loss of protection)
  *   vision.service_url           an http address            where the live ARMOR-VISION service listens (http://127.0.0.1:8765): the heat map is asked of it (ARMOR_VISION_SERVICE_URL is where it starts; empty: not set up)
  *   vision.service_token_set     on | off (read only)     whether the server holds a token for the vision service (ARMOR_VISION_SERVICE_TOKEN or ARMOR_VISION_SERVICE_TOKEN_FILE); the token itself is never shown or stored here
  *   vision.service_remote        on | off                   the service may be on another machine (off, the default: only a loopback address is used)
@@ -52,6 +67,12 @@
  *   ingest.recording             on | off                 the server keeps a copy of what the nodes send (and why a message was refused) in a JSON-lines file the simulator can play again, with a size limit and rotation from ARMOR_INGEST_RECORD_MAX_BYTES and ARMOR_INGEST_RECORD_FILES (off, the default: nothing is written)
  *   network.lan_ca              on | off                 an administrator may download the public certificate of the local CA that signs the HTTPS certificate of the LAN (GET /api/v1/security/lan-ca; the private key is never served; off, the default, answers 404)
  *   vision.semantic_search / vision.plates / vision.faces   on | off   the three features of the second phase of ARMOR-VISION that read personal data (search by meaning, licence plates, faces); each is off by default and cannot be turned on until its acknowledgement setting (the same name plus _ack) says the privacy notice was read
+ *   session.rotate_id           on | off                 a session in use gets a new id (and cookie) each time it is renewed, and the old id keeps working for 30 seconds (off, the default: the id lasts as long as the session)
+ *   network.public_access       on | off                 requests from outside the house and the VPN are taken at all, and only over TLS with strong secrets (off, the default: every one is answered 403 public_access_off; see public_access.ts)
+ *   vision.timeline              on | off                 the server keeps the events of the zones of the vision service in a review timeline with their evidence (GET /api/v1/vision/timeline; off, the default: nothing is kept)
+ *   vision.timeline_days         1 to 3650                the days an entry of the timeline is kept (30)
+ *   capture.on_alarm            on | off                 when a node (or an alarm panel) raises a high alarm, the cameras that the site design says cover it take the photo and video of the capture settings (off, the default: only the vision service starts a capture)
+ *   capture.on_alarm_per_min    1 to 60                  the most captures one minute of alarms may start in all (6)
  *   network.login_secure_only    on | off                 a stored device login is handed to a network node only when its request came over TLS or from this machine (off, the default: any request of the node)
  *
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
@@ -95,6 +116,8 @@ export function visionTokenInClear(remote: boolean, tokenHeld: boolean, url: str
 export const TRUSTED_SESSION_H = { min: 1, max: 720, default: 72 } as const;
 /** How many days a snapshot and a recording are kept; 0 means the general limit (ARMOR_MEDIA_RETENTION_DAYS) applies. */
 export const MEDIA_RETENTION_DAYS = { min: 0, max: 3650, default: 0 } as const;
+export const CAPTURE_ON_ALARM_PER_MIN = { min: 1, max: 60, default: 6 } as const;
+export const VISION_TIMELINE_DAYS = { min: 1, max: 3650, default: 30 } as const;
 export const SUMMARY_LOG_DAYS = { min: 1, max: 90, default: 14 } as const;
 export const SUMMARY_READING_EVERY_S = { min: 10, max: 3600, default: 300 } as const;
 export const SUMMARY_POWER_EVERY_S = { min: 5, max: 3600, default: 60 } as const;
@@ -115,6 +138,7 @@ export type SecuritySettingsValues = {
   "alarm.mode_schedule_lowers": boolean;
   "alarm.mode_panel_sync": boolean;
   "alarm.config_hash": boolean;
+  "commands.require_sig": boolean;
   "alarm.siren_fault_notice": boolean;
   "server.zone_feed": boolean;
   "server.zone_feed_signature": boolean;
@@ -122,6 +146,8 @@ export type SecuritySettingsValues = {
   "media.rtsp_proxy": boolean;
   "network.login_secure_only": boolean;
   "network.lan_ca": boolean;
+  "session.rotate_id": boolean;
+  "network.public_access": boolean;
   "media.retention_snapshot_days": number;
   "media.retention_recording_days": number;
   "vision.semantic_search": boolean;
@@ -137,15 +163,29 @@ export type SecuritySettingsValues = {
   "electrical.set_aside_old_readings": boolean;
   "voice.multipart_turn": boolean;
   "voice.wake_word": boolean;
+  "voice.mobile_turn": boolean;
+  "vacation.mode": boolean;
   "voice.panic_phrase": boolean;
+  "client.panic_gesture": boolean;
+  "electrical.balance": boolean;
+  "client.enrolment_code": boolean;
+  "presence.by_user": boolean;
+  "ai.spatial": boolean;
+  "ai.learn": boolean;
   "voice.panic_cooldown_s": number;
   "admin.acl_relays": boolean;
   "admin.field_http": boolean;
   "panel.live_events": boolean;
+  "panel.preflight": boolean;
+  "panel.camera_view": boolean;
+  "live.events": boolean;
   "client.device_lock": DeviceLockPolicy;
   "client.trusted_devices": boolean;
+  "admin.backup": boolean;
+  "admin.firmware_rollout": boolean;
   "client.trusted_session_h": number;
   "nodes.nvs_encryption": NvsEncryption;
+  "electrical.load_shedding": boolean;
   "voice.turn_max_bytes": number;
   "voice.reply_audio_max_bytes": number;
   "alarm_audio.spoken": boolean;
@@ -157,6 +197,10 @@ export type SecuritySettingsValues = {
   "vision.service_remote": boolean;
   "vision.service_token_set": boolean;
   "summary.log_days": number;
+  "vision.timeline": boolean;
+  "vision.timeline_days": number;
+  "capture.on_alarm": boolean;
+  "capture.on_alarm_per_min": number;
   "summary.reading_every_s": number;
   "summary.power_every_s": number;
   "summary.false_alarm_s": number;
@@ -175,6 +219,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "alarm.mode_schedule_lowers": false,
   "alarm.mode_panel_sync": false,
   "alarm.config_hash": true,
+  "commands.require_sig": false,
   "alarm.siren_fault_notice": true,
   "server.zone_feed": true,
   "server.zone_feed_signature": true,
@@ -182,6 +227,8 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "media.rtsp_proxy": true,
   "network.login_secure_only": false,
   "network.lan_ca": false,
+  "session.rotate_id": false,
+  "network.public_access": false,
   "media.retention_snapshot_days": MEDIA_RETENTION_DAYS.default,
   "media.retention_recording_days": MEDIA_RETENTION_DAYS.default,
   "vision.semantic_search": false,
@@ -197,26 +244,44 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "electrical.set_aside_old_readings": true,
   "voice.multipart_turn": true,
   "voice.wake_word": false,
+  "voice.mobile_turn": false,
+  "vacation.mode": false,
   "voice.panic_phrase": false,
+  "client.panic_gesture": false,
+  "electrical.balance": false,
+  "client.enrolment_code": false,
+  "presence.by_user": false,
+  "ai.spatial": false,
+  "ai.learn": false,
   "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S.default,
   "admin.acl_relays": false,
   "admin.field_http": false,
   "panel.live_events": true,
+  "panel.preflight": false,
+  "panel.camera_view": false,
+  "live.events": true,
   "client.device_lock": "user",
   "client.trusted_devices": false,
+  "admin.backup": false,
+  "admin.firmware_rollout": false,
   "client.trusted_session_h": TRUSTED_SESSION_H.default,
   "nodes.nvs_encryption": "off",
+  "electrical.load_shedding": false,
   "voice.turn_max_bytes": VOICE_TURN_BYTES.default,
   "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES.default,
   "alarm_audio.spoken": false,
   "alarm_audio.custom_sounds": false,
   "summary.daily": false,
   "vision.heatmap": false,
-  "vision.activity_events": false,
+  "vision.activity_events": true,
   "vision.service_url": "",
   "vision.service_remote": false,
   "vision.service_token_set": false,
   "summary.log_days": SUMMARY_LOG_DAYS.default,
+  "vision.timeline": false,
+  "vision.timeline_days": VISION_TIMELINE_DAYS.default,
+  "capture.on_alarm": false,
+  "capture.on_alarm_per_min": CAPTURE_ON_ALARM_PER_MIN.default,
   "summary.reading_every_s": SUMMARY_READING_EVERY_S.default,
   "summary.power_every_s": SUMMARY_POWER_EVERY_S.default,
   "summary.false_alarm_s": SUMMARY_FALSE_ALARM_S.default,
@@ -227,7 +292,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
 
 /** The settings that are whole numbers, with the range each may take. */
 const NUMBER_RANGES: Partial<Record<keyof SecuritySettingsValues, { min: number; max: number }>> = { "voice.turn_max_bytes": VOICE_TURN_BYTES, "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES, "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S, "client.trusted_session_h": TRUSTED_SESSION_H,
-  "summary.log_days": SUMMARY_LOG_DAYS, "summary.reading_every_s": SUMMARY_READING_EVERY_S, "summary.power_every_s": SUMMARY_POWER_EVERY_S, "summary.false_alarm_s": SUMMARY_FALSE_ALARM_S,
+  "vision.timeline_days": VISION_TIMELINE_DAYS, "capture.on_alarm_per_min": CAPTURE_ON_ALARM_PER_MIN, "summary.log_days": SUMMARY_LOG_DAYS, "summary.reading_every_s": SUMMARY_READING_EVERY_S, "summary.power_every_s": SUMMARY_POWER_EVERY_S, "summary.false_alarm_s": SUMMARY_FALSE_ALARM_S,
   "media.retention_snapshot_days": MEDIA_RETENTION_DAYS, "media.retention_recording_days": MEDIA_RETENTION_DAYS, "reports.timeout_s": REPORT_TIMEOUT_S, "reports.queue_max": REPORT_QUEUE_MAX, "reports.requests_per_minute": REPORT_REQUESTS_PER_MINUTE };
 
 /** The features of the second phase of the vision service that read personal data: each has a switch and an acknowledgement of its privacy notice. */
@@ -335,24 +400,40 @@ export class SecuritySettings {
 
 /** True when the new value lowers security compared with the old one (the audit trail and Studio say so). */
 export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boolean {
-  if (key === "voice.multipart_turn" || key === "panel.live_events" || key === "alarm_audio.spoken" || key === "alarm_audio.custom_sounds") return false;   // a way in that is turned off is not a loss of protection; turning it on is the default way
+  if (key === "client.enrolment_code") return false;   // a code only shows the public facts of the server and is asked for by an administrator who proved themselves again
+  if (key === "ai.spatial") return false;   // it only weighs better what the radars and the cameras already say
+  if (key === "ai.learn") return from === false && to === true;   // a service that studies the pictures of the cameras is a use of them: turning it on is the loss
+  if (key === "presence.by_user") return false;   // the phone says one word; turning it on adds no way in
+  if (key === "client.panic_gesture") return false;   // one more way to ask for help: no way in
+  if (key === "voice.multipart_turn" || key === "panel.live_events" || key === "live.events" || key === "alarm_audio.spoken" || key === "alarm_audio.custom_sounds") return false;   // a way in that is turned off is not a loss of protection; turning it on is the default way
+  if (key === "vision.timeline_days") return typeof from === "number" && typeof to === "number" && to > from;   // keeping what happened for longer is the loss
   if (key === "summary.log_days" || key === "summary.reading_every_s" || key === "summary.power_every_s" || key === "summary.false_alarm_s") return false;   // what the summary of a day is made from: tuning, not a protection
   if (key === "media.retention_snapshot_days" || key === "media.retention_recording_days") return false;   // how long evidence is kept: tuning, not a protection
   if (key === "voice.panic_cooldown_s") return false;   // how long one trigger keeps quiet: tuning, not a protection
   if (key === "reports.timeout_s" || key === "reports.queue_max" || key === "reports.requests_per_minute") return false;   // tuning of how much work the reports may cause, not a protection
-  if (key === "voice.wake_word") return from === false && to === true;   // a panel that listens for its word all the time is the loss, even if the audio never leaves the house
+  if (key === "vacation.mode") return false;   // lights that switch by themselves when nobody is home: a convenience that adds no way in
+  if (key === "voice.wake_word" || key === "voice.mobile_turn") return from === false && to === true;   // a panel that listens for its word all the time is the loss, even if the audio never leaves the house
+  if (key === "panel.preflight" || key === "panel.camera_view") return from === false && to === true;   // letting the account of a wall panel read more than the summary is the loss
+  if (key === "admin.firmware_rollout") return false;   // it only makes an update gentler: fewer nodes at a time, and a way back
+  if (key === "admin.backup") return from === false && to === true;   // a copy of everything the server keeps, written where it is asked: turning it on is the loss
   if (key === "admin.field_http") return from === false && to === true;   // letting Studio open the server's port to the field network is the loss
   if (key === "admin.acl_relays") return from === false && to === true;   // letting Studio open the broker for the batteries or the alarm copy is the loss
+  if (key === "session.rotate_id") return from === true && to === false;   // a session id that no longer changes is a weaker one: turning it off is the loss
+  if (key === "electrical.balance") return false;   // it only reads and informs
   if (key === "vision.service_remote") return from === false && to === true;   // a service on another machine: the positions of the house travel over a network
   if (key === "vision.service_url") { const host = parseVisionServiceUrl(to)?.host; return host !== undefined && !isLoopbackHost(host) && to !== from; }   // pointing at another machine is the loss
-  if (key === "network.lan_ca" || key === "vision.semantic_search" || key === "vision.plates" || key === "vision.faces") return from === false && to === true;   // a CA to trust on the phones, or a feature that reads personal data: turning it on is the loss
+  if (key === "capture.on_alarm_per_min") return false;   // tuning of how much evidence an alarm may start, not a protection
+  if (key === "capture.on_alarm") return from === false && to === true;   // cameras that record by themselves when an alarm sounds: more is kept about the house
+  if (key === "vision.timeline" || key === "network.lan_ca" || key === "network.public_access" || key === "vision.semantic_search" || key === "vision.plates" || key === "vision.faces") return from === false && to === true;   // a CA to trust on the phones, or a feature that reads personal data: turning it on is the loss
   if (key === "vision.semantic_search_ack" || key === "vision.plates_ack" || key === "vision.faces_ack") return false;   // reading a notice is not a loss of protection
   if (key === "summary.daily" || key === "vision.heatmap" || key === "metrics.prometheus" || key === "ingest.recording") return from === false && to === true;   // a report about what happens in the house is a way in for whoever may ask: turning it on is the loss
-  if (key === "vision.activity_events") return false;   // a source of alarms that is added: what is armed is not defended less by it
+  if (key === "vision.activity_events") return from === true && to === false;   // on by default: a source of alarms that is taken away defends less
+  if (key === "commands.require_sig") return from === true && to === false;   // signed commands that are given up defend less
   if (key === "alarm.arming_modes" || key === "alarm.mode_schedule" || key === "alarm.mode_panel_sync") return false;   // a way of arming that is added or taken away: the protection of what is armed does not drop by it
   if (key === "alarm.mode_schedule_lowers") return from === false && to === true;   // letting a timetable defend less is the loss
   if (key === "alarm.mode_downgrade_pin") return from === "required" && to === "not_required";
   if (key === "voice.turn_max_bytes" || key === "voice.reply_audio_max_bytes") return typeof from === "number" && typeof to === "number" && to > from;   // a larger turn costs the server more memory and time
+  if (key === "electrical.load_shedding") return false;   // a convenience that only switches off what the administrator listed, and switches it back on: no way in
   if (key === "alarm.disarm_pin") return DISARM_PIN_VALUES.indexOf(to as DisarmPinMode) < DISARM_PIN_VALUES.indexOf(from as DisarmPinMode);
   if (key === "voice.silence_confirmation") return SILENCE_VALUES.indexOf(to as SilenceConfirmation) < SILENCE_VALUES.indexOf(from as SilenceConfirmation);
   if (key === "nodes.nvs_encryption") return from === "secrets" && to === "off";

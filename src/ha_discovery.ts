@@ -43,6 +43,20 @@ function inverter(view: SolarDeviceView): Described {
   ];
   const r = view.reading;
   if (r.kind === "inverter" && typeof r.pv_energy_total_wh === "number") entities.push(measurement("pv_energy_total", "Energy made in all", "pv_energy_total_wh / 1000", "kWh", "energy", "total_increasing"));
+  // what a unit with more to say adds: the second PV input, the bus voltage, the whole parallel system and what it is rated for (each only when the unit said it)
+  if (r.kind === "inverter") {
+    for (const [field, name, unit, deviceClass] of [["pv2_w", "Solar power, second input", "W", "power"], ["pv2_v", "Solar voltage, second input", "V", "voltage"], ["pv2_a", "Solar current, second input", "A", "current"],
+      ["bus_v", "Bus voltage", "V", "voltage"], ["total_out_w", "Load power, whole system", "W", "power"]] as const) {
+      if (typeof r[field] === "number") entities.push(measurement(field, name, field, unit, deviceClass));
+    }
+    const ratings = r.ratings;
+    if (ratings) {
+      for (const [field, name, unit, deviceClass] of [["out_rating_w", "Rated output power", "W", "power"], ["out_rating_va", "Rated output apparent power", "VA", "apparent_power"], ["out_rating_v", "Rated output voltage", "V", "voltage"],
+        ["battery_rating_v", "Rated battery voltage", "V", "voltage"], ["max_charge_a", "Maximum charge current", "A", "current"], ["max_ac_charge_a", "Maximum charge current from the grid", "A", "current"]] as const) {
+        if (typeof ratings[field] === "number") entities.push({ component: "sensor", key: `rating_${field}`, name, template: `{{ value_json.ratings.${field} }}`, unit, deviceClass, icon: "mdi:gauge" });
+      }
+    }
+  }
   return { deviceId: slug("armor", view.node_id, view.device), deviceName: `${view.device} (${view.node_id})`, model: "Solar inverter", topic: `armor/solar/${view.node_id}/${view.device}/state`, entities };
 }
 
@@ -54,6 +68,12 @@ function battery(view: SolarDeviceView): Described {
   ];
   const r = view.reading;
   if (r.kind === "battery" && typeof r.power_w === "number") entities.push(measurement("power_w", "Power", "power_w", "W", "power"));
+  if (r.kind === "battery") {
+    if (typeof r.cell_max_v === "number") entities.push(measurement("cell_max_v", "Strongest cell", "cell_max_v", "V", "voltage"));
+    if (typeof r.cycles === "number") entities.push({ component: "sensor", key: "cycles", name: "Charge cycles", template: "{{ value_json.cycles }}", stateClass: "total_increasing", icon: "mdi:battery-sync" });
+    if (typeof r.balancing === "number") entities.push({ component: "sensor", key: "balancing", name: "Cells being balanced", template: "{{ value_json.balancing }}", stateClass: "measurement", icon: "mdi:scale-balance" });
+    if (typeof r.protecting === "boolean") entities.push({ component: "binary_sensor", key: "protecting", name: "Protection active", template: "{{ 'ON' if value_json.protecting else 'OFF' }}", payloadOn: "ON", deviceClass: "problem" });
+  }
   return { deviceId: slug("armor", view.node_id, view.device), deviceName: `${view.device} (${view.node_id})`, model: "Battery", topic: `armor/solar/${view.node_id}/${view.device}/state`, entities };
 }
 

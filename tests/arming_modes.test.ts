@@ -506,6 +506,30 @@ test("the exit delay protects only what the mode newly defends, and a switch tel
   assert.equal(state.exits, 1);
 });
 
+test("the countdown of the wall panel is the exit delay after arming, then the soonest entry delay, and it ends with them", () => {
+  const { modes, timers, clock } = engine({ doc: { modes: { away: { exit_delay_s: 30 }, home: {}, night: {} }, schedule: [] } });
+  assert.equal(modes.countdown(), undefined, "nothing waits");
+  modes.apply("away");
+  assert.deepEqual(modes.countdown(), { phase: "exit", remaining_s: 30 });
+  clock.now += 12_500; timers.advance(12_500);
+  assert.deepEqual(modes.countdown(), { phase: "exit", remaining_s: 18 }, "it counts down, rounded up");
+  clock.now += 20_000; timers.advance(20_000);
+  assert.equal(modes.countdown(), undefined, "the exit delay is over");
+  let ran = 0;
+  modes.later("door", 45_000, () => { ran += 1; });
+  assert.deepEqual(modes.countdown(), { phase: "entry", remaining_s: 45 });
+  modes.later("window", 20_000, () => { ran += 1; });
+  clock.now += 5_000; timers.advance(5_000);
+  assert.deepEqual(modes.countdown(), { phase: "entry", remaining_s: 15 }, "the soonest one");
+  modes.later("window", 90_000, () => { ran += 1; });   // a second opening does not extend the wait
+  assert.deepEqual(modes.countdown(), { phase: "entry", remaining_s: 15 });
+  clock.now += 15_000; timers.advance(15_000);
+  assert.equal(ran, 1, "the window's delay ran out");
+  assert.deepEqual(modes.countdown(), { phase: "entry", remaining_s: 25 }, "the door is next");
+  modes.cancelLater();
+  assert.equal(modes.countdown(), undefined, "cancelled: nothing waits");
+});
+
 test("the timetable changes the mode once at its minute, never disarms, and does not defend less unless it is allowed", () => {
   const doc: ArmingModesDocument = { modes: { away: {}, home: { defends: ["device:door"] }, night: { defends: ["device:door", "device:motion"] } }, schedule: [
     { mode: "night", days: [1, 2, 3, 4, 5, 6, 7], at: "08:05" }, { mode: "home", days: [1], at: "08:10" }, { mode: "away", days: [2], at: "08:15" }, { mode: "home", days: [1], at: "08:20" }] };
