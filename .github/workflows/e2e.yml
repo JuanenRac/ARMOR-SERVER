@@ -21,6 +21,11 @@ on:
 permissions:
   contents: read
 
+# A newer run of a branch replaces the one before it; the runs of main and of the tags are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
+
 env:
   STUDIO_DIR: ${{ github.event.repository.name == 'ARMOR-STUDIO' && '.' || '../ARMOR-STUDIO' }}
   SERVER_DIR: ${{ github.event.repository.name == 'ARMOR-SERVER' && '.' || '../ARMOR-SERVER' }}
@@ -29,7 +34,8 @@ jobs:
   e2e:
     name: nginx of the image + ARMOR-SERVER + Playwright
     if: ${{ vars.ARMOR_E2E != 'off' }}
-    runs-on: ubuntu-latest
+    # pinned: it installs and starts nginx as a service, and the profiles of the system services move with the Ubuntu of the image
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - name: Check out repository
