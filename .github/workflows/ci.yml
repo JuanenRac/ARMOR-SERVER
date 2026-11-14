@@ -27,21 +27,54 @@ on:
 permissions:
   contents: read
 
-# A newer run of the same branch replaces an older one that is still going; the runs of main are never cancelled.
+# A newer run of the same branch replaces an older one that is still going; the runs of main and of the tags are never cancelled.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  # Does the change touch anything but documents and pictures? Only the slow steps (the Gradle build of an Android app) wait for the answer; the manifest, the documents and the
+  # tests of the tools always run. Main, the tags, a scheduled or manual run and a pull request with the label full-ci run everything, and when the answer cannot be found it is yes.
+  changes:
+    name: Which paths changed
+    uses: JuanenRac/ARMOR-DEVOPS/.github/workflows/changed-paths.yml@a0fd0186dbf23c527b8c1dae70ca9a409b94c12a
+    with:
+      label: full-ci
+      paths: |
+        **
+        !**/*.md
+        !images/**
+        !LICENSE
+        !.github/ISSUE_TEMPLATE/**
+        !.github/PULL_REQUEST_TEMPLATE.md
+
   baseline:
     name: Validate manifest, docs and run the real build/test
-    runs-on: ubuntu-latest
+    needs: changes
+    # runs even when the question above could not be answered (then the slow steps run too)
+    if: ${{ !cancelled() }}
+    # Pinned: this job holds a coverage floor and runs a real MQTT broker, and both move with the Ubuntu of the image (the branch counts of gcov, the profiles of AppArmor);
+    # a newer image is adopted here on purpose, not by the moving label.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Decide whether the slow steps run
+        id: slow
+        env:
+          REF: ${{ github.ref }}
+          MATCHED: ${{ needs.changes.outputs.matched }}
+        run: |
+          if [ "$REF" = "refs/heads/main" ] || [ "${REF#refs/tags/}" != "$REF" ] || [ "$MATCHED" != "false" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Only documents or pictures changed: the Gradle build is skipped (label the pull request full-ci to run it)."
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -80,7 +113,7 @@ jobs:
           cache: npm
 
       - name: Set up Java for the Android client
-        if: ${{ hashFiles('gradlew') != '' }}
+        if: ${{ hashFiles('gradlew') != '' && steps.slow.outputs.run == 'true' }}
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
@@ -89,7 +122,7 @@ jobs:
           cache: gradle
 
       - name: Make the Gradle wrapper executable
-        if: ${{ hashFiles('gradlew') != '' }}
+        if: ${{ hashFiles('gradlew') != '' && steps.slow.outputs.run == 'true' }}
         run: chmod +x gradlew
 
       - name: Set up CMake and a C++ compiler for the field-node core tests
@@ -117,6 +150,8 @@ jobs:
         run: python tools/armor_project_tool.py lint .
 
       - name: Run this project's real build and test
+        # a repository with a Gradle wrapper skips it when only documents or pictures changed; every other repository always runs it
+        if: ${{ hashFiles('gradlew') == '' || steps.slow.outputs.run == 'true' }}
         run: python tools/armor_project_tool.py build-test .
         env:
           PYTHONPATH: src

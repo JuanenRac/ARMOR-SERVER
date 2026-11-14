@@ -17,6 +17,7 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/admin/console/lock` | administrator | `routes/maintenance.ts` |
 | POST | `/api/v1/admin/console/run` | administrator | `routes/maintenance.ts` |
 | POST | `/api/v1/admin/console/unlock` | administrator | `routes/maintenance.ts` |
+| POST | `/api/v1/admin/enrolment-code` | administrator, fresh proof of identity | `routes/enrolment.ts` |
 | GET | `/api/v1/admin/files` | administrator | `routes/admin.ts` |
 | GET | `/api/v1/admin/files/:id` | administrator | `routes/admin.ts` |
 | PUT | `/api/v1/admin/files/:id` | administrator | `routes/admin.ts` |
@@ -26,6 +27,8 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/admin/firmware/jobs/:id` | administrator | `routes/firmware.ts` |
 | POST | `/api/v1/admin/firmware/probe` | administrator | `routes/firmware.ts` |
 | GET | `/api/v1/admin/firmware/releases/:kind` | administrator | `routes/firmware.ts` |
+| GET | `/api/v1/admin/firmware/rollout` | administrator | `routes/firmware.ts` |
+| PUT | `/api/v1/admin/firmware/rollout` | administrator, fresh proof of identity | `routes/firmware.ts` |
 | POST | `/api/v1/admin/firmware/uploads` | administrator | `routes/firmware.ts` |
 | GET | `/api/v1/admin/incident` | administrator | `routes/media.ts` |
 | POST | `/api/v1/admin/incident/verify` | administrator | `routes/media.ts` |
@@ -76,6 +79,7 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/ai/activity-events` | AI service | `routes/ai.ts` |
 | GET | `/api/v1/ai/cameras/:id/frame` | AI service | `routes/ai.ts` |
 | GET | `/api/v1/ai/context` | AI service | `routes/ai.ts` |
+| POST | `/api/v1/ai/ignore-proposals` | AI service | `routes/ignore_proposals.ts` |
 | POST | `/api/v1/ai/observations` | AI service | `routes/ai.ts` |
 | POST | `/api/v1/ai/vision-events` | AI service | `routes/ai.ts` |
 | GET | `/api/v1/alarm-audio` | operator | `routes/alarm_audio.ts` |
@@ -94,6 +98,7 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/alarm/modes` | operator | `routes/alarm_modes.ts` |
 | PUT | `/api/v1/alarm/modes` | administrator | `routes/alarm_modes.ts` |
 | GET | `/api/v1/alarm/nodes` | operator | `routes/alarm.ts` |
+| POST | `/api/v1/alarm/panic-gesture` | operator | `routes/panic_gesture.ts` |
 | GET | `/api/v1/alarm/profiles` | operator | `routes/alarm_profiles.ts` |
 | PUT | `/api/v1/alarm/profiles` | administrator | `routes/alarm_profiles.ts` |
 | POST | `/api/v1/alarm/state` | none here | `routes/alarm.ts` |
@@ -129,6 +134,7 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/cameras/:id/ptz` | operator | `routes/cameras.ts` |
 | POST | `/api/v1/cameras/:id/recordings/start` | operator | `routes/cameras.ts` |
 | POST | `/api/v1/cameras/:id/recordings/stop` | operator | `routes/cameras.ts` |
+| GET | `/api/v1/cameras/:id/snapshot` | operator | `routes/cameras.ts` |
 | POST | `/api/v1/cameras/:id/snapshot` | operator | `routes/cameras.ts` |
 | POST | `/api/v1/cameras/:id/stream-ticket` | operator | `routes/cameras.ts` |
 | POST | `/api/v1/cameras/configure` | operator | `routes/cameras.ts` |
@@ -173,11 +179,14 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/electrical/readings` | none here | `routes/electrical.ts` |
 | POST | `/api/v1/electrical/switch` | administrator | `routes/electrical.ts` |
 | GET | `/api/v1/electrical/switching` | operator | `routes/electrical.ts` |
+| GET | `/api/v1/enrolment/:code` | none here | `routes/enrolment.ts` |
 | POST | `/api/v1/health` | none here | `routes/ingest.ts` |
 | DELETE | `/api/v1/history` | administrator | `routes/history.ts` |
 | GET | `/api/v1/history` | operator | `routes/history.ts` |
 | GET | `/api/v1/history/connections` | operator | `routes/history.ts` |
 | GET | `/api/v1/history/summary` | operator | `routes/history.ts` |
+| GET | `/api/v1/ignore-proposals` | operator | `routes/ignore_proposals.ts` |
+| POST | `/api/v1/ignore-proposals/:id` | administrator | `routes/ignore_proposals.ts` |
 | GET | `/api/v1/info` | none here | `routes/ingest.ts` |
 | GET | `/api/v1/maintenance/armed` | none here | `routes/maintenance.ts` |
 | DELETE | `/api/v1/media` | administrator | `routes/media.ts` |
@@ -224,6 +233,9 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/preferences` | none here | `routes/preferences.ts` |
 | PUT | `/api/v1/preferences` | none here | `routes/preferences.ts` |
 | GET | `/api/v1/preflight` | operator | `routes/system.ts` |
+| GET | `/api/v1/presence` | administrator | `routes/presence.ts` |
+| GET | `/api/v1/presence/me` | operator | `routes/presence.ts` |
+| PUT | `/api/v1/presence/me` | operator | `routes/presence.ts` |
 | DELETE | `/api/v1/push/register` | operator | `routes/push.ts` |
 | POST | `/api/v1/push/register` | operator | `routes/push.ts` |
 | GET | `/api/v1/push/status` | administrator | `routes/push.ts` |

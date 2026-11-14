@@ -45,6 +45,16 @@ try:   # the same: the manifest against what can be computed about the repositor
 except ImportError:
     sync_manifests = None  # type: ignore[assignment]
 
+try:   # the same: the workflows and the lessons of past CI failures, only for a repository that opted in with tools/hygiene_config.json (or a baseline)
+    import workflow_hygiene  # noqa: E402
+except ImportError:
+    workflow_hygiene = None  # type: ignore[assignment]
+
+try:   # the same
+    import lessons_lint  # noqa: E402
+except ImportError:
+    lessons_lint = None  # type: ignore[assignment]
+
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = ROOT / "armor.project.json"
 REQUIRED_DOCUMENTS = (
@@ -262,6 +272,13 @@ def main() -> int:
     if sync_manifests is not None:
         for facts_problem in sync_manifests.run_in_ci(ROOT):
             fail(facts_problem)
+
+    # Workflow hygiene and the lessons of past CI failures: only findings that are not in the baseline of the repository fail, and a repository
+    # with neither tools/hygiene_config.json nor a baseline is not affected.
+    for hygiene_module in (workflow_hygiene, lessons_lint):
+        if hygiene_module is not None:
+            for hygiene_problem in hygiene_module.run_in_ci(ROOT):
+                fail(hygiene_problem)
 
     print(f"CI_VALIDATION=PASS project={manifest['name']} version={manifest['version']}")
     return 0

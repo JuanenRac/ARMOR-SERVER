@@ -6,6 +6,7 @@
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import crypto from "node:crypto";
+import { splitWave, type RolloutChannel, type RolloutSettings } from "./firmware_rollout.js";
 
 export type NodeKind = "radar" | "solar" | "electrical" | "alarm" | "hmi";
 export const NODE_KINDS: readonly NodeKind[] = ["radar", "solar", "electrical", "alarm", "hmi"];
@@ -70,10 +71,12 @@ const MAX_TARGETS = 20;
 
 export type TargetState = "waiting" | "checking" | "signing_in" | "uploading" | "restarting" | "done" | "failed";
 /** `progress` is 0-100 for this node (the steps weigh what they take: the picture goes from 15 to 80, the restart from 80 to 98), `sent` and `total` are bytes of the picture, `waited_s` the seconds since the node was told to restart. */
-export type JobTarget = { address: string; node_id?: string; state: TargetState; version_before?: string; version_after?: string; error?: string; progress?: number; sent?: number; total?: number; waited_s?: number };
+export type JobTarget = { address: string; node_id?: string; state: TargetState; version_before?: string; version_after?: string; error?: string; skipped?: boolean; rolled_back?: boolean; rollback_error?: string; progress?: number; sent?: number; total?: number; waited_s?: number };
 export type FirmwareJob = {
   id: string; kind: NodeKind; source: "github" | "upload"; state: "preparing" | "running" | "done" | "failed";
   version?: string; bytes?: number; sha256?: string; error?: string; targets: JobTarget[]; started: number; finished?: number;
+  /** Only when the staged rollout was on for the job: the channel, the percent, the nodes left for a later job and whether a failure stopped the rest. */
+  rollout?: { channel: RolloutChannel; percent: number; deferred: Array<{ address: string; node_id?: string }>; halted: boolean };
 };
 export type UploadInfo = { id: string; name: string; bytes: number; sha256: string; project?: string };
 export type ReleaseInfo = { kind: NodeKind; repo: string; version: string; bytes: number; checksum: boolean };
@@ -106,6 +109,8 @@ export type FirmwareOptions = {
   /** The pause between one node and the next, and between the tries of a step that could not reach the node. */
   betweenMs?: number;
   retryMs?: number;
+  /** The staged rollout: undefined, or null while its option is off, means a job updates every node with the latest release as always. */
+  rollout?: () => RolloutSettings | null;
 };
 
 const sha256Of = (bytes: Buffer) => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -142,6 +147,7 @@ export class FirmwareService {
   readonly #settleMs: number;
   readonly #betweenMs: number;
   readonly #retryMs: number;
+  readonly #rollout: () => RolloutSettings | null;
   #running = false;
   readonly #restartedAt = new WeakMap<JobTarget, number>();
 
@@ -156,6 +162,7 @@ export class FirmwareService {
     this.#settleMs = options.settleMs ?? 4_000;
     this.#betweenMs = options.betweenMs ?? 3_000;
     this.#retryMs = options.retryMs ?? 2_000;
+    this.#rollout = options.rollout ?? (() => null);
   }
 
   // ---- the images -------------------------------------------------------------------------------------------------------------------
@@ -182,13 +189,17 @@ export class FirmwareService {
   }
 
   /** The newest release of the repository of this kind of node: its image, downloaded and checked against the hash the release publishes. A release without that hash is refused. */
-  async fetchRelease(kind: NodeKind, board?: string): Promise<Image & { version: string }> {
+  async fetchRelease(kind: NodeKind, board?: string, channel: RolloutChannel = "stable"): Promise<Image & { version: string }> {
     const source = RELEASE_SOURCES[kind];
-    const meta = await this.#get(`${this.#releaseApi()}/repos/${source.repo}/releases/latest`, "application/vnd.github+json").catch(() => undefined);
+    // stable: the latest release (GitHub leaves pre-releases and drafts out of it); beta: the newest release that is not a draft, a pre-release included
+    const meta = await this.#get(`${this.#releaseApi()}/repos/${source.repo}/releases${channel === "beta" ? "?per_page=10" : "/latest"}`, "application/vnd.github+json").catch(() => undefined);
     if (!meta) throw new FirmwareError("github_unreachable");
     if (meta.status === 404) throw new FirmwareError("no_release");
     if (!meta.ok) throw new FirmwareError(`github_http_${meta.status}`);
-    const release = await meta.json() as { tag_name?: string; assets?: Array<{ name?: string; browser_download_url?: string }> };
+    type Release = { tag_name?: string; draft?: boolean; assets?: Array<{ name?: string; browser_download_url?: string }> };
+    const body = await meta.json() as Release | Release[];
+    const release: Release | undefined = Array.isArray(body) ? body.find(item => !item.draft) : body;
+    if (!release) throw new FirmwareError("no_release");
     const version = String(release.tag_name ?? "").replace(/^v/, "");
     // the image built for the node's board first, then (only for the default board) the plain name; the checksum is the one next to the image that was taken
     let name: string | undefined;
@@ -220,7 +231,7 @@ export class FirmwareService {
 
   /** What the newest release of a kind of node is (it is downloaded and checked, which is how it is known to be usable). */
   async releaseInfo(kind: NodeKind): Promise<ReleaseInfo> {
-    const image = await this.fetchRelease(kind);
+    const image = await this.fetchRelease(kind, undefined, this.#rollout()?.channel);
     return { kind, repo: RELEASE_SOURCES[kind].repo, version: image.version, bytes: image.bytes.length, checksum: true };
   }
 
@@ -241,7 +252,7 @@ export class FirmwareService {
     } catch { return { address, reachable: false }; }
   }
 
-  async #updateNode(target: JobTarget, kind: NodeKind, image: Image, login: { user: string; password: string }): Promise<void> {
+  async #updateNode(target: JobTarget, kind: NodeKind, image: Image, login: { user: string; password: string }, skipSame = false): Promise<void> {
     const base = this.#base(target.address);
     const set = (state: TargetState) => { target.state = state; };
     set("checking");
@@ -252,6 +263,8 @@ export class FirmwareService {
     target.node_id = before.node_id; target.version_before = before.version;
     // A node that says what it is must be the kind this job updates: the updates of a kind go only to nodes of that kind (the image of another one would be taken for good).
     if (before.kind && before.kind !== kind) throw new FirmwareError("wrong_node_kind");
+    // A job of the staged rollout that is started again with a larger percent meets the nodes that took the version before: they are left as they are.
+    if (skipSame && image.version && before.version === image.version) { target.version_after = before.version; target.skipped = true; return; }
     // An uploaded image whose name says a board goes only to a node of that board (an image for the Wi-Fi board would be taken for good by the Ethernet one, and the signed way would never have allowed it).
     if (image.board && before.board && image.board.toLowerCase() !== before.board.toLowerCase()) throw new FirmwareError("wrong_board");
 
@@ -312,6 +325,26 @@ export class FirmwareService {
     return answer;
   }
 
+  /** Asks a node that took an image and did not come back with it to start from its previous slot (its own `ota/switch`), and waits for it to answer with the version it had. */
+  async #rollBack(target: JobTarget, login: { user: string; password: string }): Promise<void> {
+    const base = this.#base(target.address);
+    try {
+      const signIn = await fetch(`${base}/api/v1/login`, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "armor", Connection: "close" }, body: JSON.stringify(login), signal: AbortSignal.timeout(10_000) }).catch(() => undefined);
+      const cookie = signIn?.headers.get("set-cookie")?.split(";")[0];
+      if (!signIn?.ok || !cookie) throw new FirmwareError("rollback_login_failed");
+      const switched = await fetch(`${base}/api/v1/ota/switch`, { method: "POST", headers: { Cookie: cookie, "X-Requested-With": "armor", "Content-Type": "application/json", Connection: "close" }, body: "{}", signal: AbortSignal.timeout(20_000) }).catch(() => undefined);
+      if (!switched?.ok) throw new FirmwareError("rollback_refused");
+      await sleep(this.#settleMs);
+      const deadline = this.#now() + this.#restartWaitMs;
+      for (;;) {
+        const state = await this.probe(target.address);
+        if (state.reachable && (!target.version_before || state.version === target.version_before)) { target.rolled_back = true; target.version_after = state.version; return; }
+        if (this.#now() > deadline) throw new FirmwareError("rollback_did_not_come_back");
+        await sleep(this.#pollMs);
+      }
+    } catch (error) { target.rollback_error = error instanceof FirmwareError ? error.code : "rollback_failed"; }
+  }
+
   // ---- the jobs ---------------------------------------------------------------------------------------------------------------------
 
   /** Starts a job and returns at once; the nodes are updated one at a time in the background. The login is held only by that run. */
@@ -342,6 +375,7 @@ export class FirmwareService {
   async #run(job: FirmwareJob, upload: Image | undefined, login: { user: string; password: string }, onNode?: (job: FirmwareJob, target: JobTarget) => void): Promise<void> {
     // Each node gets the image built for ITS board: a job that mixes boards (an Ethernet and a Wi-Fi node of one kind) fetches one image per board. An uploaded file is the
     // administrator's choice and goes to every node as it is.
+    const rollout = job.source === "github" ? this.#rollout() : null;   // the staged rollout applies to the releases of GitHub, not to a file an administrator chose
     const images = new Map<string, Image & { version?: string }>();
     const boardOf = new Map<JobTarget, string | undefined>();
     let image: Image & { version?: string };
@@ -349,7 +383,7 @@ export class FirmwareService {
       if (upload) image = upload;
       else {
         await Promise.all(job.targets.map(async target => { boardOf.set(target, await this.probe(target.address).then(probe => probe.board).catch(() => undefined)); }));
-        for (const board of new Set(job.targets.map(target => boardOf.get(target)))) images.set(board ?? "", await this.fetchRelease(job.kind, board));
+        for (const board of new Set(job.targets.map(target => boardOf.get(target)))) images.set(board ?? "", await this.fetchRelease(job.kind, board, rollout?.channel));
         image = images.values().next().value as Image & { version?: string };
       }
     } catch (error) {
@@ -358,11 +392,29 @@ export class FirmwareService {
       return;
     }
     job.version = image.version; job.bytes = image.bytes.length; job.sha256 = image.sha256; job.state = "running";
-    for (const target of job.targets) {
-      try { await this.#updateNode(target, job.kind, upload ?? images.get(boardOf.get(target) ?? "") ?? image, login); }
-      catch (error) { target.state = "failed"; target.error = error instanceof FirmwareError ? error.code : "failed"; }
+    if (rollout) {
+      // the nodes that go now, in the order of this version; the others wait for a later job with a larger percent
+      const wave = splitWave(job.targets, target => target.node_id ?? target.address, image.version ?? "", rollout.percent);
+      job.rollout = { channel: rollout.channel, percent: rollout.percent, deferred: wave.deferred.map(target => ({ address: target.address, ...(target.node_id ? { node_id: target.node_id } : {}) })), halted: false };
+      job.targets = wave.now;
+    }
+    for (let index = 0; index < job.targets.length; index += 1) {
+      const target = job.targets[index];
+      try { await this.#updateNode(target, job.kind, upload ?? images.get(boardOf.get(target) ?? "") ?? image, login, Boolean(rollout)); }
+      catch (error) {
+        const cameBackNot = target.state === "restarting";   // the image was taken and the node did not answer with it
+        target.state = "failed"; target.error = error instanceof FirmwareError ? error.code : "failed";
+        if (rollout?.rollback && cameBackNot) await this.#rollBack(target, login);
+      }
       if (target.state !== "failed") target.state = "done";
       onNode?.(job, target);
+      if (target.state === "failed" && rollout?.halt_on_failure && job.rollout) {
+        // the nodes still to come are left alone and listed as deferred
+        const rest = job.targets.splice(index + 1);
+        job.rollout.deferred.push(...rest.map(item => ({ address: item.address, ...(item.node_id ? { node_id: item.node_id } : {}) })));
+        job.rollout.halted = rest.length > 0;
+        break;
+      }
       if (target !== job.targets[job.targets.length - 1]) await sleep(this.#betweenMs);   // the next node is spoken to after the network has had a moment
     }
     job.state = job.targets.every(target => target.state === "done") ? "done" : "failed";

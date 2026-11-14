@@ -120,7 +120,7 @@ function voiceContext(overrides: Record<string, unknown> = {}, lights: Light[] =
   const sent: string[] = [];
   const audit: Array<Record<string, unknown>> = [];
   const base = {
-    alarms: { active: () => [] as Array<{ severity: string }> },
+    alarms: { active: () => [] as Array<{ severity: string }>, recent: () => [] as Array<{ severity: string }> },
     store: { snapshot: () => ({ nodes: {} as Record<string, { online: boolean; target_count: number }> }) },
     vault: { list: () => [] as Array<{ id: string; name: string }> },
     cameraWatcher: { snapshot: () => [] as Array<{ id: string; status: string }> },
@@ -135,7 +135,7 @@ function voiceContext(overrides: Record<string, unknown> = {}, lights: Light[] =
 }
 
 test("the commands answered here are the closed list and an unknown one is left to the caller", async () => {
-  assert.deepEqual([...ANSWERED_HERE].sort(), ["alarms", "cameras", "electrical", "help", "lights_off", "lights_on", "network", "nodes", "radar", "solar", "time"]);
+  assert.deepEqual([...ANSWERED_HERE].sort(), ["alarms", "cameras", "electrical", "help", "last_camera", "lights_off", "lights_on", "network", "nodes", "radar", "solar", "time"]);
   assert.equal(await carryOut("arm", "en", voiceContext().context, "a"), undefined);
 });
 
@@ -234,4 +234,24 @@ test("the time and the help come without touching the state", async () => {
   assert.match(answer!.speech, /^It is .+\.$/);
   assert.equal(typeof answer!.result.time, "string");
   assert.match((await carryOut("help", "pt", voiceContext().context, "a"))!.speech, /^Posso armar/);
+});
+
+test("which camera saw movement last is answered from the latest camera alarm, active or already dealt with, with the name of the camera", async () => {
+  const motion = (id: string, raised_at: string) => ({ source: { type: "camera", id }, code: "camera_motion", severity: "high", raised_at });
+  const now = new Date("2026-01-01T10:30:00Z");
+  const context = voiceContext({
+    alarms: { active: () => [motion("cam-a", "2026-01-01T10:00:00Z"), { source: { type: "node", id: "radar" }, code: "intrusion", severity: "high", raised_at: "2026-01-01T10:29:00Z" }],
+              recent: () => [motion("cam-b", "2026-01-01T10:20:00Z")] },
+    vault: { list: () => [{ id: "cam-b", name: "Garage" }, { id: "cam-a", name: "Gate" }] },
+  }).context;
+  const answer = await carryOut("last_camera", "en", context, "a", now);
+  assert.equal(answer?.speech, "Garage saw movement 10 minute(s) ago.");
+  assert.deepEqual(answer?.result, { camera: "cam-b", minutes_ago: 10 });
+  assert.match((await carryOut("last_camera", "es", context, "a", now))?.speech ?? "", /^Garage vio movimiento hace 10 minuto/);
+  // an alarm of a camera that is no longer in the vault is told by its id; with no camera alarm at all the answer says so
+  const unnamed = voiceContext({ alarms: { active: () => [motion("cam-x", "2026-01-01T10:29:30Z")], recent: () => [] } }).context;
+  assert.equal((await carryOut("last_camera", "en", unnamed, "a", now))?.speech, "cam-x saw movement 0 minute(s) ago.");
+  const none = await carryOut("last_camera", "en", voiceContext().context, "a", now);
+  assert.equal(none?.speech, "No camera has seen movement lately.");
+  assert.deepEqual(none?.result, { camera: null });
 });
