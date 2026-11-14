@@ -61,6 +61,7 @@ import { registerFirmwareRoutes } from "./routes/firmware.js";
 import { registerNodePanelRoutes } from "./node_panel_proxy.js";
 import { buildPanelSummary, createPanelFeed, PANEL_HEARTBEAT_MS } from "./panel_feed.js";
 import { registerVoiceRoutes } from "./routes/voice.js";
+import { registerPanicGestureRoutes } from "./routes/panic_gesture.js";
 import { registerAlarmAudioRoutes } from "./routes/alarm_audio.js";
 import { registerLoadSheddingRoutes } from "./routes/load_shedding.js";
 import { registerReportRoutes } from "./routes/reports.js";
@@ -203,6 +204,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerMaintenanceRoutes(app, context);
   registerMachineUpdateRoutes(app, context);
   registerAlarmRoutes(app, context);
+  registerPanicGestureRoutes(app, context);
   registerSystemRoutes(app, context, version);
   registerAdminRoutes(app, context);
   registerBackupRoutes(app, context);

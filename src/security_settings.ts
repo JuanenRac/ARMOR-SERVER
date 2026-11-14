@@ -19,6 +19,7 @@
  *   media.rtsp_proxy             on | off                  FFmpeg reads the cameras through the local tunnel (off: the camera login goes in its command line, visible to every user of the machine)
  *   voice.panic_phrase           on | off                  a user's secret panic phrase, said to the voice assistant, raises the silent duress alarm (off, the default: nobody's phrase is looked for)
  *   electrical.balance         on | off                 the server works out the balance of the house from the solar plant and the grid (self-consumption, export, unexpected export, consumption anomalies; informing only; off, the default: the balance route answers 404 and nothing is watched)
+ *   client.panic_gesture        on | off                 the hidden gesture of the apps (a long press on the logo, or five quick touches) raises the silent duress alarm of the signed-in person (POST /api/v1/alarm/panic-gesture; off, the default: the route answers 404 and the apps do not offer the gesture)
  *   voice.panic_cooldown_s      10 to 3600               after a panic phrase, the seconds in which the same user's phrase raises nothing more (60)
  *   voice.multipart_turn         on | off                  the wall panel may send a spoken turn as multipart/form-data with the audio as raw bytes (off: only the older raw request is taken, a multipart one is answered 415)
  *   voice.mobile_turn           on | off                  a phone of a signed-in operator or administrator may speak to the voice gateway through POST /api/v1/voice/mobile-turn (the microphone of the phone; off, the default, answers 403 mobile_voice_disabled; the spoken orders keep the same confirmations as the typed ones)
@@ -159,6 +160,7 @@ export type SecuritySettingsValues = {
   "voice.mobile_turn": boolean;
   "vacation.mode": boolean;
   "voice.panic_phrase": boolean;
+  "client.panic_gesture": boolean;
   "electrical.balance": boolean;
   "voice.panic_cooldown_s": number;
   "admin.acl_relays": boolean;
@@ -233,6 +235,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "voice.mobile_turn": false,
   "vacation.mode": false,
   "voice.panic_phrase": false,
+  "client.panic_gesture": false,
   "electrical.balance": false,
   "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S.default,
   "admin.acl_relays": false,
@@ -379,6 +382,7 @@ export class SecuritySettings {
 
 /** True when the new value lowers security compared with the old one (the audit trail and Studio say so). */
 export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boolean {
+  if (key === "client.panic_gesture") return false;   // one more way to ask for help: no way in
   if (key === "voice.multipart_turn" || key === "panel.live_events" || key === "live.events" || key === "alarm_audio.spoken" || key === "alarm_audio.custom_sounds") return false;   // a way in that is turned off is not a loss of protection; turning it on is the default way
   if (key === "vision.timeline_days") return typeof from === "number" && typeof to === "number" && to > from;   // keeping what happened for longer is the loss
   if (key === "summary.log_days" || key === "summary.reading_every_s" || key === "summary.power_every_s" || key === "summary.false_alarm_s") return false;   // what the summary of a day is made from: tuning, not a protection
