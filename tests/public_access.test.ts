@@ -105,7 +105,7 @@ test("over TLS with the option on and strong secrets a request from outside is t
   const port = typeof address === "object" && address ? address.port : 0;
   const call = (method: string, body?: unknown) => new Promise<{ status: number; text: string; retryAfter: string }>((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
-    const request = https.request({ hostname: "127.0.0.1", port, path: "/api/v1/studio/session", method, rejectUnauthorized: false, headers: payload ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } : {} }, response => {
+    const request = https.request({ hostname: "127.0.0.1", port, path: "/api/v1/studio/session", method, ca: fs.readFileSync(certPath), servername: "localhost", headers: payload ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } : {} }, response => {
       let data = "";
       response.on("data", chunk => { data += chunk; });
       response.on("end", () => resolve({ status: response.statusCode ?? 0, text: data, retryAfter: String(response.headers["retry-after"] ?? "") }));

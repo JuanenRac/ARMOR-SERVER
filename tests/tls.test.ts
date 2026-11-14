@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
 import https from "node:https";
 import path from "node:path";
 import test from "node:test";
@@ -56,12 +57,11 @@ test("with TLS configured, the shared listener really answers over HTTPS", async
   const port = typeof address === "object" && address ? address.port : 0;
   try {
     const body = await new Promise<string>((resolve, reject) => {
-      // A self-signed cert has no real chain of trust - the point of this
-      // test is that the TLS handshake itself succeeds at all (a plain
-      // HTTP client against this same port would fail immediately with a
-      // protocol error instead).
+      // The self-signed certificate of the test is trusted explicitly, as the only authority of this request, and it is checked against the name it
+      // was issued for: the point of the test is that the TLS handshake succeeds with a verified certificate (a plain HTTP client against this
+      // same port would fail immediately with a protocol error instead).
       const request = https.get(
-        { hostname: "127.0.0.1", port, path: "/healthz", rejectUnauthorized: false },
+        { hostname: "127.0.0.1", port, path: "/healthz", ca: fs.readFileSync(certPath), servername: "localhost" },
         response => {
           let data = "";
           response.on("data", chunk => { data += chunk; });
