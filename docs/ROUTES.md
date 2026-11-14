@@ -96,6 +96,7 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/alarm/modes` | operator | `routes/alarm_modes.ts` |
 | PUT | `/api/v1/alarm/modes` | administrator | `routes/alarm_modes.ts` |
 | GET | `/api/v1/alarm/nodes` | operator | `routes/alarm.ts` |
+| POST | `/api/v1/alarm/panic-gesture` | operator | `routes/panic_gesture.ts` |
 | GET | `/api/v1/alarm/profiles` | operator | `routes/alarm_profiles.ts` |
 | PUT | `/api/v1/alarm/profiles` | administrator | `routes/alarm_profiles.ts` |
 | POST | `/api/v1/alarm/state` | none here | `routes/alarm.ts` |
