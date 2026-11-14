@@ -95,7 +95,7 @@ function tlsBroker(pki: Pki): Promise<{ port: number; connects: () => number; cl
     parser.on("packet", packet => {
       if (packet.cmd === "connect") { ++connects; socket.write(mqttPacket.generate({ cmd: "connack", reasonCode: 0, sessionPresent: false }, { protocolVersion: 5 })); }
     });
-    socket.on("data", data => parser.parse(data));
+    socket.on("data", (data: Buffer) => parser.parse(data));
     socket.on("error", () => undefined);
   });
   server.on("tlsClientError", () => undefined);
