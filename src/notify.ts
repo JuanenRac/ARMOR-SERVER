@@ -52,7 +52,7 @@ function pushDataFor(event: ArmorEvent, mode: SecurityMode): Record<string, stri
     case "node": put("node_id", event.node_id); put("from", event.from); put("to", event.to); break;
     case "camera": put("camera_id", event.camera_id); put("from", event.from); put("to", event.to); break;
     case "device": put("device_id", event.device_id); put("field", event.field); put("to", event.to); break;
-    case "alarm": put("source", event.source); put("source_type", event.source_type); put("to", event.state); put("severity", event.severity); put("code", event.code); break;
+    case "alarm": put("alarm_id", event.alarm_id); put("source", event.source); put("source_type", event.source_type); put("to", event.state); put("severity", event.severity); put("code", event.code); break;
     default: break;
   }
   return data;
