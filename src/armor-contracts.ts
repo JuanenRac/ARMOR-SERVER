@@ -256,6 +256,24 @@ export type ElectricalResult = {
   token?: string;
 };
 
+export type SolarAlert = {
+  code: "soc_low" | "cell_over_voltage" | "temperature_high" | "temperature_low";
+  device: string;
+};
+
+export type SolarSystem = {
+  kind: "system";
+  node_id: string;
+  timestamp_ms: number;
+  inverters: number;
+  batteries: number;
+  pv_w?: number;
+  load_w?: number;
+  soc_percent?: number;
+  balance_w?: number;
+  alerts: SolarAlert[];
+};
+
 export type SolarBatteryStage = {
   id: string;
   index: number;
