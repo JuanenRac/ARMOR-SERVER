@@ -64,6 +64,16 @@ test("the context tells the mode, the radar nodes and the cameras that can be lo
   });
 });
 
+test("the context carries where the camera stands and which way it faces when the site design says so, and the tracks of a placed radar", async () => {
+  await withServer(Buffer.alloc(FRAME_BYTES, 9), async running => {
+    running.app.context.site.save({ dimensions: { width: 60, depth: 40, height: 3 }, cameras: [{ id: "cam-gate", x: 10, y: 50, heading: 90, fov: 100, range: 12 }], sensors: [{ id: "r1", x: 12.5, y: 25, heading: 180, node: "radar-1" }] }, running.app.context.site.get().revision, "test");
+    const reply = await call(running, "GET", "/api/v1/ai/context", { bearer: AI_TOKEN });
+    assert.deepEqual(reply.body.cameras[0].pose, { x_mm: 6000, y_mm: 20000, yaw_deg: 90 });
+    assert.equal(reply.body.cameras[0].fov_deg, 100);
+    assert.equal(reply.body.cameras[0].range_mm, 12000);
+  });
+});
+
 test("a frame is 64 x 36 grey bytes, and what goes wrong with the camera is told without its address or password", async () => {
   await withServer(Buffer.alloc(FRAME_BYTES, 9), async running => {
     const frame = await call(running, "GET", "/api/v1/ai/cameras/cam-gate/frame", { bearer: AI_TOKEN });

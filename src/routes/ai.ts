@@ -7,7 +7,7 @@ import type { Express, Request } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { AiError, FRAME_HEIGHT, FRAME_WIDTH, parseActivityEvent, parseObservation, parseVisionEvent } from "../ai.js";
-import { coveringNodes } from "../ai_cover.js";
+import { cameraGeometry, coveringNodes, nodeGeometry, trackPoints } from "../ai_cover.js";
 
 /** A camera that keeps seeing movement is one alarm per this long, not one for ever (the alarm of an observation is an event: it ends the moment it is raised and leaves the list when somebody acknowledges it). */
 const MOTION_WINDOW_MS = 5 * 60_000;
@@ -23,14 +23,18 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
     const state = store.snapshot();
     response.json({
       mode: state.mode,
-      nodes: Object.entries(state.nodes).map(([id, node]) => ({ id, online: node.online, targets: node.target_count, lux: node.lux })),
+      // `pose` and `track_points` only when the site design places the node's radar and says which way it faces; the observation service then judges where each track falls in a camera's picture.
+      nodes: Object.entries(state.nodes).map(([id, node]) => {
+        const geometry = nodeGeometry(site.get().site, id);
+        return { id, online: node.online, targets: node.target_count, lux: node.lux, ...(geometry ? { pose: geometry.pose, ...(node.targets.length ? { track_points: trackPoints(node.targets, geometry.mirror) } : {}) } : {}) };
+      }),
       // `nodes`: the radar nodes that cover each camera in the site design (absent when the design cannot say: every node then counts).
       cameras: vault.list().filter(camera => Boolean(camera.rtspPath && camera.secrets?.username && camera.secrets.password)).map(camera => {
         const nodes = coveringNodes(site.get().site, camera.id);
         const ignore = context.ignoreZones.get(camera.id);
         const lines = context.countLines.get(camera.id);
         const detection = context.detectionZones.get(camera.id);
-        return { id: camera.id, name: camera.name, ...(nodes ? { nodes } : {}), ...(ignore.length ? { ignore } : {}), ...(lines.length ? { lines } : {}), ...(detection.zones.length ? { detection } : {}) };
+        return { id: camera.id, name: camera.name, ...cameraGeometry(site.get().site, camera.id), ...(nodes ? { nodes } : {}), ...(ignore.length ? { ignore } : {}), ...(lines.length ? { lines } : {}), ...(detection.zones.length ? { detection } : {}) };
       }),
     });
   });
