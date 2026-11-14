@@ -20,6 +20,7 @@
  *   voice.panic_phrase           on | off                  a user's secret panic phrase, said to the voice assistant, raises the silent duress alarm (off, the default: nobody's phrase is looked for)
  *   electrical.balance         on | off                 the server works out the balance of the house from the solar plant and the grid (self-consumption, export, unexpected export, consumption anomalies; informing only; off, the default: the balance route answers 404 and nothing is watched)
  *   client.panic_gesture        on | off                 the hidden gesture of the apps (a long press on the logo, or five quick touches) raises the silent duress alarm of the signed-in person (POST /api/v1/alarm/panic-gesture; off, the default: the route answers 404 and the apps do not offer the gesture)
+ *   client.enrolment_code       on | off                 an administrator may ask for a code of one use and five minutes for the QR that sets up an app on a phone (POST /api/v1/admin/enrolment-code), and a phone reads the address and the fingerprint of the local authority with it (GET /api/v1/enrolment/{code}); the code carries no secret and opens no session (off, the default: both routes answer 404)
  *   voice.panic_cooldown_s      10 to 3600               after a panic phrase, the seconds in which the same user's phrase raises nothing more (60)
  *   voice.multipart_turn         on | off                  the wall panel may send a spoken turn as multipart/form-data with the audio as raw bytes (off: only the older raw request is taken, a multipart one is answered 415)
  *   voice.mobile_turn           on | off                  a phone of a signed-in operator or administrator may speak to the voice gateway through POST /api/v1/voice/mobile-turn (the microphone of the phone; off, the default, answers 403 mobile_voice_disabled; the spoken orders keep the same confirmations as the typed ones)
@@ -164,6 +165,7 @@ export type SecuritySettingsValues = {
   "voice.panic_phrase": boolean;
   "client.panic_gesture": boolean;
   "electrical.balance": boolean;
+  "client.enrolment_code": boolean;
   "voice.panic_cooldown_s": number;
   "admin.acl_relays": boolean;
   "admin.field_http": boolean;
@@ -241,6 +243,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "voice.panic_phrase": false,
   "client.panic_gesture": false,
   "electrical.balance": false,
+  "client.enrolment_code": false,
   "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S.default,
   "admin.acl_relays": false,
   "admin.field_http": false,
@@ -388,6 +391,7 @@ export class SecuritySettings {
 
 /** True when the new value lowers security compared with the old one (the audit trail and Studio say so). */
 export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boolean {
+  if (key === "client.enrolment_code") return false;   // a code only shows the public facts of the server and is asked for by an administrator who proved themselves again
   if (key === "client.panic_gesture") return false;   // one more way to ask for help: no way in
   if (key === "voice.multipart_turn" || key === "panel.live_events" || key === "live.events" || key === "alarm_audio.spoken" || key === "alarm_audio.custom_sounds") return false;   // a way in that is turned off is not a loss of protection; turning it on is the default way
   if (key === "vision.timeline_days") return typeof from === "number" && typeof to === "number" && to > from;   // keeping what happened for longer is the loss
