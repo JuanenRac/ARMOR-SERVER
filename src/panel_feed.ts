@@ -20,11 +20,13 @@ export function energySummary(totals: SolarTotals): { reporting: boolean; pv_w: 
 }
 
 /** The summary: always a few hundred bytes, whatever the installation holds. The alarms nobody has acknowledged come first, newest first. */
-export function buildPanelSummary(context: Pick<AppContext, "store" | "alarms" | "solar">, now: () => number = Date.now): Record<string, unknown> {
+export function buildPanelSummary(context: Pick<AppContext, "store" | "alarms" | "solar"> & { armingModes?: Pick<AppContext["armingModes"], "countdown"> }, now: () => number = Date.now): Record<string, unknown> {
   const state = context.store.snapshot(), nodes = Object.values(state.nodes), active = context.alarms.active();
+  const delay = context.armingModes?.countdown();   // present only while an exit or entry delay runs
   const order = [...active].sort((a, b) => Number(Boolean(a.acknowledged_at)) - Number(Boolean(b.acknowledged_at)) || b.raised_at.localeCompare(a.raised_at));
   return {
     mode: state.mode, revision: state.revision, time_ms: now(),
+    ...(delay ? { delay } : {}),
     nodes: { online: nodes.filter(node => node.online).length, total: nodes.length },
     energy: energySummary(context.solar.totals()),
     alarms: {

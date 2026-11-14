@@ -21,6 +21,10 @@ import { isLiveQuality, type LiveQuality } from "../media/relay.js";
 /** The paths that cameras of the common families give to their lighter second stream (Hi3510 12, Hikvision 102, Dahua subtype 1). */
 const SUB_STREAM = /^\/(12|13|stream2|ch0_1\.264|ch1_1\.264|onvif2|av0_1)$|Channels\/(2|102|202)$|subtype=1|stream=1\.sdp|ch00_1$|h264minor|sub\/av_stream/;
 
+/** The least time between two stills of the same camera, and the most a still may weigh: a wall panel decodes it in a small memory. */
+const STILL_MIN_GAP_MS = 2_000;
+const STILL_MAX_BYTES = 1024 * 1024;
+
 const param = (request: Request, name: string): string => {
   const value = request.params[name];
   return typeof value === "string" ? value : "";
@@ -238,6 +242,26 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
     }
     try {
       const picture = await fetchCameraPicture(camera);
+      response.status(200).set({ "Cache-Control": "no-store", "Content-Type": picture.contentType, "X-Content-Type-Options": "nosniff" }).send(picture.body);
+      return undefined;
+    } catch (error) {
+      return response.status(502).json({ error: clientMessage(error, "the camera picture is unavailable") });
+    }
+  });
+
+  // The still picture right now, saved nowhere (the POST below makes an evidence item): for a wall panel that shows a camera on demand. An account of the panel role reaches it only while the option
+  // panel.camera_view is on (see context.ts). One picture every two seconds for each camera: the camera is asked at most that often however many screens look.
+  const lastStill = new Map<string, number>();
+  app.get("/api/v1/cameras/:id/snapshot", requireOperator, async (request, response) => {
+    const camera = withCamera(request, response);
+    if (!camera) return undefined;
+    if (!camera.snapshotUrl) return response.status(422).json({ error: "this camera has no snapshot address" });
+    const now = Date.now(), last = lastStill.get(camera.id) ?? 0;
+    if (now - last < STILL_MIN_GAP_MS) return response.status(429).set("Retry-After", String(Math.ceil((STILL_MIN_GAP_MS - (now - last)) / 1000))).json({ error: "too soon after the last picture of this camera" });
+    lastStill.set(camera.id, now);
+    try {
+      const picture = await fetchCameraPicture(camera);
+      if (picture.body.length > STILL_MAX_BYTES) return response.status(502).json({ error: "the camera picture is too big" });
       response.status(200).set({ "Cache-Control": "no-store", "Content-Type": picture.contentType, "X-Content-Type-Options": "nosniff" }).send(picture.body);
       return undefined;
     } catch (error) {

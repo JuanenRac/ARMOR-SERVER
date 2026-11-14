@@ -132,6 +132,7 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/cameras/:id/ptz` | operator | `routes/cameras.ts` |
 | POST | `/api/v1/cameras/:id/recordings/start` | operator | `routes/cameras.ts` |
 | POST | `/api/v1/cameras/:id/recordings/stop` | operator | `routes/cameras.ts` |
+| GET | `/api/v1/cameras/:id/snapshot` | operator | `routes/cameras.ts` |
 | POST | `/api/v1/cameras/:id/snapshot` | operator | `routes/cameras.ts` |
 | POST | `/api/v1/cameras/:id/stream-ticket` | operator | `routes/cameras.ts` |
 | POST | `/api/v1/cameras/configure` | operator | `routes/cameras.ts` |
