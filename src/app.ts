@@ -70,6 +70,7 @@ import { registerReportRoutes } from "./routes/reports.js";
 import { registerEnergyBalanceRoutes } from "./routes/energy_balance.js";
 import { registerVisionTimelineRoutes } from "./routes/vision_timeline.js";
 import { registerAiRoutes } from "./routes/ai.js";
+import { registerIgnoreProposalRoutes } from "./routes/ignore_proposals.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
 import { registerSystemRoutes } from "./routes/system.js";
 import { registerUserRoutes } from "./routes/users.js";
@@ -221,6 +222,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerReportRoutes(app, context);
   registerEnergyBalanceRoutes(app, context);
   registerAiRoutes(app, context);
+  registerIgnoreProposalRoutes(app, context);
   registerNotificationRoutes(app, context);
   registerHistoryRoutes(app, context);
   registerCameraRoutes(app, context);

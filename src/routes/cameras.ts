@@ -137,6 +137,7 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
     relays.stop(camera.id);
     vault.remove(camera.id);
     context.ignoreZones.forget(camera.id);
+    context.ignoreProposals.forget(camera.id);
     context.countLines.forget(camera.id);
     context.detectionZones.forget(camera.id);
     audit.record({ actor: who(request), action: "camera.remove", outcome: "allowed", target: camera.id });

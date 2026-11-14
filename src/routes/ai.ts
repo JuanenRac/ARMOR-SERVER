@@ -23,6 +23,8 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
     const state = store.snapshot();
     response.json({
       mode: state.mode,
+      // The two options the service follows (both off by default): where each radar track falls in a picture, and the study of the pictures that proposes areas to ignore.
+      options: { spatial: context.securitySettings.get("ai.spatial"), learn: context.securitySettings.get("ai.learn") },
       // `pose` and `track_points` only when the site design places the node's radar and says which way it faces; the observation service then judges where each track falls in a camera's picture.
       nodes: Object.entries(state.nodes).map(([id, node]) => {
         const geometry = nodeGeometry(site.get().site, id);

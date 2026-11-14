@@ -21,6 +21,8 @@
  *   electrical.balance         on | off                 the server works out the balance of the house from the solar plant and the grid (self-consumption, export, unexpected export, consumption anomalies; informing only; off, the default: the balance route answers 404 and nothing is watched)
  *   client.panic_gesture        on | off                 the hidden gesture of the apps (a long press on the logo, or five quick touches) raises the silent duress alarm of the signed-in person (POST /api/v1/alarm/panic-gesture; off, the default: the route answers 404 and the apps do not offer the gesture)
  *   client.enrolment_code       on | off                 an administrator may ask for a code of one use and five minutes for the QR that sets up an app on a phone (POST /api/v1/admin/enrolment-code), and a phone reads the address and the fingerprint of the local authority with it (GET /api/v1/enrolment/{code}); the code carries no secret and opens no session (off, the default: both routes answer 404)
+ *   ai.spatial                  on | off                 the observation service judges where each radar track falls in a camera's picture, from the places the site design gives the radars and cameras (off, the default: a radar track anywhere in the area a camera covers counts for that camera); it is told in the context (options.spatial)
+ *   ai.learn                    on | off                 the observation service may study the pictures of the cameras while the system is disarmed and propose parts of the picture to ignore (POST /api/v1/ai/ignore-proposals); nothing is applied until an administrator accepts a proposal (off, the default: proposals are not kept)
  *   presence.by_user            on | off                 a signed-in person's phone may tell the server only the word home or away (PUT /api/v1/presence/me; the position never leaves the phone), and the automations with a presence trigger follow the sum (off, the default: the routes answer 404 and the trigger never fires)
  *   voice.panic_cooldown_s      10 to 3600               after a panic phrase, the seconds in which the same user's phrase raises nothing more (60)
  *   voice.multipart_turn         on | off                  the wall panel may send a spoken turn as multipart/form-data with the audio as raw bytes (off: only the older raw request is taken, a multipart one is answered 415)
@@ -168,6 +170,8 @@ export type SecuritySettingsValues = {
   "electrical.balance": boolean;
   "client.enrolment_code": boolean;
   "presence.by_user": boolean;
+  "ai.spatial": boolean;
+  "ai.learn": boolean;
   "voice.panic_cooldown_s": number;
   "admin.acl_relays": boolean;
   "admin.field_http": boolean;
@@ -247,6 +251,8 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "electrical.balance": false,
   "client.enrolment_code": false,
   "presence.by_user": false,
+  "ai.spatial": false,
+  "ai.learn": false,
   "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S.default,
   "admin.acl_relays": false,
   "admin.field_http": false,
@@ -395,6 +401,8 @@ export class SecuritySettings {
 /** True when the new value lowers security compared with the old one (the audit trail and Studio say so). */
 export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boolean {
   if (key === "client.enrolment_code") return false;   // a code only shows the public facts of the server and is asked for by an administrator who proved themselves again
+  if (key === "ai.spatial") return false;   // it only weighs better what the radars and the cameras already say
+  if (key === "ai.learn") return from === false && to === true;   // a service that studies the pictures of the cameras is a use of them: turning it on is the loss
   if (key === "presence.by_user") return false;   // the phone says one word; turning it on adds no way in
   if (key === "client.panic_gesture") return false;   // one more way to ask for help: no way in
   if (key === "voice.multipart_turn" || key === "panel.live_events" || key === "live.events" || key === "alarm_audio.spoken" || key === "alarm_audio.custom_sounds") return false;   // a way in that is turned off is not a loss of protection; turning it on is the default way

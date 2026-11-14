@@ -79,6 +79,7 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/ai/activity-events` | AI service | `routes/ai.ts` |
 | GET | `/api/v1/ai/cameras/:id/frame` | AI service | `routes/ai.ts` |
 | GET | `/api/v1/ai/context` | AI service | `routes/ai.ts` |
+| POST | `/api/v1/ai/ignore-proposals` | AI service | `routes/ignore_proposals.ts` |
 | POST | `/api/v1/ai/observations` | AI service | `routes/ai.ts` |
 | POST | `/api/v1/ai/vision-events` | AI service | `routes/ai.ts` |
 | GET | `/api/v1/alarm-audio` | operator | `routes/alarm_audio.ts` |
@@ -184,6 +185,8 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/history` | operator | `routes/history.ts` |
 | GET | `/api/v1/history/connections` | operator | `routes/history.ts` |
 | GET | `/api/v1/history/summary` | operator | `routes/history.ts` |
+| GET | `/api/v1/ignore-proposals` | operator | `routes/ignore_proposals.ts` |
+| POST | `/api/v1/ignore-proposals/:id` | administrator | `routes/ignore_proposals.ts` |
 | GET | `/api/v1/info` | none here | `routes/ingest.ts` |
 | GET | `/api/v1/maintenance/armed` | none here | `routes/maintenance.ts` |
 | DELETE | `/api/v1/media` | administrator | `routes/media.ts` |
