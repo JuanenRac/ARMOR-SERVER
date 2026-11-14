@@ -221,7 +221,7 @@ test("push is off by default: a phone cannot register, and the status says so", 
 test("the push carries the id of the event and what the phone needs to tell it, and as data only when asked", async () => {
   const event = { id: 4711, at: "2026-01-01T10:00:00.000Z", type: "alarm", alarm_id: "alm-00001", state: "raised", severity: "critical", source: "smoke-1", source_type: "device", code: "smoke" } as const;
   const message = alertMessageFor(event as never, "armed")!;
-  assert.deepEqual(pushDataOf(message), { event_id: "4711", type: "alarm", at: "2026-01-01T10:00:00.000Z", armed: "true", source: "smoke-1", source_type: "device", to: "raised", severity: "critical", code: "smoke" });
+  assert.deepEqual(pushDataOf(message), { event_id: "4711", type: "alarm", at: "2026-01-01T10:00:00.000Z", armed: "true", alarm_id: "alm-00001", source: "smoke-1", source_type: "device", to: "raised", severity: "critical", code: "smoke" });
   assert.equal(JSON.stringify(message).includes("event_id"), false, "the webhook and the broker carry the message as they always did");
   const bodies: Array<{ message: Record<string, unknown> }> = [];
   const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
