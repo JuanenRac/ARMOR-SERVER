@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.8.2.3] - Encrypted backups, staged firmware rollout, hardened public access and presence by person
+
 - **The Prometheus page counts the events of the vision service:** `armor_vision_events_total{kind,outcome}` (kind: `alert`, `detection` or `activity`; outcome: `raised` an alarm, `recorded` only, or `ignored` because the system was disarmed, an alarm was already open or the profile said not to tell) is counted in memory by `POST /api/v1/ai/vision-events` and `POST /api/v1/ai/activity-events`, every combination listed from the first scrape, so the page never grows with what a camera sees and holds no camera name or picture. It stays behind the same switch and token as the rest of the page. Tested in the text form, in the fixed order and through the routes, refused events not counted.
 
 - **A security option makes the server refuse a maintenance agent that does not hide the secrets itself:** `admin.require_masked_agent` (off by default, so every agent that worked keeps working and this server hides the secrets of an environment file for an older one); on, `GET` and `PUT /api/v1/admin/files/{id}` answer `409 agent_not_masking` and relay nothing when the agent does not say it hides them (`masked: true`), so a secret never reaches this server in clear; lowering it is written in the audit trail
