@@ -10,9 +10,11 @@ import { CountLinesInvalid } from "../count_lines.js";
 import { DetectionZonesInvalid } from "../detection_zones.js";
 import type { Express, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
+import { isIP } from "node:net";
 import type { AppContext } from "../context.js";
 import { discoveryPrefixes, scanNetworks } from "../cameras/discovery.js";
 import { clientMessage } from "../cameras/errors.js";
+import { cameraHostAllowed, isHouseAddress } from "../cameras/host_policy.js";
 import { parseCameraInput, type CameraConnection } from "../cameras/model.js";
 import { fetchCameraPicture } from "../cameras/preview.js";
 import { discoverRtspPaths } from "../cameras/rtsp.js";
@@ -120,13 +122,15 @@ export function registerCameraRoutes(app: Express, context: AppContext): void {
   app.get("/api/v1/camera-views", requireOperator, (_request, response) => response.json({ cameras: vault.list().map(context.viewCamera) }));
   app.get("/api/v1/cameras", requireOperator, (_request, response) => response.json({ cameras: vault.list().map(context.publicCamera) }));
 
-  app.post("/api/v1/cameras/configure", requireOperator, (request, response) => {
+  app.post("/api/v1/cameras/configure", requireOperator, async (request, response) => {
     const existing = typeof request.body?.id === "string" ? vault.get(request.body.id.trim()) : undefined;
     const camera = parseCameraInput(request.body, existing);
     if (!camera) return response.status(400).json({ error: "invalid camera configuration" });
+    // With cameras.allow_public_hosts off a camera is an address of the house; on, one outside it is allowed as it always was and the audit trail says so.
+    if (!await cameraHostAllowed(camera.host)) return response.status(422).json({ error: "the address of a camera must be an address of the house", code: "camera_host_not_private" });
     vault.save(camera);
     relays.stop(camera.id); // a changed address or credential must not keep an old stream alive
-    audit.record({ actor: who(request), action: "camera.configure", outcome: "allowed", target: camera.id });
+    audit.record({ actor: who(request), action: "camera.configure", outcome: "allowed", target: camera.id, ...(isIP(camera.host) !== 0 && !isHouseAddress(camera.host) ? { detail: "address outside the house" } : {}) });
     return response.json(context.publicCamera(camera));
   });
 

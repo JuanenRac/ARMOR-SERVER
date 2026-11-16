@@ -6,6 +6,7 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 import { request as httpRequest } from "node:http";
+import { cameraTarget } from "./host_policy.js";
 import { answerChallenge } from "./digest.js";
 import { mediaError } from "./errors.js";
 import type { CameraConnection } from "./model.js";
@@ -122,7 +123,7 @@ function cameraHttp(camera: CameraConnection, method: string, requestPath: strin
         ...(body ? { "Content-Type": "application/xml", "Content-Length": String(Buffer.byteLength(body)) } : {}),
         ...(authorization ? { Authorization: authorization } : {}),
       };
-      const request = httpRequest({ host: camera.host, port: camera.onvifPort, method, path: requestPath, headers, timeout: 4_000 }, response => {
+      const request = httpRequest({ ...cameraTarget(camera.host, camera.onvifPort), method, path: requestPath, headers, timeout: 4_000 }, response => {
         let payload = "";
         response.on("data", chunk => { if (payload.length < 8192) payload += chunk.toString("utf8"); });
         response.on("end", () => {

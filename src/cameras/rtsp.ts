@@ -4,6 +4,7 @@
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import { createConnection } from "node:net";
+import { cameraTarget } from "./host_policy.js";
 import { answerChallenge } from "./digest.js";
 import { expandRtspPath, type CameraConnection } from "./model.js";
 
@@ -44,7 +45,7 @@ export function candidatesFor(family: RtspFamily): string[] {
 /** The `Server` header that the camera gives to an RTSP OPTIONS request, or an empty text when it gives none. */
 export function rtspBanner(host: string, port: number, timeoutMs = 2_500): Promise<string> {
   return new Promise(resolve => {
-    const socket = createConnection({ host, port });
+    const socket = createConnection(cameraTarget(host, port));
     let data = "";
     const done = () => { clearTimeout(timer); socket.destroy(); resolve(/^Server:\s*([^\r\n]+)/im.exec(data)?.[1]?.trim() ?? ""); };
     const timer = setTimeout(done, timeoutMs);
@@ -62,7 +63,7 @@ export function rtspDescribe(camera: CameraConnection, requestPath: string, time
     // Several cameras reject a DESCRIBE URI that embeds userinfo, so the
     // credentials travel only in the Authorization header.
     const source = `rtsp://${camera.host}:${camera.rtspPort}/${expandRtspPath(requestPath, credentials).replace(/^\/+/, "")}`;
-    const socket = createConnection({ host: camera.host, port: camera.rtspPort });
+    const socket = createConnection(cameraTarget(camera.host, camera.rtspPort));
     const timeout = setTimeout(() => { socket.destroy(); reject(new Error("RTSP timeout")); }, timeoutMs);
     let authenticated = false;
     let data = "";
@@ -95,7 +96,7 @@ export function rtspDescribeMany(camera: CameraConnection, paths: readonly strin
     const credentials = camera.secrets;
     const result = new Map<string, number>();
     if (!credentials?.username || !credentials.password || paths.length === 0) { resolve(result); return; }
-    const socket = createConnection({ host: camera.host, port: camera.rtspPort });
+    const socket = createConnection(cameraTarget(camera.host, camera.rtspPort));
     let buffer = "", index = 0, sequence = 1, challenge: string | undefined, retried = false, timer: NodeJS.Timeout | undefined;
     const sourceOf = (path: string) => `rtsp://${camera.host}:${camera.rtspPort}/${expandRtspPath(path, credentials).replace(/^\/+/, "")}`;
     const finish = () => { if (timer) clearTimeout(timer); socket.destroy(); resolve(result); };
