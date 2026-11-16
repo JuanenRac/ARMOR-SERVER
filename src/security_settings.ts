@@ -80,6 +80,7 @@
  *   nodes.maintenance_max_s      60 to 86400              the most seconds a node's own announcement or health report of planned maintenance holds back its offline alerts; a longer one is cut to this (ARMOR_NODE_MAINTENANCE_MAX_S is where it starts; 600)
  *   nodes.maintenance_max_s      60 to 86400              the most seconds a node's own announcement or health report of planned maintenance holds back its offline alerts; a longer one is cut to this (ARMOR_NODE_MAINTENANCE_MAX_S is where it starts; 600)
  *   nodes.maintenance_max_s      60 to 86400              the most seconds a node's own announcement or health report of planned maintenance holds back its offline alerts; a longer one is cut to this (ARMOR_NODE_MAINTENANCE_MAX_S is where it starts; 600)
+ *   panel.proxy_http             on | off                  the proxy of the node panels may open a panel registered over plain http (the HTML and the scripts of the node, and anything on the way, would run in the page of the server with the session of the administrator who opens it); off, the default: only an https panel with the fingerprint of its certificate trusted is opened, and a panel over plain http answers 403 panel_http_disabled
  *   network.login_secure_only    on | off                 a stored device login is handed to a network node only when its request came over TLS or from this machine (off, the default: any request of the node)
  *
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
@@ -157,6 +158,7 @@ export type SecuritySettingsValues = {
   "server.alarm_state_signature": boolean;
   "media.rtsp_proxy": boolean;
   "network.login_secure_only": boolean;
+  "panel.proxy_http": boolean;
   "network.lan_ca": boolean;
   "session.rotate_id": boolean;
   "network.public_access": boolean;
@@ -243,6 +245,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "server.alarm_state_signature": false,
   "media.rtsp_proxy": true,
   "network.login_secure_only": false,
+  "panel.proxy_http": false,
   "network.lan_ca": false,
   "session.rotate_id": false,
   "network.public_access": false,
@@ -447,7 +450,7 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "vision.service_url") { const host = parseVisionServiceUrl(to)?.host; return host !== undefined && !isLoopbackHost(host) && to !== from; }   // pointing at another machine is the loss
   if (key === "capture.on_alarm_per_min") return false;   // tuning of how much evidence an alarm may start, not a protection
   if (key === "capture.on_alarm") return from === false && to === true;   // cameras that record by themselves when an alarm sounds: more is kept about the house
-  if (key === "vision.timeline" || key === "network.lan_ca" || key === "network.public_access" || key === "vision.semantic_search" || key === "vision.plates" || key === "vision.faces") return from === false && to === true;   // a CA to trust on the phones, or a feature that reads personal data: turning it on is the loss
+  if (key === "vision.timeline" || key === "network.lan_ca" || key === "network.public_access" || key === "panel.proxy_http" || key === "vision.semantic_search" || key === "vision.plates" || key === "vision.faces") return from === false && to === true;   // a CA to trust on the phones, or a feature that reads personal data: turning it on is the loss
   if (key === "vision.semantic_search_ack" || key === "vision.plates_ack" || key === "vision.faces_ack") return false;   // reading a notice is not a loss of protection
   if (key === "summary.daily" || key === "vision.heatmap" || key === "metrics.prometheus" || key === "ingest.recording") return from === false && to === true;   // a report about what happens in the house is a way in for whoever may ask: turning it on is the loss
   if (key === "vision.activity_events") return from === true && to === false;   // on by default: a source of alarms that is taken away defends less
