@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **From outside the house, administering is read from the routes and not from a second list of paths:** with the remote policy `operate`, every route that asks for an administrator (the security settings, the connection address, the history, the key of the zone feed and any route added later) now answers 403 `remote_policy`, except the alarm command, switching a circuit and the arming modes; with `view` none of them is open. A test walks the routes the server registers. The setting `remote.gate_by_route` (on by default, in Studio) gives back the older behaviour.
 - **A trusted phone does not outlive the password, the role or the second factor of its person:** changing the password (your own or by an administrator) or the role, turning the second factor on or off, or an administrator resetting it now forgets the phones that renew a session by key alone, so each has to be registered again.
 - **The gates by path read the path as the routes do:** the remote policy, the lock after failed public sign-ins and the routes closed to a viewer compared the raw path, so another capitalisation or a final slash (`/api/v1/Users/`) went round them while the route still answered. The three read the path in lower case and without the final slash.
 
