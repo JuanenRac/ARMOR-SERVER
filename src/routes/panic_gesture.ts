@@ -22,7 +22,7 @@ export function registerPanicGestureRoutes(app: Express, context: AppContext): v
     const now = Date.now(), quiet = securitySettings.get("voice.panic_cooldown_s") * 1000;
     if (now - (last.get(user.id) ?? 0) >= quiet) {
       last.set(user.id, now);
-      alarms.raiseDuress(user.username);
+      context.raiseDuress(request, user.username, "panic_gesture");
       audit.record({ action: "panic.gesture", outcome: "allowed", actor: user.username, detail: "duress raised" });
     } else audit.record({ action: "panic.gesture", outcome: "denied", actor: user.username, detail: "quiet time" });
     return response.json({ ok: true });

@@ -36,7 +36,8 @@ import { RolloutStore } from "./firmware_rollout.js";
 import { PtzController } from "./cameras/ptz.js";
 import { CommandSigner } from "./command_signature.js";
 import { EventLog, type ArmorEventBody } from "./events.js";
-import { AlarmCentre, AlarmRules } from "./alarms.js";
+import { AlarmCentre, AlarmRules, type AlarmQuery } from "./alarms.js";
+import { DuressLog, type DuressVia } from "./duress_log.js";
 import { AutomationEngine, type Action } from "./automations.js";
 import { DeviceRegistry, type DeviceChange } from "./devices/registry.js";
 import { sendCommand, type Command } from "./devices/commands.js";
@@ -127,6 +128,15 @@ export type AppContext = {
   presence: PresenceStore;
   devices: DeviceRegistry;
   alarms: AlarmCentre;
+  /** The record of the duress alarms, apart from every trail (see duress_log.ts). */
+  duressLog: DuressLog;
+  /**
+   * Raises the silent duress alarm for the request's signed-in person and records it in the duress log. With the option alarm.duress_hide_trail on the alarm is also shown to the wall panels and to
+   * every session but this one (which is kept from seeing it) and goes to the phones of everybody else; off, it is the silent alarm it always was.
+   */
+  raiseDuress(request: HeaderSource, actor: string, via: DuressVia): void;
+  /** What the sessions of this request may see of the alarms: an administrator takes in the silent ones, everybody the ones shown to all, and nobody the ones kept from this session. */
+  alarmQuery(request: HeaderSource): AlarmQuery;
   alarmRules: AlarmRules;
   /** The levels at which batteries and inverters raise alarms (editable from Studio). */
   energyAlarms: EnergyAlarmStore;
@@ -357,15 +367,22 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const loginCountries = new LoginCountries(path.join(config.dataDir, "login-countries.json"));
   if (config.fcmServiceAccount) channels.push(fcmChannel({ account: parseServiceAccount(fs.readFileSync(config.fcmServiceAccount, "utf8")), devices: fcmDevices, dataOnly: config.fcmDataOnly }));
   if (config.homeAssistant) channels.push(homeAssistantChannel({ url: config.homeAssistant.url, webhookId: config.homeAssistant.webhookId }));
-  const notifier = new AlertNotifier({ webhookUrl: config.alertWebhookUrl ?? undefined, webhookSecret: config.alertWebhookSecret || undefined, audit, channels, language: config.alertLanguage });
+  const notifier = new AlertNotifier({ webhookUrl: config.alertWebhookUrl ?? undefined, webhookSecret: config.alertWebhookSecret || undefined, audit, channels, language: config.alertLanguage, silentPush: () => securitySettings.get("alarm.duress_hide_trail") === true });
   const deviceLink: AppContext["deviceLink"] = {};
   const controlHolder: { service?: NodeControlService } = {};
   // Everything that happens goes through one place: written to the history, announced, checked for alarms, offered to the automations.
   const arming: { modes?: ArmingModes } = {};
   const live = new LiveNotices({ enabled: () => securitySettings.get("live.events") });
+  /** The people whose phones must not be told of the duress alarm being raised right now (it is raised in one synchronous call, so this is only ever set during it). */
+  let duressSkip: ReadonlySet<string> | undefined;
   const record = (body: ArmorEventBody): void => {
     // A silent alarm (a duress disarm) is told to the places nobody at the panel can see and is NOT written in the history that every console reads.
-    if (body.type === "alarm" && body.silent) { notifier.notify({ ...body, id: 0, at: new Date().toISOString() }, store.snapshot().mode); return; }
+    // With alarm.duress_hide_trail on it also reaches the phones of everybody but the person who disarmed, and the other consoles are told that an alarm changed (what they may then read is decided per session).
+    if (body.type === "alarm" && body.silent) {
+      notifier.notify({ ...body, id: 0, at: new Date().toISOString() }, store.snapshot().mode, duressSkip ? { skipUsers: duressSkip } : {});
+      if (securitySettings.get("alarm.duress_hide_trail") === true) live.notify("alarm", body.alarm_id);
+      return;
+    }
     const event = events.append(body);
     if (event.type === "alarm") live.notify("alarm", event.alarm_id, event.id);
     else if (event.type === "device") live.notify("device", event.device_id, event.id);
@@ -627,6 +644,16 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const preferences = new PreferencesStore(path.join(config.dataDir, "preferences.json"));
   const presence = new PresenceStore(path.join(config.dataDir, "presence.json"));
   const studioUser = (request: HeaderSource): PublicUser | undefined => { const id = studioSessions.userId(request); return id ? users.get(id) : undefined; };
+  const duressLog = new DuressLog(path.join(config.dataDir, "duress-log.json"), overrides.now ? () => new Date(overrides.now!()) : undefined, warn);
+  const raiseDuress = (request: HeaderSource, actor: string, via: DuressVia): void => {
+    const hide = securitySettings.get("alarm.duress_hide_trail") === true, who = studioUser(request);
+    duressSkip = hide ? new Set([who?.username ?? actor]) : undefined;
+    let alarm: ReturnType<typeof alarms.raiseDuress>;
+    try { alarm = alarms.raiseDuress(actor, { shown: hide }); } finally { duressSkip = undefined; }
+    duressLog.add(actor, via, alarm?.id);
+    if (hide && alarm) studioSessions.hideAlarm(request, alarm.id);
+  };
+  const alarmQuery = (request: HeaderSource): AlarmQuery => ({ silent: studioUser(request)?.role === "admin", shown: true, hidden: studioSessions.hiddenAlarms(request) });
   // A wall panel's account is of the `panel` role: it is not an operator. It may only do what a wall panel does: read the summary, change the mode and acknowledge the alarms.
   const panelRoutes = new Set(["GET /api/v1/panel/summary", "POST /api/v1/mode", "POST /api/v1/alarms/acknowledge", "GET /api/v1/alarm-audio/spoken"]);
   // and the sound uploaded for an origin (one path per origin, so the list is closed)
@@ -685,7 +712,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com", rollout: () => (securitySettings.get("admin.firmware_rollout") ? firmwareRollout.get() : null) }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, ingestCaller, nodeTokens, sharedTokenWatch, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, ignoreProposals, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, presence, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays, visionCounters,
+    duressLog, raiseDuress, alarmQuery, live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, ingestCaller, nodeTokens, sharedTokenWatch, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, ignoreProposals, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, presence, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays, visionCounters,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     balanceWatcher,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),

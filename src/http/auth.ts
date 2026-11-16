@@ -56,8 +56,11 @@ export type EndedSession = { userId?: string; origin?: "local" | "remote"; ip?: 
 
 /** What is known of a session besides who it belongs to: where it came from and when, so the person can see their sessions and end the ones they do not know. */
 export type SessionMeta = { origin?: "local" | "remote"; ip?: string; agent?: string; ttlMs?: number };
-type SessionRecord = { expiry: number; userId?: string; origin?: "local" | "remote"; ip?: string; agent?: string; created?: number; lastSeen?: number; ttlMs?: number; elevatedUntil?: number };
+type SessionRecord = { expiry: number; userId?: string; origin?: "local" | "remote"; ip?: string; agent?: string; created?: number; lastSeen?: number; ttlMs?: number; elevatedUntil?: number; hidden?: string[] };
 export type SessionView = { id: string; created: number; last_seen: number; origin: "local" | "remote"; ip: string; agent: string; current: boolean };
+
+/** The most alarms one session is kept from seeing (see hideAlarm). */
+const MAX_HIDDEN = 16;
 
 /** How long the id a session had before a rotation keeps working (milliseconds). */
 const ROTATION_GRACE_MS = 30_000;
@@ -89,7 +92,7 @@ export class SessionStore {
       for (const [key, session] of Object.entries(saved.sessions ?? {})) {
         if (/^[0-9a-f]{64}$/.test(key) && typeof session.expiry === "number" && session.expiry > now) {
           this.#sessions.set(key, { expiry: session.expiry, userId: typeof session.userId === "string" ? session.userId : undefined, origin: session.origin === "remote" ? "remote" : session.origin === "local" ? "local" : undefined,
-            ip: text(session.ip, 64), agent: text(session.agent, 120), created: num(session.created), lastSeen: num(session.lastSeen), ttlMs: num(session.ttlMs), elevatedUntil: num(session.elevatedUntil) });
+            ip: text(session.ip, 64), agent: text(session.agent, 120), created: num(session.created), lastSeen: num(session.lastSeen), ttlMs: num(session.ttlMs), elevatedUntil: num(session.elevatedUntil), ...(Array.isArray(session.hidden) ? { hidden: session.hidden.filter((item): item is string => typeof item === "string").slice(-MAX_HIDDEN) } : {}) });
         }
       }
     } catch { /* No file yet, or an unreadable one: start with no sessions. */ }
@@ -219,6 +222,20 @@ export class SessionStore {
     for (const [key, session] of this.#sessions) if (session.userId === userId && key.startsWith(shortId)) { this.#drop(key, session, "revoked"); this.#save(); return true; }
     return false;
   }
+
+  /**
+   * The session of this request is kept from seeing an alarm (the silent alarm of a duress disarm made in this very session: the person who is being forced sees an ordinary disarmed system).
+   * It is part of the session, so it follows the session when its id is rotated and when the server restarts, and it goes with it when it ends. False when the request has no session.
+   */
+  hideAlarm(request: HeaderSource, alarmId: string): boolean {
+    const found = this.#current(request);
+    if (!found) return false;
+    found.session.hidden = [...(found.session.hidden ?? []).filter(item => item !== alarmId), alarmId].slice(-MAX_HIDDEN);
+    this.#save();
+    return true;
+  }
+  /** The alarms the session of this request is kept from seeing (empty for a request with no session). */
+  hiddenAlarms(request: HeaderSource): ReadonlySet<string> { return new Set(this.#current(request)?.session.hidden ?? []); }
 
   /** The session of this request has proved itself again (password or second factor) and may do critical things until `untilMs`. */
   elevate(request: HeaderSource, untilMs: number): boolean { const found = this.#current(request); if (!found) return false; found.session.elevatedUntil = untilMs; this.#save(); return true; }

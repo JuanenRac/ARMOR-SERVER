@@ -54,6 +54,7 @@ An administrator turns these on and off from Studio (Security) or with `PUT /api
 | Setting | Values (default first) | What it does |
 | --- | --- | --- |
 | `alarm.disarm_pin` | `if_set`, `never`, `always` | The PIN typed to disarm or to silence a siren: asked of a user who has one / not asked / asked of everybody (a user without a PIN cannot disarm). The duress PIN is never changed by it. `ARMOR_DISARM_PIN`, when set, wins over the setting (`required` is `always`) and Studio shows the option as fixed. |
+| `alarm.duress_hide_trail` | off, on | A disarm with the duress PIN leaves exactly the line of a normal disarm in the audit trail and the history, and the session that disarmed is shown an ordinary disarmed system and no alarm. The silent alarm is shown on the wall panels and to every other session, goes to the phones of everybody else and to the places the alarms go to, and what tells it from a normal disarm is kept in a record only an administrator reads (`GET /api/v1/alarm/duress-log`, a fresh proof of identity from outside the house; refused to an operator, a panel, a viewer and a token). Off, the default: the duress disarm is recorded as it always was. Turning it off lowers security and asks for a new proof of identity. |
 | `alarm.arming_modes` | off, on | The arming modes home and night besides away (everything defended, the armed of always). Off, the server only arms and disarms, as it always did, and a client sees no new field. See [ARMING_MODES.md](ARMING_MODES.md). |
 | `alarm.mode_downgrade_pin` | `required`, `not_required` | Going to a mode that defends LESS than the current one asks for the PIN of a disarm (with its lockout and duress PIN). Disarming always works. |
 | `alarm.mode_schedule` | off, on | The timetable of the arming modes changes the mode by itself (it needs `alarm.arming_modes`); it never disarms. |
@@ -109,6 +110,16 @@ An administrator turns these on and off from Studio (Security) or with `PUT /api
 | `vision.heatmap` | on, off (default off) | Whether administrators and operators may ask for the activity heat map of a camera (same section). Off, the route answers `404`. Turning it on is written in the audit as a loss. |
 
 A wall panel acknowledges the alarms with `POST /api/v1/alarms/acknowledge`. The acknowledgement of a panel's account proves nobody is standing there, so it stays unverified and a critical alarm keeps being escalated; if the body carries `pin` (the PIN of that account, set by an administrator like any user's) and it is the right one, the acknowledgement counts as a person's. A wrong PIN is refused (403) and acknowledges nothing, repeated wrong ones lock the PIN (429, the same lockout as a disarm), and the duress PIN acknowledges without verifying. A panel cannot acknowledge a single alarm.
+
+## Disarming under duress
+The duress PIN disarms like the right one and raises a silent critical alarm. With `alarm.duress_hide_trail` on:
+
+* the audit trail and the history hold the same entry for a disarm with the duress PIN as for a normal one (same action, outcome and actor, no extra detail), through every route that disarms: the mode, a command to an alarm panel and the voice;
+* the session that disarmed is shown an ordinary disarmed system: its alarm lists and its panel summary never carry the alarm (the console channel only tells every console that an alarm changed, and what each session may then read is decided per session);
+* the wall panels and every other session do see the alarm, and it goes to the webhook, Telegram, ntfy and the phones of everybody but the person who disarmed; it is never put on the broker, sent to Home Assistant, spoken, photographed or given to an automation, and only an administrator can close it;
+* the count and the latest entries (when, who, how) are kept apart, in a record that only an administrator with a fresh proof of identity reads.
+
+What it cannot do: a wall panel shows the alarm to whoever stands in front of it, so a person who looks at a panel next to the one being forced may see it; and a person who can read the record, the network traffic of the server or the phone of another user may learn that a duress disarm happened. Decide where the wall panels stand with that in mind. The option is off until an administrator turns it on after trying it.
 
 ## The panel's live channel
 

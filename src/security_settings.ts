@@ -5,6 +5,7 @@
  *
  *   alarm.disarm_pin             never | if_set | always   the PIN typed to disarm or silence a siren (the duress PIN is never changed by this)
  *   alarm.arming_modes           on | off                  the arming modes home and night besides away (off, the default: the system only arms and disarms, as it always did)
+ *   alarm.duress_hide_trail      on | off                  a disarm with the duress PIN leaves exactly the trace of a normal disarm in the history and the audit trail, and the session that disarmed sees a normal disarmed system and no alarm; the silent alarm is shown on the wall panels and to every other session, goes to the phones of everybody else and to the places the alarms go to, and what tells it from a normal disarm is kept in a record only an administrator with a recent proof of identity reads (GET /api/v1/alarm/duress-log); off, the default: the duress disarm is recorded as it always was
  *   alarm.mode_downgrade_pin     required | not_required   going to a mode that defends LESS than the current one asks for the PIN like a disarm (required, the default)
  *   alarm.mode_schedule          on | off                  the timetable of the arming modes changes the mode by itself (off, the default; it needs alarm.arming_modes)
  *   alarm.mode_schedule_lowers   on | off                  the timetable may go to a mode that defends less (off, the default: it only keeps or raises the defence, it can never disarm)
@@ -144,6 +145,7 @@ export type SecuritySettingsValues = {
   "alarm.disarm_pin": DisarmPinMode;
   "voice.silence_confirmation": SilenceConfirmation;
   "alarm.arming_modes": boolean;
+  "alarm.duress_hide_trail": boolean;
   "alarm.mode_downgrade_pin": ModeDowngradePin;
   "alarm.mode_schedule": boolean;
   "alarm.mode_schedule_lowers": boolean;
@@ -232,6 +234,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "alarm.disarm_pin": "if_set",
   "voice.silence_confirmation": "off",
   "alarm.arming_modes": false,
+  "alarm.duress_hide_trail": false,
   "alarm.mode_downgrade_pin": "required",
   "alarm.mode_schedule": false,
   "alarm.mode_schedule_lowers": false,
@@ -447,6 +450,7 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "admin.backup") return from === false && to === true;   // a copy of everything the server keeps, written where it is asked: turning it on is the loss
   if (key === "admin.field_http") return from === false && to === true;   // letting Studio open the server's port to the field network is the loss
   if (key === "admin.acl_relays") return from === false && to === true;   // letting Studio open the broker for the batteries or the alarm copy is the loss
+  if (key === "alarm.duress_hide_trail") return from === true && to === false;   // the person who is forced is no longer protected from what the screen would show: turning it off is the loss
   if (key === "session.rotate_id") return from === true && to === false;   // a session id that no longer changes is a weaker one: turning it off is the loss
   if (key === "electrical.balance") return false;   // it only reads and informs
   if (key === "vision.service_remote") return from === false && to === true;   // a service on another machine: the positions of the house travel over a network
