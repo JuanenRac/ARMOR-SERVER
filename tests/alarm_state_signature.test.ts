@@ -7,7 +7,7 @@ import test from "node:test";
 import { parseAlarmMessage, type AlarmMessage } from "../src/alarm.js";
 import { AlarmStateSigner, alarmStateCanonical, alarmStateSignature } from "../src/alarm_state_signature.js";
 import { routeMessage } from "../src/mqtt_router.js";
-import { startServer, studioCookie, tempDir } from "./helpers.js";
+import { SECRETS, startServer, studioCookie, tempDir } from "./helpers.js";
 
 const shared = path.resolve(import.meta.dirname, "..", "..", "ARMOR-COMMON", "conformance", "signatures", "alarm_state.json");
 const skip = fs.existsSync(shared) ? false : "ARMOR-COMMON is not checked out next to this repository";
@@ -105,5 +105,31 @@ test("with the setting on the server publishes a signed copy of each state, neve
     assert.equal((await put(true)).status, 200);
     context.alarmLink.publish = undefined;
     assert.doesNotThrow(() => context.alarmNodes.ingest(state({ timestamp_ms: 4000 })));
+  } finally { await running.stop(); }
+});
+
+test("with the node-only setting on, a state said over HTTP with the shared token is kept but not signed, and one from the node itself or over MQTT is", async () => {
+  const running = await startServer();
+  try {
+    const cookie = await studioCookie(running.base);
+    const context = running.app.context;
+    const published: Array<[string, string]> = [];
+    context.alarmLink.publish = (topic, payload) => { published.push([topic, payload]); };
+    const put = (values: Record<string, boolean>) => fetch(`${running.base}/api/v1/security/settings`, { method: "PUT", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify(values) });
+    const post = (token: string, extra: Partial<AlarmMessage> = {}) => fetch(`${running.base}/api/v1/alarm/state`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(state(extra)) });
+    const copies = () => published.filter(([topic]) => topic === "armor/alarm/alarm-1/state").length;
+    assert.equal((await put({ "server.alarm_state_signature": true })).status, 200);
+    // off, the default: every state is signed, as before
+    assert.equal((await post(SECRETS.ARMOR_INGEST_TOKEN)).status, 202);
+    assert.equal(copies(), 1);
+    assert.equal((await put({ "server.alarm_state_signature_node_only": true })).status, 200);
+    published.length = 0;
+    assert.equal((await post(SECRETS.ARMOR_INGEST_TOKEN, { timestamp_ms: 2000 })).status, 202);
+    assert.equal(copies(), 0, "said with the shared token: kept, not signed");
+    assert.equal(context.alarmNodes.list()[0]!.state.timestamp_ms, 2000, "and still acted on");
+    assert.equal((await post(context.nodeTokens.tokenFor("alarm-1"), { timestamp_ms: 3000 })).status, 202);
+    assert.equal(copies(), 1, "with the token of its own node: signed");
+    context.alarmNodes.ingest(state({ timestamp_ms: 4000 }));
+    assert.equal(copies(), 2, "over MQTT: signed");
   } finally { await running.stop(); }
 });

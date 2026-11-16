@@ -58,7 +58,7 @@ import { SolarStore } from "./solar.js";
 import { ElectricalStore } from "./electrical.js";
 import { SwitchingService } from "./electrical_switching.js";
 import { BatteryWriteService } from "./battery_write.js";
-import { AlarmStore, type AlarmMessage } from "./alarm.js";
+import { AlarmStore, type AlarmMessage, type AlarmOrigin } from "./alarm.js";
 import { ArmProfileStore } from "./arm_profiles.js";
 import { ArmingModes } from "./arming_modes.js";
 import { ModePanelSync } from "./mode_panel_sync.js";
@@ -446,14 +446,16 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const alarmStateSigner = new AlarmStateSigner(config.alarmStateKeyFile, overrides.now);
   const alarmLink: AppContext["alarmLink"] = {};
   // While server.alarm_state_signature is on, a state heard from a panel is published again, signed, on the same topic (a copy that is already signed is never copied again). A broker that is not connected only costs the copy.
-  const relaySignedAlarmState = (message: AlarmMessage): void => {
+  // With server.alarm_state_signature_node_only on, only a state that reached the server over MQTT or with the token of its own node is signed: a state said over HTTP with the shared ingest token could come from anyone who holds it.
+  const relaySignedAlarmState = (message: AlarmMessage, origin: AlarmOrigin): void => {
     if (message.sig !== undefined || !securitySettings.get("server.alarm_state_signature")) return;
+    if (origin === "http-shared" && securitySettings.get("server.alarm_state_signature_node_only")) return;
     try {
       if (!alarmLink.publish) throw new Error("the MQTT broker is not connected");
       alarmLink.publish(`armor/alarm/${message.node_id}/state`, JSON.stringify(alarmStateSigner.sign(message)));
     } catch (error) { warn(`alarm state signature: ${error instanceof Error ? error.message : String(error)}`); }
   };
-  const alarmNodes = new AlarmStore({ now: overrides.now, onMessage: (message, previous) => { knownNodes.seen("alarm", message.node_id, message.phase); alarmRules.handleAlarmNode(message, previous); relaySignedAlarmState(message); }, onStale: (node, stale, phase) => { alarmRules.handleAlarmNodeStale(node, stale, phase); if (stale) nodeLife.gone(node); else nodeLife.report(node); } });
+  const alarmNodes = new AlarmStore({ now: overrides.now, onMessage: (message, previous, origin) => { knownNodes.seen("alarm", message.node_id, message.phase); alarmRules.handleAlarmNode(message, previous); relaySignedAlarmState(message, origin); }, onStale: (node, stale, phase) => { alarmRules.handleAlarmNodeStale(node, stale, phase); if (stale) nodeLife.gone(node); else nodeLife.report(node); } });
   const armProfiles = new ArmProfileStore(path.join(config.dataDir, "arm-profiles.json"), overrides.now ? () => new Date(overrides.now!()) : undefined, warn);
   alarmRules.batteryProfileOf = id => { const registration = solarRegistry.list().find(item => `${item.node_id}/${item.device}` === id); return registration ? batteryProfile(registration.model) : undefined; };
   alarmRules.sirenNotice = () => securitySettings.get("alarm.siren_fault_notice");
