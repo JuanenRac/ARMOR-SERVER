@@ -450,6 +450,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     if (secrets[first]![1] === secrets[second]![1]) throw new ConfigError(`${secrets[first]![0]} and ${secrets[second]![0]} must be different values`);
   }
   if (!env.ARMOR_OPERATOR_TOKEN?.trim() && !isLoopbackHost(host)) warnings.push("ARMOR_OPERATOR_TOKEN is not set: the operator token is the control token. Set a different one so that a service with operator rights cannot also arm and disarm.");
+  if ((trustProxy === true || typeof trustProxy === "number") && !isLoopbackHost(host)) warnings.push(`ARMOR_TRUST_PROXY=${trustRaw} trusts a number of proxies: behind a chain of two (such as Caddy and the nginx of Studio) the address the server takes as the client is the one of a proxy, so every client from the Internet would look like the house, and anyone who reaches this port directly can send a forged X-Forwarded-For; name the proxies instead (uniquelocal, or their addresses)`);
   if (!disarmPinRequired) warnings.push("ARMOR_DISARM_PIN is not \"required\": unless the setting alarm.disarm_pin (Studio, Security) is \"always\", anyone signed in as a user without a PIN can disarm the system, and with \"never\" nobody is asked for a PIN; set a PIN for each user and choose \"always\" there, or ARMOR_DISARM_PIN=required, which wins over the setting.");
   const haPrefix = (env.ARMOR_HA_DISCOVERY_PREFIX ?? "homeassistant").trim();
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(haPrefix)) throw new ConfigError("ARMOR_HA_DISCOVERY_PREFIX is one word of letters, digits, - and _");
