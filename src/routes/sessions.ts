@@ -175,6 +175,7 @@ export function registerSessionRoutes(app: Express, context: AppContext): void {
     const codes = totp.confirm(user.id, typeof request.body?.code === "string" ? request.body.code.trim() : "");
     if (!codes) return response.status(401).json({ error: "that code is not right", code: "bad_code" });
     studioSessions.revokeUser(user.id, request);   // the other sessions signed in without it
+    context.trustedDevices.removeUser(user.id);    // and the phones trusted before the second factor existed
     audit.record({ action: "studio.totp.enable", outcome: "allowed", actor: user.username });
     return response.json({ enabled: true, recovery_codes: codes });
   });
@@ -185,6 +186,7 @@ export function registerSessionRoutes(app: Express, context: AppContext): void {
     if (!(await users.authenticateLater(user.username, password))) return response.status(401).json({ error: "the password is not right", code: "bad_proof" });
     totp.disable(user.id);
     studioSessions.revokeUser(user.id, request);
+    context.trustedDevices.removeUser(user.id);
     audit.record({ action: "studio.totp.disable", outcome: "allowed", actor: user.username });
     return response.sendStatus(204);
   });
@@ -195,6 +197,7 @@ export function registerSessionRoutes(app: Express, context: AppContext): void {
     if (!users.get(id)) return response.status(404).json({ error: "no such user" });
     totp.disable(id);
     studioSessions.revokeUser(id);
+    context.trustedDevices.removeUser(id);
     audit.record({ action: "users.totp.reset", outcome: "allowed", actor: studioUser(request)?.username, target: users.get(id)?.username });
     return response.sendStatus(204);
   });

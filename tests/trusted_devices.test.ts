@@ -56,6 +56,23 @@ test("a challenge is good once, for one phone, and a wrong or late signature giv
   assert.ok(new TrustedDevices(file).get(da.id)?.lastUsedAt, "kept on disk");
 });
 
+test("changing the password forgets the trusted phones of the person", async () => {
+  const running = await startServer();
+  try {
+    const cookie = await studioCookie(running.base);
+    assert.equal((await call(running, cookie, "PUT", "/api/v1/security/settings", { "client.trusted_devices": true })).status, 200);
+    const a = phone();
+    const added = await call(running, cookie, "POST", "/api/v1/devices/trust", { name: "Pixel", public_key: a.key });
+    assert.equal(added.status, 201);
+    const id = added.body.id as string;
+    assert.equal((await call(running, undefined, "POST", "/api/v1/devices/trust/challenge", { id })).status, 200, "trusted before the change");
+    const changed = await call(running, cookie, "PATCH", "/api/v1/account", { currentPassword: "correct-horse-battery", newPassword: "another-long-passphrase-9" });
+    assert.equal(changed.status, 200);
+    assert.equal((await call(running, undefined, "POST", "/api/v1/devices/trust/challenge", { id })).status, 404, "the phone has to be registered again");
+    assert.equal((await call(running, cookie, "GET", "/api/v1/devices/trust")).body.devices.length, 0);
+  } finally { await running.stop(); }
+});
+
 test("the routes answer 404 while the option is off, and register, renew and revoke while it is on", async () => {
   const running = await startServer();
   try {

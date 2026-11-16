@@ -43,6 +43,8 @@ export function registerUserRoutes(app: Express, context: AppContext): void {
       if (before && before !== changed.user.username) context.fcmDevices.rename(before, changed.user.username);
       // A different password or role must take effect at once: the user's other sessions end (this one stays when it is your own).
       if (changed.passwordChanged || changed.roleChanged) studioSessions.revokeUser(id, id === actor?.id ? request : undefined);
+      // The phones that were trusted for the old password or role renew sessions by key alone: they have to be registered again.
+      if (changed.passwordChanged || changed.roleChanged) context.trustedDevices.removeUser(id);
       // The phones of a person whose sessions were closed stop receiving the alarms until the app registers again with a new session.
       if ((changed.passwordChanged || changed.roleChanged) && id !== actor?.id) context.fcmDevices.removeUser(changed.user.username);
       audit.record({ action: "user.update", outcome: "allowed", actor: actor?.username, target: changed.user.username, detail: [input.username !== undefined && "name", changed.passwordChanged && "password", changed.roleChanged && "role"].filter(Boolean).join(",") });
@@ -145,7 +147,7 @@ export function registerUserRoutes(app: Express, context: AppContext): void {
     }
     try {
       const changed = users.update(me.id, { username: input.username, password: input.newPassword });
-      if (changed.passwordChanged) studioSessions.revokeUser(me.id, request);
+      if (changed.passwordChanged) { studioSessions.revokeUser(me.id, request); context.trustedDevices.removeUser(me.id); }   // a trusted phone renews by key alone: it does not outlive the password
       audit.record({ action: "account.update", outcome: "allowed", actor: changed.user.username, detail: [input.username !== undefined && "name", changed.passwordChanged && "password"].filter(Boolean).join(",") });
       return response.json({ id: changed.user.id, username: changed.user.username, role: changed.user.role });
     } catch (error) {
