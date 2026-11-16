@@ -130,6 +130,8 @@ export function registerNodePanelRoutes(app: Express, context: AppContext): void
   const body = (request: Request): Record<string, unknown> => (typeof request.body === "object" && request.body !== null && !Buffer.isBuffer(request.body) ? request.body as Record<string, unknown> : {});
   const elevatedOrNot = (request: Request, response: Response): boolean => { let ok = false; requireElevated(request, response, () => { ok = true; }); return ok; };
 
+  const httpAllowed = (): boolean => context.securitySettings.get("panel.proxy_http") === true;
+
   const sweep = (): void => {
     const now = Date.now();
     for (const [key, jar] of jars) if (now - jar.last > JAR_IDLE_MS) jars.delete(key);
@@ -142,6 +144,8 @@ export function registerNodePanelRoutes(app: Express, context: AppContext): void
     const input = body(request);
     const entry = PanelRegistry.check({ ...input, id: String(request.params.id ?? "") }, testPort() > 0);
     if (!entry) return response.status(422).json({ error: "invalid_panel" });
+    // A panel over plain http is only taken when the administrator turned panel.proxy_http on: its pages would run in the page of the server.
+    if (entry.scheme === "http" && !httpAllowed()) return response.status(422).json({ error: "http panels are off: register the panel over https and trust its certificate, or turn panel.proxy_http on", code: "panel_http_disabled" });
     // An address or a scheme that changed needs the certificate to be trusted again.
     const before = registry.get(entry.id);
     if (before && (before.address !== entry.address || before.port !== entry.port) && !("fingerprint" in input)) delete entry.fingerprint;
@@ -219,6 +223,8 @@ export function registerNodePanelRoutes(app: Express, context: AppContext): void
     const id = String(request.params.nodeId ?? "");
     const entry = NODE_ID.test(id) ? registry.get(id) : undefined;
     if (!entry) return response.status(404).json({ error: "unknown_panel" });
+    // A panel registered over plain http before the option existed stays in the list but is not opened until the option is turned on.
+    if (entry.scheme === "http" && !httpAllowed()) return response.status(403).json({ error: "the panel of this node is registered over plain http: register it over https or turn panel.proxy_http on", code: "panel_http_disabled" });
     if (!METHODS.has(request.method)) return response.status(405).json({ error: "method_not_allowed" });
     const prefix = `/api/v1/nodes/${id}/panel`;
     const rest = request.originalUrl.slice(prefix.length);

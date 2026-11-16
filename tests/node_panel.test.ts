@@ -44,6 +44,12 @@ function rawGet(base: string, cookie: string, target: string): Promise<number> {
   });
 }
 
+/** Turns on the option that lets the proxy open a panel registered over plain http (off by default). */
+async function allowHttpPanels(base: string, cookie: string): Promise<void> {
+  const reply = await fetch(`${base}/api/v1/security/settings`, { method: "PUT", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ "panel.proxy_http": true }) });
+  assert.equal(reply.status, 200);
+}
+
 async function viaServer(base: string, cookie: string, method: string, url: string, body?: string, headers: Record<string, string> = {}) {
   return fetch(`${base}${url}`, { method, headers: { Cookie: cookie, ...headers }, body, redirect: "manual" });
 }
@@ -74,6 +80,10 @@ test("the panel of a node goes through the server, keeps the cookie of the node 
   const running = await startServer();
   try {
     const cookie = await studioCookie(running.base);
+    // by default a panel over plain http is neither registered nor opened
+    const refusedPut = await fetch(`${running.base}/api/v1/admin/node-panels/radar-salon`, { method: "PUT", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ address: "127.0.0.1", scheme: "http", port: node.port }) });
+    assert.deepEqual([refusedPut.status, ((await refusedPut.json()) as { code: string }).code], [422, "panel_http_disabled"]);
+    await allowHttpPanels(running.base, cookie);
     const put = await fetch(`${running.base}/api/v1/admin/node-panels/radar-salon`, { method: "PUT", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ address: "127.0.0.1", scheme: "http", port: node.port, label: "Salon" }) });
     assert.equal(put.status, 200);
     assert.equal(((await (await fetch(`${running.base}/api/v1/admin/node-panels`, { headers: { Cookie: cookie } })).json()) as { panels: unknown[] }).panels.length, 1);
@@ -122,6 +132,11 @@ test("the panel of a node goes through the server, keeps the cookie of the node 
     assert.match(audit, /node-panel\.write/);
     assert.doesNotMatch(audit, /node-secret|"password":"b"/);
 
+    // turning the option off again closes a panel that was already registered, without forgetting it
+    assert.equal((await fetch(`${running.base}/api/v1/security/settings`, { method: "PUT", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ "panel.proxy_http": false }) })).status, 200);
+    const closedAgain = await viaServer(running.base, cookie, "GET", "/api/v1/nodes/radar-salon/panel/");
+    assert.deepEqual([closedAgain.status, ((await closedAgain.json()) as { code: string }).code], [403, "panel_http_disabled"]);
+    assert.equal(((await (await fetch(`${running.base}/api/v1/admin/node-panels`, { headers: { Cookie: cookie } })).json()) as { panels: unknown[] }).panels.length, 1);
     // removing it closes it
     assert.equal((await fetch(`${running.base}/api/v1/admin/node-panels/radar-salon`, { method: "DELETE", headers: { Cookie: cookie } })).status, 204);
     assert.equal((await viaServer(running.base, cookie, "GET", "/api/v1/nodes/radar-salon/panel/")).status, 404);
@@ -144,6 +159,7 @@ test("from outside a new panel asks for a new proof, a viewer cannot open one an
     const refused = await fetch(`${running.base}/api/v1/admin/node-panels/radar-salon`, { method: "PUT", headers: { ...json, Cookie: first }, body: entry });
     assert.deepEqual([refused.status, ((await refused.json()) as { code: string }).code], [403, "elevation_required"]);
     assert.equal((await elevate(first)).status, 200);
+    await allowHttpPanels(running.base, first);
     assert.equal((await fetch(`${running.base}/api/v1/admin/node-panels/radar-salon`, { method: "PUT", headers: { ...json, Cookie: first }, body: entry })).status, 200);
 
     // another session of the administrator has to prove who it is before it opens a panel; then it goes on
@@ -168,6 +184,7 @@ test("from outside a new panel asks for a new proof, a viewer cannot open one an
   try {
     const cookie = await studioCookie(limited.base);
     assert.equal((await fetch(`${limited.base}/api/v1/studio/elevate`, { method: "POST", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ password: SECRETS.ARMOR_STUDIO_PASSWORD }) })).status, 200);
+    await allowHttpPanels(limited.base, cookie);
     assert.equal((await viaServer(limited.base, cookie, "GET", "/api/v1/nodes/radar-salon/panel/")).status, 200);
     const export_ = await viaServer(limited.base, cookie, "GET", "/api/v1/nodes/radar-salon/panel/api/v1/config/export");
     assert.deepEqual([export_.status, ((await export_.json()) as { code: string }).code], [403, "remote_policy"]);

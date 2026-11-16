@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The proxy of the node panels opens only https panels with a trusted certificate unless an option says otherwise:** the new setting `panel.proxy_http` (off by default; an administrator turns it on in Studio, which warns when a registered panel uses plain http) makes the server refuse to register a panel over plain http (422 `panel_http_disabled`) and to open one that was registered that way (403 `panel_http_disabled`), because the pages and scripts of a panel run in the page of the server with the session of the administrator who opens it. Turning it on counts as lowering security in the audit trail.
 - **A trusted phone does not outlive the password, the role or the second factor of its person:** changing the password (your own or by an administrator) or the role, turning the second factor on or off, or an administrator resetting it now forgets the phones that renew a session by key alone, so each has to be registered again.
 - **The gates by path read the path as the routes do:** the remote policy, the lock after failed public sign-ins and the routes closed to a viewer compared the raw path, so another capitalisation or a final slash (`/api/v1/Users/`) went round them while the route still answered. The three read the path in lower case and without the final slash.
 
