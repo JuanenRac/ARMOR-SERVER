@@ -41,7 +41,7 @@
 | Ruolo | Coordinatore centrale di sicurezza della famiglia: nodi, allarmi, dispositivi, energia, telecamere, rete |
 | Tecnologia | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | Test | 1152 (`npm test`: unitari e integrazione HTTP completa) |
-| Contratto | 247 percorsi HTTP, 320 operazioni (OpenAPI in ARMOR-COMMON), tabella delle rotte in `docs/ROUTES.md` |
+| Contratto | 248 percorsi HTTP, 321 operazioni (OpenAPI in ARMOR-COMMON), tabella delle rotte in `docs/ROUTES.md` |
 | In ascolto su | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Gira su | Il banco di prova CM5 (come servizio, vedi ARMOR-DEVOPS) o qualsiasi computer con Node.js |
 | Su hardware reale | Il banco di prova CM5, in uso quotidiano: un vero broker MQTT, vere telecamere IP, un vero nodo radar su una scheda ESP32-S3, Studio, l'app Android e i servizi di voce e osservazione contro di esso |
@@ -142,6 +142,7 @@ flowchart LR
 | Un cookie rubato, una richiesta da un altro sito | HttpOnly, SameSite=Strict e Secure dietro HTTPS; le sessioni durano 7 giorni (Studio), 8 ore (operatore) e 12 ore con 30 minuti di inattività dall'esterno |
 | Attacchi temporali e segreti deboli | I segreti si confrontano in tempo costante, hanno almeno 24 caratteri e sono tutti diversi (ingestione, controllo, operatore, chiave delle telecamere, IA, chiave delle prove) |
 | Disarmare senza prova | Un PIN di 4-10 cifre secondo `alarm.disarm_pin` (never, if_set, always); 3 errori bloccano 60 s, 5 min, 15 min e poi 1 h, salvato su disco tra i riavvii; un PIN di coercizione si distingue in silenzio; il token di controllo disarma solo con `ARMOR_CONTROL_DISARM=1` |
+| Disarmare sotto coercizione | Il PIN di coercizione disarma come quello giusto e fa scattare un allarme silenzioso. Con `alarm.duress_hide_trail` il registro di audit e la cronologia mostrano un disarmo normale, chi ha disarmato vede un sistema normalmente disarmato, e vengono avvisati i pannelli a muro, le altre sessioni e le destinazioni degli allarmi; solo un amministratore con una prova d'identità recente legge il registro a parte. Un pannello a muro mostra l'allarme a chiunque gli stia davanti, quindi conviene collocarli tenendone conto (disattivato per impostazione predefinita) |
 | Fuga delle password delle telecamere | AES-256-GCM in `data/cameras.json`; nessuna API le restituisce; FFmpeg passa da un tunnel RTSP locale (`media.rtsp_proxy`) così la password non sta mai su una riga di comando; i reindirizzamenti ONVIF sono rifiutati |
 | Video dal vivo senza accesso | Un ticket di flusso legato a una sola telecamera, emesso solo a un operatore |
 | Inondazione dell'API | 240 richieste al minuto in generale (i POST dei nodi hanno un budget proprio di 6000 al minuto); corpi JSON da 64 kB (9 MB per un file di installazione) |
@@ -157,7 +158,7 @@ flowchart LR
 
 ## 🔌 Interfacce
 
-La tabella delle rotte (`docs/ROUTES.md`, generata dal codice) elenca ogni rotta con chi può chiamarla; il file OpenAPI di ARMOR-COMMON descrive 247 percorsi e 320 operazioni, e un test fallisce se ne manca una. Le più importanti:
+La tabella delle rotte (`docs/ROUTES.md`, generata dal codice) elenca ogni rotta con chi può chiamarla; il file OpenAPI di ARMOR-COMMON descrive 248 percorsi e 321 operazioni, e un test fallisce se ne manca una. Le più importanti:
 
 | Rotta | Autenticazione | Cosa fa |
 |---|---|---|
