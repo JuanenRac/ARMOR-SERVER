@@ -125,7 +125,7 @@ export type ArmorConfig = {
   nodeStaleAfterS: number;
   /** Minutes the name the house is reached by from outside may point elsewhere than the public address before it is an alarm (ARMOR_NETWORK_DNS_DWELL_MIN, 1 to 1440; default 30). */
   networkDnsDwellMin: number;
-  /** How long, at most, a node's own announcement of planned maintenance holds back its offline alerts (ARMOR_NODE_MAINTENANCE_MAX_S, 60 to 86400; default 600; the value where it starts, Studio changes it). */
+  /** How long, at most, a node's own announcement of planned maintenance holds back its offline alerts (ARMOR_NODE_MAINTENANCE_MAX_S, 60 to 86400; default 600; where the Studio setting nodes.maintenance_max_s starts, Studio changes it afterwards). */
   nodeMaintenanceMaxS: number;
   /** Milliseconds a two-target condition must persist before it becomes "high" (0 = immediately). */
   alertDwellMs: number;
