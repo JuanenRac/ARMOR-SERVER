@@ -11,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { alertText, alertTitle, isAlertLanguage, type AlertLanguage } from "./alert_text.js";
 import { durableRename } from "./durable.js";
-import type { NotifyChannel } from "./channels.js";
+import { skipUsers, type NotifyChannel } from "./channels.js";
 import { pushDataOf } from "./notify.js";
 
 export class FcmInvalid extends Error {}
@@ -166,11 +166,13 @@ export function fcmChannel(options: FcmOptions): NotifyChannel {
     return access.value;
   };
   return {
-    id: "fcm",
+    id: "fcm", pushesSilent: true,
     async deliver(message, text, language: AlertLanguage) {
       const got = delivered.get(message) ?? new Set<string>();
       delivered.set(message, got);
-      const pending = options.devices.list().filter(token => !got.has(token));
+      const skip = skipUsers.get(message);
+      const left = skip ? new Set(options.devices.entries().filter(device => skip.has(device.user)).map(device => device.token)) : undefined;
+      const pending = options.devices.list().filter(token => !got.has(token) && !left?.has(token));
       if (pending.length === 0) return { ok: true, detail: got.size > 0 ? `${got.size} phone(s)` : "no phones registered" };
       try {
         const bearer = await accessToken();

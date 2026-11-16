@@ -95,6 +95,7 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/alarm/design/versions` | operator | `routes/alarm_design.ts` |
 | DELETE | `/api/v1/alarm/design/versions/:id` | operator | `routes/alarm_design.ts` |
 | GET | `/api/v1/alarm/design/versions/:id` | operator | `routes/alarm_design.ts` |
+| GET | `/api/v1/alarm/duress-log` | administrator, fresh proof of identity | `routes/alarm.ts` |
 | GET | `/api/v1/alarm/modes` | operator | `routes/alarm_modes.ts` |
 | PUT | `/api/v1/alarm/modes` | administrator | `routes/alarm_modes.ts` |
 | GET | `/api/v1/alarm/nodes` | operator | `routes/alarm.ts` |

@@ -12,9 +12,12 @@ import { MAX_SITE_BYTES, SiteConflict, SiteInvalid } from "../site.js";
 
 export function registerAlarmRoutes(app: Express, context: AppContext): void {
   const { alarms, automations, audit, store, site, electrical, devices, requireOperator, studioUser } = context;
+  /** With alarm.duress_hide_trail on, a disarm under duress leaves the line of any disarm in the audit trail (the difference is in the duress record, see ../duress_log.ts). */
+  const hideTrail = (): boolean => context.securitySettings.get("alarm.duress_hide_trail") === true;
   const actor = (request: Parameters<typeof studioUser>[0]): string => studioUser(request)?.username ?? "operator";
   // The silent alarms (a duress disarm) are seen, acknowledged and deleted by an administrator signed in to Studio, and by nobody else: not an operator, a panel, a viewer or a token.
-  const sees = (request: Parameters<typeof studioUser>[0]): { silent: boolean } => ({ silent: studioUser(request)?.role === "admin" });
+  // With alarm.duress_hide_trail on, the silent alarm is also on the lists of every session but the one that disarmed (context.alarmQuery); the ones that may act on it are still the administrators.
+  const sees = (request: Parameters<typeof studioUser>[0]) => context.alarmQuery(request);
   const body = (request: { body?: unknown }): Record<string, unknown> => (typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {});
   const fail = (response: Response, error: unknown) => {
     if (error instanceof AutomationError) return response.status(error.status).json({ error: error.message, code: error.code });
@@ -48,13 +51,8 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
     if (target === "disarmed") {
       const verdict = await checkDisarm(context, user, input.pin, actor(request));
       if (!verdict.allow) return response.status(verdict.status).json(verdict.body);
-      if (verdict.duress) {
-        audit.record({ action: "control.disarm", outcome: "allowed", actor: actor(request), detail: "duress" });
-        alarms.raiseDuress(actor(request));
-        armingModes.apply("disarmed", { by: actor(request) });
-        return response.json(store.snapshot());
-      }
-      audit.record({ action: "control.disarm", outcome: "allowed", actor: actor(request) });
+      audit.record({ action: "control.disarm", outcome: "allowed", actor: actor(request), ...(verdict.duress && !hideTrail() ? { detail: "duress" } : {}) });
+      if (verdict.duress) context.raiseDuress(request, actor(request), "mode_pin");
       armingModes.apply("disarmed", { by: actor(request) });
       return response.json(store.snapshot());
     }
@@ -73,7 +71,7 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
     if (plan.lowers && context.securitySettings.get("alarm.mode_downgrade_pin") === "required") {
       const verdict = await checkDisarm(context, user, input.pin, actor(request), "mode");
       if (!verdict.allow) return response.status(verdict.status).json(verdict.body);
-      if (verdict.duress) { audit.record({ action: "control.mode", outcome: "allowed", actor: actor(request), detail: `${what} (duress)` }); alarms.raiseDuress(actor(request)); }
+      if (verdict.duress) { if (!hideTrail()) audit.record({ action: "control.mode", outcome: "allowed", actor: actor(request), detail: `${what} (duress)` }); context.raiseDuress(request, actor(request), "mode_pin"); }
     }
     try { armingModes.apply(target, { confirmUnassigned: input.confirm_unassigned === true, by: actor(request) }); } catch (error) {
       if (error instanceof ModeChangeError) return response.status(error.status).json({ error: error.message, code: error.code });

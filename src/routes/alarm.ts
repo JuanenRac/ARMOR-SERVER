@@ -16,7 +16,7 @@ import { ZoneLinksInvalid } from "../alarm_zone_feed.js";
 const NODE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 export function registerAlarmNodeRoutes(app: Express, context: AppContext): void {
-  const { alarmNodes, alarmCommands, armProfiles, requireOperator, requireAdmin, studioUser } = context;
+  const { alarmNodes, alarmCommands, armProfiles, requireOperator, requireAdmin, requireElevated, studioUser } = context;
   const ingestLimit = rateLimit({ windowMs: 60_000, limit: 6_000, standardHeaders: "draft-8", legacyHeaders: false });
   const commandLimit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "too many alarm commands" } });
 
@@ -34,6 +34,10 @@ export function registerAlarmNodeRoutes(app: Express, context: AppContext): void
       return response.status(400).json({ error: why });
     }
   });
+
+  // The record kept apart of the duress alarms (see ../duress_log.ts): the one place that tells a disarm under duress from a normal one while alarm.duress_hide_trail is on. An administrator signed in
+  // to Studio, with a recent proof of identity when the request comes from outside the house; an operator, a wall panel, a viewer and a token are all refused.
+  app.get("/api/v1/alarm/duress-log", requireAdmin, requireElevated, (_request, response) => response.json(context.duressLog.view()));
 
   app.get("/api/v1/alarm/nodes", requireOperator, (_request, response) => response.json({ nodes: alarmNodes.list(), totals: alarmNodes.totals() }));
 
@@ -76,7 +80,7 @@ export function registerAlarmNodeRoutes(app: Express, context: AppContext): void
       // The panel itself does not ask for a PIN of a disarm (or a silence) that comes from the server (the broker, the node's own setting and this server must all have said yes): this server does.
       const verdict = await checkDisarm(context, user, body.pin, user?.username ?? "administrator", body.action);
       if (!verdict.allow) return response.status(verdict.status).json(verdict.body);
-      if (verdict.duress) context.alarms.raiseDuress(user?.username ?? "administrator");
+      if (verdict.duress) context.raiseDuress(request, user?.username ?? "administrator", "pin");
     }
     try {
       const sent = alarmCommands.request(node, body.action as AlarmAction, (profile?.base ?? body.mode) as "away" | "stay" | undefined, body.force === true, studioUser(request)?.username ?? "administrator", profile);
