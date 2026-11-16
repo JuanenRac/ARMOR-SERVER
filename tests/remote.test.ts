@@ -157,6 +157,21 @@ test("the remote policy: from outside, `operate` keeps administering for the hou
   } finally { await inside.stop(); }
 });
 
+test("the remote policy reads the path as the routes do: other capitals and a final slash do not walk around it", async () => {
+  const running = await startServer({ ARMOR_LOCAL_NETWORKS: "10.99.0.0/16", ARMOR_REMOTE_POLICY: "operate" });
+  try {
+    const login = await fetch(`${running.base}/api/v1/studio/session`, { method: "POST", headers: json, body: JSON.stringify(credentials) });
+    const cookie = (login.headers.getSetCookie()[0] ?? "").split(";")[0];
+    const call = (method: string, url: string, body?: unknown) => fetch(`${running.base}${url}`, { method, headers: { ...json, Cookie: cookie }, body: body === undefined ? undefined : JSON.stringify(body) });
+    assert.equal((await call("POST", "/api/v1/studio/elevate", { password: SECRETS.ARMOR_STUDIO_PASSWORD })).status, 200);
+    for (const url of ["/api/v1/users", "/api/v1/Users", "/api/v1/USERS/", "/api/v1/users/", "/API/v1/users"]) {
+      const refused = await call("POST", url, { username: "nobody", password: "a-long-password-1", role: "viewer" });
+      assert.equal(refused.status, 403, url);
+      assert.equal(((await refused.json()) as { code: string }).code, "remote_policy", url);
+    }
+  } finally { await running.stop(); }
+});
+
 test("a sign-in from outside the house at a new place is told to the places the alarms go to, once, and it can be turned off", async () => {
   for (const [alerts, expected] of [["1", 1], ["0", 0]] as const) {
     const running = await startServer({ ARMOR_LOCAL_NETWORKS: "10.99.0.0/16", ARMOR_LOGIN_ALERTS: alerts });   // the test client (127.0.0.1) is then "outside"

@@ -75,6 +75,7 @@ import { registerNotificationRoutes } from "./routes/notifications.js";
 import { registerSystemRoutes } from "./routes/system.js";
 import { registerUserRoutes } from "./routes/users.js";
 import type { SystemState } from "./store.js";
+import { gatePath } from "./gate_path.js";
 
 export type ArmorApp = { server: Server; context: AppContext; close(): Promise<void> };
 
@@ -151,8 +152,10 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   app.use((request, response, next) => {
     if (config.remotePolicy === "full" || context.studioSessions.originOf(request) !== "remote") return next();
     const reads = request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS";
-    const own = /^\/api\/v1\/(studio\/(session|sessions|elevate|totp)|push\/(un)?register)/.test(request.path) || (request.method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/(stream|preview)-ticket$/.test(request.path));
-    const admin = /^\/api\/v1\/(admin|users|installation|system\/ingest|preferences|solar\/battery-ops|diagnostics\/tokens|nodes\/control|nodes\/[^/]+\/(panel|control|diagnostics))(\/|$)/.test(request.path);
+    // The routes answer in any capitals and with or without a final slash, so the gate reads the path the same way.
+    const gated = gatePath(request.path);
+    const own = /^\/api\/v1\/(studio\/(session|sessions|elevate|totp)|push\/(un)?register)/.test(gated) || (request.method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/(stream|preview)-ticket$/.test(gated));
+    const admin = /^\/api\/v1\/(admin|users|installation|system\/ingest|preferences|solar\/battery-ops|diagnostics\/tokens|nodes\/control|nodes\/[^/]+\/(panel|control|diagnostics))(\/|$)/.test(gated);
     if (reads && !(admin && config.remotePolicy === "view")) return next();
     if (own || (config.remotePolicy === "operate" && !admin)) return next();
     context.audit.record({ action: "remote.policy", outcome: "denied", actor: context.studioUser(request)?.username, target: `${request.method} ${request.path}`, detail: config.remotePolicy });
@@ -176,7 +179,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       context.audit.record({ action: "public_access", outcome: "denied", target: `${request.method} ${request.path}`, detail: `${decision.error} ${request.ip ?? ""}` });
       return response.status(decision.status).json({ error: decision.error, ...(decision.problems ? { problems: decision.problems } : {}) });
     }
-    if (remote && request.method === "POST" && /^\/api\/v1\/studio\/session(\/totp)?$/.test(request.path)) {
+    if (remote && request.method === "POST" && /^\/api\/v1\/studio\/session(\/totp)?$/.test(gatePath(request.path))) {
       const address = request.ip ?? "";
       const wait = publicLimiter.retryAfterS(address);
       if (wait > 0) { response.set("Retry-After", String(wait)); return response.status(429).json({ error: "too many failed sign-ins from this address", code: "public_login_locked", retry_after_s: wait }); }
