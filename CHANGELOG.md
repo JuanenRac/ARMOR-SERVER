@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The console of the maintenance agent is open for the session that unlocked it:** the unlock was kept by the name of the person, so any other session of the same account (a stolen cookie, one from outside the house) could run commands as root for the ten minutes after the person opened it at their own computer, and every use extended it. It is now kept by session; locking from another session does not close it.
 - **A trusted phone does not outlive the password, the role or the second factor of its person:** changing the password (your own or by an administrator) or the role, turning the second factor on or off, or an administrator resetting it now forgets the phones that renew a session by key alone, so each has to be registered again.
 - **The gates by path read the path as the routes do:** the remote policy, the lock after failed public sign-ins and the routes closed to a viewer compared the raw path, so another capitalisation or a final slash (`/api/v1/Users/`) went round them while the route still answered. The three read the path in lower case and without the final slash.
 

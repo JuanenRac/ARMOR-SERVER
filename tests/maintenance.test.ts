@@ -144,6 +144,25 @@ test("the console is locked until the password is given again, and every command
   } finally { await running.stop(); await agent.close(); }
 });
 
+test("the console is open for the session that typed the password and not for another session of the same person", async () => {
+  const agent = await fakeAgent();
+  const running = await startServer({ ARMOR_MAINT_SOCKET: agent.socket, ARMOR_MAINT_TOKEN: TOKEN });
+  try {
+    const first = await studioCookie(running.base), second = await studioCookie(running.base);
+    assert.notEqual(first, second);
+    assert.equal((await call(running, first, "POST", "/api/v1/admin/console/unlock", { password: SECRETS.ARMOR_STUDIO_PASSWORD })).status, 200);
+    assert.equal((await call(running, first, "POST", "/api/v1/admin/console/run", { command: "id" })).status, 202);
+    // the other session of the same person finds it locked, says so, and cannot run or follow a command
+    assert.equal((await call(running, second, "GET", "/api/v1/admin/console")).body.unlocked_until, 0);
+    assert.equal((await call(running, second, "POST", "/api/v1/admin/console/run", { command: "id" })).status, 403);
+    assert.equal((await call(running, second, "GET", "/api/v1/admin/console/jobs/c1?since=0")).status, 403);
+    assert.equal((await call(running, second, "POST", "/api/v1/admin/console/jobs/c1/cancel")).status, 403);
+    // locking from the other session does not shut the first one either
+    await call(running, second, "POST", "/api/v1/admin/console/lock");
+    assert.equal((await call(running, first, "POST", "/api/v1/admin/console/run", { command: "id" })).status, 202);
+  } finally { await running.stop(); await agent.close(); }
+});
+
 test("five wrong passwords close the console's door for a while, and a console the agent keeps off says so", async () => {
   const agent = await fakeAgent(false);
   const running = await startServer({ ARMOR_MAINT_SOCKET: agent.socket, ARMOR_MAINT_TOKEN: TOKEN });
