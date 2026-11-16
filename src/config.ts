@@ -125,7 +125,7 @@ export type ArmorConfig = {
   nodeStaleAfterS: number;
   /** Minutes the name the house is reached by from outside may point elsewhere than the public address before it is an alarm (ARMOR_NETWORK_DNS_DWELL_MIN, 1 to 1440; default 30). */
   networkDnsDwellMin: number;
-  /** How long, at most, a node's own announcement of planned maintenance holds back its offline alerts (ARMOR_NODE_MAINTENANCE_MAX_S, 60 to 3600; default 600). */
+  /** How long, at most, a node's own announcement of planned maintenance holds back its offline alerts (ARMOR_NODE_MAINTENANCE_MAX_S, 60 to 86400; default 600; the value where it starts, Studio changes it). */
   nodeMaintenanceMaxS: number;
   /** Milliseconds a two-target condition must persist before it becomes "high" (0 = immediately). */
   alertDwellMs: number;
@@ -531,7 +531,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     mqtt: mqttUrl ? { url: mqttUrl, username: env.ARMOR_MQTT_USERNAME?.trim() || undefined, password: env.ARMOR_MQTT_PASSWORD || undefined, ...(mqttCa ? { ca: mqttCa } : {}) } : null,
     nodeStaleAfterS: integer(env, "ARMOR_NODE_STALE_AFTER_S", 30, 5, 3600),
     networkDnsDwellMin: integer(env, "ARMOR_NETWORK_DNS_DWELL_MIN", 30, 1, 1440),
-    nodeMaintenanceMaxS: integer(env, "ARMOR_NODE_MAINTENANCE_MAX_S", 600, 60, 3600),
+    nodeMaintenanceMaxS: integer(env, "ARMOR_NODE_MAINTENANCE_MAX_S", 600, 60, 86400),
     alertDwellMs: integer(env, "ARMOR_ALERT_DWELL_MS", 2000, 0, 60_000),
     escalateAfterMin: integer(env, "ARMOR_ESCALATE_AFTER_MIN", 0, 0, 1440),
     alertMinTargets: integer(env, "ARMOR_ALERT_MIN_TARGETS", 1, 1, 20),

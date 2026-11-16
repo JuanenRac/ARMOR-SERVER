@@ -77,6 +77,9 @@
  *   vision.timeline_days         1 to 3650                the days an entry of the timeline is kept (30)
  *   capture.on_alarm            on | off                 when a node (or an alarm panel) raises a high alarm, the cameras that the site design says cover it take the photo and video of the capture settings (off, the default: only the vision service starts a capture)
  *   capture.on_alarm_per_min    1 to 60                  the most captures one minute of alarms may start in all (6)
+ *   nodes.maintenance_max_s      60 to 86400              the most seconds a node's own announcement or health report of planned maintenance holds back its offline alerts; a longer one is cut to this (ARMOR_NODE_MAINTENANCE_MAX_S is where it starts; 600)
+ *   nodes.maintenance_max_s      60 to 86400              the most seconds a node's own announcement or health report of planned maintenance holds back its offline alerts; a longer one is cut to this (ARMOR_NODE_MAINTENANCE_MAX_S is where it starts; 600)
+ *   nodes.maintenance_max_s      60 to 86400              the most seconds a node's own announcement or health report of planned maintenance holds back its offline alerts; a longer one is cut to this (ARMOR_NODE_MAINTENANCE_MAX_S is where it starts; 600)
  *   network.login_secure_only    on | off                 a stored device login is handed to a network node only when its request came over TLS or from this machine (off, the default: any request of the node)
  *
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
@@ -122,6 +125,8 @@ export const TRUSTED_SESSION_H = { min: 1, max: 720, default: 72 } as const;
 export const MEDIA_RETENTION_DAYS = { min: 0, max: 3650, default: 0 } as const;
 export const CAPTURE_ON_ALARM_PER_MIN = { min: 1, max: 60, default: 6 } as const;
 export const VISION_TIMELINE_DAYS = { min: 1, max: 3650, default: 30 } as const;
+/** The most seconds a node may hold back its own offline alerts by announcing maintenance: what a node reports beyond it is cut to it. */
+export const NODE_MAINTENANCE_MAX_S = { min: 60, max: 86_400, default: 600 } as const;
 export const SUMMARY_LOG_DAYS = { min: 1, max: 90, default: 14 } as const;
 export const SUMMARY_READING_EVERY_S = { min: 10, max: 3600, default: 300 } as const;
 export const SUMMARY_POWER_EVERY_S = { min: 5, max: 3600, default: 60 } as const;
@@ -205,6 +210,7 @@ export type SecuritySettingsValues = {
   "vision.service_remote": boolean;
   "vision.service_token_set": boolean;
   "summary.log_days": number;
+  "nodes.maintenance_max_s": number;
   "vision.timeline": boolean;
   "vision.timeline_days": number;
   "capture.on_alarm": boolean;
@@ -290,6 +296,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "vision.service_remote": false,
   "vision.service_token_set": false,
   "summary.log_days": SUMMARY_LOG_DAYS.default,
+  "nodes.maintenance_max_s": NODE_MAINTENANCE_MAX_S.default,
   "vision.timeline": false,
   "vision.timeline_days": VISION_TIMELINE_DAYS.default,
   "capture.on_alarm": false,
@@ -304,7 +311,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
 
 /** The settings that are whole numbers, with the range each may take. */
 const NUMBER_RANGES: Partial<Record<keyof SecuritySettingsValues, { min: number; max: number }>> = { "voice.turn_max_bytes": VOICE_TURN_BYTES, "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES, "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S, "client.trusted_session_h": TRUSTED_SESSION_H,
-  "vision.timeline_days": VISION_TIMELINE_DAYS, "capture.on_alarm_per_min": CAPTURE_ON_ALARM_PER_MIN, "summary.log_days": SUMMARY_LOG_DAYS, "summary.reading_every_s": SUMMARY_READING_EVERY_S, "summary.power_every_s": SUMMARY_POWER_EVERY_S, "summary.false_alarm_s": SUMMARY_FALSE_ALARM_S,
+  "vision.timeline_days": VISION_TIMELINE_DAYS, "capture.on_alarm_per_min": CAPTURE_ON_ALARM_PER_MIN, "summary.log_days": SUMMARY_LOG_DAYS, "nodes.maintenance_max_s": NODE_MAINTENANCE_MAX_S, "summary.reading_every_s": SUMMARY_READING_EVERY_S, "summary.power_every_s": SUMMARY_POWER_EVERY_S, "summary.false_alarm_s": SUMMARY_FALSE_ALARM_S,
   "media.retention_snapshot_days": MEDIA_RETENTION_DAYS, "media.retention_recording_days": MEDIA_RETENTION_DAYS, "reports.timeout_s": REPORT_TIMEOUT_S, "reports.queue_max": REPORT_QUEUE_MAX, "reports.requests_per_minute": REPORT_REQUESTS_PER_MINUTE };
 
 /** The options that start from the environment of the server (where they start) and are written to the file only once someone sets them in Studio, so the environment still decides the others. */
@@ -421,6 +428,7 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "presence.by_user") return false;   // the phone says one word; turning it on adds no way in
   if (key === "client.panic_gesture") return false;   // one more way to ask for help: no way in
   if (key === "voice.multipart_turn" || key === "panel.live_events" || key === "live.events" || key === "alarm_audio.spoken" || key === "alarm_audio.custom_sounds") return false;   // a way in that is turned off is not a loss of protection; turning it on is the default way
+  if (key === "nodes.maintenance_max_s") return typeof from === "number" && typeof to === "number" && to > from;   // a longer window of silence a node may announce is the loss
   if (key === "vision.timeline_days") return typeof from === "number" && typeof to === "number" && to > from;   // keeping what happened for longer is the loss
   if (key === "summary.log_days" || key === "summary.reading_every_s" || key === "summary.power_every_s" || key === "summary.false_alarm_s") return false;   // what the summary of a day is made from: tuning, not a protection
   if (key === "media.retention_snapshot_days" || key === "media.retention_recording_days") return false;   // how long evidence is kept: tuning, not a protection

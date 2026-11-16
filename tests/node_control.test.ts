@@ -132,7 +132,7 @@ const report = (id: string, family: NodeHealthMessage["family"], extra: Partial<
 });
 type Sent = { topic: string; message: Record<string, unknown> };
 
-function bench(options: { nodes?: Array<[string, NodeHealthMessage["family"]]>; publishFails?: boolean; file?: string; perMinute?: number; maintenanceMaxS?: number } = {}) {
+function bench(options: { nodes?: Array<[string, NodeHealthMessage["family"]]>; publishFails?: boolean; file?: string; perMinute?: number; maintenanceMaxS?: number | (() => number) } = {}) {
   let clock = 1_800_000_000_000;
   let stamp = 1000;
   const audits: AuditEvent[] = [];
@@ -805,6 +805,16 @@ test("the server's bound cuts what a node announces: no expected time, or an hou
   const short = bench({ maintenanceMaxS: 120 });
   short.service.handleMaintenance(announce("radar-1", { expected_s: 3600 }), "radar-1");
   assert.equal(short.service.windowOf("radar-1")!.expires_in_s, 120);
+  let live = 300;
+  const dynamic = bench({ maintenanceMaxS: () => live });   // the cap is read each time, so a change in Studio acts at once
+  dynamic.service.handleMaintenance(announce("radar-1", { expected_s: 3600 }), "radar-1");
+  assert.equal(dynamic.service.windowOf("radar-1")!.expires_in_s, 300);
+  live = 1800;
+  dynamic.service.handleMaintenance(announce("solar-1", { reason: "update", expected_s: 3600 }), "solar-1");
+  assert.equal(dynamic.service.windowOf("solar-1")!.expires_in_s, 1800, "a longer announcement is cut to the new cap");
+  const huge = bench({ maintenanceMaxS: 86_401 });   // above the range is the default
+  huge.service.handleMaintenance(announce("radar-1", { expected_s: 3600 }), "radar-1");
+  assert.equal(huge.service.windowOf("radar-1")!.expires_in_s, 600);
   const silly = bench({ maintenanceMaxS: 5 });   // a silly value is the default
   silly.service.handleMaintenance(announce("radar-1", { expected_s: 3600 }), "radar-1");
   assert.equal(silly.service.windowOf("radar-1")!.expires_in_s, 600);
