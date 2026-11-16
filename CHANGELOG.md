@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **A trusted phone does not outlive the password, the role or the second factor of its person:** changing the password (your own or by an administrator) or the role, turning the second factor on or off, or an administrator resetting it now forgets the phones that renew a session by key alone, so each has to be registered again.
 - **The gates by path read the path as the routes do:** the remote policy, the lock after failed public sign-ins and the routes closed to a viewer compared the raw path, so another capitalisation or a final slash (`/api/v1/Users/`) went round them while the route still answered. The three read the path in lower case and without the final slash.
 
 - **The signed zone messages of one panel carry a number that only goes up:** the number was the clock in milliseconds, so zones sent in the same millisecond (every refresh sends all of them in a loop) or after the clock went back shared a number and the panel, which keeps one last number for all its zones, dropped all but one. Each panel now has its own counter (the greater of the clock and the last number plus one).
