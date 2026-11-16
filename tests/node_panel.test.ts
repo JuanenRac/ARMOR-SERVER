@@ -180,11 +180,11 @@ test("from outside a new panel asks for a new proof, a viewer cannot open one an
   process.env.ARMOR_ADMIN_NODE_PORT = String(other.port);
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "armor-test-"));
   fs.writeFileSync(path.join(dataDir, "node_panels.json"), JSON.stringify({ schema: 1, panels: [{ id: "radar-salon", address: "127.0.0.1", scheme: "http", port: other.port }] }));
+  fs.writeFileSync(path.join(dataDir, "security-settings.json"), JSON.stringify({ schema: 1, settings: { "panel.proxy_http": true } }));   // from outside under operate the settings cannot be changed, so they are set beforehand
   const limited = await startServer({ ARMOR_DATA_DIR: dataDir, ARMOR_LOCAL_NETWORKS: "10.99.0.0/16", ARMOR_REMOTE_POLICY: "operate" });
   try {
     const cookie = await studioCookie(limited.base);
     assert.equal((await fetch(`${limited.base}/api/v1/studio/elevate`, { method: "POST", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ password: SECRETS.ARMOR_STUDIO_PASSWORD }) })).status, 200);
-    await allowHttpPanels(limited.base, cookie);
     assert.equal((await viaServer(limited.base, cookie, "GET", "/api/v1/nodes/radar-salon/panel/")).status, 200);
     const export_ = await viaServer(limited.base, cookie, "GET", "/api/v1/nodes/radar-salon/panel/api/v1/config/export");
     assert.deepEqual([export_.status, ((await export_.json()) as { code: string }).code], [403, "remote_policy"]);
