@@ -308,7 +308,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const securityChanged: { tell?: (changes: Record<string, unknown>) => void } = {};
   const securitySettings = new SecuritySettings(path.join(config.dataDir, "security-settings.json"), {
     environment: () => ({ "alarm.disarm_pin": config.disarmPinEnv, ...(config.visionServiceToken !== "" ? { "vision.service_token_set": true } : {}) }),
-    initial: { "nodes.ingest_strict": config.ingestStrict, "solar.battery_write": config.batteryWrite, "admin.cm5_update": config.cm5Update, "voice.turn_max_bytes": config.voiceTurnMaxBytes, "voice.reply_audio_max_bytes": config.voiceReplyAudioMaxBytes, "summary.log_days": config.dailyLogDays, "summary.reading_every_s": config.dailyLogReadingEveryS, "summary.power_every_s": config.dailyLogPowerEveryS, "summary.false_alarm_s": config.dailyFalseAlarmS, "reports.timeout_s": config.reportTimeoutS, "reports.queue_max": config.reportQueueMax, "reports.requests_per_minute": config.reportRequestsPerMinute, "vision.service_url": config.visionServiceUrl, "media.retention_snapshot_days": Math.round(config.mediaRetentionSnapshotMs / 86_400_000), "media.retention_recording_days": Math.round(config.mediaRetentionRecordingMs / 86_400_000) },
+    initial: { "nodes.maintenance_max_s": config.nodeMaintenanceMaxS, "nodes.ingest_strict": config.ingestStrict, "solar.battery_write": config.batteryWrite, "admin.cm5_update": config.cm5Update, "voice.turn_max_bytes": config.voiceTurnMaxBytes, "voice.reply_audio_max_bytes": config.voiceReplyAudioMaxBytes, "summary.log_days": config.dailyLogDays, "summary.reading_every_s": config.dailyLogReadingEveryS, "summary.power_every_s": config.dailyLogPowerEveryS, "summary.false_alarm_s": config.dailyFalseAlarmS, "reports.timeout_s": config.reportTimeoutS, "reports.queue_max": config.reportQueueMax, "reports.requests_per_minute": config.reportRequestsPerMinute, "vision.service_url": config.visionServiceUrl, "media.retention_snapshot_days": Math.round(config.mediaRetentionSnapshotMs / 86_400_000), "media.retention_recording_days": Math.round(config.mediaRetentionRecordingMs / 86_400_000) },
     onChange: changes => securityChanged.tell?.(changes),
   });
   const sharedTokenWatch = new SharedTokenWatch(node => warn(`ingest: ${node} still speaks with the shared token; give it its own token (Studio, Security) before turning nodes.ingest_strict on`));
@@ -488,7 +488,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   };
   const nodeControl = new NodeControlService({
     publish: (topic, payload) => { if (!controlLink.publish) throw new Error("the MQTT broker is not connected"); controlLink.publish(topic, payload); },
-    audit, history: recordSystem, health: node => nodeHealth.get(node), nodes: () => nodeHealth.list(), now: overrides.now, file: path.join(config.dataDir, "node_control.json"), maintenanceMaxS: config.nodeMaintenanceMaxS,
+    audit, history: recordSystem, health: node => nodeHealth.get(node), nodes: () => nodeHealth.list(), now: overrides.now, file: path.join(config.dataDir, "node_control.json"), maintenanceMaxS: () => securitySettings.get("nodes.maintenance_max_s"),
     onPackage: (node, delivered, requestedBy) => nodeDiagnostics.keep(node, delivered, requestedBy),
     onHold: (node, held) => { if (held) alarmRules.holdOffline(node); else recheckSilence(node); },
   });

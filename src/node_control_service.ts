@@ -79,8 +79,8 @@ export type NodeControlOptions = {
   /** Called when the alerts about a node's silence must stop (a restart or a maintenance began) and when they may come back. */
   onHold?: (node: string, held: boolean) => void;
   armWaitMs?: number;
-  /** The most seconds a node's own announcement of maintenance holds back its silence alerts (60 to 3600; anything else is the default, 600). */
-  maintenanceMaxS?: number;
+  /** The most seconds a node's own announcement of maintenance holds back its silence alerts (60 to 86400, a number or a function read each time; anything else is the default, 600). */
+  maintenanceMaxS?: number | (() => number);
   /** How long after a restart was acknowledged the node may take to report again. */
   backWaitMs?: number;
   keep?: number;
@@ -102,7 +102,7 @@ const WINDOW_TOTAL = 3;
 const iso = (ms: number): string => new Date(ms).toISOString();
 
 export class NodeControlService {
-  readonly #o: Required<Omit<NodeControlOptions, "file" | "onHold" | "onPackage" | "maintenanceMaxS">> & Pick<NodeControlOptions, "file" | "onHold" | "onPackage"> & { maintenanceMaxS: number };
+  readonly #o: Required<Omit<NodeControlOptions, "file" | "onHold" | "onPackage" | "maintenanceMaxS">> & Pick<NodeControlOptions, "file" | "onHold" | "onPackage"> & { maintenanceMaxS: () => number };
   readonly #records = new Map<string, ControlOperationRecord>();
   readonly #private = new Map<string, Map<string, Private>>();
   readonly #pending = new Map<string, Pending>();
@@ -116,7 +116,10 @@ export class NodeControlService {
   constructor(options: NodeControlOptions) {
     this.#o = {
       ...options, now: options.now ?? (() => Date.now()), random: options.random ?? (() => randomBytes(8).toString("hex")), armWaitMs: options.armWaitMs ?? 20_000,
-      maintenanceMaxS: Number.isInteger(options.maintenanceMaxS) && options.maintenanceMaxS! >= 60 && options.maintenanceMaxS! <= 3600 ? options.maintenanceMaxS! : 600, backWaitMs: options.backWaitMs ?? 240_000,
+      maintenanceMaxS: () => {
+        const asked = typeof options.maintenanceMaxS === "function" ? options.maintenanceMaxS() : options.maintenanceMaxS;
+        return Number.isInteger(asked) && asked! >= 60 && asked! <= 86_400 ? asked! : 600;
+      }, backWaitMs: options.backWaitMs ?? 240_000,
       keep: options.keep ?? 300, keepMs: options.keepMs ?? WEEKS_MS, perMinute: options.perMinute ?? 10,
     };
     if (options.file) {
@@ -422,7 +425,7 @@ export class NodeControlService {
         const asked = now + report.maintenance_until_s * 1000;
         const granted = memory?.maintenance_until_ms;
         if (granted !== undefined && granted > now) next.maintenance_until_ms = Math.min(asked, granted);
-        else if (memory?.blocked_ms === undefined) next.maintenance_until_ms = Math.min(asked, now + this.#o.maintenanceMaxS * 1000);
+        else if (memory?.blocked_ms === undefined) next.maintenance_until_ms = Math.min(asked, now + this.#o.maintenanceMaxS() * 1000);
         else delete next.maintenance_until_ms;
       }
       this.#memory.set(report.node_id, next);
@@ -469,7 +472,7 @@ export class NodeControlService {
     const seen = memory.seen;
     if (signal.timestamp_ms > 0 && seen && seen.stamp === signal.timestamp_ms && seen.reason === signal.reason) return;
     memory.seen = { stamp: signal.timestamp_ms, reason: signal.reason, at_ms: now };
-    const bound = this.#o.maintenanceMaxS * 1000;
+    const bound = this.#o.maintenanceMaxS() * 1000;
     if (!signal.active) {
       if (memory.node_window) memory.node_window.until_ms = now;
       this.#settle(topicNode, now, "explicit");
