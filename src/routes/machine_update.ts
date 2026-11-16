@@ -16,7 +16,7 @@ const JOB_ID = /^[A-Za-z0-9-]{1,40}$/;
 export const APPLY_MIN_INTERVAL_MS = 5 * 60_000;
 
 export function registerMachineUpdateRoutes(app: Express, context: AppContext): void {
-  const { maintenance, audit, requireAdmin, studioUser, config } = context;
+  const { maintenance, audit, requireAdmin, studioUser } = context;
   const actor = (request: Request) => studioUser(request)?.username;
   const body = (request: Request): Record<string, unknown> => (typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {});
   let lastApply = 0;
@@ -25,7 +25,7 @@ export function registerMachineUpdateRoutes(app: Express, context: AppContext): 
 
   /** Asks the agent; answers the caller itself when the switch is off, the agent is not configured or it does not answer. */
   async function ask(response: Response, method: string, path: string, payload?: unknown, headers?: Record<string, string>): Promise<AdminReply | undefined> {
-    if (!config.cm5Update) { response.status(403).json({ error: "machine_update_disabled" }); return undefined; }
+    if (!context.securitySettings.get("admin.cm5_update")) { response.status(403).json({ error: "machine_update_disabled" }); return undefined; }
     if (!maintenance) { response.status(503).json({ error: "maintenance_unavailable", reason: "not_configured" }); return undefined; }
     try { return await maintenance.request(method, path, payload, headers); }
     catch { response.status(503).json({ error: "maintenance_unavailable", reason: "not_answering" }); return undefined; }
@@ -33,7 +33,7 @@ export function registerMachineUpdateRoutes(app: Express, context: AppContext): 
 
   // Whether the switch is on here and on the agent's side, and the programs that can be updated. Reading it changes nothing.
   app.get("/api/v1/admin/machine-update", requireAdmin, async (_request, response) => {
-    if (!config.cm5Update) return response.json({ enabled: false, reason: "switched_off" });
+    if (!context.securitySettings.get("admin.cm5_update")) return response.json({ enabled: false, reason: "switched_off" });
     if (!maintenance) return response.json({ enabled: false, reason: "not_configured" });
     try {
       const reply = await maintenance.request("GET", "/v1/updater");
@@ -60,12 +60,12 @@ export function registerMachineUpdateRoutes(app: Express, context: AppContext): 
     if (typeof plan !== "string" || !PLAN.test(plan)) return response.status(422).json({ error: "bad_plan" });
     if (confirm !== project) return response.status(422).json({ error: "confirmation_mismatch" });
     if (code !== undefined && (typeof code !== "string" || !CODE.test(code))) return response.status(422).json({ error: "bad_code" });
-    if (config.cm5Update && Date.now() - lastApply < APPLY_MIN_INTERVAL_MS) {
+    if (context.securitySettings.get("admin.cm5_update") && Date.now() - lastApply < APPLY_MIN_INTERVAL_MS) {
       audit.record({ action: "machine_update.apply", outcome: "denied", actor: actor(request), target: project, detail: "too soon after the last one" });
       return response.status(429).json({ error: "too_soon" });
     }
     // Written down before it is sent: an agent that does not answer may have started it all the same.
-    if (config.cm5Update && maintenance) audit.record({ action: "machine_update.apply", outcome: "allowed", actor: actor(request), target: project, detail: "requested" });
+    if (context.securitySettings.get("admin.cm5_update") && maintenance) audit.record({ action: "machine_update.apply", outcome: "allowed", actor: actor(request), target: project, detail: "requested" });
     const reply = await ask(response, "POST", "/v1/updater/apply", { project, plan_id: plan }, typeof code === "string" ? { "X-Armor-Maint-Totp": code } : undefined);
     if (!reply) return;
     if (reply.status < 300) lastApply = Date.now();

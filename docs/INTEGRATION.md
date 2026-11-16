@@ -37,7 +37,7 @@ The server also subscribes to `armor/solar/+/+/state` and `armor/electrical/+/st
 | `armor/alarm/<node>/state` | write | only with the setting `server.alarm_state_signature` on (off by default): a copy of each state heard from a panel, with `seq` and `sig` added (HMAC-SHA256 with the key of the installation, the file `alarm-state.key` of the data directory or `ARMOR_ALARM_STATE_KEY_FILE`); the server ignores its own copy when it hears it again |
 | `armor/alarm/<node>/policy` | write | the security options that concern a panel (`config_hash`, `zone_feed`, `zone_feed_signature` and, when it is not `if_set`, `disarm_pin`), every 30 seconds and when an administrator changes one |
 | `armor/electrical/<node>/command` | write | only with `ARMOR_ELECTRICAL_SWITCHING=1` (a switch of a node) |
-| `armor/solar/<node>/maintenance/command` | write | only with `ARMOR_BATTERY_WRITE=1` (an order to write to a Pylontech battery of a gateway node) |
+| `armor/solar/<node>/maintenance/command` | write | only while the option `solar.battery_write` is on (`ARMOR_BATTERY_WRITE=1` starts it on; an order to write to a Pylontech battery of a gateway node) |
 | `armor/solar/+/maintenance/result` | read | the gateway nodes' answers to those orders |
 | the command topics of the devices registered | write | a plug, a light |
 | `homeassistant/#` | write | only with `ARMOR_HA_DISCOVERY=1` |

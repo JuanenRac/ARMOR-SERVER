@@ -13,7 +13,9 @@ import { lowers, SECURITY_DEFAULTS, SecuritySettingsInvalid, type SecuritySettin
 
 export function registerSecurityRoutes(app: Express, context: AppContext): void {
   const { securitySettings, audit, requireAdmin, requireElevated, studioUser, zoneFeedSigner } = context;
-  const view = () => ({ settings: securitySettings.effective, stored: securitySettings.stored, defaults: SECURITY_DEFAULTS, locked: securitySettings.lockedKeys });
+  const view = () => ({ settings: securitySettings.effective, stored: securitySettings.stored, defaults: SECURITY_DEFAULTS, locked: securitySettings.lockedKeys,
+    // the boards that still speak with the shared token: they have to be given their own before nodes.ingest_strict is turned on (empty: none has used it since the server started)
+    ingest_shared_token_nodes: context.sharedTokenWatch.list() });
 
   app.get("/api/v1/security/settings", requireAdmin, (_request, response) => response.json(view()));
 

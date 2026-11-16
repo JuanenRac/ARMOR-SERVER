@@ -11,6 +11,9 @@
  *   alarm.mode_panel_sync        on | off                  choosing away, home or night also arms the alarm panels with the profile that goes with it (off, the default: the modes decide only what the server defends; it needs alarm.arming_modes)
  *   voice.silence_confirmation   off | pin | double_turn | challenge   what the voice assistant asks before silencing the alarm (sent to the voice service with every turn). challenge = a number the voice service draws, shown on the screen of the panel and never said aloud: only a panel that shows it can silence by voice, every other client (Studio, the phone) fails closed
  *   alarm.config_hash            on | off                  the panel binds its saved armed state to its zones and PIN and does not restore it if they changed (panel side)
+ *   nodes.ingest_strict          on | off                  the shared ingest token is no longer taken by the routes the nodes speak to: each node has to hold its own token (derived from the shared one; an administrator reads it to provision a board). Off, the default, so the boards already in the field keep working; the settings answer lists the nodes that still spoke with the shared token (ARMOR_INGEST_STRICT=1 is where it starts)
+ *   solar.battery_write          on | off                  this server may order a gateway node to write to a Pylontech battery (clock, counters, limits, outputs, serial number, firmware); off, the default: the routes answer 403 battery_write_disabled (ARMOR_BATTERY_WRITE=1 is where it starts; the node and the broker have to allow it too)
+ *   admin.cm5_update             on | off                  Studio and the phone may ask the maintenance agent to update this machine's programs (a preview, then the project typed again and a signed release); off, the default: the routes answer 403 machine_update_disabled (ARMOR_CM5_UPDATE=1 is where it starts)
  *   commands.require_sig        on | off                 the critical commands (alarm_command, electrical_command) are published with a nonce and an HMAC-SHA256 signature of this installation, so that neither the broker nor another identity on it can forge or replay one (off, the default: unsigned, as before; the nodes verify it once their firmware holds the key)
  *   alarm.siren_fault_notice     on | off                  a warning in the alarm centre while a panel reports that the wiring of its siren is open, shorted or unreadable (on, the default; off: nothing is raised)
  *   server.zone_feed             on | off                  the server tells the panels the state of their Zigbee zones
@@ -140,6 +143,9 @@ export type SecuritySettingsValues = {
   "alarm.mode_panel_sync": boolean;
   "alarm.config_hash": boolean;
   "commands.require_sig": boolean;
+  "nodes.ingest_strict": boolean;
+  "solar.battery_write": boolean;
+  "admin.cm5_update": boolean;
   "alarm.siren_fault_notice": boolean;
   "server.zone_feed": boolean;
   "server.zone_feed_signature": boolean;
@@ -222,6 +228,9 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "alarm.mode_panel_sync": false,
   "alarm.config_hash": true,
   "commands.require_sig": false,
+  "nodes.ingest_strict": false,
+  "solar.battery_write": false,
+  "admin.cm5_update": false,
   "alarm.siren_fault_notice": true,
   "server.zone_feed": true,
   "server.zone_feed_signature": true,
@@ -297,6 +306,9 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
 const NUMBER_RANGES: Partial<Record<keyof SecuritySettingsValues, { min: number; max: number }>> = { "voice.turn_max_bytes": VOICE_TURN_BYTES, "voice.reply_audio_max_bytes": VOICE_REPLY_AUDIO_BYTES, "voice.panic_cooldown_s": VOICE_PANIC_COOLDOWN_S, "client.trusted_session_h": TRUSTED_SESSION_H,
   "vision.timeline_days": VISION_TIMELINE_DAYS, "capture.on_alarm_per_min": CAPTURE_ON_ALARM_PER_MIN, "summary.log_days": SUMMARY_LOG_DAYS, "summary.reading_every_s": SUMMARY_READING_EVERY_S, "summary.power_every_s": SUMMARY_POWER_EVERY_S, "summary.false_alarm_s": SUMMARY_FALSE_ALARM_S,
   "media.retention_snapshot_days": MEDIA_RETENTION_DAYS, "media.retention_recording_days": MEDIA_RETENTION_DAYS, "reports.timeout_s": REPORT_TIMEOUT_S, "reports.queue_max": REPORT_QUEUE_MAX, "reports.requests_per_minute": REPORT_REQUESTS_PER_MINUTE };
+
+/** The options that start from the environment of the server (where they start) and are written to the file only once someone sets them in Studio, so the environment still decides the others. */
+const ENVIRONMENT_START_KEYS: readonly string[] = ["nodes.ingest_strict", "solar.battery_write", "admin.cm5_update"];
 
 /** The features of the second phase of the vision service that read personal data: each has a switch and an acknowledgement of its privacy notice. */
 export const VISION_PERSONAL_FEATURES = ["semantic_search", "plates", "faces"] as const;
@@ -395,7 +407,7 @@ export class SecuritySettings {
   #save(values: SecuritySettingsValues): void {
     fs.mkdirSync(path.dirname(this.#file), { recursive: true });
     const temporary = `${this.#file}.tmp`;
-    const written = Object.fromEntries(Object.entries(values).filter(([key]) => !(key in NUMBER_RANGES || key === "vision.service_url") || this.#explicit.has(key)));   // a size nobody set stays out, so the environment still decides it
+    const written = Object.fromEntries(Object.entries(values).filter(([key]) => !(key in NUMBER_RANGES || key === "vision.service_url" || ENVIRONMENT_START_KEYS.includes(key)) || this.#explicit.has(key)));   // a size nobody set stays out, so the environment still decides it
     fs.writeFileSync(temporary, JSON.stringify({ schema: 1, settings: written }, null, 2), { encoding: "utf8", mode: 0o600 });
     durableRename(temporary, this.#file);
   }
@@ -431,6 +443,8 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "vision.semantic_search_ack" || key === "vision.plates_ack" || key === "vision.faces_ack") return false;   // reading a notice is not a loss of protection
   if (key === "summary.daily" || key === "vision.heatmap" || key === "metrics.prometheus" || key === "ingest.recording") return from === false && to === true;   // a report about what happens in the house is a way in for whoever may ask: turning it on is the loss
   if (key === "vision.activity_events") return from === true && to === false;   // on by default: a source of alarms that is taken away defends less
+  if (key === "solar.battery_write" || key === "admin.cm5_update") return from === false && to === true;   // a way to write to batteries or to update the machine from Studio: turning it on is the loss
+  if (key === "nodes.ingest_strict") return from === true && to === false;   // the shared token taken again: the loss
   if (key === "commands.require_sig") return from === true && to === false;   // signed commands that are given up defend less
   if (key === "alarm.arming_modes" || key === "alarm.mode_schedule" || key === "alarm.mode_panel_sync") return false;   // a way of arming that is added or taken away: the protection of what is armed does not drop by it
   if (key === "alarm.mode_schedule_lowers") return from === false && to === true;   // letting a timetable defend less is the loss
