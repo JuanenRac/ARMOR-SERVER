@@ -19,6 +19,7 @@
  *   server.zone_feed             on | off                  the server tells the panels the state of their Zigbee zones
  *   server.zone_feed_signature   on | off                  every zone message is signed, so a panel can tell it came from this server
  *   server.alarm_state_signature on | off                  the server publishes a signed copy of each alarm state it hears, so a reader on the broker (the safety zones of a HYDRA-UMC cell) can tell who sent it (off, the default)
+ *   server.alarm_state_signature_node_only  on | off      with the signed copy on, only a state that reached the server over MQTT or over HTTP with the token of its own node is signed; a state said over HTTP with the shared ingest token (anyone who holds it could say it for any node) is kept and acted on but not signed (off, the default: every state is signed)
  *   media.rtsp_proxy             on | off                  FFmpeg reads the cameras through the local tunnel (off: the camera login goes in its command line, visible to every user of the machine)
  *   voice.panic_phrase           on | off                  a user's secret panic phrase, said to the voice assistant, raises the silent duress alarm (off, the default: nobody's phrase is looked for)
  *   electrical.balance         on | off                 the server works out the balance of the house from the solar plant and the grid (self-consumption, export, unexpected export, consumption anomalies; informing only; off, the default: the balance route answers 404 and nothing is watched)
@@ -156,6 +157,7 @@ export type SecuritySettingsValues = {
   "server.zone_feed": boolean;
   "server.zone_feed_signature": boolean;
   "server.alarm_state_signature": boolean;
+  "server.alarm_state_signature_node_only": boolean;
   "media.rtsp_proxy": boolean;
   "network.login_secure_only": boolean;
   "panel.proxy_http": boolean;
@@ -243,6 +245,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "server.zone_feed": true,
   "server.zone_feed_signature": true,
   "server.alarm_state_signature": false,
+  "server.alarm_state_signature_node_only": false,
   "media.rtsp_proxy": true,
   "network.login_secure_only": false,
   "panel.proxy_http": false,

@@ -21,10 +21,11 @@ export function registerAlarmNodeRoutes(app: Express, context: AppContext): void
   const commandLimit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "too many alarm commands" } });
 
   app.post("/api/v1/alarm/state", ingestLimit, (request, response) => {
-    if (!context.ingestCaller(request, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
+    const caller = context.ingestCaller(request, (request.body as { node_id?: unknown } | undefined)?.node_id);
+    if (!caller) return response.sendStatus(401);
     try {
       const { value, ignored } = forwardCompatible(() => parseAlarmMessage(request.body));
-      alarmNodes.ingest(value);
+      alarmNodes.ingest(value, caller === "node" ? "http-node" : "http-shared");
       context.ingestLog.ok(`http:alarm/${value.node_id}`, ignored, JSON.stringify(request.body ?? null));
       return response.status(202).json({ accepted: true, ...(ignored.length ? { ignored } : {}) });
     } catch (error) {
