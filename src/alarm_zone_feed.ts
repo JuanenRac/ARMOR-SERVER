@@ -99,6 +99,9 @@ export class AlarmZoneFeed {
     try { this.#links = parseZoneLinks(JSON.parse(fs.readFileSync(file, "utf8"))); } catch { this.#links = []; }
   }
 
+  /** The last number each panel was sent. */
+  readonly #seqs = new Map<string, number>();
+
   list(): ZoneLink[] { return this.#links.map(link => ({ ...link })); }
 
   set(value: unknown): ZoneLink[] {
@@ -147,7 +150,9 @@ export class AlarmZoneFeed {
     try {
       const message = zoneMessage(device, link);
       const signer = this.options.signer?.();
-      const seq = (this.options.now ?? Date.now)();
+      // one counter for each panel that only goes up: the panel keeps a single last number for all its zones and refuses anything that is not greater, so two zones sent in the same millisecond (or a clock that went back) must not share one
+      const seq = Math.max((this.options.now ?? Date.now)(), (this.#seqs.get(link.node_id) ?? 0) + 1);
+      this.#seqs.set(link.node_id, seq);
       this.options.publish(`armor/alarm/${link.node_id}/zigbee`, JSON.stringify(signer ? { ...message, seq, sig: signer.sign(link.node_id, message, seq) } : message));
     }
     catch (error) { this.options.warn?.(`zone feed: ${error instanceof Error ? error.message : String(error)}`); }

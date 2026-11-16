@@ -444,12 +444,21 @@ test("a pause is forgotten when its time is up, maintenance holds back the silen
   assert.equal(b.service.isHeld("hmi-1"), false);
 });
 
+test("a health report cannot open a window of maintenance longer than the server's bound, nor lengthen one, nor start one from a node the server stopped believing", () => {
+  const b = bench();
+  b.hear("alarm-1", "alarm", { control_state: "running", maintenance: true, maintenance_until_s: 86_400 });
+  assert.equal(b.service.windowOf("alarm-1")?.expires_in_s, 600, "24 hours asked, ten minutes given");
+  b.tick(300_000);
+  b.hear("alarm-1", "alarm", { control_state: "running", maintenance: true, maintenance_until_s: 86_400 });
+  assert.equal(b.service.windowOf("alarm-1")?.expires_in_s, 300, "a window in force is not renewed by the next report");
+});
+
 test("the node health the consoles read carries the control state, from the node's report or from what the server remembers", () => {
   const b = bench();
   b.hear("radar-1", "radar", { control_state: "paused", control_since_ms: 1_760_000_000_000, control_by: "ana", control_until_s: 600 });
   assert.deepEqual(b.health.get("radar-1")!.control, { state: "paused", maintenance: false, since_ms: 1_760_000_000_000, by: "ana", until_s: 600, source: "node" });
   b.hear("solar-1", "solar", { control_state: "standby", control_since_ms: 0, control_by: "ana", maintenance: true, maintenance_until_s: 900 });
-  assert.deepEqual(b.health.get("solar-1")!.control, { state: "standby", maintenance: true, since_ms: 0, by: "ana", maintenance_until_s: 900, window: { source: "operator", reason: "operator", remaining_s: 900 }, source: "node" });
+  assert.deepEqual(b.health.get("solar-1")!.control, { state: "standby", maintenance: true, since_ms: 0, by: "ana", maintenance_until_s: 600, window: { source: "operator", reason: "operator", remaining_s: 600 }, source: "node" });   // asked for 900, cut to the bound of the server
   assert.equal(b.health.get("hmi-1")!.control, undefined, "nothing is known of a node that never was ordered");
   assert.equal(b.health.list().find(view => view.node_id === "radar-1")!.control?.state, "paused");
 });

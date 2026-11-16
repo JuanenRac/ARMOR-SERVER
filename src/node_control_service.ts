@@ -417,7 +417,14 @@ export class NodeControlService {
         else { if (report.control_since_ms !== undefined) next.since_ms = report.control_since_ms || next.since_ms; if (report.control_by !== undefined) next.by = report.control_by; if (report.control_until_s !== undefined) next.until_ms = now + report.control_until_s * 1000; }
       }
       if (report.maintenance === false) { delete next.maintenance_until_ms; delete next.maintenance_by; }
-      else if (report.maintenance === true && report.maintenance_until_s !== undefined) next.maintenance_until_ms = now + report.maintenance_until_s * 1000;
+      else if (report.maintenance === true && report.maintenance_until_s !== undefined) {
+        // A report may only say what the server already granted, or ask for the same short window an announcement gets: never the 24 hours the message allows, never again while one is in force, never from a node the server stopped believing.
+        const asked = now + report.maintenance_until_s * 1000;
+        const granted = memory?.maintenance_until_ms;
+        if (granted !== undefined && granted > now) next.maintenance_until_ms = Math.min(asked, granted);
+        else if (memory?.blocked_ms === undefined) next.maintenance_until_ms = Math.min(asked, now + this.#o.maintenanceMaxS * 1000);
+        else delete next.maintenance_until_ms;
+      }
       this.#memory.set(report.node_id, next);
       this.#dirty = true;
     }
