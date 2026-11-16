@@ -10,7 +10,6 @@ import { forwardCompatible, parseHealth, parseTelemetry } from "../contracts.js"
 import { CONTRACT_VERSION } from "../contract_version.js";
 import { stampOf } from "../mqtt.js";
 import { hasBearer } from "../http/auth.js";
-import { ingestCaller } from "../http/node_token.js";
 import { disarmPinMode } from "./disarm_gate.js";
 
 export function registerIngestRoutes(app: Express, context: AppContext, startedAt: number, version: string): void {
@@ -40,7 +39,7 @@ export function registerIngestRoutes(app: Express, context: AppContext, startedA
   };
 
   app.post("/api/v1/telemetry", ingestLimit, (request, response) => {
-    if (!ingestCaller(request, config.ingestToken, config.ingestStrict, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
+    if (!context.ingestCaller(request, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
     // The answer is deliberately minimal: a field node's token must not reveal the rest of the perimeter.
     try {
       // As over MQTT, a field this server does not know yet is ignored and said, not a reason to lose the message (a newer node, an older server).
@@ -52,7 +51,7 @@ export function registerIngestRoutes(app: Express, context: AppContext, startedA
   });
 
   app.post("/api/v1/health", ingestLimit, (request, response) => {
-    if (!ingestCaller(request, config.ingestToken, config.ingestStrict, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
+    if (!context.ingestCaller(request, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
     try {
       const { value, ignored } = forwardCompatible(() => parseHealth(request.body));
       const revision = store.health(stamped(value)).revision;

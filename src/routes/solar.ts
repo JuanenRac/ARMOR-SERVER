@@ -6,7 +6,6 @@ import type { Express, Response } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { hasBearer } from "../http/auth.js";
-import { ingestCaller } from "../http/node_token.js";
 import { forwardCompatible } from "../contracts.js";
 import { stampOf } from "../mqtt.js";
 import { ENERGY_ALARM_DEFAULTS, EnergySettingsInvalid } from "../energy_alarms.js";
@@ -17,12 +16,12 @@ const NODE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const DEVICE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
 export function registerSolarRoutes(app: Express, context: AppContext): void {
-  const { config, solar, solarRegistry, requireOperator, audit, studioUser } = context;
+  const { solar, solarRegistry, requireOperator, audit, studioUser } = context;
   const actor = (request: Parameters<typeof studioUser>[0]): string => studioUser(request)?.username ?? "operator";
   const ingestLimit = rateLimit({ windowMs: 60_000, limit: 6_000, standardHeaders: "draft-8", legacyHeaders: false });
 
   app.post("/api/v1/solar", ingestLimit, (request, response) => {
-    if (!ingestCaller(request, config.ingestToken, config.ingestStrict, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
+    if (!context.ingestCaller(request, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
     try {
       const { value, ignored } = forwardCompatible(() => parseSolarMessage(request.body));
       solar.ingest({ ...value, timestamp_ms: stampOf(value.timestamp_ms, Date.now()) });   // a node without a clock counts from zero: the arrival time is used, as over MQTT

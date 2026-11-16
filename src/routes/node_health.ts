@@ -9,7 +9,6 @@ import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { forwardCompatible } from "../contracts.js";
 import { stampOf } from "../mqtt.js";
-import { ingestCaller } from "../http/node_token.js";
 import { HEALTH_LEVELS, parseNodeHealth, type HealthFamily, type NodeHealthView } from "../node_health.js";
 import { withoutSensorAddresses } from "../node_diag_contract.js";
 import { contractStatus } from "../contract_status.js";
@@ -18,11 +17,11 @@ import { CONTRACT_VERSION } from "../contract_version.js";
 const NODE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 export function registerNodeHealthRoutes(app: Express, context: AppContext): void {
-  const { config, nodeHealth, requireOperator, requireAdmin, audit, studioUser } = context;
+  const { nodeHealth, requireOperator, requireAdmin, audit, studioUser } = context;
   const ingestLimit = rateLimit({ windowMs: 60_000, limit: 6_000, standardHeaders: "draft-8", legacyHeaders: false });
 
   app.post("/api/v1/node-health", ingestLimit, (request, response) => {
-    if (!ingestCaller(request, config.ingestToken, config.ingestStrict, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
+    if (!context.ingestCaller(request, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
     try {
       const { value, ignored } = forwardCompatible(() => parseNodeHealth(request.body));
       nodeHealth.ingest({ ...value, timestamp_ms: stampOf(value.timestamp_ms, Date.now()) });

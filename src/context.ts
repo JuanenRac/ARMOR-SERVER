@@ -10,6 +10,7 @@ import { unixTransport, type AdminAgent } from "./admin.js";
 import { FirmwareService } from "./firmware.js";
 import { AiGateway } from "./ai.js";
 import { SecuritySettings } from "./security_settings.js";
+import { ingestCaller as ingestCallerOf, SharedTokenWatch, type IngestCaller } from "./http/node_token.js";
 import { createAuditLog, type AuditLog } from "./audit.js";
 import { CameraVault } from "./cameras/vault.js";
 import { LiveNotices } from "./live_events.js";
@@ -252,6 +253,10 @@ export type AppContext = {
   visionCounters: VisionCounters;
   /** The optional copy of the node traffic (ingest_recorder.ts): writes only while the option ingest.recording is on. */
   ingestRecorder: IngestRecorder;
+  /** Who speaks to the node routes: the node with its own token, or (unless nodes.ingest_strict is on) a board still holding the shared one, which is noted so Studio can list it. */
+  ingestCaller: (request: Parameters<typeof ingestCallerOf>[0], nodeId: unknown) => IngestCaller;
+  /** The nodes that still spoke with the shared token. */
+  sharedTokenWatch: SharedTokenWatch;
   /** The MQTT side of devices: set once the broker client exists. */
   deviceLink: { publish?: (topic: string, payload: string) => void; resubscribe?: () => void };
   sendDeviceCommand(id: string, command: Command): ReturnType<typeof sendCommand>;
@@ -302,9 +307,15 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const securityChanged: { tell?: (changes: Record<string, unknown>) => void } = {};
   const securitySettings = new SecuritySettings(path.join(config.dataDir, "security-settings.json"), {
     environment: () => ({ "alarm.disarm_pin": config.disarmPinEnv, ...(config.visionServiceToken !== "" ? { "vision.service_token_set": true } : {}) }),
-    initial: { "voice.turn_max_bytes": config.voiceTurnMaxBytes, "voice.reply_audio_max_bytes": config.voiceReplyAudioMaxBytes, "summary.log_days": config.dailyLogDays, "summary.reading_every_s": config.dailyLogReadingEveryS, "summary.power_every_s": config.dailyLogPowerEveryS, "summary.false_alarm_s": config.dailyFalseAlarmS, "reports.timeout_s": config.reportTimeoutS, "reports.queue_max": config.reportQueueMax, "reports.requests_per_minute": config.reportRequestsPerMinute, "vision.service_url": config.visionServiceUrl, "media.retention_snapshot_days": Math.round(config.mediaRetentionSnapshotMs / 86_400_000), "media.retention_recording_days": Math.round(config.mediaRetentionRecordingMs / 86_400_000) },
+    initial: { "nodes.ingest_strict": config.ingestStrict, "solar.battery_write": config.batteryWrite, "admin.cm5_update": config.cm5Update, "voice.turn_max_bytes": config.voiceTurnMaxBytes, "voice.reply_audio_max_bytes": config.voiceReplyAudioMaxBytes, "summary.log_days": config.dailyLogDays, "summary.reading_every_s": config.dailyLogReadingEveryS, "summary.power_every_s": config.dailyLogPowerEveryS, "summary.false_alarm_s": config.dailyFalseAlarmS, "reports.timeout_s": config.reportTimeoutS, "reports.queue_max": config.reportQueueMax, "reports.requests_per_minute": config.reportRequestsPerMinute, "vision.service_url": config.visionServiceUrl, "media.retention_snapshot_days": Math.round(config.mediaRetentionSnapshotMs / 86_400_000), "media.retention_recording_days": Math.round(config.mediaRetentionRecordingMs / 86_400_000) },
     onChange: changes => securityChanged.tell?.(changes),
   });
+  const sharedTokenWatch = new SharedTokenWatch(node => warn(`ingest: ${node} still speaks with the shared token; give it its own token (Studio, Security) before turning nodes.ingest_strict on`));
+  const ingestCaller: AppContext["ingestCaller"] = (request, nodeId) => {
+    const caller = ingestCallerOf(request, config.ingestToken, securitySettings.get("nodes.ingest_strict"), nodeId);
+    sharedTokenWatch.note(nodeId, caller, (overrides.now ?? Date.now)());
+    return caller;
+  };
   const dailyLog = new DailyLog({
     file: path.join(config.dataDir, "daily-log.json"), warn, now: overrides.now,
     enabled: () => securitySettings.get("summary.daily"), days: () => securitySettings.get("summary.log_days"), readingEveryS: () => securitySettings.get("summary.reading_every_s"),
@@ -535,7 +546,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     },
   });
   const batteryWrite = new BatteryWriteService({
-    enabled: config.batteryWrite, solar, audit, now: overrides.now, file: path.join(config.dataDir, "battery_ops.json"),
+    enabled: () => securitySettings.get("solar.battery_write"), solar, audit, now: overrides.now, file: path.join(config.dataDir, "battery_ops.json"),
     publish: (topic, payload) => { if (!batteryLink.publish) throw new Error("the MQTT broker is not connected"); batteryLink.publish(topic, payload); },
   });
   const persistence = new FileStatePersistence(path.join(config.dataDir, "state.json"), { warn });
@@ -668,7 +679,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com", rollout: () => (securitySettings.get("admin.firmware_rollout") ? firmwareRollout.get() : null) }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, ignoreProposals, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, presence, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays, visionCounters,
+    live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, ingestCaller, sharedTokenWatch, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, ignoreProposals, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, presence, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays, visionCounters,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     balanceWatcher,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),

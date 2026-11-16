@@ -18,3 +18,30 @@ export function ingestCaller(request: HeaderSource, ingestToken: string, strict:
   if (!strict && hasBearer(request, ingestToken)) return "shared";
   return null;
 }
+
+/**
+ * Which nodes still speak with the shared token. Every message that is accepted on the shared token is noted by node id (the id the message claims, when it has a valid one),
+ * so Studio can list the boards that have to be given their own token before the strict mode is turned on. A node that later speaks with its own token leaves the list.
+ */
+export class SharedTokenWatch {
+  readonly #seen = new Map<string, { last: number; count: number }>();
+  readonly #onFirst: (nodeId: string) => void;
+  constructor(onFirst: (nodeId: string) => void = () => undefined, readonly max = 256) { this.#onFirst = onFirst; }
+
+  /** Notes who spoke and how: only the shared token adds to the list, a node's own token removes the node from it. */
+  note(nodeId: unknown, caller: IngestCaller, now: number): void {
+    const id = typeof nodeId === "string" && /^[a-z0-9][a-z0-9:._-]{0,63}$/.test(nodeId) ? nodeId : "";
+    if (caller === "node") { if (id) this.#seen.delete(id); return; }
+    if (caller !== "shared") return;
+    const key = id || "(no node id)";
+    const entry = this.#seen.get(key);
+    if (entry) { entry.last = now; entry.count++; return; }
+    if (this.#seen.size >= this.max) return;
+    this.#seen.set(key, { last: now, count: 1 });
+    this.#onFirst(key);
+  }
+
+  list(): { node_id: string; last_seen: string; messages: number }[] {
+    return [...this.#seen.entries()].map(([node_id, value]) => ({ node_id, last_seen: new Date(value.last).toISOString(), messages: value.count })).sort((a, b) => a.node_id.localeCompare(b.node_id));
+  }
+}

@@ -7,7 +7,6 @@ import type { Express } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { hasBearer } from "../http/auth.js";
-import { ingestCaller } from "../http/node_token.js";
 import { forwardCompatible } from "../contracts.js";
 import { stampOf } from "../mqtt.js";
 import { kindInfo } from "../devices/catalog.js";
@@ -18,12 +17,12 @@ const NODE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const CHANNEL = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
 export function registerElectricalRoutes(app: Express, context: AppContext): void {
-  const { config, electricalNodes, electricalSwitching, requireOperator, requireAdmin, studioUser } = context;
+  const { electricalNodes, electricalSwitching, requireOperator, requireAdmin, studioUser } = context;
   const ingestLimit = rateLimit({ windowMs: 60_000, limit: 6_000, standardHeaders: "draft-8", legacyHeaders: false });
   const switchLimit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "too many switch commands" } });
 
   app.post("/api/v1/electrical/readings", ingestLimit, (request, response) => {
-    if (!ingestCaller(request, config.ingestToken, config.ingestStrict, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
+    if (!context.ingestCaller(request, (request.body as { node_id?: unknown } | undefined)?.node_id)) return response.sendStatus(401);
     try {
       const { value, ignored } = forwardCompatible(() => parseElectricalMessage(request.body));
       electricalNodes.ingest({ ...value, timestamp_ms: stampOf(value.timestamp_ms, Date.now()) });

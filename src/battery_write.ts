@@ -33,8 +33,8 @@ export type BatteryOperation = {
 };
 
 export type BatteryWriteOptions = {
-  /** The operator's decision: false unless ARMOR_BATTERY_WRITE=1. */
-  enabled: boolean;
+  /** The operator's decision: the option solar.battery_write (off unless ARMOR_BATTERY_WRITE=1 started it on, or an administrator turned it on in Studio). A function is asked every time. */
+  enabled: boolean | (() => boolean);
   solar: SolarStore;
   /** Publish to the broker; throws when it is not connected. */
   publish: (topic: string, payload: string) => void;
@@ -87,9 +87,9 @@ export class BatteryWriteService {
     }
   }
 
-  get enabled(): boolean { return this.#o.enabled; }
+  get enabled(): boolean { return typeof this.#o.enabled === "function" ? this.#o.enabled() : this.#o.enabled; }
 
-  catalog(): { enabled: boolean; catalog: typeof BATTERY_CATALOG } { return { enabled: this.#o.enabled, catalog: BATTERY_CATALOG }; }
+  catalog(): { enabled: boolean; catalog: typeof BATTERY_CATALOG } { return { enabled: this.enabled, catalog: BATTERY_CATALOG }; }
 
   list(): BatteryOperation[] { return [...this.#records.values()].reverse().map(item => ({ ...item })); }
   get(id: string): BatteryOperation | undefined { const item = this.#records.get(id); return item ? { ...item } : undefined; }
@@ -364,7 +364,7 @@ export class BatteryWriteService {
   // ---- bookkeeping ---------------------------------------------------------------------------------------------------------------------------------
 
   #requireEnabled(actor: string, action: string): void {
-    if (this.#o.enabled) return;
+    if (this.enabled) return;
     this.#o.audit.record({ action, outcome: "denied", actor, detail: "battery_write_disabled" });
     throw new BatteryOpsError("battery_write_disabled", "writing to batteries is not turned on in this server", 403);
   }

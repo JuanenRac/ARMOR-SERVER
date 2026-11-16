@@ -8,7 +8,7 @@ import express, { type Express } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { hasBearer } from "../http/auth.js";
-import { ingestCaller, nodeTokenFor } from "../http/node_token.js";
+import { nodeTokenFor } from "../http/node_token.js";
 import { sealFor } from "../http/credential_seal.js";
 import { forwardCompatible } from "../contracts.js";
 import { NoteInvalid, outdatedContract, parseNetworkMessage } from "../network.js";
@@ -40,7 +40,7 @@ export function registerNetworkRoutes(app: Express, context: AppContext): void {
   const body = (request: { body?: unknown }): Record<string, unknown> => (typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {});
 
   app.post("/api/v1/network/state", ingestLimit, (request, response) => {
-    const caller = ingestCaller(request, config.ingestToken, config.ingestStrict, (request.body as { node_id?: unknown } | undefined)?.node_id);
+    const caller = context.ingestCaller(request, (request.body as { node_id?: unknown } | undefined)?.node_id);
     if (!caller) return response.sendStatus(401);
     try {
       const { value: message, ignored } = forwardCompatible(() => parseNetworkMessage(request.body));
