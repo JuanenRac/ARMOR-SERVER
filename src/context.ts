@@ -11,7 +11,7 @@ import { FirmwareService } from "./firmware.js";
 import { gatePath } from "./gate_path.js";
 import { AiGateway } from "./ai.js";
 import { SecuritySettings } from "./security_settings.js";
-import { ingestCaller as ingestCallerOf, SharedTokenWatch, type IngestCaller } from "./http/node_token.js";
+import { ingestCaller as ingestCallerOf, NodeTokens, SharedTokenWatch, type IngestCaller } from "./http/node_token.js";
 import { createAuditLog, type AuditLog } from "./audit.js";
 import { CameraVault } from "./cameras/vault.js";
 import { LiveNotices } from "./live_events.js";
@@ -256,6 +256,8 @@ export type AppContext = {
   ingestRecorder: IngestRecorder;
   /** Who speaks to the node routes: the node with its own token, or (unless nodes.ingest_strict is on) a board still holding the shared one, which is noted so Studio can list it. */
   ingestCaller: (request: Parameters<typeof ingestCallerOf>[0], nodeId: unknown) => IngestCaller;
+  /** The tokens of the nodes, made from a key of this server (http/node_token.ts). */
+  nodeTokens: NodeTokens;
   /** The nodes that still spoke with the shared token. */
   sharedTokenWatch: SharedTokenWatch;
   /** The MQTT side of devices: set once the broker client exists. */
@@ -312,8 +314,9 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     onChange: changes => securityChanged.tell?.(changes),
   });
   const sharedTokenWatch = new SharedTokenWatch(node => warn(`ingest: ${node} still speaks with the shared token; give it its own token (Studio, Security) before turning nodes.ingest_strict on`));
+  const nodeTokens = new NodeTokens(path.join(config.dataDir, "node-token.key"));
   const ingestCaller: AppContext["ingestCaller"] = (request, nodeId) => {
-    const caller = ingestCallerOf(request, config.ingestToken, securitySettings.get("nodes.ingest_strict"), nodeId);
+    const caller = ingestCallerOf(request, config.ingestToken, securitySettings.get("nodes.ingest_strict"), nodeId, nodeTokens);
     sharedTokenWatch.note(nodeId, caller, (overrides.now ?? Date.now)());
     return caller;
   };
@@ -682,7 +685,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com", rollout: () => (securitySettings.get("admin.firmware_rollout") ? firmwareRollout.get() : null) }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, ingestCaller, sharedTokenWatch, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, ignoreProposals, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, presence, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays, visionCounters,
+    live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, ingestCaller, nodeTokens, sharedTokenWatch, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, ignoreProposals, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, presence, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays, visionCounters,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     balanceWatcher,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
