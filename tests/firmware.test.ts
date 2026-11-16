@@ -4,7 +4,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import test from "node:test";
-import { FirmwareService, imageNames, NODE_KINDS, parseChecksum, RELEASE_PUBLIC_KEY_HEX, RELEASE_SOURCES } from "../src/firmware.js";
+import { FirmwareService, imageNames, NODE_KINDS, parseChecksum, projectMatchesKind, RELEASE_PUBLIC_KEY_HEX, RELEASE_SOURCES, versionOlder } from "../src/firmware.js";
 import { startServer, studioCookie, type Running } from "./helpers.js";
 
 const json = { "Content-Type": "application/json" };
@@ -258,6 +258,8 @@ test("a release is installed only when its manifest is signed with the key of th
   await assert.rejects(fetchWith(release(good, signed(pair.privateKey, "armor_alarm", "s3-eth", "1.2.2", good))), (error: unknown) => codeOf(error) === "bad_signature");   // an old signed manifest
   await assert.rejects(fetchWith(release(good, signed(pair.privateKey, "armor_alarm", "s3-wifi", "1.2.3", good))), (error: unknown) => codeOf(error) === "bad_signature");  // another board's
   await assert.rejects(fetchWith(release(good, signed(pair.privateKey, "armor_radar", "s3-eth", "1.2.3", good))), (error: unknown) => codeOf(error) === "bad_signature");   // another project's
+  const radarImage = withProject(0x66, "armor_radar");
+  await assert.rejects(fetchWith(release(radarImage, signed(pair.privateKey, "armor_radar", "s3-eth", "1.2.3", radarImage))), (error: unknown) => codeOf(error) === "wrong_image_kind");   // a validly signed image of another project in the release of this kind
   const unnamed = image(0x55);
   await assert.rejects(fetchWith(release(unnamed, signed(pair.privateKey, "armor_alarm", "s3-eth", "1.2.3", unnamed))), (error: unknown) => codeOf(error) === "bad_signature"); // an image that does not say what it is
 });
@@ -325,4 +327,42 @@ test("an uploaded image whose name says a board goes only to a node of that boar
       assert.equal(node.seen.length, 0, "nothing was sent to the node");
     });
   } finally { await node.close(); }
+});
+
+test("versions are compared number by number, and the project of an image is matched to the kind of node", () => {
+  for (const [older, newer] of [["0.5.4", "0.5.5"], ["0.8.2.3", "0.8.2.10"], ["0.9", "0.10.0"], ["1.2", "1.2.0.1"], ["v0.5.0", "0.5.1"]]) {
+    assert.equal(versionOlder(older!, newer!), true, `${older} < ${newer}`);
+    assert.equal(versionOlder(newer!, older!), false, `${newer} is not older than ${older}`);
+  }
+  assert.equal(versionOlder("0.5.0", "0.5.0"), false);
+  assert.equal(versionOlder("1.2", "1.2.0"), false, "a missing number is zero");
+  assert.equal(versionOlder("0.8.2.4-rc1", "0.8.2.4"), false, "what follows the numbers is ignored");
+  assert.equal(versionOlder("not a version", "0.1.0"), true, "nothing readable counts as the oldest, so it is never a step forward");
+  assert.equal(projectMatchesKind("armor_alarm", "alarm"), true);
+  assert.equal(projectMatchesKind("armor-alarm", "alarm"), true);
+  assert.equal(projectMatchesKind("armor_radar", "alarm"), false);
+});
+
+test("a release older than the version a node runs is refused unless the job says it may, and the option can be turned off", async () => {
+  const node = await fakeNode({ version: "0.9.0" }), bytes = image(5), github = await fakeGithub({ tag: "0.5.4", image: bytes });
+  try {
+    await withServer(node, github, async (running, cookie) => {
+      const job = { kind: "radar", source: "github", targets: [{ address: "127.0.0.1" }], panel_user: "admin", panel_password: "node-pass" };
+      const refused = await finished(running, cookie, (await call(running, cookie, "POST", "/api/v1/admin/firmware/jobs", job)).body.id);
+      assert.deepEqual([refused.state, refused.targets[0].error], ["failed", "downgrade_refused"]);
+      assert.equal(node.seen.length, 0, "nothing was sent to the node");
+      const allowed = await finished(running, cookie, (await call(running, cookie, "POST", "/api/v1/admin/firmware/jobs", { ...job, allow_downgrade: true })).body.id);
+      assert.equal(allowed.state, "done");
+      assert.equal(node.seen.length, 1);
+      assert.match(fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8"), /older versions allowed/);
+    });
+  } finally { await node.close(); }
+  const again = await fakeNode({ version: "0.9.0" }), more = await fakeGithub({ tag: "0.5.4", image: bytes });
+  try {
+    await withServer(again, more, async (running, cookie) => {
+      assert.equal((await call(running, cookie, "PUT", "/api/v1/security/settings", { "admin.firmware_refuse_downgrade": false })).status, 200);
+      const job = { kind: "radar", source: "github", targets: [{ address: "127.0.0.1" }], panel_user: "admin", panel_password: "node-pass" };
+      assert.equal((await finished(running, cookie, (await call(running, cookie, "POST", "/api/v1/admin/firmware/jobs", job)).body.id)).state, "done");
+    });
+  } finally { await again.close(); await more.close(); }
 });
