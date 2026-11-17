@@ -41,7 +41,7 @@
 | Rolle | Zentraler Sicherheitskoordinator der Familie: Knoten, Alarme, Geräte, Energie, Kameras, Netzwerk |
 | Technik | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | Tests | 1152 (`npm test`: Unit und volle HTTP-Integration) |
-| Vertrag | 247 HTTP-Pfade, 320 Operationen (OpenAPI in ARMOR-COMMON), Routentabelle in `docs/ROUTES.md` |
+| Vertrag | 248 HTTP-Pfade, 321 Operationen (OpenAPI in ARMOR-COMMON), Routentabelle in `docs/ROUTES.md` |
 | Lauscht auf | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Läuft auf | Der CM5-Prüfstand (als Dienst, siehe ARMOR-DEVOPS) oder jeder Computer mit Node.js |
 | Auf echter Hardware | Der CM5-Testaufbau im täglichen Einsatz: ein echter MQTT-Broker, echte IP-Kameras, ein echter Radarknoten auf einer ESP32-S3-Platine, Studio, die Android-App und die Sprach- und Beobachtungsdienste daran |
@@ -142,6 +142,7 @@ flowchart LR
 | Ein gestohlenes Cookie, eine Anfrage von einer anderen Seite | HttpOnly, SameSite=Strict und Secure hinter HTTPS; Sitzungen dauern 7 Tage (Studio), 8 Stunden (Bediener) und 12 Stunden mit 30 Minuten Leerlauf von außen |
 | Zeitangriffe und schwache Geheimnisse | Geheimnisse werden zeitkonstant verglichen, brauchen mindestens 24 Zeichen und müssen alle verschieden sein (Ingest, Steuerung, Bediener, Kameraschlüssel, KI, Beweisschlüssel) |
 | Entschärfen ohne Nachweis | Eine PIN mit 4 bis 10 Ziffern gemäß `alarm.disarm_pin` (never, if_set, always); 3 Fehlversuche sperren 60 s, 5 min, 15 min, dann 1 h, auf Platte über Neustarts gespeichert; eine Zwangs-PIN wird still erkannt; das Steuer-Token entschärft nur mit `ARMOR_CONTROL_DISARM=1` |
+| Entschärfen unter Zwang | Die Zwangs-PIN entschärft wie die richtige und löst einen stillen Alarm aus. Mit `alarm.duress_hide_trail` zeigen Audit-Protokoll und Verlauf eine gewöhnliche Entschärfung, wer entschärft hat, sieht ein normal entschärftes System, und die Wandpanels, die anderen Sitzungen und die Ziele der Alarme werden informiert; nur ein Administrator mit frischem Identitätsnachweis liest das gesonderte Protokoll. Ein Wandpanel zeigt den Alarm jedem, der davorsteht, daher sollten die Panels entsprechend aufgestellt werden (standardmäßig aus) |
 | Kennwörter der Kameras gelangen nach außen | AES-256-GCM in `data/cameras.json`; keine API gibt sie zurück; FFmpeg läuft über einen lokalen RTSP-Tunnel (`media.rtsp_proxy`), damit das Kennwort nie in der Kommandozeile steht; ONVIF-Weiterleitungen werden abgelehnt |
 | Live-Video ohne Anmeldung | Ein Stream-Ticket für genau eine Kamera, nur an Bediener ausgestellt |
 | Überfluten der API | allgemein 240 Anfragen pro Minute (Knoten-POSTs haben ein eigenes Budget von 6000 pro Minute); JSON-Inhalte bis 64 kB (9 MB für eine Installationsdatei) |
@@ -157,7 +158,7 @@ flowchart LR
 
 ## 🔌 Schnittstellen
 
-Die Routentabelle (`docs/ROUTES.md`, aus dem Code erzeugt) listet jede Route mit den Berechtigten; die OpenAPI-Datei von ARMOR-COMMON beschreibt 247 Pfade und 320 Operationen, und ein Test schlägt fehl, wenn eine Route fehlt. Die wichtigsten:
+Die Routentabelle (`docs/ROUTES.md`, aus dem Code erzeugt) listet jede Route mit den Berechtigten; die OpenAPI-Datei von ARMOR-COMMON beschreibt 248 Pfade und 321 Operationen, und ein Test schlägt fehl, wenn eine Route fehlt. Die wichtigsten:
 
 | Route | Authentifizierung | Was sie tut |
 |---|---|---|

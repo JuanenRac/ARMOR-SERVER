@@ -5,6 +5,7 @@
  */
 import { request as httpRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
+import { cameraTarget } from "./host_policy.js";
 import { answerChallenge } from "./digest.js";
 import { mediaError } from "./errors.js";
 import type { CameraConnection } from "./model.js";
@@ -28,7 +29,10 @@ export function previewTarget(camera: Pick<CameraConnection, "host" | "snapshotU
 function once(url: URL, authorization: string | undefined, timeoutMs: number): Promise<{ response: IncomingMessage; body: Buffer }> {
   return new Promise((resolve, reject) => {
     const send = url.protocol === "https:" ? httpsRequest : httpRequest;
-    const request = send(url, { method: "GET", headers: { Accept: "image/jpeg,image/png", ...(authorization ? { Authorization: authorization } : {}) }, timeout: timeoutMs }, response => {
+    // While cameras.allow_public_hosts is off the picture is asked only of an address of the house (a refused one is told apart by the host the policy gives back).
+    const guard = cameraTarget(url.hostname, Number(url.port) || (url.protocol === "https:" ? 443 : 80));
+    if (guard.host !== url.hostname) { reject(mediaError("the camera is unavailable")); return; }
+    const request = send(url, { ...(guard.lookup ? { lookup: guard.lookup } : {}), method: "GET", headers: { Accept: "image/jpeg,image/png", ...(authorization ? { Authorization: authorization } : {}) }, timeout: timeoutMs }, response => {
       const chunks: Buffer[] = [];
       let size = 0;
       response.on("data", (chunk: Buffer) => {

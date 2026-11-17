@@ -5,6 +5,7 @@
  *
  *   alarm.disarm_pin             never | if_set | always   the PIN typed to disarm or silence a siren (the duress PIN is never changed by this)
  *   alarm.arming_modes           on | off                  the arming modes home and night besides away (off, the default: the system only arms and disarms, as it always did)
+ *   alarm.duress_hide_trail      on | off                  a disarm with the duress PIN leaves exactly the trace of a normal disarm in the history and the audit trail, and the session that disarmed sees a normal disarmed system and no alarm; the silent alarm is shown on the wall panels and to every other session, goes to the phones of everybody else and to the places the alarms go to, and what tells it from a normal disarm is kept in a record only an administrator with a recent proof of identity reads (GET /api/v1/alarm/duress-log); off, the default: the duress disarm is recorded as it always was
  *   alarm.mode_downgrade_pin     required | not_required   going to a mode that defends LESS than the current one asks for the PIN like a disarm (required, the default)
  *   alarm.mode_schedule          on | off                  the timetable of the arming modes changes the mode by itself (off, the default; it needs alarm.arming_modes)
  *   alarm.mode_schedule_lowers   on | off                  the timetable may go to a mode that defends less (off, the default: it only keeps or raises the defence, it can never disarm)
@@ -19,6 +20,9 @@
  *   server.zone_feed             on | off                  the server tells the panels the state of their Zigbee zones
  *   server.zone_feed_signature   on | off                  every zone message is signed, so a panel can tell it came from this server
  *   server.alarm_state_signature on | off                  the server publishes a signed copy of each alarm state it hears, so a reader on the broker (the safety zones of a HYDRA-UMC cell) can tell who sent it (off, the default)
+ *   cameras.allow_public_hosts   on | off                  the server may open connections for a camera at any address (on, the default, as it always was; the audit trail notes a camera saved at an address outside the house). Off: only an address of the house (10/8, 172.16/12, 192.168/16, a unique local IPv6 address) is accepted for a camera and connected to, the host name checked on the address it resolves to; the loopback, the link-local range and public addresses are refused
+ *   admin.firmware_refuse_downgrade  on | off              a firmware job from GitHub refuses to put on a node a version older than the one it runs, unless the job says it may (allow_downgrade, written in the audit trail); on, the default
+ *   server.alarm_state_signature_node_only  on | off      with the signed copy on, only a state that reached the server over MQTT or over HTTP with the token of its own node is signed; a state said over HTTP with the shared ingest token (anyone who holds it could say it for any node) is kept and acted on but not signed (off, the default: every state is signed)
  *   media.rtsp_proxy             on | off                  FFmpeg reads the cameras through the local tunnel (off: the camera login goes in its command line, visible to every user of the machine)
  *   voice.panic_phrase           on | off                  a user's secret panic phrase, said to the voice assistant, raises the silent duress alarm (off, the default: nobody's phrase is looked for)
  *   electrical.balance         on | off                 the server works out the balance of the house from the solar plant and the grid (self-consumption, export, unexpected export, consumption anomalies; informing only; off, the default: the balance route answers 404 and nothing is watched)
@@ -80,6 +84,7 @@
  *   nodes.maintenance_max_s      60 to 86400              the most seconds a node's own announcement or health report of planned maintenance holds back its offline alerts; a longer one is cut to this (ARMOR_NODE_MAINTENANCE_MAX_S is where it starts; 600)
  *   nodes.maintenance_max_s      60 to 86400              the most seconds a node's own announcement or health report of planned maintenance holds back its offline alerts; a longer one is cut to this (ARMOR_NODE_MAINTENANCE_MAX_S is where it starts; 600)
  *   nodes.maintenance_max_s      60 to 86400              the most seconds a node's own announcement or health report of planned maintenance holds back its offline alerts; a longer one is cut to this (ARMOR_NODE_MAINTENANCE_MAX_S is where it starts; 600)
+ *   remote.gate_by_route         on | off                  from outside the house, with the remote policy operate or view, every route that asks for an administrator is closed by the route itself and not by a list of paths (on, the default: only the few routes that operate the house stay open under operate, and a secret is not read; off: only the older list of paths closes administering from outside)
  *   panel.proxy_http             on | off                  the proxy of the node panels may open a panel registered over plain http (the HTML and the scripts of the node, and anything on the way, would run in the page of the server with the session of the administrator who opens it); off, the default: only an https panel with the fingerprint of its certificate trusted is opened, and a panel over plain http answers 403 panel_http_disabled
  *   network.login_secure_only    on | off                 a stored device login is handed to a network node only when its request came over TLS or from this machine (off, the default: any request of the node)
  *
@@ -143,6 +148,7 @@ export type SecuritySettingsValues = {
   "alarm.disarm_pin": DisarmPinMode;
   "voice.silence_confirmation": SilenceConfirmation;
   "alarm.arming_modes": boolean;
+  "alarm.duress_hide_trail": boolean;
   "alarm.mode_downgrade_pin": ModeDowngradePin;
   "alarm.mode_schedule": boolean;
   "alarm.mode_schedule_lowers": boolean;
@@ -156,8 +162,11 @@ export type SecuritySettingsValues = {
   "server.zone_feed": boolean;
   "server.zone_feed_signature": boolean;
   "server.alarm_state_signature": boolean;
+  "server.alarm_state_signature_node_only": boolean;
   "media.rtsp_proxy": boolean;
+  "cameras.allow_public_hosts": boolean;
   "network.login_secure_only": boolean;
+  "remote.gate_by_route": boolean;
   "panel.proxy_http": boolean;
   "network.lan_ca": boolean;
   "session.rotate_id": boolean;
@@ -198,6 +207,7 @@ export type SecuritySettingsValues = {
   "client.trusted_devices": boolean;
   "admin.backup": boolean;
   "admin.firmware_rollout": boolean;
+  "admin.firmware_refuse_downgrade": boolean;
   "client.trusted_session_h": number;
   "nodes.nvs_encryption": NvsEncryption;
   "electrical.load_shedding": boolean;
@@ -230,6 +240,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "alarm.disarm_pin": "if_set",
   "voice.silence_confirmation": "off",
   "alarm.arming_modes": false,
+  "alarm.duress_hide_trail": false,
   "alarm.mode_downgrade_pin": "required",
   "alarm.mode_schedule": false,
   "alarm.mode_schedule_lowers": false,
@@ -243,8 +254,11 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "server.zone_feed": true,
   "server.zone_feed_signature": true,
   "server.alarm_state_signature": false,
+  "server.alarm_state_signature_node_only": false,
   "media.rtsp_proxy": true,
+  "cameras.allow_public_hosts": true,
   "network.login_secure_only": false,
+  "remote.gate_by_route": true,
   "panel.proxy_http": false,
   "network.lan_ca": false,
   "session.rotate_id": false,
@@ -285,6 +299,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "client.trusted_devices": false,
   "admin.backup": false,
   "admin.firmware_rollout": false,
+  "admin.firmware_refuse_downgrade": true,
   "client.trusted_session_h": TRUSTED_SESSION_H.default,
   "nodes.nvs_encryption": "off",
   "electrical.load_shedding": false,
@@ -444,7 +459,9 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "admin.backup") return from === false && to === true;   // a copy of everything the server keeps, written where it is asked: turning it on is the loss
   if (key === "admin.field_http") return from === false && to === true;   // letting Studio open the server's port to the field network is the loss
   if (key === "admin.acl_relays") return from === false && to === true;   // letting Studio open the broker for the batteries or the alarm copy is the loss
+  if (key === "alarm.duress_hide_trail") return from === true && to === false;   // the person who is forced is no longer protected from what the screen would show: turning it off is the loss
   if (key === "session.rotate_id") return from === true && to === false;   // a session id that no longer changes is a weaker one: turning it off is the loss
+  if (key === "cameras.allow_public_hosts") return from === false && to === true;   // letting the server connect to any address for a camera is the loss
   if (key === "electrical.balance") return false;   // it only reads and informs
   if (key === "vision.service_remote") return from === false && to === true;   // a service on another machine: the positions of the house travel over a network
   if (key === "vision.service_url") { const host = parseVisionServiceUrl(to)?.host; return host !== undefined && !isLoopbackHost(host) && to !== from; }   // pointing at another machine is the loss

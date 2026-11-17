@@ -9,6 +9,7 @@
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import { randomBytes } from "node:crypto";
+import { cameraTarget } from "./host_policy.js";
 import { createConnection, createServer, type AddressInfo, type Server, type Socket } from "node:net";
 import { answerChallenge, basicAuthorization, digestAuthorization, parseDigestChallenge, type DigestChallenge } from "./digest.js";
 import { rtspUrl, type CameraConnection } from "./model.js";
@@ -62,7 +63,7 @@ export type TunnelTarget = { host: string; port: number; username: string; passw
 
 /** One FFmpeg connection: requests go to the camera with the login added, responses and media come back untouched (except a 401 that the tunnel answers itself). */
 function serveSession(client: Socket, target: TunnelTarget, proxyBase: string, realBase: string, onFirstRequest: (ok: boolean) => void): void {
-  const upstream = createConnection({ host: target.host, port: target.port });
+  const upstream = createConnection(cameraTarget(target.host, target.port));
   const fromClient = new RtspFramer(), fromCamera = new RtspFramer();
   const pending: PendingRequest[] = [];
   let auth: AuthState = { kind: "none" };

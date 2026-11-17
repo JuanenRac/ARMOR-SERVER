@@ -145,7 +145,7 @@ export function registerSystemRoutes(app: Express, context: AppContext, version:
 
   // A small summary for the screens that cannot take the whole state (the touch panel, a watch): the mode, how many nodes are there and the alarms that need a person, newest first,
   // the ones nobody has acknowledged first. Always a few hundred bytes, whatever the installation holds.
-  app.get("/api/v1/panel/summary", requireOperator, (_request, response) => response.json(buildPanelSummary(context)));
+  app.get("/api/v1/panel/summary", requireOperator, (request, response) => response.json(buildPanelSummary(context, Date.now, context.studioSessions.hiddenAlarms(request))));
 
   // Where the server listens and where Studio is served (an administrator). The change is kept in a file and takes effect when the server is started again.
   const connectionState = () => {

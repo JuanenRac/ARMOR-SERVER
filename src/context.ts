@@ -9,8 +9,10 @@ import type { RequestHandler } from "express";
 import { unixTransport, type AdminAgent } from "./admin.js";
 import { FirmwareService } from "./firmware.js";
 import { gatePath } from "./gate_path.js";
+import { remoteMayUseAdminRoute } from "./remote_admin_gate.js";
 import { AiGateway } from "./ai.js";
 import { SecuritySettings } from "./security_settings.js";
+import { setCameraHostPolicy } from "./cameras/host_policy.js";
 import { ingestCaller as ingestCallerOf, NodeTokens, SharedTokenWatch, type IngestCaller } from "./http/node_token.js";
 import { createAuditLog, type AuditLog } from "./audit.js";
 import { CameraVault } from "./cameras/vault.js";
@@ -36,7 +38,8 @@ import { RolloutStore } from "./firmware_rollout.js";
 import { PtzController } from "./cameras/ptz.js";
 import { CommandSigner } from "./command_signature.js";
 import { EventLog, type ArmorEventBody } from "./events.js";
-import { AlarmCentre, AlarmRules } from "./alarms.js";
+import { AlarmCentre, AlarmRules, type AlarmQuery } from "./alarms.js";
+import { DuressLog, type DuressVia } from "./duress_log.js";
 import { AutomationEngine, type Action } from "./automations.js";
 import { DeviceRegistry, type DeviceChange } from "./devices/registry.js";
 import { sendCommand, type Command } from "./devices/commands.js";
@@ -58,7 +61,7 @@ import { SolarStore } from "./solar.js";
 import { ElectricalStore } from "./electrical.js";
 import { SwitchingService } from "./electrical_switching.js";
 import { BatteryWriteService } from "./battery_write.js";
-import { AlarmStore, type AlarmMessage } from "./alarm.js";
+import { AlarmStore, type AlarmMessage, type AlarmOrigin } from "./alarm.js";
 import { ArmProfileStore } from "./arm_profiles.js";
 import { ArmingModes } from "./arming_modes.js";
 import { ModePanelSync } from "./mode_panel_sync.js";
@@ -127,6 +130,15 @@ export type AppContext = {
   presence: PresenceStore;
   devices: DeviceRegistry;
   alarms: AlarmCentre;
+  /** The record of the duress alarms, apart from every trail (see duress_log.ts). */
+  duressLog: DuressLog;
+  /**
+   * Raises the silent duress alarm for the request's signed-in person and records it in the duress log. With the option alarm.duress_hide_trail on the alarm is also shown to the wall panels and to
+   * every session but this one (which is kept from seeing it) and goes to the phones of everybody else; off, it is the silent alarm it always was.
+   */
+  raiseDuress(request: HeaderSource, actor: string, via: DuressVia): void;
+  /** What the sessions of this request may see of the alarms: an administrator takes in the silent ones, everybody the ones shown to all, and nobody the ones kept from this session. */
+  alarmQuery(request: HeaderSource): AlarmQuery;
   alarmRules: AlarmRules;
   /** The levels at which batteries and inverters raise alarms (editable from Studio). */
   energyAlarms: EnergyAlarmStore;
@@ -313,6 +325,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     initial: { "nodes.maintenance_max_s": config.nodeMaintenanceMaxS, "nodes.ingest_strict": config.ingestStrict, "solar.battery_write": config.batteryWrite, "admin.cm5_update": config.cm5Update, "voice.turn_max_bytes": config.voiceTurnMaxBytes, "voice.reply_audio_max_bytes": config.voiceReplyAudioMaxBytes, "summary.log_days": config.dailyLogDays, "summary.reading_every_s": config.dailyLogReadingEveryS, "summary.power_every_s": config.dailyLogPowerEveryS, "summary.false_alarm_s": config.dailyFalseAlarmS, "reports.timeout_s": config.reportTimeoutS, "reports.queue_max": config.reportQueueMax, "reports.requests_per_minute": config.reportRequestsPerMinute, "vision.service_url": config.visionServiceUrl, "media.retention_snapshot_days": Math.round(config.mediaRetentionSnapshotMs / 86_400_000), "media.retention_recording_days": Math.round(config.mediaRetentionRecordingMs / 86_400_000) },
     onChange: changes => securityChanged.tell?.(changes),
   });
+  setCameraHostPolicy(() => securitySettings.get("cameras.allow_public_hosts"));
   const sharedTokenWatch = new SharedTokenWatch(node => warn(`ingest: ${node} still speaks with the shared token; give it its own token (Studio, Security) before turning nodes.ingest_strict on`));
   const nodeTokens = new NodeTokens(path.join(config.dataDir, "node-token.key"));
   const ingestCaller: AppContext["ingestCaller"] = (request, nodeId) => {
@@ -357,15 +370,22 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const loginCountries = new LoginCountries(path.join(config.dataDir, "login-countries.json"));
   if (config.fcmServiceAccount) channels.push(fcmChannel({ account: parseServiceAccount(fs.readFileSync(config.fcmServiceAccount, "utf8")), devices: fcmDevices, dataOnly: config.fcmDataOnly }));
   if (config.homeAssistant) channels.push(homeAssistantChannel({ url: config.homeAssistant.url, webhookId: config.homeAssistant.webhookId }));
-  const notifier = new AlertNotifier({ webhookUrl: config.alertWebhookUrl ?? undefined, webhookSecret: config.alertWebhookSecret || undefined, audit, channels, language: config.alertLanguage });
+  const notifier = new AlertNotifier({ webhookUrl: config.alertWebhookUrl ?? undefined, webhookSecret: config.alertWebhookSecret || undefined, audit, channels, language: config.alertLanguage, silentPush: () => securitySettings.get("alarm.duress_hide_trail") === true });
   const deviceLink: AppContext["deviceLink"] = {};
   const controlHolder: { service?: NodeControlService } = {};
   // Everything that happens goes through one place: written to the history, announced, checked for alarms, offered to the automations.
   const arming: { modes?: ArmingModes } = {};
   const live = new LiveNotices({ enabled: () => securitySettings.get("live.events") });
+  /** The people whose phones must not be told of the duress alarm being raised right now (it is raised in one synchronous call, so this is only ever set during it). */
+  let duressSkip: ReadonlySet<string> | undefined;
   const record = (body: ArmorEventBody): void => {
     // A silent alarm (a duress disarm) is told to the places nobody at the panel can see and is NOT written in the history that every console reads.
-    if (body.type === "alarm" && body.silent) { notifier.notify({ ...body, id: 0, at: new Date().toISOString() }, store.snapshot().mode); return; }
+    // With alarm.duress_hide_trail on it also reaches the phones of everybody but the person who disarmed, and the other consoles are told that an alarm changed (what they may then read is decided per session).
+    if (body.type === "alarm" && body.silent) {
+      notifier.notify({ ...body, id: 0, at: new Date().toISOString() }, store.snapshot().mode, duressSkip ? { skipUsers: duressSkip } : {});
+      if (securitySettings.get("alarm.duress_hide_trail") === true) live.notify("alarm", body.alarm_id);
+      return;
+    }
     const event = events.append(body);
     if (event.type === "alarm") live.notify("alarm", event.alarm_id, event.id);
     else if (event.type === "device") live.notify("device", event.device_id, event.id);
@@ -449,14 +469,16 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const alarmStateSigner = new AlarmStateSigner(config.alarmStateKeyFile, overrides.now);
   const alarmLink: AppContext["alarmLink"] = {};
   // While server.alarm_state_signature is on, a state heard from a panel is published again, signed, on the same topic (a copy that is already signed is never copied again). A broker that is not connected only costs the copy.
-  const relaySignedAlarmState = (message: AlarmMessage): void => {
+  // With server.alarm_state_signature_node_only on, only a state that reached the server over MQTT or with the token of its own node is signed: a state said over HTTP with the shared ingest token could come from anyone who holds it.
+  const relaySignedAlarmState = (message: AlarmMessage, origin: AlarmOrigin): void => {
     if (message.sig !== undefined || !securitySettings.get("server.alarm_state_signature")) return;
+    if (origin === "http-shared" && securitySettings.get("server.alarm_state_signature_node_only")) return;
     try {
       if (!alarmLink.publish) throw new Error("the MQTT broker is not connected");
       alarmLink.publish(`armor/alarm/${message.node_id}/state`, JSON.stringify(alarmStateSigner.sign(message)));
     } catch (error) { warn(`alarm state signature: ${error instanceof Error ? error.message : String(error)}`); }
   };
-  const alarmNodes = new AlarmStore({ now: overrides.now, onMessage: (message, previous) => { knownNodes.seen("alarm", message.node_id, message.phase); alarmRules.handleAlarmNode(message, previous); relaySignedAlarmState(message); }, onStale: (node, stale, phase) => { alarmRules.handleAlarmNodeStale(node, stale, phase); if (stale) nodeLife.gone(node); else nodeLife.report(node); } });
+  const alarmNodes = new AlarmStore({ now: overrides.now, onMessage: (message, previous, origin) => { knownNodes.seen("alarm", message.node_id, message.phase); alarmRules.handleAlarmNode(message, previous); relaySignedAlarmState(message, origin); }, onStale: (node, stale, phase) => { alarmRules.handleAlarmNodeStale(node, stale, phase); if (stale) nodeLife.gone(node); else nodeLife.report(node); } });
   const armProfiles = new ArmProfileStore(path.join(config.dataDir, "arm-profiles.json"), overrides.now ? () => new Date(overrides.now!()) : undefined, warn);
   alarmRules.batteryProfileOf = id => { const registration = solarRegistry.list().find(item => `${item.node_id}/${item.device}` === id); return registration ? batteryProfile(registration.model) : undefined; };
   alarmRules.sirenNotice = () => securitySettings.get("alarm.siren_fault_notice");
@@ -625,6 +647,16 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const preferences = new PreferencesStore(path.join(config.dataDir, "preferences.json"));
   const presence = new PresenceStore(path.join(config.dataDir, "presence.json"));
   const studioUser = (request: HeaderSource): PublicUser | undefined => { const id = studioSessions.userId(request); return id ? users.get(id) : undefined; };
+  const duressLog = new DuressLog(path.join(config.dataDir, "duress-log.json"), overrides.now ? () => new Date(overrides.now!()) : undefined, warn);
+  const raiseDuress = (request: HeaderSource, actor: string, via: DuressVia): void => {
+    const hide = securitySettings.get("alarm.duress_hide_trail") === true, who = studioUser(request);
+    duressSkip = hide ? new Set([who?.username ?? actor]) : undefined;
+    let alarm: ReturnType<typeof alarms.raiseDuress>;
+    try { alarm = alarms.raiseDuress(actor, { shown: hide }); } finally { duressSkip = undefined; }
+    duressLog.add(actor, via, alarm?.id);
+    if (hide && alarm) studioSessions.hideAlarm(request, alarm.id);
+  };
+  const alarmQuery = (request: HeaderSource): AlarmQuery => ({ silent: studioUser(request)?.role === "admin", shown: true, hidden: studioSessions.hiddenAlarms(request) });
   // A wall panel's account is of the `panel` role: it is not an operator. It may only do what a wall panel does: read the summary, change the mode and acknowledge the alarms.
   const panelRoutes = new Set(["GET /api/v1/panel/summary", "POST /api/v1/mode", "POST /api/v1/alarms/acknowledge", "GET /api/v1/alarm-audio/spoken"]);
   // and the sound uploaded for an origin (one path per origin, so the list is closed)
@@ -659,7 +691,16 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(401).json({ error: "operator authorization is required" });
   };
   const requireAdmin: RequestHandler = (request, response, next) => {
-    if (studioUser(request)?.role === "admin") { try { connections.seen(sightingOf(request, studioUser(request)?.username)); } catch { /* see above */ } return next(); }
+    if (studioUser(request)?.role === "admin") {
+      try { connections.seen(sightingOf(request, studioUser(request)?.username)); } catch { /* see above */ }
+      // From outside the house, with the remote policy operate or view, an administrator route is closed by the route itself (remote.gate_by_route), so a route added later is closed too.
+      const pattern = typeof request.route?.path === "string" ? request.route.path : "";
+      if (config.remotePolicy !== "full" && securitySettings.get("remote.gate_by_route") && studioSessions.originOf(request) === "remote" && !remoteMayUseAdminRoute(config.remotePolicy, request.method, pattern)) {
+        audit.record({ action: "remote.policy", outcome: "denied", actor: studioUser(request)?.username, target: `${request.method} ${request.path}`, detail: config.remotePolicy });
+        return response.status(403).json({ error: "this is only possible from the house or over the VPN", code: "remote_policy", needs: "vpn" });
+      }
+      return next();
+    }
     audit.record({ action: "admin.access", outcome: "denied", actor: studioUser(request)?.username, target: `${request.method} ${request.path}` });
     return response.status(studioUser(request) ? 403 : 401).json({ error: "an administrator is required" });
   };
@@ -680,10 +721,10 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   };
   return {
     ai: overrides.ai ?? new AiGateway({ ffmpegPath: config.ffmpegPath ?? "", proxy: rtspProxy }), requireAi,
-    firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com", rollout: () => (securitySettings.get("admin.firmware_rollout") ? firmwareRollout.get() : null) }),
+    firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com", rollout: () => (securitySettings.get("admin.firmware_rollout") ? firmwareRollout.get() : null), refuseDowngrade: () => securitySettings.get("admin.firmware_refuse_downgrade") }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, ingestCaller, nodeTokens, sharedTokenWatch, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, ignoreProposals, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, presence, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays, visionCounters,
+    duressLog, raiseDuress, alarmQuery, live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, ingestCaller, nodeTokens, sharedTokenWatch, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, ignoreProposals, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, presence, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays, visionCounters,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     balanceWatcher,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
