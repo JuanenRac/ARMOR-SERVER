@@ -103,11 +103,18 @@ export function registerAiRoutes(app: Express, context: AppContext): void {
    * of kind `alert` raises an alarm, only while the system is armed and only when the event does not say `notify: false` (the profile of the arming mode watches the zone without telling the people the
    * alarms go to); a zone the server does not know (one of the configuration of the service) and a `detection` zone are only recorded.
    */
+  const seenActivityEvents = new Map<string, true>();   // the last identifiers taken, oldest first: an event sent again (a retry after a lost answer) is recorded once
   app.post("/api/v1/ai/activity-events", requireAi, (request, response) => {
     if (!context.securitySettings.get("vision.activity_events")) { audit.record({ action: "ai.activity_event", outcome: "denied", detail: "feature_off" }); return response.json({ raised: false, reason: "feature_off" }); }
     const event = parseActivityEvent(request.body);
     if (!event) return response.status(422).json({ error: "invalid_activity_event" });
     if (!vault.get(event.camera_id)) return response.status(404).json({ error: "unknown_camera" });
+    if (event.event_id !== undefined) {
+      const key = `${event.camera_id}:${event.event_id}`;
+      if (seenActivityEvents.has(key)) return response.json({ raised: false, reason: "duplicate" });
+      seenActivityEvents.set(key, true);
+      if (seenActivityEvents.size > 2048) seenActivityEvents.delete(seenActivityEvents.keys().next().value as string);
+    }
     const where = event.zone_id ? `zone ${event.zone_id}` : `line ${event.line_id}`;
     const record = (outcome: string): void => { context.visionCounters.record("activity", outcome === "alarm raised" ? "raised" : outcome === "recorded" ? "recorded" : "ignored"); note(outcome); };
     const note = (outcome: string): void => audit.record({ action: "ai.activity_event", outcome: "allowed", target: event.camera_id, detail: `${event.type} ${event.label} in ${where}, ${outcome}` });
