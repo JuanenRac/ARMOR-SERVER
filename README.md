@@ -229,6 +229,10 @@ python -I tools/armor_ci_validate.py
 
 `npm test` runs every file of `tests/` (99 files): unit tests of each module and a full HTTP integration suite against an isolated server (`tests/vertical-slice.test.ts`). `tests/conformance.test.ts` runs the shared vectors of ARMOR-COMMON and checks that **the routes the server registers are exactly the operations the OpenAPI file describes**, by method and path, and that every answer says which body it has; it is skipped when ARMOR-COMMON is not next to this repository. The TLS tests need `openssl` installed. GitHub Actions runs the A.R.M.O.R. baseline on every push and pull request: the validation of the manifest, version, changelog and README parity, then the project's own build and tests.
 
+### Operation and tools
+
+* **Restoring a backup:** `npx tsx tools/armorbk_restore.ts <backup.armorbk> --to <folder> [--passphrase-file <file>] [--apply]` works with the server stopped. Without `--apply` it only proves the backup (the authentication tag and the SHA-256 of every file) and prints a checklist; with `--apply` it first copies what is in the folder to `<folder>.before-restore-<time>` and then writes the files, refusing any path that leaves the folder or goes through a link. The passphrase comes from `ARMOR_BACKUP_PASSPHRASE` or from the file, never from the command line.
+
 ## 🏗️ Build & Release
 
 `npm run build` bundles the server into `dist/server.mjs` (the `Dockerfile` builds the container image from it). The version lives in `package.json`, in `armor.project.json` and in the README badge (read from the manifest); each version has its entry in [CHANGELOG.md](CHANGELOG.md). Releases are published on GitHub.

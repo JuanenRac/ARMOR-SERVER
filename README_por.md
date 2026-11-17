@@ -229,6 +229,10 @@ python -I tools/armor_ci_validate.py
 
 `npm test` executa cada ficheiro de `tests/` (99 ficheiros): testes unitários de cada módulo e uma bateria de integração HTTP completa contra um servidor isolado (`tests/vertical-slice.test.ts`). `tests/conformance.test.ts` executa os vetores partilhados do ARMOR-COMMON e verifica que **as rotas que o servidor regista são exatamente as operações que o ficheiro OpenAPI descreve**, por método e caminho, e que cada resposta diz que corpo tem; é saltado se o ARMOR-COMMON não estiver ao lado deste repositório. Os testes de TLS precisam de `openssl` instalado. O GitHub Actions executa a base do A.R.M.O.R. em cada push e pull request: a validação do manifesto, da versão, do registo de alterações e da paridade dos README, e depois a compilação e os testes do próprio projeto.
 
+### Operação e ferramentas
+
+* **Restaurar uma cópia:** `npx tsx tools/armorbk_restore.ts <copia.armorbk> --to <pasta> [--passphrase-file <ficheiro>] [--apply]` funciona com o servidor parado. Sem `--apply` só verifica a cópia (a etiqueta de autenticação e o SHA-256 de cada ficheiro) e mostra uma lista de verificação; com `--apply` copia primeiro o que está na pasta para `<pasta>.before-restore-<hora>` e depois escreve os ficheiros, recusando qualquer caminho que saia da pasta ou passe por uma ligação. A frase-passe vem de `ARMOR_BACKUP_PASSPHRASE` ou do ficheiro, nunca da linha de comandos.
+
 ## 🏗️ Compilação e publicação
 
 `npm run build` empacota o servidor em `dist/server.mjs` (o `Dockerfile` constrói a imagem de contentor a partir dele). A versão está em `package.json`, em `armor.project.json` e no emblema do README (lido do manifesto); cada versão tem a sua entrada em [CHANGELOG.md](CHANGELOG.md). As versões são publicadas no GitHub.
