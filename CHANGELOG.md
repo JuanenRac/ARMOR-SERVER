@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- A backup can be restored on request without the server running: `tools/armorbk_restore.ts` proves the backup (authentication tag and the hash of every file), shows a checklist, copies what is in the target aside and writes the files only with `--apply`. The backup reader is now a function that needs no running server.
+
 - A test holds the subject the server gives the voice service (the panel behind the operator token, or the operator) to the shared vector of the whole way of a spoken silence.
 
 - The remote access policy (ARMOR_REMOTE_POLICY) is now decided by the route guards (`requireOperator`, `requireAdmin`) from one pure function, and the public sign-in limit lives in the sign-in routes; a small backstop covers the few routes without such a guard. A test walks every registered route and fails when one is left uncovered, so a route added later cannot slip through.
