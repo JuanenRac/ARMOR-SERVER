@@ -9,6 +9,7 @@ import type { RequestHandler } from "express";
 import { unixTransport, type AdminAgent } from "./admin.js";
 import { FirmwareService } from "./firmware.js";
 import { gatePath } from "./gate_path.js";
+import { remoteMayUseAdminRoute } from "./remote_admin_gate.js";
 import { AiGateway } from "./ai.js";
 import { SecuritySettings } from "./security_settings.js";
 import { ingestCaller as ingestCallerOf, NodeTokens, SharedTokenWatch, type IngestCaller } from "./http/node_token.js";
@@ -688,7 +689,16 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(401).json({ error: "operator authorization is required" });
   };
   const requireAdmin: RequestHandler = (request, response, next) => {
-    if (studioUser(request)?.role === "admin") { try { connections.seen(sightingOf(request, studioUser(request)?.username)); } catch { /* see above */ } return next(); }
+    if (studioUser(request)?.role === "admin") {
+      try { connections.seen(sightingOf(request, studioUser(request)?.username)); } catch { /* see above */ }
+      // From outside the house, with the remote policy operate or view, an administrator route is closed by the route itself (remote.gate_by_route), so a route added later is closed too.
+      const pattern = typeof request.route?.path === "string" ? request.route.path : "";
+      if (config.remotePolicy !== "full" && securitySettings.get("remote.gate_by_route") && studioSessions.originOf(request) === "remote" && !remoteMayUseAdminRoute(config.remotePolicy, request.method, pattern)) {
+        audit.record({ action: "remote.policy", outcome: "denied", actor: studioUser(request)?.username, target: `${request.method} ${request.path}`, detail: config.remotePolicy });
+        return response.status(403).json({ error: "this is only possible from the house or over the VPN", code: "remote_policy", needs: "vpn" });
+      }
+      return next();
+    }
     audit.record({ action: "admin.access", outcome: "denied", actor: studioUser(request)?.username, target: `${request.method} ${request.path}` });
     return response.status(studioUser(request) ? 403 : 401).json({ error: "an administrator is required" });
   };
