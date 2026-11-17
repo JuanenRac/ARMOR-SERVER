@@ -464,6 +464,9 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const alarmDesign = new SiteStore(path.join(config.dataDir, "alarm_design.json"), () => new Date(), "alarm design");
   const switchLink: AppContext["switchLink"] = {};
   const commandSigner = new CommandSigner(path.join(config.dataDir, "command-signature.key"));
+  // The orders to the nodes themselves, to the batteries and the policy of the panels: signed with the key of the node while commands.sign_node_orders is on (a signature that cannot be made stops the order).
+  const signNodeOrder = (command: Record<string, unknown>): string => (securitySettings.get("commands.sign_node_orders") ? commandSigner.sign(command) : JSON.stringify(command));
+  const signPolicy = (node: string, message: Record<string, unknown>): string => (securitySettings.get("commands.sign_node_orders") ? commandSigner.signFor(node, message) : JSON.stringify(message));
   const signCommand = (command: Record<string, unknown>): string => (securitySettings.get("commands.require_sig") ? commandSigner.sign(command) : JSON.stringify(command));
   const electricalSwitching = new SwitchingService({
     enabled: config.electricalSwitching, nodes: electricalNodes, audit, now: overrides.now, sign: signCommand,
@@ -515,6 +518,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     else if (store.snapshot().nodes[node] || store.wallPanels().some(panel => panel.id === node)) alarmRules.handleEvent({ type: "node", node_id: node, from: "online", to: "offline" });
   };
   const nodeControl = new NodeControlService({
+    sign: signNodeOrder,
     publish: (topic, payload) => { if (!controlLink.publish) throw new Error("the MQTT broker is not connected"); controlLink.publish(topic, payload); },
     audit, history: recordSystem, health: node => nodeHealth.get(node), nodes: () => nodeHealth.list(), now: overrides.now, file: path.join(config.dataDir, "node_control.json"), maintenanceMaxS: () => securitySettings.get("nodes.maintenance_max_s"),
     onPackage: (node, delivered, requestedBy) => nodeDiagnostics.keep(node, delivered, requestedBy),
@@ -536,6 +540,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const detectionZones = new DetectionZones(path.join(config.dataDir, "camera-detection-zones.json"));
   const zoneFeedSigner = new ZoneFeedSigner(path.join(config.dataDir, "zone-feed.key"));
   const alarmZoneFeed = new AlarmZoneFeed(path.join(config.dataDir, "alarm-zone-links.json"), { publish: (topic, payload) => { if (!alarmLink.publish) throw new Error("the MQTT broker is not connected"); alarmLink.publish(topic, payload); }, devices: () => devices.list(), now: overrides.now, warn,
+    signPolicy,
     enabled: () => securitySettings.get("server.zone_feed"), signer: () => (securitySettings.get("server.zone_feed_signature") ? zoneFeedSigner : undefined),
     panels: () => alarmNodes.list().map(node => node.node_id),
     policy: () => ({ config_hash: securitySettings.get("alarm.config_hash"), zone_feed: securitySettings.get("server.zone_feed"), zone_feed_signature: securitySettings.get("server.zone_feed_signature"),
@@ -575,6 +580,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     },
   });
   const batteryWrite = new BatteryWriteService({
+    sign: signNodeOrder,
     enabled: () => securitySettings.get("solar.battery_write"), solar, audit, now: overrides.now, file: path.join(config.dataDir, "battery_ops.json"),
     publish: (topic, payload) => { if (!batteryLink.publish) throw new Error("the MQTT broker is not connected"); batteryLink.publish(topic, payload); },
   });

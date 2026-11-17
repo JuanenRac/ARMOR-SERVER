@@ -36,6 +36,8 @@ export type BatteryWriteOptions = {
   /** The operator's decision: the option solar.battery_write (off unless ARMOR_BATTERY_WRITE=1 started it on, or an administrator turned it on in Studio). A function is asked every time. */
   enabled: boolean | (() => boolean);
   solar: SolarStore;
+  /** Makes the payload to publish with the signature of the node (commands.sign_node_orders); absent: the order as plain JSON. A throw means the order is not sent. */
+  sign?: (command: Record<string, unknown>) => string;
   /** Publish to the broker; throws when it is not connected. */
   publish: (topic: string, payload: string) => void;
   audit: AuditLog;
@@ -60,7 +62,7 @@ type Kept = { bytes: Buffer; info: ImageInfo; atMs: number };
 const CHUNK = BATTERY_CATALOG.limits.chunk_bytes;
 
 export class BatteryWriteService {
-  readonly #o: Required<Omit<BatteryWriteOptions, "file">> & { file?: string };
+  readonly #o: Required<Omit<BatteryWriteOptions, "file" | "sign">> & { file?: string; sign?: BatteryWriteOptions["sign"] };
   readonly #records = new Map<string, BatteryOperation>();
   readonly #private = new Map<string, Private>();
   readonly #pending = new Map<string, Pending>();
@@ -171,7 +173,7 @@ export class BatteryWriteService {
     const message = { kind: "solar_battery_command", node_id: record.node, timestamp_ms: this.#o.now(), command_id: commandId, port: record.port, action, ...fields };
     try {
       parseBatteryCommand(message);   // nothing leaves this server that the shared contract would refuse
-      this.#o.publish(`armor/solar/${record.node}/maintenance/command`, JSON.stringify(message));
+      this.#o.publish(`armor/solar/${record.node}/maintenance/command`, this.#o.sign ? this.#o.sign(message) : JSON.stringify(message));
     } catch (error) {
       this.#finish(record, "rejected", { refusal: "no_answer", code: "mqtt_unavailable" });
       this.#o.audit.record({ action: `battery.${action}`, outcome: "failed", actor: record.actor, target: `${record.node}/${record.port}`, detail: error instanceof Error ? error.message : "not sent" });
@@ -201,7 +203,7 @@ export class BatteryWriteService {
         this.#waiting.set(commandId, result => { clearTimeout(timer); resolve(result); });
       });
       this.#pending.set(commandId, { id: record.id, kind: "stage" });
-      try { parseBatteryCommand(message); this.#o.publish(`armor/solar/${record.node}/maintenance/command`, JSON.stringify(message)); } catch { this.#waiting.delete(commandId); this.#finish(record, "rejected", { refusal: "no_answer", code: "mqtt_unavailable" }); return; }
+      try { parseBatteryCommand(message); this.#o.publish(`armor/solar/${record.node}/maintenance/command`, this.#o.sign ? this.#o.sign(message) : JSON.stringify(message)); } catch { this.#waiting.delete(commandId); this.#finish(record, "rejected", { refusal: "no_answer", code: "mqtt_unavailable" }); return; }
       const result = await answer;
       this.#pending.delete(commandId);
       if (!result) { this.#finish(record, "rejected", { refusal: "no_answer", code: "image_piece_not_acknowledged" }); return; }

@@ -15,6 +15,7 @@
  *   nodes.ingest_strict          on | off                  the shared ingest token is no longer taken by the routes the nodes speak to: each node has to hold its own token (derived from the shared one; an administrator reads it to provision a board). Off, the default, so the boards already in the field keep working; the settings answer lists the nodes that still spoke with the shared token (ARMOR_INGEST_STRICT=1 is where it starts)
  *   solar.battery_write          on | off                  this server may order a gateway node to write to a Pylontech battery (clock, counters, limits, outputs, serial number, firmware); off, the default: the routes answer 403 battery_write_disabled (ARMOR_BATTERY_WRITE=1 is where it starts; the node and the broker have to allow it too)
  *   admin.cm5_update             on | off                  Studio and the phone may ask the maintenance agent to update this machine's programs (a preview, then the project typed again and a signed release); off, the default: the routes answer 403 machine_update_disabled (ARMOR_CM5_UPDATE=1 is where it starts)
+ *   commands.sign_node_orders   on | off                 the orders to the node itself (node_control_command), the battery orders (solar_battery_command) and the policy of the alarm panels (alarm_policy) are published with a nonce and an HMAC-SHA256 signature made with the key of the node, like the critical commands; a node that holds its key and has its own switch on reads only those. Off by default: a node without a key reads them unsigned, as before
  *   commands.require_sig        on | off                 the critical commands (alarm_command, electrical_command) are published with a nonce and an HMAC-SHA256 signature of this installation, so that neither the broker nor another identity on it can forge or replay one (off, the default: unsigned, as before; the nodes verify it once their firmware holds the key)
  *   alarm.siren_fault_notice     on | off                  a warning in the alarm centre while a panel reports that the wiring of its siren is open, shorted or unreadable (on, the default; off: nothing is raised)
  *   server.zone_feed             on | off                  the server tells the panels the state of their Zigbee zones
@@ -155,6 +156,7 @@ export type SecuritySettingsValues = {
   "alarm.mode_panel_sync": boolean;
   "alarm.config_hash": boolean;
   "commands.require_sig": boolean;
+  "commands.sign_node_orders": boolean;
   "nodes.ingest_strict": boolean;
   "solar.battery_write": boolean;
   "admin.cm5_update": boolean;
@@ -247,6 +249,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "alarm.mode_panel_sync": false,
   "alarm.config_hash": true,
   "commands.require_sig": false,
+  "commands.sign_node_orders": false,
   "nodes.ingest_strict": false,
   "solar.battery_write": false,
   "admin.cm5_update": false,
@@ -473,7 +476,7 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "vision.activity_events") return from === true && to === false;   // on by default: a source of alarms that is taken away defends less
   if (key === "solar.battery_write" || key === "admin.cm5_update") return from === false && to === true;   // a way to write to batteries or to update the machine from Studio: turning it on is the loss
   if (key === "nodes.ingest_strict") return from === true && to === false;   // the shared token taken again: the loss
-  if (key === "commands.require_sig") return from === true && to === false;   // signed commands that are given up defend less
+  if (key === "commands.require_sig" || key === "commands.sign_node_orders") return from === true && to === false;   // signed commands that are given up defend less
   if (key === "alarm.arming_modes" || key === "alarm.mode_schedule" || key === "alarm.mode_panel_sync") return false;   // a way of arming that is added or taken away: the protection of what is armed does not drop by it
   if (key === "alarm.mode_schedule_lowers") return from === false && to === true;   // letting a timetable defend less is the loss
   if (key === "alarm.mode_downgrade_pin") return from === "required" && to === "not_required";

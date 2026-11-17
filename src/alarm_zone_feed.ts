@@ -89,7 +89,9 @@ export class AlarmZoneFeed {
   #links: ZoneLink[] = [];
   #last = 0;
 
-  constructor(private readonly file: string, private readonly options: { publish: (topic: string, payload: string) => void; devices: () => Device[]; refreshMs?: number; now?: () => number; warn?: (message: string) => void;
+  constructor(private readonly file: string, private readonly options: { publish: (topic: string, payload: string) => void;
+    /** Makes the payload of the policy of one panel, signed with its key while commands.sign_node_orders is on; absent: plain JSON. */
+    signPolicy?: (node: string, message: Record<string, unknown>) => string; devices: () => Device[]; refreshMs?: number; now?: () => number; warn?: (message: string) => void;
     /** The setting server.zone_feed: when it is off nothing is sent about the zones (default on). */
     enabled?: () => boolean;
     /** Signs the messages when given (the setting server.zone_feed_signature is on). */
@@ -138,9 +140,9 @@ export class AlarmZoneFeed {
   /** The policy goes to every panel (and again with every refresh, so a panel that restarts learns it). Panels that do not know it ignore the message. */
   publishPolicy(): void {
     if (!this.options.policy || !this.options.panels) return;
-    const payload = JSON.stringify(this.options.policy());
+    const policy = this.options.policy();
     for (const node of new Set([...this.options.panels(), ...this.#links.map(link => link.node_id)])) {
-      try { this.options.publish(`armor/alarm/${node}/policy`, payload); }
+      try { this.options.publish(`armor/alarm/${node}/policy`, this.options.signPolicy ? this.options.signPolicy(node, policy as unknown as Record<string, unknown>) : JSON.stringify(policy)); }
       catch (error) { this.options.warn?.(`alarm policy: ${error instanceof Error ? error.message : String(error)}`); }
     }
   }

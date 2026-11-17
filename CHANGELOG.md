@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The orders to the nodes can be signed with the key of each node:** the new security option `commands.sign_node_orders` (off by default) makes the server publish the orders to the node itself (restart, pause, standby...), the battery orders and the policy of the alarm panels with a nonce and a signature made with the key of the node, as it does for the critical commands. The key is given with the token of the node while this option or `commands.require_sig` is on. A node reads only signed messages when its own setting says so; the policy keeps its contract, the nonce and the signature are taken off by the node before it reads it.
+
 - A backup can be restored on request without the server running: `tools/armorbk_restore.ts` proves the backup (authentication tag and the hash of every file), shows a checklist, copies what is in the target aside and writes the files only with `--apply`. The backup reader is now a function that needs no running server.
 
 - A test holds the subject the server gives the voice service (the panel behind the operator token, or the operator) to the shared vector of the whole way of a spoken silence.
