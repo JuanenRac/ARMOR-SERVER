@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nodeTokenFor } from "../src/http/node_token.js";
 import { arrivedSecurely } from "../src/routes/network.js";
 import { SECRETS, startServer, studioCookie } from "./helpers.js";
 
@@ -24,7 +23,7 @@ test("a request counts as secure when it came over TLS or straight from this mac
 test("with the option on, the stored login of a device is not handed to a node whose request was not secure; off (the default) it is, as before", async () => {
   const running = await startServer();
   try {
-    const nodeToken = nodeTokenFor(SECRETS.ARMOR_INGEST_TOKEN, "network-1");
+    const nodeToken = running.app.context.nodeTokens.tokenFor("network-1");
     const ingest = (extra: Record<string, string> = {}) => fetch(`${running.base}/api/v1/network/state`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${nodeToken}`, ...extra }, body: JSON.stringify(state()) });
     assert.equal((await ingest()).status, 202);
     const cookie = await studioCookie(running.base);

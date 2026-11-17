@@ -9,7 +9,7 @@ import type { AuditLog } from "./audit.js";
 import type { ArmorEvent } from "./events.js";
 import type { SecurityMode } from "./store.js";
 import { alertText, type AlertLanguage } from "./alert_text.js";
-import type { NotifyChannel } from "./channels.js";
+import { skipUsers, type NotifyChannel } from "./channels.js";
 
 export const ALERT_TOPIC = "armor/server/alert";
 export type AlertMessage = {
@@ -103,6 +103,8 @@ export type NotifierOptions = {
   /** Other places the alarms go (Telegram, Home Assistant), and the language their sentences are told in. */
   channels?: NotifyChannel[];
   language?: AlertLanguage;
+  /** True while a silent alarm may also go to the places that are marked `pushesSilent` (option alarm.duress_hide_trail). */
+  silentPush?: () => boolean;
 };
 
 /** What a test of one place came to. */
@@ -172,19 +174,20 @@ export class AlertNotifier {
     return results;
   }
 
-  notify(event: ArmorEvent, mode: SecurityMode): void {
+  notify(event: ArmorEvent, mode: SecurityMode, options: { skipUsers?: ReadonlySet<string> } = {}): void {
     const message = alertMessageFor(event, mode);
-    if (message) this.send(message);
+    if (message) this.send(message, options);
   }
 
   /** Send a message to the MQTT alarm topic and the webhook (used by automations as well). */
-  send(message: AlertMessage): void {
+  send(message: AlertMessage, options: { skipUsers?: ReadonlySet<string> } = {}): void {
     if (this.#closed) return;
+    if (options.skipUsers && options.skipUsers.size > 0) skipUsers.set(message, options.skipUsers);
     // A silent alarm is not put on the broker (anything that listens to it - a panel on the wall - would show it); it goes only to the places that can carry silent news.
     if (!message.silent) { try { this.#publish?.(ALERT_TOPIC, JSON.stringify(message)); } catch { /* MQTT down: the webhook still goes out. */ } }
     if (this.#options.webhookUrl) this.#enqueue(this.#lane("webhook", "alert.webhook", item => this.#postWebhook(item)), message);
     for (const channel of this.#channels) {
-      if (message.silent && channel.quiet !== true) continue;
+      if (message.silent && channel.quiet !== true && !(channel.pushesSilent === true && this.#options.silentPush?.() === true)) continue;
       this.#enqueue(this.#lane(channel.id, `alert.${channel.id}`, item => channel.deliver(item, alertText(item, this.#language), this.#language, AbortSignal.timeout(this.#options.timeoutMs ?? 5_000))), message);
     }
   }

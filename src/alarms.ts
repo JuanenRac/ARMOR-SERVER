@@ -19,6 +19,9 @@ import { ENERGY_ALARM_DEFAULTS, type EnergyAlarmSettings } from "./energy_alarms
 import type { SecurityMode } from "./store.js";
 import { durableRename } from "./durable.js";
 
+/** What a list of alarms is for: `silent` (an administrator's list) takes in every silent alarm; `shown` (a wall panel, a console) the silent ones that are also `shown`; `hidden` leaves out the alarms a session is kept from seeing. */
+export type AlarmQuery = { silent?: boolean; shown?: boolean; hidden?: ReadonlySet<string> };
+
 export type AlarmSource = { type: "node" | "camera" | "device" | "solar" | "electrical" | "network" | "alarm"; id: string };
 export type Alarm = {
   id: string; key: string; source: AlarmSource; severity: Severity;
@@ -33,6 +36,11 @@ export type Alarm = {
    * administrator can acknowledge or delete it.
    */
   silent?: true;
+  /**
+   * Only on a silent alarm raised while the option alarm.duress_hide_trail is on: it is also on the lists of the wall panels and of every console except the session that disarmed
+   * (see AlarmQuery.hidden); it is still left out of the history, the reports, the voice and everything that could answer it (the automations, the cameras, the broker).
+   */
+  shown?: true;
   /**
    * Acknowledged from a place that proves nobody (a wall panel's one tap, a voice command): the alarm leaves the unread list but is NOT taken as dealt with by a person, so a critical
    * one keeps being escalated until somebody who signed in acknowledges it.
@@ -110,14 +118,14 @@ export class AlarmCentre {
    * Raise an alarm unless one for the same cause is already open. An `instant` alarm is an event, not a condition (somebody disarmed under duress, a watched device came onto the
    * network, a camera saw something): its cause is over the moment it happens, so it is created already ended and leaves the list as soon as somebody acknowledges it.
    */
-  raise(key: string, info: { source: AlarmSource; severity: Severity; code: string; detail?: Record<string, unknown>; silent?: boolean; instant?: boolean }): Alarm | undefined {
+  raise(key: string, info: { source: AlarmSource; severity: Severity; code: string; detail?: Record<string, unknown>; silent?: boolean; instant?: boolean; shown?: boolean }): Alarm | undefined {
     // An event (instant) is raised once per key, whatever became of its alarm since; a condition once while it lasts (and not at all while somebody has taken it off the list).
     if (info.instant ? this.#alarms.some(alarm => alarm.key === key) : (this.#open(key) || this.#muted.has(key))) return undefined;
     const detail = cleanDetail(info.detail);
     const raisedAt = this.#now().toISOString();
     const alarm: Alarm = {
       id: `alm-${String(this.#counter).padStart(5, "0")}`, key, source: info.source, severity: info.severity, code: info.code, raised_at: raisedAt,
-      ...(info.instant ? { cleared_at: raisedAt } : {}), ...(detail ? { detail } : {}), ...(info.silent ? { silent: true as const } : {}),
+      ...(info.instant ? { cleared_at: raisedAt } : {}), ...(detail ? { detail } : {}), ...(info.silent ? { silent: true as const } : {}), ...(info.silent && info.shown ? { shown: true as const } : {}),
     };
     this.#counter += 1;
     this.#alarms.push(alarm);
@@ -132,8 +140,8 @@ export class AlarmCentre {
    * The system was disarmed with the duress PIN: somebody is being forced. A critical alarm that is SILENT (see Alarm.silent): it reaches the people who can help and nothing a
    * person standing at the panel, or holding the phone that disarmed, can see or hear. It is an event, so it is created ended.
    */
-  raiseDuress(who: string): Alarm | undefined {
-    return this.raise(`duress:${this.#now().getTime()}`, { source: { type: "alarm", id: "duress" }, severity: "critical", code: "duress_disarm", detail: { by: who }, silent: true, instant: true });
+  raiseDuress(who: string, options: { shown?: boolean } = {}): Alarm | undefined {
+    return this.raise(`duress:${this.#now().getTime()}`, { source: { type: "alarm", id: "duress" }, severity: "critical", code: "duress_disarm", detail: { by: who }, silent: true, instant: true, shown: options.shown === true });
   }
 
   /**
@@ -229,11 +237,15 @@ export class AlarmCentre {
    * On the list: not yet acknowledged, or still going on. Newest first. The silent alarms are left out unless `silent` is asked for (the list of an administrator): the
    * panel, the summary, the voice and the escalation all read this without it.
    */
-  active(options: { silent?: boolean } = {}): Alarm[] { return this.#alarms.filter(alarm => (options.silent === true || !alarm.silent) && (!alarm.acknowledged_at || !alarm.cleared_at)).reverse(); }
+  active(options: AlarmQuery = {}): Alarm[] { return this.#alarms.filter(alarm => AlarmCentre.#listed(alarm, options) && (!alarm.acknowledged_at || !alarm.cleared_at)).reverse(); }
+  static #listed(alarm: Alarm, options: AlarmQuery): boolean {
+    if (options.hidden?.has(alarm.id)) return false;
+    return !alarm.silent || options.silent === true || (options.shown === true && alarm.shown === true);
+  }
   /** Every alarm kept, open or closed, oldest first, without the silent ones (a duress disarm is never in a report). Copies: the caller cannot change the record. */
   kept(): Alarm[] { return this.#alarms.filter(alarm => !alarm.silent).map(alarm => ({ ...alarm })); }
   /** Closed (acknowledged and ended): the record. Newest first. */
-  recent(limit = 50, options: { silent?: boolean } = {}): Alarm[] { return this.#alarms.filter(alarm => (options.silent === true || !alarm.silent) && alarm.acknowledged_at && alarm.cleared_at).reverse().slice(0, limit); }
+  recent(limit = 50, options: AlarmQuery = {}): Alarm[] { return this.#alarms.filter(alarm => AlarmCentre.#listed(alarm, options) && alarm.acknowledged_at && alarm.cleared_at).reverse().slice(0, limit); }
   /**
    * Take one alarm off the list altogether (open or closed). If its cause is still going on it simply is not on the list any more: the
    * alarm for the same cause is raised again only when the cause happens again (a port that opens anew, the line going bad anew).
