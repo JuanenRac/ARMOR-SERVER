@@ -61,3 +61,13 @@ test("the bound on a node's own announcement of maintenance is 600 seconds unles
   assert.equal(readConfig({ ...SECRETS, ARMOR_NODE_MAINTENANCE_MAX_S: "86400" }).nodeMaintenanceMaxS, 86_400);
   for (const value of ["59", "86401", "abc", "-5", "1.5"]) assert.throws(() => readConfig({ ...SECRETS, ARMOR_NODE_MAINTENANCE_MAX_S: value }), ConfigError, value);
 });
+
+test("a number of trusted proxies on a server that is not on the loopback is warned about, and a named proxy is not", () => {
+  const about = (extra: Record<string, string>) => readConfig({ ...SECRETS, ARMOR_DISARM_PIN: "required", ...extra }).warnings.filter(line => line.includes("ARMOR_TRUST_PROXY"));
+  assert.equal(about({ ARMOR_HOST: "0.0.0.0", ARMOR_TRUST_PROXY: "1" }).length, 1);
+  assert.equal(about({ ARMOR_HOST: "0.0.0.0", ARMOR_TRUST_PROXY: "true" }).length, 1);
+  assert.equal(about({ ARMOR_HOST: "0.0.0.0", ARMOR_TRUST_PROXY: "uniquelocal" }).length, 0);
+  assert.equal(about({ ARMOR_HOST: "0.0.0.0", ARMOR_TRUST_PROXY: "10.0.0.2,10.0.0.3" }).length, 0);
+  assert.equal(about({ ARMOR_HOST: "127.0.0.1", ARMOR_TRUST_PROXY: "1" }).length, 0, "a server on the loopback is reached through its local proxy only");
+  assert.equal(about({ ARMOR_HOST: "0.0.0.0" }).length, 0);
+});
