@@ -172,6 +172,8 @@ export type ArmorConfig = {
    * client is. Without it every client behind a reverse proxy (Studio's nginx in Docker) has the proxy's address, and the rate limits of the sign-in count everybody as one. false when not set.
    */
   trustProxy: boolean | number | string;
+  /** ARMOR_STRICT_ROUTES=1: the routes are matched as they are written (a different capitalization or a trailing slash is a 404). false (the default) keeps the matching of Express, in which both are accepted; the checks by path normalize the path either way. */
+  strictRoutes: boolean;
   /** Home Assistant's MQTT discovery of what the nodes report (read-only sensors): off unless ARMOR_HA_DISCOVERY=1; the prefix is Home Assistant's (default "homeassistant"). See ha_discovery.ts. */
   haDiscovery: { prefix: string } | null;
   /** The admin agent (ARMOR-DEVOPS): where its Unix socket is and the token it wants; null when this install has no agent, and Studio then cannot administer services. */
@@ -537,6 +539,7 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     escalateAfterMin: integer(env, "ARMOR_ESCALATE_AFTER_MIN", 0, 0, 1440),
     alertMinTargets: integer(env, "ARMOR_ALERT_MIN_TARGETS", 1, 1, 20),
     cameraCheckS: integer(env, "ARMOR_CAMERA_CHECK_S", 20, 0, 3600),
+    strictRoutes: env.ARMOR_STRICT_ROUTES === "1",
     alertWebhookUrl, alertWebhookSecret, telegram, ntfy, fcmServiceAccount, homeAssistant, alertLanguage, electricalSwitching, batteryWrite, cm5Update, alarmCommands, disarmPinRequired, disarmPinEnv, controlDisarm, evidenceKey, trustProxy, haDiscovery, admin, maintenance, voice, aiToken,
     tls,
     warnings,
