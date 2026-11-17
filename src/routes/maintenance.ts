@@ -19,6 +19,11 @@ const relay = (response: Response, reply: AdminReply) => response.status(reply.s
 export function registerMaintenanceRoutes(app: Express, context: AppContext): void {
   const { maintenance, audit, requireAdmin, studioUser, studioSessions, users, config, store, alarmNodes } = context;
   const actor = (request: Request) => studioUser(request)?.username;
+  /** The one-time code of the administrator's authenticator, when the agent asks for one on the calls it guards: it is only handed on, and never written down. */
+  const approval = (request: Request): Record<string, string> => {
+    const given = request.headers["x-armor-maint-totp"];
+    return typeof given === "string" && /^\d{6}$/.test(given) ? { "X-Armor-Maint-Totp": given } : {};
+  };
   const body = (request: Request): Record<string, unknown> => (typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {});
   /** Who has the console open: the SESSION that typed the password (not the person: another session of the same person, a stolen cookie or one from outside, does not inherit it). */
   const unlocked = new Map<string, number>();
@@ -27,9 +32,9 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
   const failures = new Map<string, number[]>();
   const ended = new Set<string>();
 
-  async function ask(response: Response, method: string, path: string, payload?: unknown): Promise<AdminReply | undefined> {
+  async function ask(response: Response, method: string, path: string, payload?: unknown, headers?: Record<string, string>): Promise<AdminReply | undefined> {
     if (!maintenance) { response.status(503).json({ error: "maintenance_unavailable", reason: "not_configured" }); return undefined; }
-    try { return await maintenance.request(method, path, payload); }
+    try { return await maintenance.request(method, path, payload, headers); }
     catch { response.status(503).json({ error: "maintenance_unavailable", reason: "not_answering" }); return undefined; }
   }
 
@@ -52,7 +57,7 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
     const input = body(request);
     const wanted = Array.isArray(input.components) ? input.components.filter((item): item is string => typeof item === "string") : [];
     if (wanted.length === 0 || wanted.length > COMPONENTS.length || wanted.some(item => !(COMPONENTS as readonly string[]).includes(item))) return response.status(422).json({ error: "unknown_component" });
-    const reply = await ask(response, "POST", "/v1/updates", { components: [...new Set(wanted)], force: input.force === true });
+    const reply = await ask(response, "POST", "/v1/updates", { components: [...new Set(wanted)], force: input.force === true }, approval(request));
     if (!reply) return;
     audit.record({ action: "maintenance.update", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: wanted.join(","), detail: input.force === true ? "forced" : undefined });
     relay(response, reply);
@@ -61,7 +66,7 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
   app.post("/api/v1/admin/updates/:id/rollback", requireAdmin, async (request, response) => {
     const id = String(request.params.id);
     if (!(COMPONENTS as readonly string[]).includes(id)) return response.status(404).json({ error: "unknown_component" });
-    const reply = await ask(response, "POST", `/v1/updates/${id}/rollback`);
+    const reply = await ask(response, "POST", `/v1/updates/${id}/rollback`, undefined, approval(request));
     if (!reply) return;
     audit.record({ action: "maintenance.rollback", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: id });
     relay(response, reply);
@@ -274,7 +279,7 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
     const input = body(request);
     const name = typeof input.name === "string" ? input.name : "";
     if (!PEER.test(name)) return response.status(422).json({ error: "bad_name" });
-    const reply = await ask(response, "POST", "/v1/remote/wireguard/peers", { name, full_tunnel: input.full_tunnel === true });
+    const reply = await ask(response, "POST", "/v1/remote/wireguard/peers", { name, full_tunnel: input.full_tunnel === true }, approval(request));
     if (!reply) return;
     audit.record({ action: "remote.vpn.peer.add", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: name });
     response.setHeader("Cache-Control", "no-store");
@@ -284,7 +289,7 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
   app.get("/api/v1/admin/remote/wireguard/peers/:name", requireAdmin, context.requireElevated, async (request, response) => {
     const name = String(request.params.name ?? "");
     if (!PEER.test(name)) return response.status(422).json({ error: "bad_name" });
-    const reply = await ask(response, "GET", `/v1/remote/wireguard/peers/${name}`);
+    const reply = await ask(response, "GET", `/v1/remote/wireguard/peers/${name}`, undefined, approval(request));
     if (!reply) return;
     audit.record({ action: "remote.vpn.peer.show", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: name });
     response.setHeader("Cache-Control", "no-store");
@@ -294,7 +299,7 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
   app.delete("/api/v1/admin/remote/wireguard/peers/:name", requireAdmin, context.requireElevated, async (request, response) => {
     const name = String(request.params.name ?? "");
     if (!PEER.test(name)) return response.status(422).json({ error: "bad_name" });
-    const reply = await ask(response, "POST", `/v1/remote/wireguard/peers/${name}/remove`, {});
+    const reply = await ask(response, "POST", `/v1/remote/wireguard/peers/${name}/remove`, {}, approval(request));
     if (!reply) return;
     audit.record({ action: "remote.vpn.peer.remove", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: name });
     relay(response, reply);
@@ -311,7 +316,7 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
 
   for (const action of ["update", "remove"] as const) {
     app.post(`/api/v1/admin/remote/ddns/${action}`, requireAdmin, context.requireElevated, async (request, response) => {
-      const reply = await ask(response, "POST", `/v1/remote/ddns/${action}`, {});
+      const reply = await ask(response, "POST", `/v1/remote/ddns/${action}`, {}, approval(request));
       if (!reply) return;
       audit.record({ action: `remote.ddns.${action}`, outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request) });
       relay(response, reply);

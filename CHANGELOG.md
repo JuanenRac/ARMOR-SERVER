@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The authenticator code is handed on to the maintenance agent for updates, rollback, WireGuard peers and the DDNS refresh:** the code the person types (`X-Armor-Maint-Totp`, six digits) was only forwarded for the console and the machine update, so turning on `ARMOR_MAINT_SENSITIVE_EXTENDED` in the agent would have refused those calls; it is forwarded unchanged, never stored, and nothing changes while the agent does not ask for it.
 - **An activity event can carry a stable identifier and a repeat is dropped:** `event_id` (8 to 64 letters, digits, `-` and `_`) is an optional field of `POST /api/v1/ai/activity-events`; the same identifier on the same camera is recorded once and a repeat is answered `{ raised: false, reason: duplicate }`, so a sender that sends an event again after a lost answer cannot raise the same alarm twice. Events without it work as before. Tests for the route and the parser.
 
 - **The server warns at start when `ARMOR_TRUST_PROXY` is a number or `true` and it is not on the loopback:** behind two proxies (Caddy and the nginx of Studio) the address it takes as the client is the one of a proxy, so every client from the Internet would look like the house, and anyone who reaches the port directly can forge `X-Forwarded-For`. The warning says to name the proxies (`uniquelocal` or their addresses).

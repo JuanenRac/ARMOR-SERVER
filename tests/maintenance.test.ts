@@ -10,7 +10,7 @@ const json = { "Content-Type": "application/json" };
 const TOKEN = "m".repeat(32);
 const socketName = () => (process.platform === "win32" ? `\\\\.\\pipe\\armor-maint-test-${process.pid}-${Date.now()}` : path.join(fs.mkdtempSync(path.join(os.tmpdir(), "armor-msock-")), "m.sock"));
 
-type Seen = { method: string; url: string; body: Record<string, unknown>; token: string };
+type Seen = { method: string; url: string; body: Record<string, unknown>; token: string; totp: string };
 
 /** A stand-in for the maintenance agent: the same paths and answers, recording what it was asked. */
 async function fakeAgent(consoleEnabled = true): Promise<{ socket: string; seen: Seen[]; close: () => Promise<void> }> {
@@ -22,7 +22,7 @@ async function fakeAgent(consoleEnabled = true): Promise<{ socket: string; seen:
       const raw = Buffer.concat(chunks).toString("utf8");
       const body = raw ? JSON.parse(raw) as Record<string, unknown> : {};
       const token = String(request.headers["x-armor-maint-token"] ?? "");
-      seen.push({ method: request.method ?? "", url: request.url ?? "", body, token });
+      seen.push({ method: request.method ?? "", url: request.url ?? "", body, token, totp: String(request.headers["x-armor-maint-totp"] ?? "") });
       const send = (status: number, payload: unknown) => { response.writeHead(status, json); response.end(JSON.stringify(payload)); };
       if (token !== TOKEN) return send(401, { error: "unauthorized" });
       const url = request.url ?? "";
@@ -49,8 +49,8 @@ async function fakeAgent(consoleEnabled = true): Promise<{ socket: string; seen:
   return { socket, seen, close: () => new Promise<void>(resolve => server.close(() => resolve())) };
 }
 
-const call = async (running: Running, cookie: string, method: string, route: string, body?: unknown) => {
-  const response = await fetch(`${running.base}${route}`, { method, headers: { ...json, cookie }, body: body === undefined ? undefined : JSON.stringify(body) });
+const call = async (running: Running, cookie: string, method: string, route: string, body?: unknown, extra: Record<string, string> = {}) => {
+  const response = await fetch(`${running.base}${route}`, { method, headers: { ...json, cookie, ...extra }, body: body === undefined ? undefined : JSON.stringify(body) });
   const text = await response.text();
   return { status: response.status, body: text ? JSON.parse(text) as Record<string, any> : {} };
 };
@@ -94,6 +94,28 @@ test("an administrator checks, installs, rolls back and upgrades the system, wit
     assert.ok(agent.seen.every(item => item.token === TOKEN), "every request carries the token");
     const audit = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8");
     for (const action of ["maintenance.check", "maintenance.update", "maintenance.rollback", "maintenance.system.check", "maintenance.system.upgrade", "maintenance.system.reboot", "maintenance.history.clear"]) assert.match(audit, new RegExp(action.replace(/\./g, "\\.")));
+  } finally { await running.stop(); await agent.close(); }
+});
+
+test("the authenticator code the person typed is handed on to the agent for updates, rollback, WireGuard peers and the DDNS refresh, and only when it is six digits", async () => {
+  const agent = await fakeAgent();
+  const running = await startServer({ ARMOR_MAINT_SOCKET: agent.socket, ARMOR_MAINT_TOKEN: TOKEN });
+  try {
+    const cookie = await studioCookie(running.base);
+    const code = { "X-Armor-Maint-Totp": "123456" };
+    await call(running, cookie, "POST", "/api/v1/admin/updates", { components: ["server"], force: true }, code);
+    await call(running, cookie, "POST", "/api/v1/admin/updates/server/rollback", undefined, code);
+    await call(running, cookie, "POST", "/api/v1/admin/remote/wireguard/peers", { name: "phone" }, code);
+    await call(running, cookie, "GET", "/api/v1/admin/remote/wireguard/peers/phone", undefined, code);
+    await call(running, cookie, "DELETE", "/api/v1/admin/remote/wireguard/peers/phone", undefined, code);
+    await call(running, cookie, "POST", "/api/v1/admin/remote/ddns/update", undefined, code);
+    for (const url of ["/v1/updates", "/v1/updates/server/rollback", "/v1/remote/wireguard/peers", "/v1/remote/wireguard/peers/phone", "/v1/remote/wireguard/peers/phone/remove", "/v1/remote/ddns/update"]) {
+      assert.equal(agent.seen.find(item => item.url === url)?.totp, "123456", url);
+    }
+    await call(running, cookie, "POST", "/api/v1/admin/remote/ddns/update", undefined, { "X-Armor-Maint-Totp": "12ab56" });
+    assert.equal(agent.seen.filter(item => item.url === "/v1/remote/ddns/update").at(-1)?.totp, "", "a code that is not six digits is not handed on");
+    await call(running, cookie, "POST", "/api/v1/admin/updates", { components: ["server"] });
+    assert.equal(agent.seen.filter(item => item.url === "/v1/updates").at(-1)?.totp, "", "no code, none sent");
   } finally { await running.stop(); await agent.close(); }
 });
 
