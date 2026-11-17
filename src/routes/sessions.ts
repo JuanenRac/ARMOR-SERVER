@@ -3,11 +3,12 @@
  * used by service automation. Both hand out an HttpOnly cookie, never a body token.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
-import type { Express } from "express";
+import type { Express, RequestHandler } from "express";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { randomBytes } from "node:crypto";
 import { hasBearer } from "../http/auth.js";
+import { PublicLoginLimiter } from "../public_access.js";
 
 /** A sign-in that passed the password and waits for the second factor: two minutes, five tries. */
 type Challenge = { userId: string; username: string; role: string; origin: "local" | "remote"; ip: string; agent: string; until: number; tries: number };
@@ -68,12 +69,23 @@ export function registerSessionRoutes(app: Express, context: AppContext): void {
     windowMs: 60_000, limit: 40, skipSuccessfulRequests: true, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "too many Studio login attempts" }, keyGenerator: () => "all",
   });
 
+  // The sign-in routes of a server open to the Internet (network.public_access): an address that fails too often is closed for a while. app.ts says whether the request came from outside.
+  const publicLimiter = new PublicLoginLimiter(config.publicLogin.attempts, config.publicLogin.windowS * 1000);
+  const publicLoginGuard: RequestHandler = (request, response, next) => {
+    if (response.locals.publicRemote !== true) return next();
+    const address = request.ip ?? "";
+    const wait = publicLimiter.retryAfterS(address);
+    if (wait > 0) { response.set("Retry-After", String(wait)); return response.status(429).json({ error: "too many failed sign-ins from this address", code: "public_login_locked", retry_after_s: wait }); }
+    response.on("finish", () => { if (response.statusCode === 401) publicLimiter.fail(address); else if (response.statusCode < 400) publicLimiter.succeed(address); });
+    return next();
+  };
+
   app.get("/api/v1/studio/session", (request, response) => {
     const user = studioUser(request);
     return response.json({ authenticated: Boolean(user), ...(user ? { user: { id: user.id, username: user.username, role: user.role }, capabilities: capabilitiesOf(context, user.role) } : {}) });
   });
 
-  app.post("/api/v1/studio/session", globalLimit, placeLimit, loginLimit, async (request, response) => {
+  app.post("/api/v1/studio/session", publicLoginGuard, globalLimit, placeLimit, loginLimit, async (request, response) => {
     const username = typeof request.body?.username === "string" ? request.body.username : "";
     const password = typeof request.body?.password === "string" ? request.body.password : "";
     // The same work is done whether or not the user exists, so the response time never reveals which value was wrong.
@@ -102,7 +114,7 @@ export function registerSessionRoutes(app: Express, context: AppContext): void {
   });
 
   /** The second step of the sign-in: the challenge of the first step and a code of the app (or a recovery code). */
-  app.post("/api/v1/studio/session/totp", placeLimit, (request, response) => {
+  app.post("/api/v1/studio/session/totp", publicLoginGuard, placeLimit, (request, response) => {
     const challenge = typeof request.body?.challenge === "string" ? request.body.challenge : "";
     const code = typeof request.body?.code === "string" ? request.body.code : "";
     const pending = challenges.get(challenge);
