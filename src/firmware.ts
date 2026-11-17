@@ -111,7 +111,23 @@ export type FirmwareOptions = {
   retryMs?: number;
   /** The staged rollout: undefined, or null while its option is off, means a job updates every node with the latest release as always. */
   rollout?: () => RolloutSettings | null;
+  /** Whether a job refuses to put on a node a version older than the one it runs (default: yes), unless the job says it may. */
+  refuseDowngrade?: () => boolean;
 };
+
+/** Whether the project an image says it is built for is the one of this kind of node (`armor-alarm` or `armor_alarm` for the kind alarm). */
+export const projectMatchesKind = (project: string, kind: NodeKind): boolean => project.replace(/_/g, "-").includes(`armor-${kind}`);
+
+/** Whether version `a` is older than version `b` (numbers separated by dots or dashes, any length; a missing number counts as 0; what follows the numbers is ignored). */
+export function versionOlder(a: string, b: string): boolean {
+  const parts = (text: string): number[] => (/^v?(\d+(?:[.-]\d+)*)/.exec(text.trim())?.[1] ?? "").split(/[.-]/).filter(Boolean).map(Number);
+  const left = parts(a), right = parts(b);
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const x = left[index] ?? 0, y = right[index] ?? 0;
+    if (x !== y) return x < y;
+  }
+  return false;
+}
 
 const sha256Of = (bytes: Buffer) => crypto.createHash("sha256").update(bytes).digest("hex");
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
@@ -148,6 +164,7 @@ export class FirmwareService {
   readonly #betweenMs: number;
   readonly #retryMs: number;
   readonly #rollout: () => RolloutSettings | null;
+  readonly #refuseDowngrade: () => boolean;
   #running = false;
   readonly #restartedAt = new WeakMap<JobTarget, number>();
 
@@ -163,6 +180,7 @@ export class FirmwareService {
     this.#betweenMs = options.betweenMs ?? 3_000;
     this.#retryMs = options.retryMs ?? 2_000;
     this.#rollout = options.rollout ?? (() => null);
+    this.#refuseDowngrade = options.refuseDowngrade ?? (() => true);
   }
 
   // ---- the images -------------------------------------------------------------------------------------------------------------------
@@ -224,6 +242,8 @@ export class FirmwareService {
       // the board is the one in the name of the image taken; the plain name is the kind's default board
       const taken = /^armor_[a-z]+-(.+)\.bin$/.exec(name ?? "")?.[1] ?? DEFAULT_BOARDS[kind];
       const project = imageProject(bytes);
+      // The signature binds the project the image says it is built for, so the image must be the one of the kind that was asked for (the way an uploaded file is checked).
+      if (project && !projectMatchesKind(project, kind)) throw new FirmwareError("wrong_image_kind");
       if (!project || !signatureReply || !manifestSignatureOk(this.#releaseKeyHex, project, taken, version, expected, await signatureReply.text())) throw new FirmwareError("bad_signature");
     }
     return { bytes, sha256: expected, version };
@@ -252,7 +272,7 @@ export class FirmwareService {
     } catch { return { address, reachable: false }; }
   }
 
-  async #updateNode(target: JobTarget, kind: NodeKind, image: Image, login: { user: string; password: string }, skipSame = false): Promise<void> {
+  async #updateNode(target: JobTarget, kind: NodeKind, image: Image, login: { user: string; password: string }, skipSame = false, allowDowngrade = false): Promise<void> {
     const base = this.#base(target.address);
     const set = (state: TargetState) => { target.state = state; };
     set("checking");
@@ -263,6 +283,8 @@ export class FirmwareService {
     target.node_id = before.node_id; target.version_before = before.version;
     // A node that says what it is must be the kind this job updates: the updates of a kind go only to nodes of that kind (the image of another one would be taken for good).
     if (before.kind && before.kind !== kind) throw new FirmwareError("wrong_node_kind");
+    // A release older than the one the node runs is a step back to a firmware with known faults: refused unless the job says it may (and that is written in the audit trail).
+    if (image.version && before.version && !allowDowngrade && this.#refuseDowngrade() && versionOlder(image.version, before.version)) throw new FirmwareError("downgrade_refused");
     // A job of the staged rollout that is started again with a larger percent meets the nodes that took the version before: they are left as they are.
     if (skipSame && image.version && before.version === image.version) { target.version_after = before.version; target.skipped = true; return; }
     // An uploaded image whose name says a board goes only to a node of that board (an image for the Wi-Fi board would be taken for good by the Ethernet one, and the signed way would never have allowed it).
@@ -348,7 +370,7 @@ export class FirmwareService {
   // ---- the jobs ---------------------------------------------------------------------------------------------------------------------
 
   /** Starts a job and returns at once; the nodes are updated one at a time in the background. The login is held only by that run. */
-  start(input: { kind: NodeKind; source: "github" | "upload"; uploadId?: string; targets: Array<{ address: string; node_id?: string }>; login: { user: string; password: string }; onNode?: (job: FirmwareJob, target: JobTarget) => void }): FirmwareJob {
+  start(input: { kind: NodeKind; source: "github" | "upload"; uploadId?: string; allowDowngrade?: boolean; targets: Array<{ address: string; node_id?: string }>; login: { user: string; password: string }; onNode?: (job: FirmwareJob, target: JobTarget) => void }): FirmwareJob {
     if (this.#running) throw new FirmwareError("job_running");
     if (input.targets.length < 1 || input.targets.length > MAX_TARGETS) throw new FirmwareError("bad_targets");
     let upload: Image | undefined;
@@ -358,7 +380,7 @@ export class FirmwareService {
       upload = kept?.image;
       if (!kept || !upload) throw new FirmwareError("unknown_upload");
       // An image that says which project it is built for must be the one of this kind of node (a radar's image sent to an alarm panel would be taken for good and break it).
-      if (kept.info.project && !kept.info.project.replace(/_/g, "-").includes(`armor-${input.kind}`)) throw new FirmwareError("wrong_image_kind");
+      if (kept.info.project && !projectMatchesKind(kept.info.project, input.kind)) throw new FirmwareError("wrong_image_kind");
       if (upload.bytes.length > maxImageBytes(input.kind)) throw new FirmwareError("bad_size");
     }
     const job: FirmwareJob = {
@@ -368,11 +390,11 @@ export class FirmwareService {
     this.#jobs.set(job.id, job);
     while (this.#jobs.size > MAX_JOBS) this.#jobs.delete(this.#jobs.keys().next().value as string);
     this.#running = true;
-    void this.#run(job, upload, input.login, input.onNode).finally(() => { this.#running = false; job.finished = this.#now(); });
+    void this.#run(job, upload, input.login, input.onNode, input.allowDowngrade === true).finally(() => { this.#running = false; job.finished = this.#now(); });
     return job;
   }
 
-  async #run(job: FirmwareJob, upload: Image | undefined, login: { user: string; password: string }, onNode?: (job: FirmwareJob, target: JobTarget) => void): Promise<void> {
+  async #run(job: FirmwareJob, upload: Image | undefined, login: { user: string; password: string }, onNode?: (job: FirmwareJob, target: JobTarget) => void, allowDowngrade = false): Promise<void> {
     // Each node gets the image built for ITS board: a job that mixes boards (an Ethernet and a Wi-Fi node of one kind) fetches one image per board. An uploaded file is the
     // administrator's choice and goes to every node as it is.
     const rollout = job.source === "github" ? this.#rollout() : null;   // the staged rollout applies to the releases of GitHub, not to a file an administrator chose
@@ -400,7 +422,7 @@ export class FirmwareService {
     }
     for (let index = 0; index < job.targets.length; index += 1) {
       const target = job.targets[index];
-      try { await this.#updateNode(target, job.kind, upload ?? images.get(boardOf.get(target) ?? "") ?? image, login, Boolean(rollout)); }
+      try { await this.#updateNode(target, job.kind, upload ?? images.get(boardOf.get(target) ?? "") ?? image, login, Boolean(rollout), allowDowngrade); }
       catch (error) {
         const cameBackNot = target.state === "restarting";   // the image was taken and the node did not answer with it
         target.state = "failed"; target.error = error instanceof FirmwareError ? error.code : "failed";

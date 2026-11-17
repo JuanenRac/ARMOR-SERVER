@@ -20,6 +20,7 @@
  *   server.zone_feed             on | off                  the server tells the panels the state of their Zigbee zones
  *   server.zone_feed_signature   on | off                  every zone message is signed, so a panel can tell it came from this server
  *   server.alarm_state_signature on | off                  the server publishes a signed copy of each alarm state it hears, so a reader on the broker (the safety zones of a HYDRA-UMC cell) can tell who sent it (off, the default)
+ *   admin.firmware_refuse_downgrade  on | off              a firmware job from GitHub refuses to put on a node a version older than the one it runs, unless the job says it may (allow_downgrade, written in the audit trail); on, the default
  *   server.alarm_state_signature_node_only  on | off      with the signed copy on, only a state that reached the server over MQTT or over HTTP with the token of its own node is signed; a state said over HTTP with the shared ingest token (anyone who holds it could say it for any node) is kept and acted on but not signed (off, the default: every state is signed)
  *   media.rtsp_proxy             on | off                  FFmpeg reads the cameras through the local tunnel (off: the camera login goes in its command line, visible to every user of the machine)
  *   voice.panic_phrase           on | off                  a user's secret panic phrase, said to the voice assistant, raises the silent duress alarm (off, the default: nobody's phrase is looked for)
@@ -204,6 +205,7 @@ export type SecuritySettingsValues = {
   "client.trusted_devices": boolean;
   "admin.backup": boolean;
   "admin.firmware_rollout": boolean;
+  "admin.firmware_refuse_downgrade": boolean;
   "client.trusted_session_h": number;
   "nodes.nvs_encryption": NvsEncryption;
   "electrical.load_shedding": boolean;
@@ -294,6 +296,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "client.trusted_devices": false,
   "admin.backup": false,
   "admin.firmware_rollout": false,
+  "admin.firmware_refuse_downgrade": true,
   "client.trusted_session_h": TRUSTED_SESSION_H.default,
   "nodes.nvs_encryption": "off",
   "electrical.load_shedding": false,
