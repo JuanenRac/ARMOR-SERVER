@@ -19,7 +19,7 @@ async function made() {
   return { dataDir, file: path.join(dataDir, "backups", result.file!) };
 }
 
-const quiet = (env: Record<string, string | undefined> = {}) => { const lines: string[] = [], errors: string[] = []; return { lines, errors, io: { out: (line: string) => { lines.push(line); }, err: (line: string) => { errors.push(line); }, env } }; };
+const quiet = (passphrase?: string) => { const lines: string[] = [], errors: string[] = []; return { lines, errors, io: { out: (line: string) => { lines.push(line); }, err: (line: string) => { errors.push(line); }, passphrase } }; };
 
 test("a backup is proved without the server: the signature and the hash of every file, and a wrong passphrase or a changed file is refused", async () => {
   const { file } = await made();
@@ -68,15 +68,15 @@ test("a path that leaves the target or goes through a link is refused and nothin
 test("the command proves and shows the checklist without writing, and only writes with --apply; the passphrase never comes from the command line", async () => {
   const { file } = await made();
   const target = path.join(tempDir(), "out");
-  const dry = quiet({ ARMOR_BACKUP_PASSPHRASE: PASSPHRASE });
+  const dry = quiet(PASSPHRASE);
   assert.equal(await main([file, "--to", target], dry.io), 0);
   assert.ok(dry.lines.some(line => line.startsWith("RESTORE=PROVED")));
   assert.ok(dry.lines.some(line => line.startsWith("[TODO] stop the ARMOR server")));
   assert.equal(fs.existsSync(target), false, "without --apply nothing is written");
-  const wrong = quiet({ ARMOR_BACKUP_PASSPHRASE: "wrong passphrase" });
+  const wrong = quiet("wrong passphrase");
   assert.equal(await main([file, "--to", target, "--apply"], wrong.io), 1);
   assert.equal(fs.existsSync(target), false, "a backup that is not proved is never restored");
-  const apply = quiet({ ARMOR_BACKUP_PASSPHRASE: PASSPHRASE });
+  const apply = quiet(PASSPHRASE);
   assert.equal(await main([file, "--a", target, "--apply"], apply.io), 0);
   assert.ok(apply.lines.some(line => line === "RESTORE=DONE files=3"));
   assert.equal(fs.readFileSync(path.join(target, "alarms.json"), "utf8"), "{\"alarms\":[1,2,3]}");

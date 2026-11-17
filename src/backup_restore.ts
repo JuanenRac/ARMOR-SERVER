@@ -71,7 +71,8 @@ export function restoreInto(files: Array<{ path: string; data: Buffer }>, target
   return { copiedTo, written };
 }
 
-export type CliIo = { out: (line: string) => void; err: (line: string) => void; env: Record<string, string | undefined> };
+/** `passphrase` is what the tool read from the environment (tools/armorbk_restore.ts); a file given with --passphrase-file replaces it. */
+export type CliIo = { out: (line: string) => void; err: (line: string) => void; passphrase?: string };
 
 const USAGE = "usage: armorbk_restore <backup.armorbk> --to <folder> [--passphrase-file <file>] [--apply]\n  the passphrase is read from ARMOR_BACKUP_PASSPHRASE or from the file, never from the command line\n  without --apply nothing is written: the backup is proved and the checklist is shown";
 
@@ -88,7 +89,7 @@ export async function main(argv: string[], io: CliIo, now: Date = new Date()): P
     else file = item;
   }
   if (file === "" || to === "") { io.err(USAGE); return 2; }
-  let passphrase = io.env.ARMOR_BACKUP_PASSPHRASE ?? "";
+  let passphrase = io.passphrase ?? "";
   if (passphraseFile !== "") { try { passphrase = fs.readFileSync(passphraseFile, "utf8").replace(/\r?\n$/, ""); } catch { io.err("the passphrase file cannot be read"); return 2; } }
   const checked = await checkBackup(file, passphrase);
   for (const step of checked.steps) io.out(`[${step.ok ? "OK" : "FAIL"}] ${step.name}: ${step.detail}`);
