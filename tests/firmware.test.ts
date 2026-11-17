@@ -66,8 +66,10 @@ async function fakeGithub(release: { tag: string; image: Buffer; checksum?: stri
 
 async function withServer(node: { port: number }, github: { api: string } | null, run: (running: Running, cookie: string) => Promise<void>): Promise<void> {
   process.env.ARMOR_ADMIN_NODE_PORT = String(node.port);
-  const firmware = new FirmwareService({ nodePort: () => node.port, releaseApi: () => github?.api ?? "http://127.0.0.1:9", requireSignature: false, settleMs: 20, pollMs: 20, restartWaitMs: 3000, betweenMs: 10, retryMs: 10 });
+  let refuseDowngrade = (): boolean => true;   // the setting of the server that starts below, once it exists
+  const firmware = new FirmwareService({ nodePort: () => node.port, releaseApi: () => github?.api ?? "http://127.0.0.1:9", requireSignature: false, settleMs: 20, pollMs: 20, restartWaitMs: 3000, betweenMs: 10, retryMs: 10, refuseDowngrade: () => refuseDowngrade() });
   const running = await startServer({}, { firmware });
+  refuseDowngrade = () => running.app.context.securitySettings.get("admin.firmware_refuse_downgrade");
   try { await run(running, await studioCookie(running.base)); } finally { delete process.env.ARMOR_ADMIN_NODE_PORT; await running.stop(); }
 }
 
@@ -352,11 +354,11 @@ test("a release older than the version a node runs is refused unless the job say
       assert.deepEqual([refused.state, refused.targets[0].error], ["failed", "downgrade_refused"]);
       assert.equal(node.seen.length, 0, "nothing was sent to the node");
       const allowed = await finished(running, cookie, (await call(running, cookie, "POST", "/api/v1/admin/firmware/jobs", { ...job, allow_downgrade: true })).body.id);
-      assert.equal(allowed.state, "done");
+      assert.equal(allowed.state, "done", JSON.stringify(allowed.targets));
       assert.equal(node.seen.length, 1);
       assert.match(fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8"), /older versions allowed/);
     });
-  } finally { await node.close(); }
+  } finally { await node.close(); await github.close(); }
   const again = await fakeNode({ version: "0.9.0" }), more = await fakeGithub({ tag: "0.5.4", image: bytes });
   try {
     await withServer(again, more, async (running, cookie) => {
