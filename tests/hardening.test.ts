@@ -442,3 +442,20 @@ test("an answer of the API is never cached and can run nothing in a browser", as
     assert.equal(answer.headers.get("strict-transport-security"), null, "without TLS there is nothing to pin");
   } finally { await running.stop(); }
 });
+
+test("the routes are matched exactly as written only when ARMOR_STRICT_ROUTES is on", async () => {
+  assert.equal(readConfig({ ...SECRETS, ARMOR_DATA_DIR: tempDir() }).strictRoutes, false);
+  assert.equal(readConfig({ ...SECRETS, ARMOR_DATA_DIR: tempDir(), ARMOR_STRICT_ROUTES: "1" }).strictRoutes, true);
+  const loose = await startServer();
+  try {
+    assert.equal((await fetch(`${loose.base}/healthz`)).status, 200);
+    assert.equal((await fetch(`${loose.base}/HEALTHZ`)).status, 200, "the default matching of Express is unchanged");
+    assert.equal((await fetch(`${loose.base}/healthz/`)).status, 200);
+  } finally { await loose.stop(); }
+  const strict = await startServer({ ARMOR_STRICT_ROUTES: "1" });
+  try {
+    assert.equal((await fetch(`${strict.base}/healthz`)).status, 200);
+    assert.equal((await fetch(`${strict.base}/HEALTHZ`)).status, 404);
+    assert.equal((await fetch(`${strict.base}/healthz/`)).status, 404);
+  } finally { await strict.stop(); }
+});

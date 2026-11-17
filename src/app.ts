@@ -120,6 +120,8 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   app.disable("x-powered-by");
   // Behind a reverse proxy the client is whoever the proxy says in X-Forwarded-For - but only a proxy that was named (ARMOR_TRUST_PROXY) is believed.
   if (config.trustProxy !== false) app.set("trust proxy", config.trustProxy);
+  // Off by default (the matching stays the one of Express); with ARMOR_STRICT_ROUTES=1 a route is reached only by the path it is written with.
+  if (config.strictRoutes) { app.enable("case sensitive routing"); app.enable("strict routing"); }
   app.use((_request, response, next) => {
     response.set({ "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Cross-Origin-Resource-Policy": "same-site" });
     next();

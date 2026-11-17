@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The routes can be matched exactly as they are written:** `ARMOR_STRICT_ROUTES=1` (off by default) turns on case sensitive and strict routing, so a different capitalization or a slash at the end of a path is a 404 instead of reaching the route while the checks by path looked at another spelling. Clients that use the paths of `docs/ROUTES.md` are not affected; it is read at start.
+
 - **The authenticator code is handed on to the maintenance agent for updates, rollback, WireGuard peers and the DDNS refresh:** the code the person types (`X-Armor-Maint-Totp`, six digits) was only forwarded for the console and the machine update, so turning on `ARMOR_MAINT_SENSITIVE_EXTENDED` in the agent would have refused those calls; it is forwarded unchanged, never stored, and nothing changes while the agent does not ask for it.
 - **An activity event can carry a stable identifier and a repeat is dropped:** `event_id` (8 to 64 letters, digits, `-` and `_`) is an optional field of `POST /api/v1/ai/activity-events`; the same identifier on the same camera is recorded once and a repeat is answered `{ raised: false, reason: duplicate }`, so a sender that sends an event again after a lost answer cannot raise the same alarm twice. Events without it work as before. Tests for the route and the parser.
 
