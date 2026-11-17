@@ -70,6 +70,13 @@ export class CommandSigner {
     return nodeKeyOf(this.#ensure(), nodeId);
   }
 
+  /** Like `sign`, for a message that does not carry the id of its node (the policy of the alarm panels): the node is named by the caller and the signature is made with its key. */
+  signFor(nodeId: string, message: Record<string, unknown>): string {
+    const key = this.nodeKey(nodeId);
+    const body = JSON.stringify({ ...message, nonce: this.random() });
+    return `${body.slice(0, -1)},"sig":"${bodySignature(key, body)}"}`;
+  }
+
   /** The payload to publish: the command with a nonce, then the signature of those bytes. Throws when the key cannot be made or read, or the command names no node (the command is then not sent). */
   sign(command: Record<string, unknown>): string {
     const nodeId = command.node_id;

@@ -62,6 +62,8 @@ export type ControlTarget = { id: string; family: string };
 export type ControlInput = { scope: "node" | "all"; operation: ControlOperation; mode: ControlMode; duration_s?: number; detail?: DiagnosticDetail; actor: string; origin?: string; targets: ControlTarget[] };
 
 export type NodeControlOptions = {
+  /** Makes the payload to publish with the signature of the node (commands.sign_node_orders); absent: the order as plain JSON. A throw means the order is not sent. */
+  sign?: (command: Record<string, unknown>) => string;
   /** Publish to the broker; throws when it is not connected. */
   publish: (topic: string, payload: string) => void;
   audit: AuditLog;
@@ -102,7 +104,7 @@ const WINDOW_TOTAL = 3;
 const iso = (ms: number): string => new Date(ms).toISOString();
 
 export class NodeControlService {
-  readonly #o: Required<Omit<NodeControlOptions, "file" | "onHold" | "onPackage" | "maintenanceMaxS">> & Pick<NodeControlOptions, "file" | "onHold" | "onPackage"> & { maintenanceMaxS: () => number };
+  readonly #o: Required<Omit<NodeControlOptions, "file" | "onHold" | "onPackage" | "maintenanceMaxS" | "sign">> & Pick<NodeControlOptions, "file" | "onHold" | "onPackage" | "sign"> & { maintenanceMaxS: () => number };
   readonly #records = new Map<string, ControlOperationRecord>();
   readonly #private = new Map<string, Map<string, Private>>();
   readonly #pending = new Map<string, Pending>();
@@ -307,7 +309,7 @@ export class NodeControlService {
 
   #publishArm(record: ControlOperationRecord, line: ControlLine): void {
     const { id, message } = this.#command(record, line.node_id, "arm");
-    this.#o.publish(`armor/control/${line.node_id}/command`, JSON.stringify(message));
+    this.#o.publish(`armor/control/${line.node_id}/command`, this.#o.sign ? this.#o.sign(message as unknown as Record<string, unknown>) : JSON.stringify(message));
     this.#private.get(record.id)!.get(line.node_id)!.armId = id;
     this.#pending.set(id, { op: record.id, node: line.node_id, action: "arm" });
   }
@@ -320,7 +322,7 @@ export class NodeControlService {
     if (record.duration_s !== undefined && DURATIONS[record.operation]) extra.duration_s = record.duration_s;
     if (record.detail !== undefined && record.operation === "diagnostics") extra.detail = record.detail;
     const { id, message } = this.#command(record, line.node_id, "execute", extra);
-    this.#o.publish(`armor/control/${line.node_id}/command`, JSON.stringify(message));
+    this.#o.publish(`armor/control/${line.node_id}/command`, this.#o.sign ? this.#o.sign(message as unknown as Record<string, unknown>) : JSON.stringify(message));
     const now = this.#o.now();
     secret.execId = id; secret.sentMs = now;
     secret.waitUntilMs = now + 30_000 + (record.mode === "rolling" ? (line.slot ?? 0) * ROLLING_GAP_S * 1000 : 0);

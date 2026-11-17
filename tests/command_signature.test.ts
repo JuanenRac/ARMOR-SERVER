@@ -22,6 +22,20 @@ test("the option is off by default and giving it up is a loss of protection", ()
   assert.equal(lowers("commands.require_sig", false, true), false);
 });
 
+test("the option for the orders to the nodes is off by default, giving it up is a loss, and the policy of a panel is signed without a node id in the body", () => {
+  assert.equal(SECURITY_DEFAULTS["commands.sign_node_orders"], false);
+  assert.equal(lowers("commands.sign_node_orders", true, false), true);
+  assert.equal(lowers("commands.sign_node_orders", false, true), false);
+  const signer = new CommandSigner(keyFile(MASTER), () => "0123456789abcdef");
+  const payload = signer.signFor("alarm-1", { config_hash: true, zone_feed: false, zone_feed_signature: false });
+  const parts = splitSigned(payload);
+  assert.ok(parts);
+  assert.equal(parts.body, '{"config_hash":true,"zone_feed":false,"zone_feed_signature":false,"nonce":"0123456789abcdef"}');
+  assert.equal(parts.sig, bodySignature(nodeKeyOf(MASTER, "alarm-1"), parts.body));
+  assert.equal(payload.includes("node_id"), false, "the policy contract has no node id");
+  assert.throws(() => signer.signFor("Not A Node", {}), /not the id of a node/);
+});
+
 test("the vector the nodes check against: key of the node, payload and signature are fixed", () => {
   const signer = new CommandSigner(keyFile(MASTER), () => "0123456789abcdef");
   const nodeKey = nodeKeyOf(MASTER, "alarm-1");
