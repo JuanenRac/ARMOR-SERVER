@@ -20,6 +20,7 @@
  *   server.zone_feed             on | off                  the server tells the panels the state of their Zigbee zones
  *   server.zone_feed_signature   on | off                  every zone message is signed, so a panel can tell it came from this server
  *   server.alarm_state_signature on | off                  the server publishes a signed copy of each alarm state it hears, so a reader on the broker (the safety zones of a HYDRA-UMC cell) can tell who sent it (off, the default)
+ *   cameras.allow_public_hosts   on | off                  the server may open connections for a camera at any address (on, the default, as it always was; the audit trail notes a camera saved at an address outside the house). Off: only an address of the house (10/8, 172.16/12, 192.168/16, a unique local IPv6 address) is accepted for a camera and connected to, the host name checked on the address it resolves to; the loopback, the link-local range and public addresses are refused
  *   admin.firmware_refuse_downgrade  on | off              a firmware job from GitHub refuses to put on a node a version older than the one it runs, unless the job says it may (allow_downgrade, written in the audit trail); on, the default
  *   server.alarm_state_signature_node_only  on | off      with the signed copy on, only a state that reached the server over MQTT or over HTTP with the token of its own node is signed; a state said over HTTP with the shared ingest token (anyone who holds it could say it for any node) is kept and acted on but not signed (off, the default: every state is signed)
  *   media.rtsp_proxy             on | off                  FFmpeg reads the cameras through the local tunnel (off: the camera login goes in its command line, visible to every user of the machine)
@@ -163,6 +164,7 @@ export type SecuritySettingsValues = {
   "server.alarm_state_signature": boolean;
   "server.alarm_state_signature_node_only": boolean;
   "media.rtsp_proxy": boolean;
+  "cameras.allow_public_hosts": boolean;
   "network.login_secure_only": boolean;
   "remote.gate_by_route": boolean;
   "panel.proxy_http": boolean;
@@ -254,6 +256,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "server.alarm_state_signature": false,
   "server.alarm_state_signature_node_only": false,
   "media.rtsp_proxy": true,
+  "cameras.allow_public_hosts": true,
   "network.login_secure_only": false,
   "remote.gate_by_route": true,
   "panel.proxy_http": false,
@@ -458,6 +461,7 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "admin.acl_relays") return from === false && to === true;   // letting Studio open the broker for the batteries or the alarm copy is the loss
   if (key === "alarm.duress_hide_trail") return from === true && to === false;   // the person who is forced is no longer protected from what the screen would show: turning it off is the loss
   if (key === "session.rotate_id") return from === true && to === false;   // a session id that no longer changes is a weaker one: turning it off is the loss
+  if (key === "cameras.allow_public_hosts") return from === false && to === true;   // letting the server connect to any address for a camera is the loss
   if (key === "electrical.balance") return false;   // it only reads and informs
   if (key === "vision.service_remote") return from === false && to === true;   // a service on another machine: the positions of the house travel over a network
   if (key === "vision.service_url") { const host = parseVisionServiceUrl(to)?.host; return host !== undefined && !isLoopbackHost(host) && to !== from; }   // pointing at another machine is the loss

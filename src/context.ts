@@ -12,6 +12,7 @@ import { gatePath } from "./gate_path.js";
 import { remoteMayUseAdminRoute } from "./remote_admin_gate.js";
 import { AiGateway } from "./ai.js";
 import { SecuritySettings } from "./security_settings.js";
+import { setCameraHostPolicy } from "./cameras/host_policy.js";
 import { ingestCaller as ingestCallerOf, NodeTokens, SharedTokenWatch, type IngestCaller } from "./http/node_token.js";
 import { createAuditLog, type AuditLog } from "./audit.js";
 import { CameraVault } from "./cameras/vault.js";
@@ -324,6 +325,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     initial: { "nodes.maintenance_max_s": config.nodeMaintenanceMaxS, "nodes.ingest_strict": config.ingestStrict, "solar.battery_write": config.batteryWrite, "admin.cm5_update": config.cm5Update, "voice.turn_max_bytes": config.voiceTurnMaxBytes, "voice.reply_audio_max_bytes": config.voiceReplyAudioMaxBytes, "summary.log_days": config.dailyLogDays, "summary.reading_every_s": config.dailyLogReadingEveryS, "summary.power_every_s": config.dailyLogPowerEveryS, "summary.false_alarm_s": config.dailyFalseAlarmS, "reports.timeout_s": config.reportTimeoutS, "reports.queue_max": config.reportQueueMax, "reports.requests_per_minute": config.reportRequestsPerMinute, "vision.service_url": config.visionServiceUrl, "media.retention_snapshot_days": Math.round(config.mediaRetentionSnapshotMs / 86_400_000), "media.retention_recording_days": Math.round(config.mediaRetentionRecordingMs / 86_400_000) },
     onChange: changes => securityChanged.tell?.(changes),
   });
+  setCameraHostPolicy(() => securitySettings.get("cameras.allow_public_hosts"));
   const sharedTokenWatch = new SharedTokenWatch(node => warn(`ingest: ${node} still speaks with the shared token; give it its own token (Studio, Security) before turning nodes.ingest_strict on`));
   const nodeTokens = new NodeTokens(path.join(config.dataDir, "node-token.key"));
   const ingestCaller: AppContext["ingestCaller"] = (request, nodeId) => {
