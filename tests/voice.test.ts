@@ -291,3 +291,27 @@ test("without a voice gateway the wake word says so once the option is on", asyn
     assert.equal(reply.status, 503);
   } finally { await running.stop(); }
 });
+
+test("the subject the server gives the voice service follows the shared path of a spoken silence: the panel behind the operator token, or the operator", { skip: fs.existsSync(path.resolve(import.meta.dirname, "..", "..", "ARMOR-COMMON", "conformance", "voice", "silence_path.json")) ? false : "ARMOR-COMMON is not checked out next to this repository" }, async () => {
+  const vector = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "..", "..", "ARMOR-COMMON", "conformance", "voice", "silence_path.json"), "utf8")) as {
+    subject: { operator: string; panel_prefix: string; max_length: number }; original: string;
+    paths: Array<{ name: string; panel: string; asks: Array<{ confirmation: string; subject?: string }> }>;
+  };
+  const gateway = await fakeGateway();
+  const running = await startServer({ ARMOR_VOICE_URL: gateway.url, ARMOR_VOICE_TOKEN: TOKEN });
+  try {
+    for (const item of vector.paths) {
+      const subject = item.asks.find(ask => ask.confirmation === "issued")?.subject;
+      if (subject === undefined) continue;
+      gateway.seen.length = 0;
+      const reply = await fetch(`${running.base}/api/v1/voice/command`, {
+        method: "POST", headers: { ...json, Authorization: `Bearer ${SECRETS.ARMOR_OPERATOR_TOKEN}`, ...(item.panel ? { "X-Armor-Panel": item.panel } : {}) },
+        body: JSON.stringify({ text: "silence", language: "en" }),
+      });
+      assert.equal(reply.status, 200, item.name);
+      assert.equal((gateway.seen[0] as { subject?: string }).subject, subject, item.name);
+      assert.ok(subject.length <= vector.subject.max_length);
+      assert.equal(subject, item.panel ? vector.subject.panel_prefix + item.panel : vector.subject.operator);
+    }
+  } finally { await running.stop(); await gateway.close(); }
+});
