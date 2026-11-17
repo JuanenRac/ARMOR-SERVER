@@ -86,7 +86,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   const clients = new WebSocketServer({ noServer: true, maxPayload: 1024 });
   // The live channel of the wall panel (panel_feed.ts): the same small summary the panel can ask for, sent when it changes. A different socket set from the one above, which carries the whole state.
   const panelClients = new WebSocketServer({ noServer: true, maxPayload: 128 });
-  const panelFeed = createPanelFeed(() => buildPanelSummary(context), () => panelClients.clients);
+  const panelFeed = createPanelFeed(hidden => buildPanelSummary(context, Date.now, hidden), () => panelClients.clients, socket => context.studioSessions.hiddenAlarms(panelAdmitted.get(socket)?.reader ?? { header: () => undefined }));
   /** A client that is too far behind (its network is slow, or it stopped reading) is dropped rather than made to wait in memory: the next state it would get is only newer than the last. */
   const MAX_BUFFERED_BYTES = 2 * 1024 * 1024;
   const sendState = (state: SystemState) => {
