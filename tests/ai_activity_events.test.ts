@@ -82,6 +82,29 @@ test("an activity event needs the token of the observation service, a known came
   });
 });
 
+test("an event that carries an identifier is recorded once however often it is sent, and one without it behaves as before", async () => {
+  await withServer(async running => {
+    const context = running.app.context;
+    context.store.arm("armed");
+    const first = await post(running, { ...enter, notify: true, event_id: "abcdef0123456789" });
+    assert.equal(first.body.raised, true);
+    assert.equal(context.alarms.active().length, 1);
+    const again = await post(running, { ...enter, notify: true, event_id: "abcdef0123456789" });
+    assert.deepEqual([again.status, again.body], [200, { raised: false, reason: "duplicate" }]);
+    assert.equal(context.alarms.active().length, 1);
+    // another identifier, or the same one on another camera, is another event
+    assert.notEqual((await post(running, { ...enter, notify: true, event_id: "abcdef0123456780" })).body.reason, "duplicate");
+    // no identifier: nothing is remembered, nothing is dropped
+    assert.notEqual((await post(running, { ...enter, notify: true })).body.reason, "duplicate");
+    assert.notEqual((await post(running, { ...enter, notify: true })).body.reason, "duplicate");
+  });
+});
+
+test("the identifier of an event is checked and kept by the parser", () => {
+  assert.deepEqual(parseActivityEvent({ ...enter, event_id: "abcdef01-23_45" }), { ...enter, event_id: "abcdef01-23_45" });
+  for (const bad of ["short", "has space 12345", "x".repeat(65), 12345678, ""]) assert.equal(parseActivityEvent({ ...enter, event_id: bad }), undefined, String(bad));
+});
+
 test("parseActivityEvent keeps what the contract names and nothing else", () => {
   assert.deepEqual(parseActivityEvent(enter), enter);
   assert.deepEqual(parseActivityEvent({ ...enter, notify: false }), { ...enter, notify: false });

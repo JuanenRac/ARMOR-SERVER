@@ -142,9 +142,11 @@ export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[number];
 export type ActivityEvent = {
   schema: "armor.vision.activity/v1"; type: ActivityEventType; camera_id: string; track_id: number; label: string; timestamp: number; timestamp_ms: number; authorizes_action: false;
   zone_id?: string; zone_name?: string; seconds?: number; line_id?: string; direction?: "to_left" | "to_right"; notify?: boolean;
+  /** A stable identifier the sender gives the event (8 to 64 letters, digits, - and _): the same event sent again carries the same one and the server records it once. */
+  event_id?: string;
 };
 
-const ACTIVITY_EVENT_FIELDS = ["schema", "type", "camera_id", "track_id", "label", "timestamp", "timestamp_ms", "authorizes_action", "zone_id", "zone_name", "seconds", "line_id", "direction", "notify"];
+const ACTIVITY_EVENT_FIELDS = ["schema", "type", "camera_id", "track_id", "label", "timestamp", "timestamp_ms", "authorizes_action", "zone_id", "zone_name", "seconds", "line_id", "direction", "notify", "event_id"];
 
 /** The activity event a service sent, checked field by field; undefined when it is not what it should be. A zone event names its zone, a line event its line and direction, and nothing else is let through. */
 export function parseActivityEvent(input: unknown): ActivityEvent | undefined {
@@ -160,6 +162,7 @@ export function parseActivityEvent(input: unknown): ActivityEvent | undefined {
   if (typeof item.timestamp_ms !== "number" || !Number.isInteger(item.timestamp_ms) || item.timestamp_ms < 0) return undefined;
   if (item.authorizes_action !== false) return undefined;
   if (item.notify !== undefined && typeof item.notify !== "boolean") return undefined;
+  if (item.event_id !== undefined && (typeof item.event_id !== "string" || !/^[A-Za-z0-9_-]{8,64}$/.test(item.event_id))) return undefined;
   if (item.seconds !== undefined && !inRange(item.seconds, 0, 86_400 * 7)) return undefined;
   if (type === "line_cross") {
     if (!text(item.line_id, 80) || (item.direction !== "to_left" && item.direction !== "to_right")) return undefined;
@@ -175,6 +178,7 @@ export function parseActivityEvent(input: unknown): ActivityEvent | undefined {
     ...(item.zone_id !== undefined ? { zone_id: item.zone_id as string } : {}), ...(item.zone_name !== undefined ? { zone_name: item.zone_name as string } : {}),
     ...(item.seconds !== undefined ? { seconds: item.seconds as number } : {}), ...(item.line_id !== undefined ? { line_id: item.line_id as string } : {}),
     ...(item.direction !== undefined ? { direction: item.direction as "to_left" | "to_right" } : {}), ...(item.notify !== undefined ? { notify: item.notify } : {}),
+    ...(item.event_id !== undefined ? { event_id: item.event_id } : {}),
   };
 }
 
