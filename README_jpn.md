@@ -229,6 +229,10 @@ python -I tools/armor_ci_validate.py
 
 `npm test` は `tests/` の全ファイル（99 個）を実行します：各モジュールの単体テストと、隔離したサーバーに対する完全な HTTP 結合テスト（`tests/vertical-slice.test.ts`）。`tests/conformance.test.ts` は ARMOR-COMMON の共有ベクターを実行し、**サーバーが登録するルートが OpenAPI の記述する操作と（メソッドとパスで）完全に一致すること**、各応答が本文の種類を示していることを確認します。ARMOR-COMMON がこのリポジトリの隣にないとスキップされます。TLS のテストには `openssl` が必要です。GitHub Actions は push と pull request のたびに A.R.M.O.R. の基本検査（マニフェスト、バージョン、変更履歴、README の一致）と、プロジェクト自身のビルドとテストを実行します。
 
+### 運用とツール
+
+* **バックアップの復元：** `npx tsx tools/armorbk_restore.ts <backup.armorbk> --to <フォルダ> [--passphrase-file <ファイル>] [--apply]` はサーバーを止めたまま動作します。`--apply` なしではバックアップの検証（認証タグと各ファイルの SHA-256）とチェックリストの表示だけを行い、`--apply` ありではまずフォルダの中身を `<フォルダ>.before-restore-<時刻>` にコピーしてからファイルを書き込み、フォルダの外へ出るパスやリンクを通るパスは拒否します。パスフレーズは `ARMOR_BACKUP_PASSPHRASE` またはファイルから読み、コマンドラインからは決して受け取りません。
+
 ## 🏗️ ビルドとリリース
 
 `npm run build` はサーバーを `dist/server.mjs` にまとめます（`Dockerfile` がそこからコンテナイメージを作ります）。バージョンは `package.json`、`armor.project.json`、README のバッジ（マニフェストから読み取り）にあり、各バージョンには [CHANGELOG.md](CHANGELOG.md) にエントリーがあります。リリースは GitHub で公開されます。

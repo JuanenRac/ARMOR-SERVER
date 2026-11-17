@@ -229,6 +229,10 @@ python -I tools/armor_ci_validate.py
 
 `npm test` 运行 `tests/` 的每个文件（99 个）：各模块的单元测试，以及针对隔离服务器的完整 HTTP 集成套件（`tests/vertical-slice.test.ts`）。`tests/conformance.test.ts` 运行 ARMOR-COMMON 的共享向量，并检查**服务器注册的路由与 OpenAPI 文件描述的操作（按方法和路径）完全一致**，以及每个响应都说明其请求体类型；ARMOR-COMMON 不在本仓库旁边时会跳过。TLS 测试需要安装 `openssl`。GitHub Actions 在每次推送和拉取请求时运行 A.R.M.O.R. 基线：清单、版本、更新日志和 README 一致性的校验，然后是项目自身的构建和测试。
 
+### 运维与工具
+
+* **恢复备份：** `npx tsx tools/armorbk_restore.ts <备份.armorbk> --to <文件夹> [--passphrase-file <文件>] [--apply]` 在服务器停止时运行。不加 `--apply` 时只验证备份（认证标签和每个文件的 SHA-256）并显示检查清单；加 `--apply` 时先把文件夹中现有内容复制到 `<文件夹>.before-restore-<时间>`，再写入文件，并拒绝任何跳出文件夹或经过链接的路径。口令来自 `ARMOR_BACKUP_PASSPHRASE` 或该文件，绝不从命令行读取。
+
 ## 🏗️ 构建与发布
 
 `npm run build` 把服务器打包为 `dist/server.mjs`（`Dockerfile` 据此构建容器镜像）。版本记录在 `package.json`、`armor.project.json` 和 README 徽章中（读取自清单）；每个版本在 [CHANGELOG.md](CHANGELOG.md) 中都有对应条目。发布版本发布在 GitHub 上。
