@@ -5,9 +5,9 @@
  */
 import path from "node:path";
 import cors from "cors";
-import express from "express";
+import express, { type Express } from "express";
 import rateLimit from "express-rate-limit";
-import { PublicLoginLimiter, decidePublicRequest, publicAccessProblems } from "./public_access.js";
+import { decidePublicRequest, publicAccessProblems } from "./public_access.js";
 import fs from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
@@ -75,9 +75,9 @@ import { registerNotificationRoutes } from "./routes/notifications.js";
 import { registerSystemRoutes } from "./routes/system.js";
 import { registerUserRoutes } from "./routes/users.js";
 import type { SystemState } from "./store.js";
-import { gatePath } from "./gate_path.js";
+import { remoteBackstopMayRequest } from "./remote_policy.js";
 
-export type ArmorApp = { server: Server; context: AppContext; close(): Promise<void> };
+export type ArmorApp = { server: Server; context: AppContext; express: Express; close(): Promise<void> };
 
 const headerReader = (request: IncomingMessage) => ({ header: (name: string) => { const value = request.headers[name.toLowerCase()]; return Array.isArray(value) ? value[0] : value; } });
 
@@ -149,24 +149,16 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
 
   // A signed-in console that keeps working keeps its session: the cookie is renewed once half of its life has gone.
   app.use((request, response, next) => { context.studioSessions.renew(request, response); context.operatorSessions.renew(request, response); next(); });
-  // What a session from outside the house may do (ARMOR_REMOTE_POLICY): from "operate" on, administering (users, the installation, the firmware, the broker) is for the house or the VPN;
-  // "view" lets it only look. The answer says what is needed, so the clients can explain it. Sessions made inside the house are not touched.
+  // What a session from outside the house may do (ARMOR_REMOTE_POLICY) is decided by the guards of the routes (requireOperator, requireAdmin: see remote_policy.ts); this covers only the
+  // few routes that have no guard of that kind (REMOTE_BACKSTOP). Sessions made inside the house are not touched.
   app.use((request, response, next) => {
     if (config.remotePolicy === "full" || context.studioSessions.originOf(request) !== "remote") return next();
-    const reads = request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS";
-    // The routes answer in any capitals and with or without a final slash, so the gate reads the path the same way.
-    const gated = gatePath(request.path);
-    const own = /^\/api\/v1\/(studio\/(session|sessions|elevate|totp)|push\/(un)?register)/.test(gated) || (request.method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/(stream|preview)-ticket$/.test(gated));
-    const admin = /^\/api\/v1\/(admin|users|installation|system\/ingest|preferences|solar\/battery-ops|diagnostics\/tokens|nodes\/control|nodes\/[^/]+\/(panel|control|diagnostics))(\/|$)/.test(gated);
-    if (reads && !(admin && config.remotePolicy === "view")) return next();
-    if (own || (config.remotePolicy === "operate" && !admin)) return next();
-    context.audit.record({ action: "remote.policy", outcome: "denied", actor: context.studioUser(request)?.username, target: `${request.method} ${request.path}`, detail: config.remotePolicy });
-    return response.status(403).json({ error: "this is only possible from the house or over the VPN", code: "remote_policy", needs: "vpn" });
+    if (remoteBackstopMayRequest(config.remotePolicy, request.method, request.path)) return next();
+    return context.refuseRemote(request, response);
   });
 
   // The port opened to the Internet (network.public_access, off by default): a request from outside the house is taken only when the option is on, over TLS and with strong secrets, and
   // an address that fails to sign in too often is closed for a while. Requests from the house and the VPN are not touched.
-  const publicLimiter = new PublicLoginLimiter(config.publicLogin.attempts, config.publicLogin.windowS * 1000);
   const publicFacts = { ownTls: config.tls !== null, controlTokenLength: config.controlToken.length, studioPasswordLength: config.studioPassword.length, cookieSecure: config.cookieSecure };
   app.use((request, response, next) => {
     // A server that listens on the loopback only can be reached through a local proxy and nothing else: there is no port to be opened to the Internet, so nothing is gated.
@@ -181,12 +173,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       context.audit.record({ action: "public_access", outcome: "denied", target: `${request.method} ${request.path}`, detail: `${decision.error} ${request.ip ?? ""}` });
       return response.status(decision.status).json({ error: decision.error, ...(decision.problems ? { problems: decision.problems } : {}) });
     }
-    if (remote && request.method === "POST" && /^\/api\/v1\/studio\/session(\/totp)?$/.test(gatePath(request.path))) {
-      const address = request.ip ?? "";
-      const wait = publicLimiter.retryAfterS(address);
-      if (wait > 0) { response.set("Retry-After", String(wait)); return response.status(429).json({ error: "too many failed sign-ins from this address", code: "public_login_locked", retry_after_s: wait }); }
-      response.on("finish", () => { if (response.statusCode === 401) publicLimiter.fail(address); else if (response.statusCode < 400) publicLimiter.succeed(address); });
-    }
+    response.locals.publicRemote = remote;
     return next();
   });
 
@@ -446,7 +433,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     first.unref(); every.unref(); watchdogs.push(first, every);
   }
   return {
-    server, context,
+    server, context, express: app,
     close: async () => {
       clearInterval(sweeper);
       clearInterval(watchSockets);

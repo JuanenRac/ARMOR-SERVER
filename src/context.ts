@@ -10,6 +10,7 @@ import { unixTransport, type AdminAgent } from "./admin.js";
 import { FirmwareService } from "./firmware.js";
 import { gatePath } from "./gate_path.js";
 import { remoteMayUseAdminRoute } from "./remote_admin_gate.js";
+import { remoteMayRequest } from "./remote_policy.js";
 import { AiGateway } from "./ai.js";
 import { SecuritySettings } from "./security_settings.js";
 import { setCameraHostPolicy } from "./cameras/host_policy.js";
@@ -286,6 +287,8 @@ export type AppContext = {
   requireOperator: RequestHandler;
   /** A signed-in Studio user with the administrator role (bearer tokens are service credentials and do not qualify). */
   requireAdmin: RequestHandler;
+  /** Answers 403 `remote_policy` (and records it); the guards and the backstop in app.ts use it. */
+  refuseRemote: (request: HeaderSource & { method: string; path: string }, response: Parameters<RequestHandler>[1]) => unknown;
   publicCamera(camera: CameraConnection): ReturnType<typeof cameraPublic>;
   viewCamera(camera: CameraConnection): ReturnType<typeof cameraView>;
 };
@@ -672,7 +675,15 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   // settings (the administration routes, the users, the console, the node tokens) is closed to them even to read.
   const viewerCloses = /^\/api\/v1\/(admin|users|system\/ingest|preferences|installation|summary|vision)(\/|$)/;
   const viewerMay = (method: string, path: string): boolean => (method === "GET" || method === "HEAD" ? !viewerCloses.test(gatePath(path)) : (method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/(stream|preview)-ticket$/.test(path)) || ((method === "POST" || method === "DELETE") && (path === "/api/v1/push/register" || path === "/api/v1/push/unregister")));
+  // What a session from outside the house may do is decided here, by the guards (see remote_policy.ts): a route added with requireOperator or requireAdmin is covered without a second list.
+  const refuseRemote = (request: HeaderSource & { method: string; path: string }, response: Parameters<RequestHandler>[1]) => {
+    audit.record({ action: "remote.policy", outcome: "denied", actor: studioUser(request)?.username, target: `${request.method} ${request.path}`, detail: config.remotePolicy });
+    return response.status(403).json({ error: "this is only possible from the house or over the VPN", code: "remote_policy", needs: "vpn" });
+  };
+  const remoteRefuses = (request: HeaderSource & { method: string; path: string }): boolean =>
+    config.remotePolicy !== "full" && studioSessions.originOf(request) === "remote" && !remoteMayRequest(config.remotePolicy, request.method, request.path);
   const requireOperator: RequestHandler = (request, response, next) => {
+    if (remoteRefuses(request)) return refuseRemote(request, response);
     // Whoever is let in (or turned away as a viewer or a wall panel) is a client the history knows about; a request that is not signed in is not, so strangers cannot fill the list.
     if (studioUser(request) || hasBearer(request, config.operatorToken) || operatorSessions.has(request)) { try { connections.seen(sightingOf(request, studioUser(request)?.username)); } catch { /* the list of clients never stops a request */ } }
     if (operatorAuthorized(request)) return next();
@@ -691,6 +702,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     return response.status(401).json({ error: "operator authorization is required" });
   };
   const requireAdmin: RequestHandler = (request, response, next) => {
+    if (remoteRefuses(request)) return refuseRemote(request, response);
     if (studioUser(request)?.role === "admin") {
       try { connections.seen(sightingOf(request, studioUser(request)?.username)); } catch { /* see above */ }
       // From outside the house, with the remote policy operate or view, an administrator route is closed by the route itself (remote.gate_by_route), so a route added later is closed too.
@@ -724,7 +736,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com", rollout: () => (securitySettings.get("admin.firmware_rollout") ? firmwareRollout.get() : null), refuseDowngrade: () => securitySettings.get("admin.firmware_refuse_downgrade") }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    duressLog, raiseDuress, alarmQuery, live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, ingestCaller, nodeTokens, sharedTokenWatch, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, ignoreProposals, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, presence, studioUser, requireAdmin, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays, visionCounters,
+    duressLog, raiseDuress, alarmQuery, live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, ingestCaller, nodeTokens, sharedTokenWatch, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, ignoreProposals, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, presence, studioUser, requireAdmin, refuseRemote, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays, visionCounters,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     balanceWatcher,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),

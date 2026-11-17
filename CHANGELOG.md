@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- The remote access policy (ARMOR_REMOTE_POLICY) is now decided by the route guards (`requireOperator`, `requireAdmin`) from one pure function, and the public sign-in limit lives in the sign-in routes; a small backstop covers the few routes without such a guard. A test walks every registered route and fails when one is left uncovered, so a route added later cannot slip through.
+
 - **The routes can be matched exactly as they are written:** `ARMOR_STRICT_ROUTES=1` (off by default) turns on case sensitive and strict routing, so a different capitalization or a slash at the end of a path is a 404 instead of reaching the route while the checks by path looked at another spelling. Clients that use the paths of `docs/ROUTES.md` are not affected; it is read at start.
 
 - **The authenticator code is handed on to the maintenance agent for updates, rollback, WireGuard peers and the DDNS refresh:** the code the person types (`X-Armor-Maint-Totp`, six digits) was only forwarded for the console and the machine update, so turning on `ARMOR_MAINT_SENSITIVE_EXTENDED` in the agent would have refused those calls; it is forwarded unchanged, never stored, and nothing changes while the agent does not ask for it.
