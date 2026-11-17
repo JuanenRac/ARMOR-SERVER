@@ -68,6 +68,49 @@ const sha = (data: Buffer): string => createHash("sha256").update(data).digest("
 const stamp = (date: Date): string => date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 const unstamp = (name: string): string => { const m = /(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/.exec(name); return m ? `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z` : ""; };
 
+/**
+ * The files inside a backup, for whoever holds the key (the derived key of the server, or scrypt of the passphrase with the salt of the file): the authentication tag and every hash are
+ * checked, and a path that leaves the folder is refused. It needs no running server, so a restore tool can use it.
+ */
+export async function openWithKey(raw: Buffer, key: Buffer): Promise<Array<{ path: string; data: Buffer }>> {
+  if (raw.length < MAGIC.length + 16 + 12 + 16 + 1 || !raw.subarray(0, MAGIC.length).equals(MAGIC)) throw new BackupError("corrupt", "not a backup of this server", 422);
+  const iv = raw.subarray(24, 36), tag = raw.subarray(36, 52), body = raw.subarray(52);
+  let packed: Buffer;
+  try {
+    const decipher = createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(tag);
+    packed = await gunzipAsync(Buffer.concat([decipher.update(body), decipher.final()]));
+  } catch { throw new BackupError("wrong_key", "the backup cannot be opened: wrong passphrase, or it was changed", 422); }
+  return filesOf(packed);
+}
+
+/** The key a passphrase makes for a given backup file (scrypt with the salt stored in the file). */
+export function keyFromPassphrase(raw: Buffer, passphrase: string): Buffer {
+  if (raw.length < MAGIC.length + 16 || !raw.subarray(0, MAGIC.length).equals(MAGIC)) throw new BackupError("corrupt", "not a backup of this server", 422);
+  return scryptSync(passphrase, raw.subarray(8, 24), 32, SCRYPT);
+}
+
+function filesOf(packed: Buffer): Array<{ path: string; data: Buffer }> {
+  if (packed.length < 4) throw new BackupError("corrupt", "the backup is empty", 422);
+  const headerLength = packed.readUInt32BE(0);
+  if (headerLength === 0 || 4 + headerLength > packed.length) throw new BackupError("corrupt", "the manifest is cut", 422);
+  let manifest: Manifest;
+  try { manifest = JSON.parse(packed.subarray(4, 4 + headerLength).toString("utf8")) as Manifest; } catch { throw new BackupError("corrupt", "the manifest cannot be read", 422); }
+  if (manifest.schema !== 1 || !Array.isArray(manifest.files)) throw new BackupError("corrupt", "the manifest is not valid", 422);
+  const files: Array<{ path: string; data: Buffer }> = [];
+  let offset = 4 + headerLength;
+  for (const item of manifest.files) {
+    if (typeof item?.path !== "string" || item.path.startsWith("/") || item.path.split("/").includes("..") || !Number.isInteger(item.size) || item.size < 0 || typeof item.sha256 !== "string") throw new BackupError("corrupt", "an entry of the manifest is not valid", 422);
+    const data = packed.subarray(offset, offset + item.size);
+    offset += item.size;
+    if (data.length !== item.size) throw new BackupError("corrupt", "the backup is cut", 422);
+    const a = Buffer.from(sha(data)), b = Buffer.from(item.sha256);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) throw new BackupError("corrupt", `the hash of ${item.path} does not match`, 422);
+    files.push({ path: item.path, data });
+  }
+  return files;
+}
+
 /** The settings as the console may give them: unknown keys, wrong types and values out of range are refused, never guessed. */
 export function parseBackupSettings(value: unknown, base: BackupSettings = DEFAULT_SETTINGS): BackupSettings {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new BackupError("invalid_settings", "the settings must be an object", 422);
@@ -277,35 +320,12 @@ export class BackupService {
   /** The files inside a backup, after the authentication tag and every hash have been checked. Used by `verify` and by a restore tool. */
   async open(raw: Buffer, passphrase?: string): Promise<Array<{ path: string; data: Buffer }>> {
     if (raw.length < MAGIC.length + 16 + 12 + 16 + 1 || !raw.subarray(0, MAGIC.length).equals(MAGIC)) throw new BackupError("corrupt", "not a backup of this server", 422);
-    const salt = raw.subarray(8, 24), iv = raw.subarray(24, 36), tag = raw.subarray(36, 52), body = raw.subarray(52);
+    const salt = raw.subarray(8, 24);
     let key: Buffer;
     if (passphrase !== undefined) key = scryptSync(passphrase, salt, 32, SCRYPT);
     else if (this.#key && this.#key.salt === salt.toString("hex")) key = Buffer.from(this.#key.key, "hex");
     else throw new BackupError("wrong_key", "the stored key is not the one that made this backup: give the passphrase", 422);
-    let packed: Buffer;
-    try {
-      const decipher = createDecipheriv("aes-256-gcm", key, iv);
-      decipher.setAuthTag(tag);
-      packed = await gunzipAsync(Buffer.concat([decipher.update(body), decipher.final()]));
-    } catch { throw new BackupError("wrong_key", "the backup cannot be opened: wrong passphrase, or it was changed", 422); }
-    if (packed.length < 4) throw new BackupError("corrupt", "the backup is empty", 422);
-    const headerLength = packed.readUInt32BE(0);
-    if (headerLength === 0 || 4 + headerLength > packed.length) throw new BackupError("corrupt", "the manifest is cut", 422);
-    let manifest: Manifest;
-    try { manifest = JSON.parse(packed.subarray(4, 4 + headerLength).toString("utf8")) as Manifest; } catch { throw new BackupError("corrupt", "the manifest cannot be read", 422); }
-    if (manifest.schema !== 1 || !Array.isArray(manifest.files)) throw new BackupError("corrupt", "the manifest is not valid", 422);
-    const files: Array<{ path: string; data: Buffer }> = [];
-    let offset = 4 + headerLength;
-    for (const item of manifest.files) {
-      if (typeof item?.path !== "string" || item.path.startsWith("/") || item.path.split("/").includes("..") || !Number.isInteger(item.size) || item.size < 0 || typeof item.sha256 !== "string") throw new BackupError("corrupt", "an entry of the manifest is not valid", 422);
-      const data = packed.subarray(offset, offset + item.size);
-      offset += item.size;
-      if (data.length !== item.size) throw new BackupError("corrupt", "the backup is cut", 422);
-      const a = Buffer.from(sha(data)), b = Buffer.from(item.sha256);
-      if (a.length !== b.length || !timingSafeEqual(a, b)) throw new BackupError("corrupt", `the hash of ${item.path} does not match`, 422);
-      files.push({ path: item.path, data });
-    }
-    return files;
+    return openWithKey(raw, key);
   }
 
   /** Once a minute: makes the backup that is due. Never throws; the result is the last one. */
