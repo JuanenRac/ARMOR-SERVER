@@ -109,10 +109,13 @@ export type AlarmStoreOptions = {
   /** A node that has not reported for this long is stale (the node says its state every five seconds). */
   staleAfterMs?: number;
   maxNodes?: number;
-  onMessage?: (message: AlarmMessage, previous: AlarmMessage | undefined) => void;
+  /** `origin` says how the state arrived (see AlarmOrigin). */
+  onMessage?: (message: AlarmMessage, previous: AlarmMessage | undefined, origin: AlarmOrigin) => void;
   /** `phase` is the phase of the panel when it fell silent: a panel that was disarmed and goes quiet is not news to wake anybody for. */
   onStale?: (node: string, stale: boolean, phase?: AlarmMessage["phase"]) => void;
 };
+/** How a state reached the server: over MQTT on the topic of the node (the access list of the broker lets only the node publish there), over HTTP with the token of that node, or over HTTP with the shared ingest token (anyone who holds it can say it for any node). */
+export type AlarmOrigin = "mqtt" | "http-node" | "http-shared";
 type Entry = { state: AlarmMessage; receivedAtMs: number; stale: boolean };
 
 export class AlarmStore {
@@ -124,7 +127,7 @@ export class AlarmStore {
   }
 
   /** Keep a message. Refuses (throws) a new node when the store is full, so a broker full of noise cannot grow it without limit. */
-  ingest(message: AlarmMessage): void {
+  ingest(message: AlarmMessage, origin: AlarmOrigin = "mqtt"): void {
     const entry = this.#entries.get(message.node_id);
     if (!entry && this.#entries.size >= this.#options.maxNodes) throw new Error("too many alarm nodes");
     const previous = entry?.state;
@@ -132,7 +135,7 @@ export class AlarmStore {
     if (entry) { entry.state = message; wasStale = refresh(entry, this.#options.now()); }
     else this.#entries.set(message.node_id, { state: message, receivedAtMs: this.#options.now(), stale: false });
     if (wasStale) this.#options.onStale?.(message.node_id, false);
-    this.#options.onMessage?.(message, previous);
+    this.#options.onMessage?.(message, previous, origin);
   }
 
   remove(node: string): boolean { return this.#entries.delete(node); }

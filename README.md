@@ -41,7 +41,7 @@
 | Role | Central security coordinator of the family: nodes, alarms, devices, energy, cameras, network |
 | Stack | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | Tests | 1152 (`npm test`: unit and full HTTP integration) |
-| Contract | 247 HTTP paths, 320 operations (OpenAPI in ARMOR-COMMON), route table in `docs/ROUTES.md` |
+| Contract | 248 HTTP paths, 321 operations (OpenAPI in ARMOR-COMMON), route table in `docs/ROUTES.md` |
 | Listens on | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Runs on | The CM5 test bench (as a service, see ARMOR-DEVOPS) or any computer with Node.js |
 | On real hardware | The CM5 test bench, in daily use: a real MQTT broker, real IP cameras, a real radar node on an ESP32-S3 board, Studio, the Android app and the voice and observation services against it |
@@ -142,6 +142,7 @@ flowchart LR
 | A stolen cookie, a request from another site | HttpOnly, SameSite=Strict and Secure behind HTTPS; sessions last 7 days (Studio), 8 hours (operator) and 12 hours with 30 minutes idle from outside |
 | Timing attacks and weak secrets | Secrets are compared in constant time, must have 24 characters or more and all differ (ingest, control, operator, camera key, AI, evidence key) |
 | Disarming without proof | A PIN of 4 to 10 digits by `alarm.disarm_pin` (never, if_set, always); 3 wrong tries lock for 60 s, 5 min, 15 min and then 1 h, kept on disk across restarts; a duress PIN is told apart silently; the control token disarms only with `ARMOR_CONTROL_DISARM=1` |
+| Disarming under duress | The duress PIN disarms like the right one and raises a silent alarm. With `alarm.duress_hide_trail` the audit trail and the history show an ordinary disarm, the person who disarmed sees a normal disarmed system, and the wall panels, the other sessions and the places the alarms go to are told; only an administrator with a fresh proof of identity reads the record apart. A wall panel shows the alarm to whoever stands in front of it, so place the panels with that in mind (off by default) |
 | Camera passwords leaking | AES-256-GCM in `data/cameras.json`; no API returns them; FFmpeg goes through a local RTSP tunnel (`media.rtsp_proxy`) so the password is never on a command line; ONVIF redirects are refused |
 | Live video without signing in | A stream ticket tied to one camera, issued only to an operator |
 | Flooding the API | 240 requests a minute in general (node posts have their own budget of 6000 a minute); JSON bodies of 64 kB (9 MB for an installation file) |
@@ -157,7 +158,7 @@ flowchart LR
 
 ## 🔌 Interfaces
 
-The route table (`docs/ROUTES.md`, generated from the code) lists every route with who may call it; the OpenAPI file of ARMOR-COMMON describes 247 paths and 320 operations, and a test fails if a route is missing from it. The ones that matter most:
+The route table (`docs/ROUTES.md`, generated from the code) lists every route with who may call it; the OpenAPI file of ARMOR-COMMON describes 248 paths and 321 operations, and a test fails if a route is missing from it. The ones that matter most:
 
 | Route | Auth | What it does |
 |---|---|---|

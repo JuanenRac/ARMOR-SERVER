@@ -21,6 +21,7 @@ test("when the browser leaves in the middle of an answer, the connection to the 
   const running = await startServer();
   try {
     const cookie = await studioCookie(running.base);
+    await fetch(`${running.base}/api/v1/security/settings`, { method: "PUT", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ "panel.proxy_http": true }) });
     await fetch(`${running.base}/api/v1/admin/node-panels/radar-salon`, { method: "PUT", headers: { ...json, Cookie: cookie }, body: JSON.stringify({ address: "127.0.0.1", scheme: "http", port, label: "Salon" }) });
     const controller = new AbortController();
     const reply = await fetch(`${running.base}/api/v1/nodes/radar-salon/panel/stream`, { headers: { Cookie: cookie }, signal: controller.signal });

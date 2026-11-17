@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { nodeTokenFor, SharedTokenWatch } from "../src/http/node_token.js";
+import { legacyNodeTokenFor, SharedTokenWatch } from "../src/http/node_token.js";
 import { lowers, SECURITY_DEFAULTS, SecuritySettings } from "../src/security_settings.js";
 import { SECRETS, startServer, studioCookie, tempDir } from "./helpers.js";
 
@@ -53,12 +53,15 @@ test("through the routes: the shared token works until the strict switch is on, 
     const call = (method: string, url: string, body?: unknown) => fetch(`${running.base}${url}`, { method, headers: { "Content-Type": "application/json", cookie }, body: body === undefined ? undefined : JSON.stringify(body) });
     const ingest = (token: string) => fetch(`${running.base}/api/v1/solar`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ node_id: "gw-1" }) });
     assert.notEqual((await ingest(SECRETS.ARMOR_INGEST_TOKEN)).status, 401, "off by default: the boards in the field keep working");
+    const legacy = legacyNodeTokenFor(SECRETS.ARMOR_INGEST_TOKEN, "gw-1");
+    assert.notEqual((await ingest(legacy)).status, 401, "the token an older version derived from the shared one is still taken while the strict mode is off");
     const listed = async () => ((await (await call("GET", "/api/v1/security/settings")).json()) as { ingest_shared_token_nodes: Array<{ node_id: string }> }).ingest_shared_token_nodes.map(item => item.node_id);
     assert.deepEqual(await listed(), ["gw-1"]);
     assert.equal((await call("POST", "/api/v1/studio/elevate", { password: SECRETS.ARMOR_STUDIO_PASSWORD })).status, 200);
     assert.equal((await call("PUT", "/api/v1/security/settings", { "nodes.ingest_strict": true })).status, 200);
     assert.equal((await ingest(SECRETS.ARMOR_INGEST_TOKEN)).status, 401);
-    assert.notEqual((await ingest(nodeTokenFor(SECRETS.ARMOR_INGEST_TOKEN, "gw-1"))).status, 401, "the node's own token is still taken");
+    assert.equal((await ingest(legacy)).status, 401, "and refused once it is on: it can be worked out from the shared token");
+    assert.notEqual((await ingest(running.app.context.nodeTokens.tokenFor("gw-1"))).status, 401, "the node's own token is still taken");
     assert.deepEqual(await listed(), [], "a node that speaks with its own token leaves the list");
     assert.match(fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8"), /nodes\.ingest_strict.*false -> true/);
   } finally { await running.stop(); }

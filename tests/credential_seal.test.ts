@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { openSealed, sealFor } from "../src/http/credential_seal.js";
-import { nodeTokenFor } from "../src/http/node_token.js";
+import { nodeTokenOf } from "../src/http/node_token.js";
 
 test("a sealed login opens with the same token and only with it", () => {
-  const token = nodeTokenFor("i".repeat(32), "net-1");
+  const token = nodeTokenOf("a1".repeat(32), "net-1");
   const sealed = sealFor(token, JSON.stringify({ user: "admin", password: "p4ss wörd" }));
   assert.equal(openSealed(token, sealed), JSON.stringify({ user: "admin", password: "p4ss wörd" }));
-  assert.equal(openSealed(nodeTokenFor("i".repeat(32), "net-2"), sealed), null);
+  assert.equal(openSealed(nodeTokenOf("a1".repeat(32), "net-2"), sealed), null);
   assert.ok(!Buffer.from(sealed, "base64").toString("latin1").includes("p4ss"));
 });
 

@@ -28,9 +28,9 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
   const limit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
 
   /** Raises the silent duress alarm for a user's panic phrase unless that user's quiet time is still running; only the fact is written to the trail, never the words. */
-  const raisePanic = (id: string, username: string, via?: string): void => {
+  const raisePanic = (request: Request, id: string, username: string, via?: string): void => {
     const now = Date.now(), last = panicLast.get(id) ?? 0, quiet = context.securitySettings.get("voice.panic_cooldown_s") * 1000;
-    if (now - last >= quiet) { panicLast.set(id, now); alarms.raiseDuress(username); audit.record({ action: "voice.panic", outcome: "allowed", actor: username, detail: via ? `duress raised, ${via}` : "duress raised" }); }
+    if (now - last >= quiet) { panicLast.set(id, now); context.raiseDuress(request, username, "panic_phrase"); audit.record({ action: "voice.panic", outcome: "allowed", actor: username, detail: via ? `duress raised, ${via}` : "duress raised" }); }
     else audit.record({ action: "voice.panic", outcome: "denied", actor: username, detail: via ? `quiet time, ${via}` : "quiet time" });
   };
   const panicCheckLimit = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false });
@@ -48,7 +48,7 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
     if (input.text.length > 240) return response.status(422).json({ error: "text_too_long" });
     if (context.securitySettings.get("voice.panic_phrase")) {
       const owner = users.panicPhraseOwner(input.text);
-      if (owner) raisePanic(owner.id, owner.username, panelBehind(request) ? `via ${panelBehind(request)}` : "via gateway");
+      if (owner) raisePanic(request, owner.id, owner.username, panelBehind(request) ? `via ${panelBehind(request)}` : "via gateway");
     }
     return response.json({ ok: true });
   });
@@ -177,7 +177,7 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
     // is the one of a command that was not understood, so whoever stands beside cannot tell. Inside the quiet time of the option nothing more is raised. Only the words are secret: the trail holds the fact.
     const me = studioUser(request);
     if (me && context.securitySettings.get("voice.panic_phrase") && users.matchesPanicPhrase(me.id, text)) {
-      raisePanic(me.id, me.username);
+      raisePanic(request, me.id, me.username);
       return response.json({ accepted: false, executed: false, intent: null, outcome: "", speech: "" });
     }
 
@@ -195,8 +195,8 @@ export function registerVoiceRoutes(app: Express, context: AppContext): void {
         // A voice that disarms is a disarm like any other: it carries the PIN of the signed-in user (said or typed on the second turn) and gets the same refusals.
         const verdict = await checkDisarm(context, studioUser(request), input.pin, actor(request));
         if (!verdict.allow) return response.status(verdict.status).json(verdict.body);
-        if (verdict.duress) alarms.raiseDuress(actor(request));
-        audit.record({ action: "control.disarm", outcome: "allowed", actor: actor(request), detail: verdict.duress ? "voice, duress" : "voice" });
+        if (verdict.duress) context.raiseDuress(request, actor(request), "voice_pin");
+        audit.record({ action: "control.disarm", outcome: "allowed", actor: actor(request), detail: verdict.duress && context.securitySettings.get("alarm.duress_hide_trail") !== true ? "voice, duress" : "voice" });
         context.disarmAll(actor(request)); executed = true; speech = spokenResult(language, { intent: "disarm" }); result = { mode: "disarmed" };
       } else if (answer.accepted && answer.intent === "status") {
         const state = store.snapshot();

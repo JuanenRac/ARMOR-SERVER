@@ -19,9 +19,12 @@ export function energySummary(totals: SolarTotals): { reporting: boolean; pv_w: 
   };
 }
 
-/** The summary: always a few hundred bytes, whatever the installation holds. The alarms nobody has acknowledged come first, newest first. */
-export function buildPanelSummary(context: Pick<AppContext, "store" | "alarms" | "solar"> & { armingModes?: Pick<AppContext["armingModes"], "countdown"> }, now: () => number = Date.now): Record<string, unknown> {
-  const state = context.store.snapshot(), nodes = Object.values(state.nodes), active = context.alarms.active();
+/**
+ * The summary: always a few hundred bytes, whatever the installation holds. The alarms nobody has acknowledged come first, newest first. A silent duress alarm raised while the option
+ * alarm.duress_hide_trail is on is in it too (a wall panel shows it to whoever stands there), except for the session that disarmed, which names it in `hidden`.
+ */
+export function buildPanelSummary(context: Pick<AppContext, "store" | "alarms" | "solar"> & { armingModes?: Pick<AppContext["armingModes"], "countdown"> }, now: () => number = Date.now, hidden?: ReadonlySet<string>): Record<string, unknown> {
+  const state = context.store.snapshot(), nodes = Object.values(state.nodes), active = context.alarms.active({ shown: true, ...(hidden ? { hidden } : {}) });
   const delay = context.armingModes?.countdown();   // present only while an exit or entry delay runs
   const order = [...active].sort((a, b) => Number(Boolean(a.acknowledged_at)) - Number(Boolean(b.acknowledged_at)) || b.raised_at.localeCompare(a.raised_at));
   return {
@@ -44,6 +47,8 @@ export const MAX_PANEL_BUFFERED_BYTES = 64 * 1024;
 /** A panel that hears nothing for a few of these knows the channel is gone: the summary is sent again, unchanged, at least this often, and the frame says how often (`heartbeat_ms`). */
 export const PANEL_HEARTBEAT_MS = 5000;
 
+const NO_ALARMS: ReadonlySet<string> = new Set();
+
 export type PanelFeed = {
   /** Sends the summary to every open socket when something in it changed since the last time (the clock in it does not count). `force` sends it anyway. */
   push(force?: boolean): void;
@@ -51,8 +56,13 @@ export type PanelFeed = {
   hello(socket: PanelSocket): void;
 };
 
-export function createPanelFeed(summary: () => Record<string, unknown>, sockets: () => Iterable<PanelSocket>): PanelFeed {
-  let last = "";
+/**
+ * `hiddenOf` names the alarms a socket must not be told about (the session behind it disarmed under duress): the sockets that share the same list share one document, so the usual case
+ * (nobody is hidden from anybody) builds the summary once, as before.
+ */
+export function createPanelFeed(summary: (hidden: ReadonlySet<string>) => Record<string, unknown>, sockets: () => Iterable<PanelSocket>, hiddenOf?: (socket: PanelSocket) => ReadonlySet<string>): PanelFeed {
+  const last = new Map<string, string>();
+  const view = (socket: PanelSocket): { key: string; hidden: ReadonlySet<string> } => { const hidden = hiddenOf?.(socket) ?? NO_ALARMS; return { key: [...hidden].sort().join(","), hidden }; };
   const line = (document: Record<string, unknown>): string => JSON.stringify({ type: "summary", heartbeat_ms: PANEL_HEARTBEAT_MS, summary: document });
   const sendTo = (socket: PanelSocket, text: string): void => {
     if (socket.readyState !== OPEN) return;
@@ -61,17 +71,25 @@ export function createPanelFeed(summary: () => Record<string, unknown>, sockets:
   };
   return {
     push(force = false): void {
-      let any = false;
-      for (const socket of sockets()) { any = true; break; }
-      if (!any) return;   // nobody listens: nothing is built
-      const document = summary();
-      const { time_ms: _clock, ...stable } = document;
-      const key = JSON.stringify(stable);
-      if (!force && key === last) return;
-      last = key;
-      const text = line(document);
-      for (const socket of sockets()) sendTo(socket, text);
+      const groups = new Map<string, { hidden: ReadonlySet<string>; members: PanelSocket[] }>();
+      for (const socket of sockets()) {
+        const { key, hidden } = view(socket);
+        const group = groups.get(key) ?? { hidden, members: [] };
+        group.members.push(socket);
+        groups.set(key, group);
+      }
+      if (groups.size === 0) return;   // nobody listens: nothing is built
+      for (const key of [...last.keys()]) if (!groups.has(key)) last.delete(key);
+      for (const [key, group] of groups) {
+        const document = summary(group.hidden);
+        const { time_ms: _clock, ...stable } = document;
+        const fingerprint = JSON.stringify(stable);
+        if (!force && fingerprint === last.get(key)) continue;
+        last.set(key, fingerprint);
+        const text = line(document);
+        for (const socket of group.members) sendTo(socket, text);
+      }
     },
-    hello(socket: PanelSocket): void { sendTo(socket, line(summary())); },
+    hello(socket: PanelSocket): void { sendTo(socket, line(summary(view(socket).hidden))); },
   };
 }
