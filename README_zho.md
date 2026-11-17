@@ -41,7 +41,7 @@
 | 角色 | 家族的中央安全协调器：节点、报警、设备、能源、摄像头、网络 |
 | 技术栈 | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | 测试 | 1152 项（`npm test`：单元与完整 HTTP 集成） |
-| 契约 | 247 条 HTTP 路径、320 个操作（OpenAPI 在 ARMOR-COMMON 中），路由表见 `docs/ROUTES.md` |
+| 契约 | 248 条 HTTP 路径、321 个操作（OpenAPI 在 ARMOR-COMMON 中），路由表见 `docs/ROUTES.md` |
 | 监听地址 | `127.0.0.1:18080`（`ARMOR_HOST`、`ARMOR_PORT`） |
 | 运行位置 | CM5 测试台（作为服务，见 ARMOR-DEVOPS）或任何装有 Node.js 的计算机 |
 | 真实硬件 | CM5 测试台的日常使用：真实的 MQTT 代理、真实的 IP 摄像头、ESP32-S3 板上的真实雷达节点，以及与之配合的 Studio、Android 应用和语音、观察服务 |
@@ -142,6 +142,7 @@ flowchart LR
 | 被盗的 Cookie、来自其他站点的请求 | HttpOnly、SameSite=Strict，HTTPS 后使用 Secure；会话时长：Studio 7 天、操作员 8 小时、从外部访问 12 小时（空闲 30 分钟） |
 | 计时攻击与弱密钥 | 密钥以恒定时间比较，至少 24 个字符且互不相同（采集、控制、操作员、摄像头密钥、AI、证据密钥） |
 | 未经验证的撤防 | 由 `alarm.disarm_pin`（never、if_set、always）决定的 4 到 10 位 PIN；错误 3 次后锁定 60 秒、5 分钟、15 分钟，之后 1 小时，重启后仍保存在磁盘；胁迫 PIN 会被悄悄区分；控制令牌仅在 `ARMOR_CONTROL_DISARM=1` 时可撤防 |
+| 胁迫下的撤防 | 胁迫 PIN 与正确 PIN 一样撤防，并悄悄触发警报。启用 `alarm.duress_hide_trail` 后，审计记录和历史只显示一次普通撤防，撤防的人看到的是正常撤防的系统，而墙面面板、其他会话和警报的接收处会收到通知；只有近期验证过身份的管理员才能读取单独保存的记录。墙面面板会向站在面前的人显示警报，所以安放面板时要考虑这一点（默认关闭） |
 | 摄像头密码泄露 | 以 AES-256-GCM 存于 `data/cameras.json`，任何 API 都不返回；FFmpeg 通过本地 RTSP 隧道（`media.rtsp_proxy`），密码绝不出现在命令行；拒绝 ONVIF 重定向 |
 | 未登录观看实时视频 | 仅绑定一台摄像头的流票据，只发给操作员 |
 | 洪泛 API | 通常每分钟 240 个请求（节点 POST 有单独的每分钟 6000 额度）；JSON 请求体 64 kB（安装文件 9 MB） |
@@ -157,7 +158,7 @@ flowchart LR
 
 ## 🔌 接口
 
-路由表（`docs/ROUTES.md`，由代码生成）列出每条路由及可调用者；ARMOR-COMMON 的 OpenAPI 文件描述了 247 条路径和 320 个操作，缺少任何路由时测试会失败。最重要的几条：
+路由表（`docs/ROUTES.md`，由代码生成）列出每条路由及可调用者；ARMOR-COMMON 的 OpenAPI 文件描述了 248 条路径和 321 个操作，缺少任何路由时测试会失败。最重要的几条：
 
 | 路由 | 认证 | 作用 |
 |---|---|---|

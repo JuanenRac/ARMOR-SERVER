@@ -60,12 +60,12 @@ export function registerFirmwareRoutes(app: Express, context: AppContext): void 
     if (!user || !password || user.length > 64 || password.length > 128) return response.status(422).json({ error: "no_panel_login" });
     try {
       const job = firmware.start({
-        kind, source, uploadId: typeof input.upload_id === "string" ? input.upload_id : undefined,
+        kind, source, uploadId: typeof input.upload_id === "string" ? input.upload_id : undefined, allowDowngrade: input.allow_downgrade === true,
         targets: targets.map(item => ({ address: String(item.address), ...(typeof item.node_id === "string" && NODE_ID.test(item.node_id) ? { node_id: item.node_id } : {}) })),
         login: { user, password },
         onNode: (finished, target) => audit.record({ action: "admin.firmware.node", outcome: target.state === "done" ? "allowed" : "failed", actor: actor(request), target: target.node_id ?? target.address, detail: `${finished.kind} ${target.version_before ?? "?"} -> ${target.version_after ?? "?"}${target.error ? ` (${target.error})` : ""}` }),
       });
-      audit.record({ action: "admin.firmware.start", outcome: "allowed", actor: actor(request), target: kind, detail: `${source}, ${targets.length} node(s)` });
+      audit.record({ action: "admin.firmware.start", outcome: "allowed", actor: actor(request), target: kind, detail: `${source}, ${targets.length} node(s)${input.allow_downgrade === true ? ", older versions allowed" : ""}` });
       return response.status(202).json({ id: job.id });
     } catch (error) { const { status, error: code } = fail(error); return response.status(status).json({ error: code }); }
   });

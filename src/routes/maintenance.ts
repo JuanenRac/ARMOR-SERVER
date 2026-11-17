@@ -17,10 +17,13 @@ const JOB_ID = /^[A-Za-z0-9-]{1,40}$/;
 const relay = (response: Response, reply: AdminReply) => response.status(reply.status).json(reply.body);
 
 export function registerMaintenanceRoutes(app: Express, context: AppContext): void {
-  const { maintenance, audit, requireAdmin, studioUser, users, config, store, alarmNodes } = context;
+  const { maintenance, audit, requireAdmin, studioUser, studioSessions, users, config, store, alarmNodes } = context;
   const actor = (request: Request) => studioUser(request)?.username;
   const body = (request: Request): Record<string, unknown> => (typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {});
+  /** Who has the console open: the SESSION that typed the password (not the person: another session of the same person, a stolen cookie or one from outside, does not inherit it). */
   const unlocked = new Map<string, number>();
+  const sessionOf = (request: Request): string => studioSessions.handleOf(request) ?? "";
+  const dropExpired = (): void => { const now = Date.now(); for (const [key, until] of unlocked) if (until <= now) unlocked.delete(key); };
   const failures = new Map<string, number[]>();
   const ended = new Set<string>();
 
@@ -142,7 +145,7 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
 
   // ---- the console ----
   app.get("/api/v1/admin/console", requireAdmin, async (request, response) => {
-    const until = unlocked.get(actor(request) ?? "") ?? 0;
+    const until = unlocked.get(sessionOf(request)) ?? 0;
     if (!maintenance) return response.json({ available: false, enabled: false, unlocked_until: 0 });
     try { const reply = await maintenance.request("GET", "/v1/console"); return response.json({ available: reply.status === 200, enabled: reply.body.enabled === true, unlocked_until: until > Date.now() ? until : 0 }); }
     catch { return response.json({ available: false, enabled: false, unlocked_until: 0 }); }
@@ -163,18 +166,19 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
     }
     failures.delete(name);
     const until = Date.now() + UNLOCK_MS;
-    unlocked.set(name, until);
+    dropExpired();
+    if (sessionOf(request)) unlocked.set(sessionOf(request), until);
     audit.record({ action: "console.unlock", outcome: "allowed", actor: name });
     return response.json({ unlocked_until: until });
   });
 
   app.post("/api/v1/admin/console/lock", requireAdmin, (request, response) => {
-    unlocked.delete(actor(request) ?? "");
+    unlocked.delete(sessionOf(request));
     audit.record({ action: "console.lock", outcome: "allowed", actor: actor(request) });
     response.json({ unlocked_until: 0 });
   });
 
-  const isUnlocked = (request: Request) => (unlocked.get(actor(request) ?? "") ?? 0) > Date.now();
+  const isUnlocked = (request: Request) => sessionOf(request) !== "" && (unlocked.get(sessionOf(request)) ?? 0) > Date.now();
 
   app.post("/api/v1/admin/console/run", requireAdmin, async (request, response) => {
     if (!isUnlocked(request)) return response.status(403).json({ error: "console_locked" });
@@ -189,7 +193,7 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
     const reply = await ask(response, "POST", "/v1/console/run", { command, cwd, timeout });
     if (!reply) { audit.record({ action: "console.run", outcome: "failed", actor: actor(request), target: cwd, detail: "the agent did not answer: the command may have run" }); return; }
     audit.record({ action: "console.run", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: cwd, detail: `answered ${reply.status}` });
-    if (reply.status < 300) unlocked.set(actor(request) ?? "", Date.now() + UNLOCK_MS);   // using it keeps it open
+    if (reply.status < 300) unlocked.set(sessionOf(request), Date.now() + UNLOCK_MS);   // using it keeps it open
     relay(response, reply);
   });
 

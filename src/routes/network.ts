@@ -8,7 +8,6 @@ import express, { type Express } from "express";
 import rateLimit from "express-rate-limit";
 import type { AppContext } from "../context.js";
 import { hasBearer } from "../http/auth.js";
-import { nodeTokenFor } from "../http/node_token.js";
 import { sealFor } from "../http/credential_seal.js";
 import { forwardCompatible } from "../contracts.js";
 import { NoteInvalid, outdatedContract, parseNetworkMessage } from "../network.js";
@@ -34,7 +33,7 @@ export function addressContested(message: { timestamp_ms: number; events?: Array
 }
 
 export function registerNetworkRoutes(app: Express, context: AppContext): void {
-  const { config, networkNodes, networkNotes, networkCommands, deviceCredentials, network, alarmRules, audit, requireOperator, requireAdmin, studioUser } = context;
+  const { networkNodes, networkNotes, networkCommands, deviceCredentials, network, alarmRules, audit, requireOperator, requireAdmin, studioUser } = context;
   const ingestLimit = rateLimit({ windowMs: 60_000, limit: 1_200, standardHeaders: "draft-8", legacyHeaders: false });
   const actor = (request: Parameters<typeof studioUser>[0]): string => studioUser(request)?.username ?? "operator";
   const body = (request: { body?: unknown }): Record<string, unknown> => (typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {});
@@ -55,7 +54,7 @@ export function registerNetworkRoutes(app: Express, context: AppContext): void {
         const login = mayHold ? deviceCredentials.get(command.device_id) : undefined;
         const { login: _asked, ...rest } = command;
         // The login is sealed with the token of this node alone: on plain HTTP it is not readable on the way and no other node can open it. Without one kept, the node looks without one.
-        return login ? { ...rest, auth_sealed: sealFor(nodeTokenFor(config.ingestToken, message.node_id), JSON.stringify({ user: login.user, password: login.password })) } : rest;
+        return login ? { ...rest, auth_sealed: sealFor(context.nodeTokens.tokenFor(message.node_id), JSON.stringify({ user: login.user, password: login.password })) } : rest;
       });
       return response.status(202).json({ accepted: true, commands });
     } catch (error) {

@@ -12,8 +12,13 @@ export type NotifyChannel = {
   id: "telegram" | "homeassistant" | "ntfy" | "fcm";
   /** True for a place that can carry a SILENT alarm (a duress disarm): somewhere a person standing at the panel, or holding the phone that disarmed, cannot see or hear it. */
   quiet?: true;
+  /** True for a place that can carry a silent alarm only when the option alarm.duress_hide_trail is on (the phones: the ones of the person who disarmed are left out, see skipUsers). */
+  pushesSilent?: true;
   deliver(message: AlertMessage, text: string, language: AlertLanguage, signal: AbortSignal): Promise<Attempt>;
 };
+
+/** The people whose own devices a message must not reach (the one being forced, for a silent alarm): set by the notifier before it queues the message, read by the channel that has devices. */
+export const skipUsers = new WeakMap<object, ReadonlySet<string>>();
 
 export type TelegramOptions = { token: string; chatIds: string[]; api?: string; fetchImpl?: typeof fetch };
 export type NtfyOptions = { /** The address of the topic, such as https://ntfy.sh/my-armor-topic or the one of a self-hosted ntfy. */ url: string; token?: string; fetchImpl?: typeof fetch };
