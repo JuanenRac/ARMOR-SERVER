@@ -216,7 +216,7 @@ def strict_evidence_default() -> bool:
 
 def evidence_contradictions(root: Path, state: dict) -> list[str]:
     """The manifest claims bench or field evidence, the repository has hardware and its Hardware row is red."""
-    manifest = state["manifest"]
+    manifest = state.get("manifest", {})
     if manifest.get("evidence") not in ("bench", "field") or manifest.get("hardware_bound", True) is False:
         return []
     return [f"{root.name}: manifest evidence is {manifest.get('evidence')} but row {item['label']!r} is red: lower the evidence or raise the row"
