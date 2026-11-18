@@ -252,7 +252,7 @@ python -I tools/armor_ci_validate.py
 ## 📂 Estrutura do repositório
 
 <p align="center">
-  <img src="images/repository-structure.svg" alt="Repository structure of ARMOR-SERVER" width="100%">
+  <img src="images/repository-structure.svg" alt="Estrutura do repositório de ARMOR-SERVER" width="100%">
 </p>
 
 <details>
