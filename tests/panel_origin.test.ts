@@ -7,6 +7,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { remoteMayRequest } from "../src/remote_policy.js";
 import { isOwnOrigin, PANEL_COOKIE, PANEL_SESSION_IDLE_MS, PANEL_TICKET_TTL_MS, PanelSessions, PanelTickets, type PanelGrant } from "../src/panel_origin.js";
 import { lowers, SECURITY_DEFAULTS } from "../src/security_settings.js";
 import { SECRETS, startServer, studioCookie, testConfig } from "./helpers.js";
@@ -211,7 +212,7 @@ test("on, a panel is entered with a ticket of one use and then lives on its own 
 
     // the API does not know the cookie of the panel origin
     assert.equal((await fetch(`${running.base}/api/v1/admin/node-panels`, { headers: { Cookie: panelCookie } })).status, 401);
-    assert.equal((await fetch(`${running.base}/api/v1/studio/session`, { headers: { Cookie: panelCookie } })).status !== 200, true);
+    assert.equal(((await (await fetch(`${running.base}/api/v1/studio/session`, { headers: { Cookie: panelCookie } })).json()) as { authenticated: boolean }).authenticated, false, "not a session of Studio");
 
     const audit = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8");
     assert.match(audit, /node-panel\.ticket/);
@@ -387,4 +388,14 @@ test("when the port of the second origin is taken the ticket is refused with 503
     assert.equal(running.app.panelOrigin.port(), undefined);
     assert.equal((await fetch(`${running.base}/api/v1/admin/node-panels`, { headers: { Cookie: cookie } })).status, 200, "the API goes on");
   } finally { delete process.env.ARMOR_ADMIN_NODE_PORT; await running.stop(); await node.close(); await new Promise<void>(resolve => blocker.close(() => resolve())); }
+});
+
+test("asking for the ticket of a panel is looking at it: open from outside under operate, closed under view, and no other administrator write opens with it", () => {
+  const ticket = "/api/v1/admin/node-panels/radar-1/ticket";
+  assert.equal(remoteMayRequest("operate", "POST", ticket), true);
+  assert.equal(remoteMayRequest("view", "POST", ticket), false);
+  assert.equal(remoteMayRequest("full", "POST", ticket), true);
+  assert.equal(remoteMayRequest("operate", "PUT", "/api/v1/admin/node-panels/radar-1"), false);
+  assert.equal(remoteMayRequest("operate", "POST", "/api/v1/admin/node-panels/radar-1/fingerprint"), false);
+  assert.equal(remoteMayRequest("operate", "DELETE", "/api/v1/admin/node-panels/radar-1"), false);
 });

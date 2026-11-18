@@ -10,6 +10,8 @@ import type { RemotePolicy } from "./remote_admin_gate.js";
 /** The things a session from outside may always do: manage its own sign-in, register its phone and ask for the ticket of a camera stream. */
 const OWN = /^\/api\/v1\/(studio\/(session|sessions|elevate|totp)|push\/(un)?register)/;
 const OWN_TICKET = /^\/api\/v1\/cameras\/[^/]+\/(stream|preview)-ticket$/;
+/** The ticket that opens a node panel on its own origin: asking for it is looking at the panel, as the read of the panel through the API was (closed under view, open under operate). */
+const PANEL_TICKET = /^\/api\/v1\/admin\/node-panels\/[^/]+\/ticket$/;
 /** What administers the house: users, the installation, the firmware, the broker, the node panels. */
 export const REMOTE_ADMIN_PATHS = /^\/api\/v1\/(admin|users|installation|system\/ingest|preferences|solar\/battery-ops|diagnostics\/tokens|nodes\/control|nodes\/[^/]+\/(panel|control|diagnostics))(\/|$)/;
 /** The routes that are closed from outside by their path because they carry no `requireOperator` / `requireAdmin`; every other closed route is closed by its guard. The routes that a node or a service calls with its own token (ingest, the observation service) never carry a Studio session, so the policy has nothing to say about them. */
@@ -19,7 +21,7 @@ export const REMOTE_BACKSTOP = /^\/api\/v1\/(preferences|account|devices\/trust|
 export function remoteMayRequest(policy: RemotePolicy, method: string, rawPath: string): boolean {
   if (policy === "full") return true;
   const gated = gatePath(rawPath);
-  const reads = method === "GET" || method === "HEAD" || method === "OPTIONS";
+  const reads = method === "GET" || method === "HEAD" || method === "OPTIONS" || (method === "POST" && PANEL_TICKET.test(gated));
   const own = OWN.test(gated) || (method === "POST" && OWN_TICKET.test(gated));
   const admin = REMOTE_ADMIN_PATHS.test(gated);
   if (reads && !(admin && policy === "view")) return true;

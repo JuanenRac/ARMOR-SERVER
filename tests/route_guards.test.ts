@@ -88,8 +88,8 @@ const TOKEN_ROUTES = ["POST /api/v1/ai/activity-events", "POST /api/v1/ai/ignore
 // The decision as it was written before it moved into the guards: one regular expression over the path for every route.
 function previousVerdict(policy: RemotePolicy, method: string, rawPath: string): boolean {
   if (policy === "full") return true;
-  const reads = method === "GET" || method === "HEAD" || method === "OPTIONS";
   const gated = gatePath(rawPath);
+  const reads = method === "GET" || method === "HEAD" || method === "OPTIONS" || (method === "POST" && /^\/api\/v1\/admin\/node-panels\/[^/]+\/ticket$/.test(gated));   // asking for the ticket of a node panel is looking at it
   const own = /^\/api\/v1\/(studio\/(session|sessions|elevate|totp)|push\/(un)?register)/.test(gated) || (method === "POST" && /^\/api\/v1\/cameras\/[^/]+\/(stream|preview)-ticket$/.test(gated));
   const admin = /^\/api\/v1\/(admin|users|installation|system\/ingest|preferences|solar\/battery-ops|diagnostics\/tokens|nodes\/control|nodes\/[^/]+\/(panel|control|diagnostics))(\/|$)/.test(gated);
   if (reads && !(admin && policy === "view")) return true;
