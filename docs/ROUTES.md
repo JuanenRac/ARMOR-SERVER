@@ -53,6 +53,7 @@ Every route the code registers, with who may call it and the file that registers
 | DELETE | `/api/v1/admin/node-panels/:id` | administrator, fresh proof of identity | `node_panel_proxy.ts` |
 | PUT | `/api/v1/admin/node-panels/:id` | administrator, fresh proof of identity | `node_panel_proxy.ts` |
 | POST | `/api/v1/admin/node-panels/:id/fingerprint` | administrator, fresh proof of identity | `node_panel_proxy.ts` |
+| POST | `/api/v1/admin/node-panels/:id/ticket` | administrator | `node_panel_proxy.ts` |
 | GET | `/api/v1/admin/nodes/:id/token` | administrator | `routes/admin.ts` |
 | POST | `/api/v1/admin/nodes/provision` | administrator | `routes/admin.ts` |
 | POST | `/api/v1/admin/nodes/settings` | administrator | `routes/admin.ts` |
@@ -316,5 +317,6 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/voice/turn` | none here | `routes/voice.ts` |
 | POST | `/api/v1/voice/v1/turn` | none here | `routes/voice.ts` |
 | POST | `/api/v1/voice/wake` | none here | `routes/voice.ts` |
+| GET | `/enter/:ticket` | none here | `panel_origin.ts` |
 | GET | `/healthz` | none here | `routes/ingest.ts` |
 | GET | `/metrics` | none here | `routes/system.ts` |

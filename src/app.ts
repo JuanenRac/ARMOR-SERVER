@@ -58,7 +58,7 @@ import { registerTrustedDeviceRoutes } from "./routes/trusted_devices.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerBackupRoutes } from "./routes/backup.js";
 import { registerFirmwareRoutes } from "./routes/firmware.js";
-import { registerNodePanelRoutes } from "./node_panel_proxy.js";
+import { registerNodePanelRoutes, type PanelOriginControl } from "./node_panel_proxy.js";
 import { buildPanelSummary, createPanelFeed, PANEL_HEARTBEAT_MS } from "./panel_feed.js";
 import { registerVoiceRoutes } from "./routes/voice.js";
 import { registerPanicGestureRoutes } from "./routes/panic_gesture.js";
@@ -77,7 +77,7 @@ import { registerUserRoutes } from "./routes/users.js";
 import type { SystemState } from "./store.js";
 import { remoteBackstopMayRequest } from "./remote_policy.js";
 
-export type ArmorApp = { server: Server; context: AppContext; express: Express; close(): Promise<void> };
+export type ArmorApp = { server: Server; context: AppContext; express: Express; /** The second origin of the node panels (it listens only while panel.separate_origin is on). */ panelOrigin: PanelOriginControl; close(): Promise<void> };
 
 const headerReader = (request: IncomingMessage) => ({ header: (name: string) => { const value = request.headers[name.toLowerCase()]; return Array.isArray(value) ? value[0] : value; } });
 
@@ -138,6 +138,13 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   const smallJson = express.json({ limit: "64kb", type: "application/json" });
   // The panel of a node is passed on as it comes (its body goes to the node untouched), and the installation file has its own, larger limit (9 MB): neither is read here.
   app.use((request, response, next) => (/^\/api\/v1\/nodes\/[^/]+\/panel(\/|$)/.test(request.path) || (request.method === "POST" && request.path === "/api/v1/admin/installation") || ((request.path === "/api/v1/site" || request.path === "/api/v1/electrical/design" || request.path === "/api/v1/network/design" || request.path === "/api/v1/alarm/design") && request.method === "PUT") ? next() : smallJson(request, response, next)));
+  // The second origin of the node panels (panel.separate_origin) has no business with the API: a page that comes from there is refused whatever it asks, before any session is read.
+  let panelOrigin: PanelOriginControl | undefined;
+  app.use((request, response, next) => {
+    if (!panelOrigin?.refuses(request)) return next();
+    context.audit.record({ action: "node-panel.blocked", outcome: "denied", target: `${request.method} ${request.path}`, detail: "request of the panel origin to the API" });
+    return response.status(403).json({ error: "the panels of the nodes have no access to the API", code: "panel_origin_forbidden" });
+  });
   app.use(cors({ origin: config.studioOrigins, credentials: true, methods: ["GET", "POST", "PUT", "PATCH", "DELETE"] }));
   // Field-node ingest has its own, larger budget (routes/ingest.ts): a burst of node messages must never lock an operator out.
   // A signed-in operator is identified, so the console's own polling never spends the anonymous budget (which exists to slow a flood
@@ -207,7 +214,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerBackupRoutes(app, context);
   registerVisionTimelineRoutes(app, context);
   registerFirmwareRoutes(app, context);
-  registerNodePanelRoutes(app, context);
+  panelOrigin = registerNodePanelRoutes(app, context);
   registerVoiceRoutes(app, context);
   registerAlarmAudioRoutes(app, context);
   registerLoadSheddingRoutes(app, context);
@@ -415,6 +422,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   const sweeper = setInterval(() => {
     try {
       context.escalator.tick(); context.automations.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.batteryWrite.sweep(); context.nodeControl.sweep(); context.diagnosticTokens.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.armingModes.tick(); context.reportSilentNodes(); context.networkNodes.sweep();
+      void panelOrigin?.sync();   // the second origin of the panels follows its option: open while it is on, closed when it is off
       context.studioSessions.sweep(); context.operatorSessions.sweep(); context.connections.registry.tick(); context.nodeLife.flush();
       void context.backup.tick(context.securitySettings.get("admin.backup"));
       sweepFailing = false;
@@ -433,7 +441,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
     first.unref(); every.unref(); watchdogs.push(first, every);
   }
   return {
-    server, context, express: app,
+    server, context, express: app, panelOrigin: panelOrigin as PanelOriginControl,
     close: async () => {
       clearInterval(sweeper);
       clearInterval(watchSockets);
@@ -458,6 +466,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       clients.close();
       for (const client of panelClients.clients) client.terminate();
       panelClients.close();
+      await panelOrigin?.close();
       await new Promise<void>(resolve => server.close(() => resolve()));
     },
   };

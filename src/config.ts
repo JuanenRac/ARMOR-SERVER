@@ -99,6 +99,10 @@ export type ArmorConfig = {
   remotePolicy: "full" | "operate" | "view";
   studioOrigins: string[];
   cookieSecure: boolean;
+  /** ARMOR_PANEL_PORT: the port of the second origin that serves the panels of the nodes while the option panel.separate_origin is on (0, the default, is the port of the server plus one). */
+  panelPort: number;
+  /** ARMOR_PANEL_ORIGIN: the address people open that second origin at when it is not the one the request came to (a proxy in front, another name for the same machine); null when not set. */
+  panelOrigin: string | null;
   dataDir: string;
   ffmpegPath: string;
   maxMjpegRelays: number;
@@ -278,6 +282,17 @@ const secret = (env: Env, key: string): string => {
   if (!value) throw new ConfigError(`${key} must be configured`);
   if (value.length < MIN_SECRET_LENGTH) throw new ConfigError(`${key} must be at least ${MIN_SECRET_LENGTH} characters`);
   return value;
+};
+
+/** The port of the origin of the panels: the one asked for, or (0) the one next to the port of the server. */
+const panelPortOf = (asked: number, serverPort: number): number => (asked > 0 ? asked : serverPort < 65535 ? serverPort + 1 : serverPort - 1);
+
+const panelOriginOf = (raw: string | undefined): string | null => {
+  const value = raw?.trim() ?? "";
+  if (!value) return null;
+  const origin = parseOrigin(value);
+  if (origin === null) throw new ConfigError("ARMOR_PANEL_ORIGIN must be an http or https address (scheme, host and optional port) without a path");
+  return origin;
 };
 
 /** A plain http(s) origin without credentials, path, query or fragment. */
@@ -516,6 +531,8 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     remotePolicy: oneOf(env, "ARMOR_REMOTE_POLICY", ["full", "operate", "view"] as const, "full"),
     studioOrigins: originsWithStudioPort([...origins], saved.studio_port),
     cookieSecure: env.ARMOR_COOKIE_SECURE === "1" || ((env.ARMOR_COOKIE_SECURE === undefined || env.ARMOR_COOKIE_SECURE.trim() === "") && (tls !== null || (env.ARMOR_PUBLIC_ORIGIN ?? "").trim().startsWith("https://"))),
+    panelPort: panelPortOf(integer(env, "ARMOR_PANEL_PORT", 0, 0, 65535), saved.port ?? integer(env, "ARMOR_PORT", ARMOR_PORTS.server, 1, 65535)),
+    panelOrigin: panelOriginOf(env.ARMOR_PANEL_ORIGIN),
     dataDir,
     ffmpegPath: env.ARMOR_FFMPEG_PATH?.trim() ?? "",
     maxMjpegRelays: integer(env, "ARMOR_MAX_MJPEG_RELAYS", 8, 1, 64),

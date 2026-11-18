@@ -11,6 +11,7 @@ export const REMOTE_OPERATE_ADMIN_ROUTES: readonly string[] = [
   "POST /api/v1/alarm/command",
   "POST /api/v1/electrical/switch",
   "PUT /api/v1/alarm/modes",
+  "POST /api/v1/admin/node-panels/:id/ticket",   // asking for the address of a node panel is looking at it, as the read of the panel was
 ];
 
 /** Reads that return a secret: closed from outside under `operate` too, although they only read. */
