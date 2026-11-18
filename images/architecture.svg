@@ -96,7 +96,7 @@
 <text x="58" y="560" font-family="'Segoe UI','Noto Sans','Noto Sans CJK SC','Microsoft YaHei','Yu Gothic','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#C9D1D9" text-anchor="start">covered by the server's tests</text>
 <rect x="265.52" y="548" width="14" height="14" rx="3" fill="none" stroke="#00E5FF" stroke-width="2"/>
 <text x="287.52" y="560" font-family="'Segoe UI','Noto Sans','Noto Sans CJK SC','Microsoft YaHei','Yu Gothic','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#C9D1D9" text-anchor="start">security or contract layer</text>
-<rect x="475.59999999999997" y="548" width="14" height="14" rx="3" fill="none" stroke="#30363D" stroke-width="2"/>
+<rect x="475.6" y="548" width="14" height="14" rx="3" fill="none" stroke="#30363D" stroke-width="2"/>
 <text x="497.6" y="560" font-family="'Segoe UI','Noto Sans','Noto Sans CJK SC','Microsoft YaHei','Yu Gothic','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#C9D1D9" text-anchor="start">another repository or a device</text>
 <text x="36" y="604" font-family="'Segoe UI','Noto Sans','Noto Sans CJK SC','Microsoft YaHei','Yu Gothic','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#6E7681" text-anchor="start">The server listens on 127.0.0.1 unless the installation says otherwise on purpose.</text>
 </svg>
