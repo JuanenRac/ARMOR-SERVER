@@ -27,6 +27,11 @@ The tool only moves lights. It never reads or writes the sentence of a row: the 
     python tools/status_lights.py --suggest    # list the rows that could be better by the manifest and the evidence; writes nothing
     python tools/status_lights.py --apply      # lower every light above its ceiling in the eight READMEs and in the source of the generator
     python tools/status_lights.py --apply --raise   # also raise a hardware / integration light one step when the evidence allows it
+    python tools/status_lights.py --check --strict-evidence   # also fail when the manifest claims bench / field evidence and the Hardware row is red
+
+``--strict-evidence`` (or ``ARMOR_STRICT_EVIDENCE=1``, which is what a ci_validate reads) is off by default: without it the same contradiction is
+only listed by --suggest. With it, a manifest whose ``evidence`` is bench or field (and which has hardware) fails when its Hardware row is red:
+either the evidence is not that high or the row is not red.
 
 ``--repo PATH`` works on another repository (default: the repository this file sits in). ``--ci auto|off`` (default: off for --check, auto otherwise)
 asks ``gh run list`` for the last run of the default branch.
@@ -205,9 +210,24 @@ def evaluate(root: Path, ci_mode: str) -> dict:
     return {"manifest": manifest, "items": items, "ci": ci_now}
 
 
-def problems_of(root: Path, state: dict) -> list[str]:
+def strict_evidence_default() -> bool:
+    return os.environ.get("ARMOR_STRICT_EVIDENCE", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def evidence_contradictions(root: Path, state: dict) -> list[str]:
+    """The manifest claims bench or field evidence, the repository has hardware and its Hardware row is red."""
+    manifest = state["manifest"]
+    if manifest.get("evidence") not in ("bench", "field") or manifest.get("hardware_bound", True) is False:
+        return []
+    return [f"{root.name}: manifest evidence is {manifest.get('evidence')} but row {item['label']!r} is red: lower the evidence or raise the row"
+            for item in state["items"] if item["kind"] == "hardware" and item["light"] == RED]
+
+
+def problems_of(root: Path, state: dict, strict: bool | None = None) -> list[str]:
     problems = []
     manifest = state["manifest"]
+    if strict if strict is not None else strict_evidence_default():
+        problems.extend(evidence_contradictions(root, state))
     evidence = manifest.get("evidence")
     if evidence is None:
         problems.append(f"{root.name}: the manifest has no 'evidence' (one of {', '.join(EVIDENCE_LEVELS)})")
@@ -240,7 +260,7 @@ def problems_of(root: Path, state: dict) -> list[str]:
     return problems
 
 
-def run_in_ci(root: Path) -> list[str]:
+def run_in_ci(root: Path, strict: bool | None = None) -> list[str]:
     """What a ci_validate calls: the reasons to fail (a light above its ceiling, no evidence in the manifest, the eight READMEs with different lights). Offline."""
     english = root / "README.md"
     if not english.is_file() or read_table(english.read_bytes().decode("utf-8")) is None:
@@ -249,7 +269,7 @@ def run_in_ci(root: Path) -> list[str]:
         state = evaluate(root, "off")
     except SystemExit:
         return [f"{root.name}: the Project status table or the manifest cannot be read (python tools/status_lights.py --check says what)"]
-    return problems_of(root, state)
+    return problems_of(root, state, strict)
 
 
 def patch_armor_source(root: Path, wanted: list[str]) -> str | None:
@@ -380,11 +400,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", default=str(Path(__file__).resolve().parents[1]))
     parser.add_argument("--ci", choices=("auto", "off"), default=None)
     parser.add_argument("--raise", dest="allow_raise", action="store_true")
+    parser.add_argument("--strict-evidence", action="store_true", help="also fail when the manifest claims bench or field evidence and the Hardware row is red")
     args = parser.parse_args(argv)
     root = Path(args.repo).resolve()
     state = evaluate(root, args.ci or ("off" if args.check else "auto"))
     if args.check:
-        problems = problems_of(root, state)
+        problems = problems_of(root, state, True if args.strict_evidence else None)
         for line in problems:
             print(line, file=sys.stderr)
         if problems:
@@ -393,6 +414,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"STATUS_LIGHTS=PASS {root.name}")
         return 0
     if args.suggest:
+        for line in evidence_contradictions(root, state):
+            print(line)
         for item in state["items"]:
             if item["light"] in ORDER and ORDER.index(item["light"]) < ORDER.index(item["ceiling"]):
                 print(f"{root.name}: {item['label']}: {WORDS[item['light']]} could reach {WORDS[item['ceiling']]} (kind {item['kind']}; a person decides, the sentence must say what ran)")

@@ -29,6 +29,9 @@ Facts per repository (read from ``origin/main`` with ``git show``, so a dirty cl
 a manifest that keeps one, and ``data/manifest_facts.json`` of the docs repository (no dates, so it only changes when a fact changes).
 It never writes ``maturity``, ``evidence`` or ``hardware_bound``.
 
+``--strict-evidence`` (or ``ARMOR_STRICT_EVIDENCE=1``, which a ci_validate reads) is off by default: a manifest whose evidence is bench or field
+without an ``evidence_record`` is then only a NOTE; with it, that is a HARD finding.
+
 Findings are HARD (contradict the computed state; --check fails) or NOTE (information: release pending, unreleased entries, human
 record missing). A repository may list findings it accepts for now in ``data/manifest_waivers.json`` as {"REPO": ["CODE", ...]}.
 """
@@ -235,7 +238,12 @@ class Gh:
         return self.ask(f"ci:{repo}", f"repos/{self.owner}/{repo}/actions/runs?branch=main&status=completed&per_page=1", ".workflow_runs[0].conclusion // \"none\"")
 
 
-def inspect(repo: Repo, gh: Gh | None) -> dict:
+def strict_evidence_default() -> bool:
+    return os.environ.get("ARMOR_STRICT_EVIDENCE", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def inspect(repo: Repo, gh: Gh | None, strict: bool | None = None) -> dict:
+    strict = strict_evidence_default() if strict is None else strict
     raw = repo.read(MANIFEST)
     if raw is None:
         return {"name": repo.name, "findings": [(HARD, "NO_MANIFEST", f"{MANIFEST} not found")]}
@@ -263,7 +271,7 @@ def inspect(repo: Repo, gh: Gh | None) -> dict:
     if evidence == "simulator" and not sim["ci_simulation"]:
         findings.append((HARD, "SIMULATOR_NO_CI_JOB", "evidence is simulator but no workflow runs a simulator, replay or fake bench"))
     if evidence in ("bench", "field") and not manifest.get("evidence_record"):
-        findings.append((NOTE, "HUMAN_RECORD_MISSING", f"evidence is {evidence}: a person has to keep the record of that test in 'evidence_record'"))
+        findings.append((HARD if strict else NOTE, "HUMAN_RECORD_MISSING", f"evidence is {evidence}: a person has to keep the record of that test in 'evidence_record'"))
     if evidence == "none" and sim["ci_simulation"] and hardware_bound is not False:
         findings.append((NOTE, "SIMULATION_NOT_CLAIMED", "a workflow runs a simulation but evidence is none: a person may raise it to simulator"))
     facts = {"manifest_version": version, "native": dict(candidates), "maturity": manifest.get("maturity"), "evidence": evidence, "hardware_bound": hardware_bound,
@@ -326,14 +334,14 @@ def waivers(base: Path | None = None) -> dict:
         return {}
 
 
-def run_in_ci(root: Path) -> list[str]:
+def run_in_ci(root: Path, strict: bool | None = None) -> list[str]:
     """The contradictions of ONE repository, from its working tree and offline: what ci_validate calls (the file is vendored next to it)."""
     global MANIFEST
     names = [n for n in ("hydra-umc.project.json", "armor.project.json", "urtc.project.json") if (root / n).is_file()]
     if not names:
         return []
     MANIFEST = names[0]
-    item = inspect(Repo(root, "WORKTREE"), None)
+    item = inspect(Repo(root, "WORKTREE"), None, strict)
     listed = waivers(root)
     skip = set(listed.get(root.name, [])) | set(listed.get("*", []))
     return [f"manifest facts: {code}: {text}" for level, code, text in item["findings"] if level == HARD and code not in skip]
@@ -349,6 +357,7 @@ def main() -> int:
     parser.add_argument("--apply-manifests", action="store_true", help="also write the derivable fields into the manifests of the clones (local use)")
     parser.add_argument("--self", dest="self_only", action="store_true", help="only the repository this docs repository is, from its working tree (for ci_validate)")
     parser.add_argument("--report")
+    parser.add_argument("--strict-evidence", action="store_true", help="a bench or field evidence without an evidence_record is a HARD finding")
     parser.add_argument("--online", action="store_true")
     parser.add_argument("--owner", default="JuanenRac")
     parser.add_argument("--max-calls", type=int, default=150, help="most GitHub API calls of one run (the quota is shared)")
@@ -358,9 +367,9 @@ def main() -> int:
     workspace = Path(args.workspace)
     gh = Gh(args.owner, args.max_calls, Path(args.cache), args.cache_ttl) if args.online else None
     if args.self_only:
-        results = [inspect(Repo(DOCS, "WORKTREE"), None)]
+        results = [inspect(Repo(DOCS, "WORKTREE"), None, True if args.strict_evidence else None)]
     else:
-        results = [inspect(Repo(path, args.ref), gh) for path in family_repos(workspace, args.repo)]
+        results = [inspect(Repo(path, args.ref), gh, True if args.strict_evidence else None) for path in family_repos(workspace, args.repo)]
     if gh:
         gh.save()
     waived, hard, notes = waivers(), 0, 0

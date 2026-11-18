@@ -14,7 +14,7 @@
   ],
   "deployment_target": "Raspberry Pi CM5 (tested); NVIDIA Jetson Orin NX (planned)",
   "maturity": "established",
-  "evidence": "bench",
+  "evidence": "simulator",
   "family": "Core Services",
   "parent": null,
   "native_version": "0.8.2.3",
