@@ -42,7 +42,7 @@ export const CATALOG: readonly CatalogEntry[] = [
   { id: "broker", name: "MQTT broker", family: "Core", description: "Where the field nodes publish what they read", unit: "armor-mosquitto.service", port: ARMOR_PORTS.mqtt },
   { id: "network", name: "ARMOR-NETWORK", family: "Network", description: "Watches the local network: devices, internet and what changes", unit: "armor-network.service" },
   { id: "server-ai", name: "ARMOR-SERVER-AI", family: "AI and voice", description: "Decides what a camera detection means (day and night, movement first)", unit: "armor-server-ai.service" },
-  { id: "voice-ai", name: "ARMOR-VOICE-AI", family: "AI and voice", description: "Written and spoken commands (a closed list of fifteen commands, arm and disarm confirmed in two turns)", unit: "armor-voice.service", port: ARMOR_PORTS.voice },
+  { id: "voice-ai", name: "ARMOR-VOICE-AI", family: "AI and voice", description: "Written and spoken commands (a closed list of sixteen commands, arm and disarm confirmed in two turns)", unit: "armor-voice.service", port: ARMOR_PORTS.voice },
 ];
 
 const PROPERTIES = ["Id", "Description", "LoadState", "ActiveState", "SubState", "UnitFileState", "MainPID", "ActiveEnterTimestampMonotonic", "ExecMainStartTimestamp", "MemoryCurrent", "NRestarts", "ExecStart", "WorkingDirectory", "Environment"] as const;
