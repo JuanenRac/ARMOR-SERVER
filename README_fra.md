@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 ou ultérieure">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Langage">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-1152%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-1389%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Version-0.8.2.3-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturité">
 </p>
 
 ---
 
-**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** Chaque route, session, chiffrement et règle de preuves ci-dessous est réel et couvert par des tests (`npm test` : 1152 tests, dont une suite complète d'intégration HTTP contre un serveur isolé et une vérification que chaque route est documentée dans le fichier OpenAPI). Il fonctionne en usage quotidien sur le banc de test CM5 avec un vrai broker MQTT, le firmware d'un vrai nœud radar sur une carte ESP32-S3, de vraies caméras IP (vidéo en direct, captures, enregistrements, PTZ sur les unités Hi3510), la console Studio, l'application Android et les services de voix et d'observation. Ce qui n'est **pas** encore prouvé : ONVIF avec une vraie caméra ONVIF, tout matériel Jetson, les routes solaires, électriques, de centrales d'alarme et de panneau tactile avec de vrais nœuds (testées avec des messages générés : seule la carte radar existe) et le push via Firebase avec un vrai projet Firebase.
+**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** Chaque route, session, chiffrement et règle de preuves ci-dessous est réel et couvert par des tests (`npm test` : 1389 tests, dont une suite complète d'intégration HTTP contre un serveur isolé et une vérification que chaque route est documentée dans le fichier OpenAPI). Il fonctionne en usage quotidien sur le banc de test CM5 avec un vrai broker MQTT, le firmware d'un vrai nœud radar sur une carte ESP32-S3, de vraies caméras IP (vidéo en direct, captures, enregistrements, PTZ sur les unités Hi3510), la console Studio, l'application Android et les services de voix et d'observation. Ce qui n'est **pas** encore prouvé : ONVIF avec une vraie caméra ONVIF, tout matériel Jetson, les routes solaires, électriques, de centrales d'alarme et de panneau tactile avec de vrais nœuds (testées avec des messages générés : seule la carte radar existe) et le push via Firebase avec un vrai projet Firebase.
 
 ---
 
@@ -40,8 +40,8 @@
 | Maturité | Établi |
 | Rôle | Coordinateur central de sécurité de la famille : nœuds, alarmes, appareils, énergie, caméras, réseau |
 | Technologie | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| Tests | 1152 (`npm test` : unitaires et intégration HTTP complète) |
-| Contrat | 248 chemins HTTP, 321 opérations (OpenAPI dans ARMOR-COMMON), table des routes dans `docs/ROUTES.md` |
+| Tests | 1389 (`npm test` : unitaires et intégration HTTP complète) |
+| Contrat | 249 chemins HTTP, 322 opérations (OpenAPI dans ARMOR-COMMON), table des routes dans `docs/ROUTES.md` |
 | Écoute sur | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Fonctionne sur | Le banc d'essai CM5 (en service, voir ARMOR-DEVOPS) ou tout ordinateur avec Node.js |
 | Sur matériel réel | Le banc de test CM5, en usage quotidien : un vrai broker MQTT, de vraies caméras IP, un vrai nœud radar sur une carte ESP32-S3, Studio, l'application Android et les services de voix et d'observation contre lui |
@@ -58,11 +58,11 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 | Domaine | État | Ce que cela veut dire ici |
 |---|---|---|
 | Logiciel | 🟢 | Les routes, les sessions, le chiffrement et les règles de preuves tournent au quotidien sur le banc d'essai CM5. |
-| Tests | 🟢 | 1152 tests réussissent (`npm test`), dont une suite d'intégration HTTP complète contre un serveur isolé et un contrôle que chaque route est documentée dans le fichier OpenAPI. |
+| Tests | 🟢 | 1389 tests réussissent (`npm test`), dont une suite d'intégration HTTP complète contre un serveur isolé et un contrôle que chaque route est documentée dans le fichier OpenAPI. |
 | Protocoles et données | 🟡 | Les messages du radar viennent d'une vraie carte ; les routes solaire, électrique, de centrale d'alarme et de panneau tactile sont testées avec des messages générés, et ONVIF n'a pas rencontré de vraie caméra ONVIF. |
-| Matériel | 🟡 | Il tourne sur le banc d'essai CM5 avec un vrai courtier MQTT, de vraies caméras IP (vidéo en direct, captures, enregistrements, PTZ sur les unités Hi3510) et un vrai nœud radar ; rien n'a tourné sur un Jetson. |
+| Matériel | 🟠 | Il tourne sur le banc d'essai CM5 avec un vrai courtier MQTT, de vraies caméras IP (vidéo en direct, captures, enregistrements, PTZ sur les unités Hi3510) et un vrai nœud radar ; rien n'a tourné sur un Jetson. |
 | Sécurité | 🟡 | Les règles de sessions, de chiffrement, de preuves et de connexion sont couvertes par des tests ; il n'y a pas eu de revue indépendante. |
-| Intégration | 🟡 | Studio, l'application Android et les services de voix et d'observation l'utilisent chaque jour sur le banc ; le push via Firebase n'a jamais tourné contre un vrai projet Firebase. |
+| Intégration | 🟠 | Studio, l'application Android et les services de voix et d'observation l'utilisent chaque jour sur le banc ; le push via Firebase n'a jamais tourné contre un vrai projet Firebase. |
 | Documentation | 🟢 | Huit langues, la référence des routes (OpenAPI et ROUTES), les guides d'environnement et d'accès à distance et le journal des modifications sont à jour. |
 
 ## 🎯 Présentation
@@ -148,7 +148,7 @@ flowchart LR
 | Inondation de l'API | 240 requêtes par minute en général (les POST des nœuds ont leur propre budget de 6000 par minute) ; corps JSON de 64 ko (9 Mo pour un fichier d'installation) |
 | Un message de nœud faux ou mal formé | Vérifié à la frontière par les analyseurs de `src/contracts.ts`, testés avec les vecteurs partagés d'ARMOR-COMMON : 15 pistes au plus, lux jusqu'à 200 000, un identifiant de nœud en lettres, chiffres, `_` et `-` ; un jeton par nœud dérivé du partagé et un mode strict (`ARMOR_INGEST_STRICT=1`) |
 | Une session depuis l'extérieur | Second facteur (`ARMOR_TOTP_REQUIRED` : off, remote, always), une politique de ce qu'elle peut faire (`ARMOR_REMOTE_POLICY` : full, operate, view), nouvelle preuve d'identité pour les actions critiques (5 minutes par défaut) et alerte lors d'une connexion depuis un nouveau lieu |
-| Un panneau de nœud utilisé comme proxy ouvert | L'adresse ne vient jamais de la requête ; HTTPS est épinglé à l'empreinte SHA-256 du certificat du nœud |
+| Un panneau de nœud utilisé comme proxy ouvert | L'adresse ne vient jamais de la requête ; HTTPS est épinglé à l'empreinte SHA-256 du certificat du nœud ; avec `panel.separate_origin` (désactivé par défaut), les panneaux viennent d'une seconde origine (`ARMOR_PANEL_PORT`, `ARMOR_PANEL_ORIGIN`), où l'on entre avec un billet à usage unique valable 30 secondes, et l'API refuse toute requête venant de cette origine. Elle n'a tourné jusqu'ici que dans les tests automatiques, pas sur le vrai serveur |
 | Voix : couper sans vérifier, texte long, audio énorme | La politique `voice.silence_confirmation` (off, pin, double_turn, challenge) accompagne chaque tour ; confirmation liée à la personne ; 200 caractères, 8 langues, 30 requêtes par minute ; audio de 480 000 octets et réponse de 200 000 octets au plus |
 | Écritures dangereuses par erreur | Désactivées sauf `ARMOR_BATTERY_WRITE=1`, `ARMOR_ELECTRICAL_SWITCHING=1` ou `ARMOR_ALARM_COMMANDS=1`, avec avertissement au démarrage |
 
@@ -158,7 +158,7 @@ flowchart LR
 
 ## 🔌 Interfaces
 
-La table des routes (`docs/ROUTES.md`, générée depuis le code) liste chaque route avec qui peut l'appeler ; le fichier OpenAPI d'ARMOR-COMMON décrit 248 chemins et 321 opérations, et un test échoue s'il en manque une. Les plus importantes :
+La table des routes (`docs/ROUTES.md`, générée depuis le code) liste chaque route avec qui peut l'appeler ; le fichier OpenAPI d'ARMOR-COMMON décrit 249 chemins et 322 opérations, et un test échoue s'il en manque une. Les plus importantes :
 
 | Route | Authentification | Ce qu'elle fait |
 |---|---|---|
@@ -201,6 +201,7 @@ Copiez `.env.example` en `.env` (ignoré par Git), ou laissez `run.bat` / `run.s
 | `ARMOR_ALARM_COMMANDS`  `ARMOR_BATTERY_WRITE`  `ARMOR_ELECTRICAL_SWITCHING`  `ARMOR_INGEST_STRICT`  `ARMOR_CONTROL_DISARM` | 0 | écritures dangereuses et modes stricts, tout désactivé |
 | `ARMOR_COOKIE_SECURE`  `ARMOR_STUDIO_ORIGIN` | - | mettre `1` derrière TLS ; l'origine de Studio |
 | `ARMOR_STRICT_ROUTES` | off | faire correspondre les routes exactement comme écrites : une autre casse ou une barre à la fin du chemin donne alors 404 (désactivé, Express accepte les deux) |
+| `ARMOR_PANEL_PORT`  `ARMOR_PANEL_ORIGIN` | 0  (empty) | le port et l'adresse publique de la seconde origine qui sert les panneaux des nœuds tant que `panel.separate_origin` est actif (0 = le port du serveur plus un ; l'adresse est nécessaire derrière un proxy ou avec un autre nom) |
 
 * Obligatoires : `ARMOR_INGEST_TOKEN` et `ARMOR_CONTROL_TOKEN` (24 caractères ou plus, tous différents) et `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD` (le premier administrateur).
 * Courantes : `ARMOR_HOST` / `ARMOR_PORT`, `ARMOR_DATA_DIR`, `ARMOR_FFMPEG_PATH` (vidéo en direct et capture), `ARMOR_MQTT_URL`, `ARMOR_MQTT_CA_FILE`, `ARMOR_STUDIO_ORIGIN`, `ARMOR_NODE_STALE_AFTER_S`, `ARMOR_CAMERA_CHECK_S`, `ARMOR_ALERT_DWELL_MS`, `ARMOR_ALERT_WEBHOOK_URL` et `ARMOR_COOKIE_SECURE` (à `1` derrière TLS).
@@ -212,7 +213,7 @@ Copiez `.env.example` en `.env` (ignoré par Git), ou laissez `run.bat` / `run.s
 ```powershell
 npm install           # dépendances
 npm run typecheck     # tsc --noEmit
-npm test              # 1152 tests : unitaires et intégration HTTP complète
+npm test              # 1389 tests : unitaires et intégration HTTP complète
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # serveur de développement avec rechargement à chaud
 ```
@@ -274,7 +275,7 @@ ARMOR-SERVER/
 │   ├── cameras/                      coffre, PTZ, RTSP, découverte, santé
 │   ├── media/                        relais FFmpeg et bibliothèque de preuves
 │   └── devices/                      modèle d'appareils et son pont MQTT
-├── tests/                            1152 tests, unitaires et intégration HTTP
+├── tests/                            1389 tests, unitaires et intégration HTTP
 ├── docs/                             8 guides, table des routes, environnement
 ├── tools/                            générateurs de docs/ROUTES.md et docs/ENVIRONMENT.md, vérifications CI, lanceur
 ├── images/                           bannière, icône et images du README

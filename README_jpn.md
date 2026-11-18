@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 or later">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-1152%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-1389%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Version-0.8.2.3-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
 ---
 
-**正直さのチェック - 今日動いているもの:** 以下のすべてのルート、セッション、暗号化、証拠のルールは実在し、テストでカバーされています（`npm test`：1152 件。隔離したサーバーに対する完全な HTTP 統合テストと、すべてのルートが OpenAPI ファイルに記載されていることの確認を含む）。CM5 テストベンチで日常的に動作しており、実際の MQTT ブローカー、ESP32-S3 基板上の実際のレーダーノードのファームウェア、実際の IP カメラ（ライブ映像、スナップショット、録画、Hi3510 機での PTZ）、Studio コンソール、Android アプリ、音声・観察サービスと組み合わせています。**まだ**証明されていないもの：実際の ONVIF カメラでの ONVIF、Jetson ハードウェア全般、実ノードでのソーラー・電気・警報盤・タッチパネルのルート（生成したメッセージでテスト：存在するのはレーダー基板のみ）、実際の Firebase プロジェクトでの Firebase プッシュ。
+**正直さのチェック - 今日動いているもの:** 以下のすべてのルート、セッション、暗号化、証拠のルールは実在し、テストでカバーされています（`npm test`：1389 件。隔離したサーバーに対する完全な HTTP 統合テストと、すべてのルートが OpenAPI ファイルに記載されていることの確認を含む）。CM5 テストベンチで日常的に動作しており、実際の MQTT ブローカー、ESP32-S3 基板上の実際のレーダーノードのファームウェア、実際の IP カメラ（ライブ映像、スナップショット、録画、Hi3510 機での PTZ）、Studio コンソール、Android アプリ、音声・観察サービスと組み合わせています。**まだ**証明されていないもの：実際の ONVIF カメラでの ONVIF、Jetson ハードウェア全般、実ノードでのソーラー・電気・警報盤・タッチパネルのルート（生成したメッセージでテスト：存在するのはレーダー基板のみ）、実際の Firebase プロジェクトでの Firebase プッシュ。
 
 ---
 
@@ -40,8 +40,8 @@
 | 成熟度 | 確立 |
 | 役割 | ファミリーの中央セキュリティコーディネーター：ノード、アラーム、デバイス、エネルギー、カメラ、ネットワーク |
 | 技術 | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| テスト | 1152 件（`npm test`：単体と完全な HTTP 結合） |
-| 契約 | HTTP パス 248 本、321 操作（OpenAPI は ARMOR-COMMON）、ルート表は `docs/ROUTES.md` |
+| テスト | 1389 件（`npm test`：単体と完全な HTTP 結合） |
+| 契約 | HTTP パス 249 本、322 操作（OpenAPI は ARMOR-COMMON）、ルート表は `docs/ROUTES.md` |
 | 待ち受け | `127.0.0.1:18080`（`ARMOR_HOST`、`ARMOR_PORT`） |
 | 動作環境 | CM5 テストベンチ（サービスとして。ARMOR-DEVOPS 参照）または Node.js のある任意のコンピューター |
 | 実機での確認 | CM5 テストベンチでの日常使用：実際の MQTT ブローカー、実際の IP カメラ、ESP32-S3 基板上の実際のレーダーノード、これに接続する Studio、Android アプリ、音声・観察サービス |
@@ -58,11 +58,11 @@
 | 領域 | 状態 | ここでの意味 |
 |---|---|---|
 | ソフトウェア | 🟢 | ルート、セッション、暗号化、証拠の規則は、CM5 テストベンチで毎日使われています。 |
-| テスト | 🟢 | 1152 件のテストが通ります（`npm test`）。隔離したサーバーに対する HTTP 統合テスト一式と、すべてのルートが OpenAPI ファイルに記載されているかの確認を含みます。 |
+| テスト | 🟢 | 1389 件のテストが通ります（`npm test`）。隔離したサーバーに対する HTTP 統合テスト一式と、すべてのルートが OpenAPI ファイルに記載されているかの確認を含みます。 |
 | プロトコルとデータ | 🟡 | レーダーのメッセージは実機のボードから来ています。太陽光・電気・警報パネル・タッチパネルのルートは生成したメッセージでテストしており、ONVIF は本物の ONVIF カメラと接続していません。 |
-| ハードウェア | 🟡 | CM5 テストベンチで、実際の MQTT ブローカー、実際の IP カメラ（ライブ映像、スナップショット、録画、Hi3510 機の PTZ）、実際のレーダーノードとともに動作しています。Jetson ではまだ何も動かしていません。 |
+| ハードウェア | 🟠 | CM5 テストベンチで、実際の MQTT ブローカー、実際の IP カメラ（ライブ映像、スナップショット、録画、Hi3510 機の PTZ）、実際のレーダーノードとともに動作しています。Jetson ではまだ何も動かしていません。 |
 | セキュリティ | 🟡 | セッション、暗号化、証拠、ログインの規則はテストでカバーされています。独立したレビューはありません。 |
-| 連携 | 🟡 | Studio、Android アプリ、音声・観察サービスがテストベンチで毎日使っています。Firebase 経由のプッシュは、本物の Firebase プロジェクトに対して一度も実行していません。 |
+| 連携 | 🟠 | Studio、Android アプリ、音声・観察サービスがテストベンチで毎日使っています。Firebase 経由のプッシュは、本物の Firebase プロジェクトに対して一度も実行していません。 |
 | ドキュメント | 🟢 | 8 言語、ルートのリファレンス（OpenAPI と ROUTES）、環境とリモートアクセスのガイド、変更履歴は最新です。 |
 
 ## 🎯 概要
@@ -148,7 +148,7 @@ flowchart LR
 | API の過剰リクエスト | 通常は毎分 240 リクエスト（ノードの POST は別枠で毎分 6000）。JSON 本文は 64 kB（インストールファイルは 9 MB） |
 | 偽造または不正なノードメッセージ | `src/contracts.ts` のパーサーが境界で検査し、ARMOR-COMMON の共有ベクターでテスト済み：トラックは最大 15、照度は 200 000 まで、ノード ID は英数字と `_` `-`。共有トークンから導出したノード別トークンと厳格モード（`ARMOR_INGEST_STRICT=1`） |
 | 家の外からのセッション | 2 要素（`ARMOR_TOTP_REQUIRED`：off、remote、always）、できることの方針（`ARMOR_REMOTE_POLICY`：full、operate、view）、重要操作での再認証（既定 5 分）、新しい場所からのログイン通知 |
-| 開放プロキシとして使われるノードパネル | アドレスはリクエストから取らず、HTTPS はノード証明書の SHA-256 指紋に固定 |
+| 開放プロキシとして使われるノードパネル | アドレスはリクエストから取らず、HTTPS はノード証明書の SHA-256 指紋に固定。`panel.separate_origin`（初期はオフ）をオンにすると、パネルは別のオリジン（`ARMOR_PANEL_PORT`、`ARMOR_PANEL_ORIGIN`）から配信され、30 秒だけ有効な 1 回限りのチケットで開き、API はそのオリジンからのリクエストをすべて拒否します。これまでは自動テストでのみ動作し、実機のサーバーではまだ試していません |
 | 音声：確認なしの消音、長文、巨大な音声 | ポリシー `voice.silence_confirmation`（off、pin、double_turn、challenge）を毎ターン送信。確認は本人に紐づく。200 文字、8 言語、毎分 30 リクエスト、音声は最大 480 000 バイト、応答は最大 200 000 バイト |
 | 誤った危険な書き込み | `ARMOR_BATTERY_WRITE=1`、`ARMOR_ELECTRICAL_SWITCHING=1`、`ARMOR_ALARM_COMMANDS=1` を設定しない限りオフ。起動時に警告 |
 
@@ -158,7 +158,7 @@ flowchart LR
 
 ## 🔌 インターフェース
 
-ルート表（`docs/ROUTES.md`、コードから生成）は各ルートと呼び出せる主体を一覧にします。ARMOR-COMMON の OpenAPI は 248 パス・321 操作を記述し、欠けているルートがあるとテストが失敗します。主なもの：
+ルート表（`docs/ROUTES.md`、コードから生成）は各ルートと呼び出せる主体を一覧にします。ARMOR-COMMON の OpenAPI は 249 パス・322 操作を記述し、欠けているルートがあるとテストが失敗します。主なもの：
 
 | ルート | 認証 | 内容 |
 |---|---|---|
@@ -201,6 +201,7 @@ flowchart LR
 | `ARMOR_ALARM_COMMANDS`  `ARMOR_BATTERY_WRITE`  `ARMOR_ELECTRICAL_SWITCHING`  `ARMOR_INGEST_STRICT`  `ARMOR_CONTROL_DISARM` | 0 | 危険な書き込みと厳格モード（すべてオフ） |
 | `ARMOR_COOKIE_SECURE`  `ARMOR_STUDIO_ORIGIN` | - | TLS の背後では `1`。Studio のオリジン |
 | `ARMOR_STRICT_ROUTES` | off | ルートを書かれたとおりに厳密に照合します。大文字小文字が違うパスや末尾のスラッシュは 404 になります（無効時は Express が両方を受け付けます） |
+| `ARMOR_PANEL_PORT`  `ARMOR_PANEL_ORIGIN` | 0  (empty) | `panel.separate_origin` がオンの間、ノードのパネルを配信する 2 つ目のオリジンのポートと公開アドレス（0 = サーバーのポート + 1。プロキシの背後や別の名前で使うときはアドレスが必要） |
 
 * 必須：`ARMOR_INGEST_TOKEN` と `ARMOR_CONTROL_TOKEN`（24 文字以上、すべて異なる）、および `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD`（最初の管理者）。
 * よく使うもの：`ARMOR_HOST` / `ARMOR_PORT`、`ARMOR_DATA_DIR`、`ARMOR_FFMPEG_PATH`（ライブ映像と撮影）、`ARMOR_MQTT_URL`、`ARMOR_MQTT_CA_FILE`、`ARMOR_STUDIO_ORIGIN`、`ARMOR_NODE_STALE_AFTER_S`、`ARMOR_CAMERA_CHECK_S`、`ARMOR_ALERT_DWELL_MS`、`ARMOR_ALERT_WEBHOOK_URL`、`ARMOR_COOKIE_SECURE`（TLS の背後では `1`）。
@@ -212,7 +213,7 @@ flowchart LR
 ```powershell
 npm install           # 依存関係
 npm run typecheck     # tsc --noEmit
-npm test              # 1152 件：単体と完全な HTTP 結合
+npm test              # 1389 件：単体と完全な HTTP 結合
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # ホットリロード付き開発サーバー
 ```
@@ -274,7 +275,7 @@ ARMOR-SERVER/
 │   ├── cameras/                      金庫、PTZ、RTSP、探索、健全性
 │   ├── media/                        FFmpeg 中継と証拠ライブラリ
 │   └── devices/                      デバイスモデルと MQTT ブリッジ
-├── tests/                            1152 件（単体と HTTP 結合）
+├── tests/                            1389 件（単体と HTTP 結合）
 ├── docs/                             8 つのガイド、ルート表、環境変数
 ├── tools/                            docs/ROUTES.md と docs/ENVIRONMENT.md の生成、CI 検査、ランチャー
 ├── images/                           バナー、アイコン、README の画像

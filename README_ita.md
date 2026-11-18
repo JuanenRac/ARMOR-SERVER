@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 o successiva">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Linguaggio">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-1152%20passing-2ea44f.svg" alt="Test">
+  <img src="https://img.shields.io/badge/Tests-1389%20passing-2ea44f.svg" alt="Test">
   <img src="https://img.shields.io/badge/Version-0.8.2.3-0f6cbd.svg" alt="Versione">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturità">
 </p>
 
 ---
 
-**Controllo di onestà - cosa funziona oggi:** Ogni rotta, sessione, cifratura e regola delle prove qui sotto è reale e coperta da test (`npm test`: 1152 test, compresa una suite completa di integrazione HTTP contro un server isolato e un controllo che ogni rotta sia documentata nel file OpenAPI). Funziona in uso quotidiano sul banco di prova CM5 con un vero broker MQTT, il firmware di un vero nodo radar su una scheda ESP32-S3, vere telecamere IP (video dal vivo, istantanee, registrazioni, PTZ sulle unità Hi3510), la console Studio, l'app Android e i servizi di voce e di osservazione. Ciò che **non** è ancora provato: ONVIF con una vera telecamera ONVIF, qualsiasi hardware Jetson, le rotte solari, elettriche, delle centrali d'allarme e del pannello touch con nodi reali (si provano con messaggi generati: esiste solo la scheda radar) e il push tramite Firebase con un vero progetto Firebase.
+**Controllo di onestà - cosa funziona oggi:** Ogni rotta, sessione, cifratura e regola delle prove qui sotto è reale e coperta da test (`npm test`: 1389 test, compresa una suite completa di integrazione HTTP contro un server isolato e un controllo che ogni rotta sia documentata nel file OpenAPI). Funziona in uso quotidiano sul banco di prova CM5 con un vero broker MQTT, il firmware di un vero nodo radar su una scheda ESP32-S3, vere telecamere IP (video dal vivo, istantanee, registrazioni, PTZ sulle unità Hi3510), la console Studio, l'app Android e i servizi di voce e di osservazione. Ciò che **non** è ancora provato: ONVIF con una vera telecamera ONVIF, qualsiasi hardware Jetson, le rotte solari, elettriche, delle centrali d'allarme e del pannello touch con nodi reali (si provano con messaggi generati: esiste solo la scheda radar) e il push tramite Firebase con un vero progetto Firebase.
 
 ---
 
@@ -40,8 +40,8 @@
 | Maturità | Consolidato |
 | Ruolo | Coordinatore centrale di sicurezza della famiglia: nodi, allarmi, dispositivi, energia, telecamere, rete |
 | Tecnologia | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| Test | 1152 (`npm test`: unitari e integrazione HTTP completa) |
-| Contratto | 248 percorsi HTTP, 321 operazioni (OpenAPI in ARMOR-COMMON), tabella delle rotte in `docs/ROUTES.md` |
+| Test | 1389 (`npm test`: unitari e integrazione HTTP completa) |
+| Contratto | 249 percorsi HTTP, 322 operazioni (OpenAPI in ARMOR-COMMON), tabella delle rotte in `docs/ROUTES.md` |
 | In ascolto su | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Gira su | Il banco di prova CM5 (come servizio, vedi ARMOR-DEVOPS) o qualsiasi computer con Node.js |
 | Su hardware reale | Il banco di prova CM5, in uso quotidiano: un vero broker MQTT, vere telecamere IP, un vero nodo radar su una scheda ESP32-S3, Studio, l'app Android e i servizi di voce e osservazione contro di esso |
@@ -58,11 +58,11 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 | Area | Stato | Cosa significa qui |
 |---|---|---|
 | Software | 🟢 | Le route, le sessioni, la cifratura e le regole delle prove girano ogni giorno sul banco di prova CM5. |
-| Test | 🟢 | Superano 1152 test (`npm test`), compresa una suite di integrazione HTTP completa contro un server isolato e un controllo che ogni rotta sia documentata nel file OpenAPI. |
+| Test | 🟢 | Superano 1389 test (`npm test`), compresa una suite di integrazione HTTP completa contro un server isolato e un controllo che ogni rotta sia documentata nel file OpenAPI. |
 | Protocolli e dati | 🟡 | I messaggi del radar vengono da una scheda reale; le rotte solare, elettrica, della centralina d'allarme e del pannello touch sono provate con messaggi generati, e ONVIF non ha incontrato una vera telecamera ONVIF. |
-| Hardware | 🟡 | Gira sul banco di prova CM5 con un broker MQTT reale, telecamere IP reali (video dal vivo, istantanee, registrazioni, PTZ sulle unità Hi3510) e un nodo radar reale; nulla ha girato su una Jetson. |
+| Hardware | 🟠 | Gira sul banco di prova CM5 con un broker MQTT reale, telecamere IP reali (video dal vivo, istantanee, registrazioni, PTZ sulle unità Hi3510) e un nodo radar reale; nulla ha girato su una Jetson. |
 | Sicurezza | 🟡 | Le regole di sessioni, cifratura, prove e accesso sono coperte da test; non c'è stata una revisione indipendente. |
-| Integrazione | 🟡 | Studio, l'app Android e i servizi di voce e osservazione lo usano ogni giorno sul banco; il push tramite Firebase non è mai stato eseguito contro un vero progetto Firebase. |
+| Integrazione | 🟠 | Studio, l'app Android e i servizi di voce e osservazione lo usano ogni giorno sul banco; il push tramite Firebase non è mai stato eseguito contro un vero progetto Firebase. |
 | Documentazione | 🟢 | Otto lingue, il riferimento delle rotte (OpenAPI e ROUTES), le guide di ambiente e accesso remoto e il registro delle modifiche sono aggiornati. |
 
 ## 🎯 Panoramica
@@ -148,7 +148,7 @@ flowchart LR
 | Inondazione dell'API | 240 richieste al minuto in generale (i POST dei nodi hanno un budget proprio di 6000 al minuto); corpi JSON da 64 kB (9 MB per un file di installazione) |
 | Un messaggio di nodo falso o malformato | Verificato al confine dai parser di `src/contracts.ts`, provati con i vettori condivisi di ARMOR-COMMON: al massimo 15 tracce, lux fino a 200 000, un id di nodo con lettere, cifre, `_` e `-`; un token per nodo derivato da quello condiviso e una modalità rigorosa (`ARMOR_INGEST_STRICT=1`) |
 | Una sessione da fuori casa | Secondo fattore (`ARMOR_TOTP_REQUIRED`: off, remote, always), una politica su cosa può fare (`ARMOR_REMOTE_POLICY`: full, operate, view), nuova prova d'identità per le azioni critiche (5 minuti di default) e avviso per un accesso da un luogo nuovo |
-| Un pannello di nodo usato come proxy aperto | L'indirizzo non arriva mai dalla richiesta; HTTPS è vincolato all'impronta SHA-256 del certificato del nodo |
+| Un pannello di nodo usato come proxy aperto | L'indirizzo non arriva mai dalla richiesta; HTTPS è vincolato all'impronta SHA-256 del certificato del nodo; con `panel.separate_origin` (spento di default) i pannelli arrivano da una seconda origine (`ARMOR_PANEL_PORT`, `ARMOR_PANEL_ORIGIN`), a cui si accede con un biglietto monouso valido 30 secondi, e l'API rifiuta ogni richiesta che arriva da quell'origine. Finora ha girato solo nei test automatici, non sul server reale |
 | Voce: silenziare senza verifica, testo lungo, audio enorme | La politica `voice.silence_confirmation` (off, pin, double_turn, challenge) viaggia con ogni turno; conferma legata alla persona; 200 caratteri, 8 lingue, 30 richieste al minuto; audio al massimo 480 000 byte e risposta 200 000 byte |
 | Scritture pericolose per errore | Spente salvo `ARMOR_BATTERY_WRITE=1`, `ARMOR_ELECTRICAL_SWITCHING=1` o `ARMOR_ALARM_COMMANDS=1`, con avviso all'avvio |
 
@@ -158,7 +158,7 @@ flowchart LR
 
 ## 🔌 Interfacce
 
-La tabella delle rotte (`docs/ROUTES.md`, generata dal codice) elenca ogni rotta con chi può chiamarla; il file OpenAPI di ARMOR-COMMON descrive 248 percorsi e 321 operazioni, e un test fallisce se ne manca una. Le più importanti:
+La tabella delle rotte (`docs/ROUTES.md`, generata dal codice) elenca ogni rotta con chi può chiamarla; il file OpenAPI di ARMOR-COMMON descrive 249 percorsi e 322 operazioni, e un test fallisce se ne manca una. Le più importanti:
 
 | Rotta | Autenticazione | Cosa fa |
 |---|---|---|
@@ -201,6 +201,7 @@ Copia `.env.example` in `.env` (ignorato da Git), oppure lascia che `run.bat` / 
 | `ARMOR_ALARM_COMMANDS`  `ARMOR_BATTERY_WRITE`  `ARMOR_ELECTRICAL_SWITCHING`  `ARMOR_INGEST_STRICT`  `ARMOR_CONTROL_DISARM` | 0 | scritture pericolose e modalità rigorose, tutto spento |
 | `ARMOR_COOKIE_SECURE`  `ARMOR_STUDIO_ORIGIN` | - | metti `1` dietro TLS; l'origine di Studio |
 | `ARMOR_STRICT_ROUTES` | off | far corrispondere le rotte esattamente come scritte: un'altra capitalizzazione o una barra finale nel percorso dà allora 404 (spento, Express accetta entrambe) |
+| `ARMOR_PANEL_PORT`  `ARMOR_PANEL_ORIGIN` | 0  (empty) | la porta e l'indirizzo pubblico della seconda origine che serve i pannelli dei nodi finché `panel.separate_origin` è attivo (0 = la porta del server più uno; l'indirizzo serve dietro un proxy o con un altro nome) |
 
 * Obbligatori: `ARMOR_INGEST_TOKEN` e `ARMOR_CONTROL_TOKEN` (24 caratteri o più, tutti diversi) e `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD` (il primo amministratore).
 * Comuni: `ARMOR_HOST` / `ARMOR_PORT`, `ARMOR_DATA_DIR`, `ARMOR_FFMPEG_PATH` (video dal vivo e cattura), `ARMOR_MQTT_URL`, `ARMOR_MQTT_CA_FILE`, `ARMOR_STUDIO_ORIGIN`, `ARMOR_NODE_STALE_AFTER_S`, `ARMOR_CAMERA_CHECK_S`, `ARMOR_ALERT_DWELL_MS`, `ARMOR_ALERT_WEBHOOK_URL` e `ARMOR_COOKIE_SECURE` (a `1` dietro TLS).
@@ -212,7 +213,7 @@ Copia `.env.example` in `.env` (ignorato da Git), oppure lascia che `run.bat` / 
 ```powershell
 npm install           # dipendenze
 npm run typecheck     # tsc --noEmit
-npm test              # 1152 test: unitari e integrazione HTTP completa
+npm test              # 1389 test: unitari e integrazione HTTP completa
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # server di sviluppo con ricarica a caldo
 ```
@@ -274,7 +275,7 @@ ARMOR-SERVER/
 │   ├── cameras/                      cassaforte, PTZ, RTSP, scoperta, salute
 │   ├── media/                        relè FFmpeg e libreria di prove
 │   └── devices/                      modello dei dispositivi e ponte MQTT
-├── tests/                            1152 test, unitari e integrazione HTTP
+├── tests/                            1389 test, unitari e integrazione HTTP
 ├── docs/                             8 guide, tabella delle rotte, ambiente
 ├── tools/                            generatori di docs/ROUTES.md e docs/ENVIRONMENT.md, controlli CI, avviatore
 ├── images/                           banner, icona e immagini del README

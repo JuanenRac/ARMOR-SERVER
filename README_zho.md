@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 or later">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-1152%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-1389%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Version-0.8.2.3-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
 ---
 
-**诚实性检查 - 今天真正能运行的部分：** 下面的每条路由、会话、加密和证据规则都是真实的，并有测试覆盖（`npm test`：1152 个测试，包括针对隔离服务器的完整 HTTP 集成测试套件，以及检查每条路由都已写入 OpenAPI 文件）。它在 CM5 测试台上日常运行，配有真实的 MQTT 代理、ESP32-S3 板上真实雷达节点的固件、真实的 IP 摄像头（实时视频、快照、录像、Hi3510 设备上的 PTZ）、Studio 控制台、Android 应用以及语音和观察服务。**尚未**证明的是：用真实 ONVIF 摄像头测试 ONVIF、任何 Jetson 硬件、用真实节点测试太阳能、电气、报警主机和触摸屏的路由（它们用生成的消息测试：目前只有雷达板存在），以及用真实 Firebase 项目测试 Firebase 推送。
+**诚实性检查 - 今天真正能运行的部分：** 下面的每条路由、会话、加密和证据规则都是真实的，并有测试覆盖（`npm test`：1389 个测试，包括针对隔离服务器的完整 HTTP 集成测试套件，以及检查每条路由都已写入 OpenAPI 文件）。它在 CM5 测试台上日常运行，配有真实的 MQTT 代理、ESP32-S3 板上真实雷达节点的固件、真实的 IP 摄像头（实时视频、快照、录像、Hi3510 设备上的 PTZ）、Studio 控制台、Android 应用以及语音和观察服务。**尚未**证明的是：用真实 ONVIF 摄像头测试 ONVIF、任何 Jetson 硬件、用真实节点测试太阳能、电气、报警主机和触摸屏的路由（它们用生成的消息测试：目前只有雷达板存在），以及用真实 Firebase 项目测试 Firebase 推送。
 
 ---
 
@@ -40,8 +40,8 @@
 | 成熟度 | 成熟 |
 | 角色 | 家族的中央安全协调器：节点、报警、设备、能源、摄像头、网络 |
 | 技术栈 | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| 测试 | 1152 项（`npm test`：单元与完整 HTTP 集成） |
-| 契约 | 248 条 HTTP 路径、321 个操作（OpenAPI 在 ARMOR-COMMON 中），路由表见 `docs/ROUTES.md` |
+| 测试 | 1389 项（`npm test`：单元与完整 HTTP 集成） |
+| 契约 | 249 条 HTTP 路径、322 个操作（OpenAPI 在 ARMOR-COMMON 中），路由表见 `docs/ROUTES.md` |
 | 监听地址 | `127.0.0.1:18080`（`ARMOR_HOST`、`ARMOR_PORT`） |
 | 运行位置 | CM5 测试台（作为服务，见 ARMOR-DEVOPS）或任何装有 Node.js 的计算机 |
 | 真实硬件 | CM5 测试台的日常使用：真实的 MQTT 代理、真实的 IP 摄像头、ESP32-S3 板上的真实雷达节点，以及与之配合的 Studio、Android 应用和语音、观察服务 |
@@ -58,11 +58,11 @@
 | 领域 | 状态 | 在这里的含义 |
 |---|---|---|
 | 软件 | 🟢 | 路由、会话、加密和证据规则每天都在 CM5 测试台上运行。 |
-| 测试 | 🟢 | 1152 项测试通过（`npm test`），包括针对隔离服务器的完整 HTTP 集成测试，以及检查每条路由都已写入 OpenAPI 文件。 |
+| 测试 | 🟢 | 1389 项测试通过（`npm test`），包括针对隔离服务器的完整 HTTP 集成测试，以及检查每条路由都已写入 OpenAPI 文件。 |
 | 协议与数据 | 🟡 | 雷达消息来自真实的板子；光伏、电气、报警面板和触摸面板的路由是用生成的消息测试的，ONVIF 也没有遇到过真正的 ONVIF 摄像头。 |
-| 硬件 | 🟡 | 它在 CM5 测试台上运行，配有真实的 MQTT 代理、真实的 IP 摄像头（实时视频、截图、录像、Hi3510 机型的云台）和真实的雷达节点；还没有在 Jetson 上运行过。 |
+| 硬件 | 🟠 | 它在 CM5 测试台上运行，配有真实的 MQTT 代理、真实的 IP 摄像头（实时视频、截图、录像、Hi3510 机型的云台）和真实的雷达节点；还没有在 Jetson 上运行过。 |
 | 安全 | 🟡 | 会话、加密、证据和登录规则均有测试覆盖；没有经过独立审查。 |
-| 集成 | 🟡 | Studio、Android 应用以及语音和观察服务每天在测试台上使用它；通过 Firebase 的推送从未对真实的 Firebase 项目运行过。 |
+| 集成 | 🟠 | Studio、Android 应用以及语音和观察服务每天在测试台上使用它；通过 Firebase 的推送从未对真实的 Firebase 项目运行过。 |
 | 文档 | 🟢 | 八种语言、路由参考（OpenAPI 和 ROUTES）、环境与远程访问指南以及更新日志均为最新。 |
 
 ## 🎯 概述
@@ -148,7 +148,7 @@ flowchart LR
 | 洪泛 API | 通常每分钟 240 个请求（节点 POST 有单独的每分钟 6000 额度）；JSON 请求体 64 kB（安装文件 9 MB） |
 | 伪造或格式错误的节点消息 | 由 `src/contracts.ts` 的解析器在边界检查，并用 ARMOR-COMMON 的共享向量测试：最多 15 条轨迹，照度至多 200 000，节点 ID 由字母、数字、`_` 和 `-` 组成；每个节点有由共享令牌派生的令牌，另有严格模式（`ARMOR_INGEST_STRICT=1`） |
 | 来自屋外的会话 | 第二因素（`ARMOR_TOTP_REQUIRED`：off、remote、always）、可做事项的策略（`ARMOR_REMOTE_POLICY`：full、operate、view）、关键操作前重新验证身份（默认 5 分钟）以及从新地点登录时的提醒 |
-| 被当作开放代理的节点面板 | 地址从不取自请求；HTTPS 固定到节点证书的 SHA-256 指纹 |
+| 被当作开放代理的节点面板 | 地址从不取自请求；HTTPS 固定到节点证书的 SHA-256 指纹；开启 `panel.separate_origin`（默认关闭）后，面板由第二个源（`ARMOR_PANEL_PORT`、`ARMOR_PANEL_ORIGIN`）提供，凭只能使用一次、有效期 30 秒的票据进入，API 会拒绝来自该源的任何请求。目前只在自动化测试中运行过，尚未在真实服务器上试过 |
 | 语音：未确认就静音、超长文本、超大音频 | 策略 `voice.silence_confirmation`（off、pin、double_turn、challenge）随每个轮次发送；确认与本人绑定；200 个字符、8 种语言、每分钟 30 个请求；音频最多 480 000 字节，回复最多 200 000 字节 |
 | 误操作的危险写入 | 除非设置 `ARMOR_BATTERY_WRITE=1`、`ARMOR_ELECTRICAL_SWITCHING=1` 或 `ARMOR_ALARM_COMMANDS=1`，否则关闭；启动时给出警告 |
 
@@ -158,7 +158,7 @@ flowchart LR
 
 ## 🔌 接口
 
-路由表（`docs/ROUTES.md`，由代码生成）列出每条路由及可调用者；ARMOR-COMMON 的 OpenAPI 文件描述了 248 条路径和 321 个操作，缺少任何路由时测试会失败。最重要的几条：
+路由表（`docs/ROUTES.md`，由代码生成）列出每条路由及可调用者；ARMOR-COMMON 的 OpenAPI 文件描述了 249 条路径和 322 个操作，缺少任何路由时测试会失败。最重要的几条：
 
 | 路由 | 认证 | 作用 |
 |---|---|---|
@@ -201,6 +201,7 @@ flowchart LR
 | `ARMOR_ALARM_COMMANDS`  `ARMOR_BATTERY_WRITE`  `ARMOR_ELECTRICAL_SWITCHING`  `ARMOR_INGEST_STRICT`  `ARMOR_CONTROL_DISARM` | 0 | 危险写入与严格模式，全部关闭 |
 | `ARMOR_COOKIE_SECURE`  `ARMOR_STUDIO_ORIGIN` | - | 在 TLS 之后设为 `1`；Studio 的来源 |
 | `ARMOR_STRICT_ROUTES` | off | 严格按书写形式匹配路由：大小写不同或路径末尾带斜杠时返回 404（关闭时 Express 两者都接受） |
+| `ARMOR_PANEL_PORT`  `ARMOR_PANEL_ORIGIN` | 0  (empty) | `panel.separate_origin` 开启期间提供节点面板的第二个源的端口和公开地址（0 = 服务器端口加一；在代理之后或使用其他名称时需要该地址） |
 
 * 必填：`ARMOR_INGEST_TOKEN` 和 `ARMOR_CONTROL_TOKEN`（24 个字符以上，彼此不同），以及 `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD`（第一位管理员）。
 * 常用：`ARMOR_HOST` / `ARMOR_PORT`、`ARMOR_DATA_DIR`、`ARMOR_FFMPEG_PATH`（实时视频和抓拍）、`ARMOR_MQTT_URL`、`ARMOR_MQTT_CA_FILE`、`ARMOR_STUDIO_ORIGIN`、`ARMOR_NODE_STALE_AFTER_S`、`ARMOR_CAMERA_CHECK_S`、`ARMOR_ALERT_DWELL_MS`、`ARMOR_ALERT_WEBHOOK_URL` 和 `ARMOR_COOKIE_SECURE`（在 TLS 之后设为 `1`）。
@@ -212,7 +213,7 @@ flowchart LR
 ```powershell
 npm install           # 依赖
 npm run typecheck     # tsc --noEmit
-npm test              # 1152 项：单元与完整 HTTP 集成
+npm test              # 1389 项：单元与完整 HTTP 集成
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # 带热重载的开发服务器
 ```
@@ -274,7 +275,7 @@ ARMOR-SERVER/
 │   ├── cameras/                      保险库、PTZ、RTSP、发现、健康
 │   ├── media/                        FFmpeg 中继与证据库
 │   └── devices/                      设备模型及其 MQTT 桥
-├── tests/                            1152 项测试（单元与 HTTP 集成）
+├── tests/                            1389 项测试（单元与 HTTP 集成）
 ├── docs/                             8 份指南、路由表、环境变量
 ├── tools/                            docs/ROUTES.md 和 docs/ENVIRONMENT.md 的生成器、CI 检查、启动器
 ├── images/                           横幅图、图标和 README 的图片

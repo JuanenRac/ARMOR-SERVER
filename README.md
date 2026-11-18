@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 or later">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-1152%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-1389%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Version-0.8.2.3-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
 ---
 
-**Honesty check - what runs today:** Every route, session, encryption and evidence rule below is real and covered by tests (`npm test`: 1152 tests, including a full HTTP integration suite against an isolated server and a check that every route is documented in the OpenAPI file). It runs in daily use on the CM5 test bench with a real MQTT broker, the firmware of a real radar node on an ESP32-S3 board, real IP cameras (live video, snapshots, recordings, PTZ on the Hi3510 units), the Studio console, the Android app and the voice and observation services. What is **not** proven yet: ONVIF against a real ONVIF camera, any Jetson hardware, the solar, electrical, alarm-panel and touch-panel routes against real nodes (they are tested with generated messages: only the radar board exists) and push through Firebase against a real Firebase project.
+**Honesty check - what runs today:** Every route, session, encryption and evidence rule below is real and covered by tests (`npm test`: 1389 tests, including a full HTTP integration suite against an isolated server and a check that every route is documented in the OpenAPI file). It runs in daily use on the CM5 test bench with a real MQTT broker, the firmware of a real radar node on an ESP32-S3 board, real IP cameras (live video, snapshots, recordings, PTZ on the Hi3510 units), the Studio console, the Android app and the voice and observation services. What is **not** proven yet: ONVIF against a real ONVIF camera, any Jetson hardware, the solar, electrical, alarm-panel and touch-panel routes against real nodes (they are tested with generated messages: only the radar board exists) and push through Firebase against a real Firebase project.
 
 ---
 
@@ -40,8 +40,8 @@
 | Maturity | Established |
 | Role | Central security coordinator of the family: nodes, alarms, devices, energy, cameras, network |
 | Stack | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| Tests | 1152 (`npm test`: unit and full HTTP integration) |
-| Contract | 248 HTTP paths, 321 operations (OpenAPI in ARMOR-COMMON), route table in `docs/ROUTES.md` |
+| Tests | 1389 (`npm test`: unit and full HTTP integration) |
+| Contract | 249 HTTP paths, 322 operations (OpenAPI in ARMOR-COMMON), route table in `docs/ROUTES.md` |
 | Listens on | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Runs on | The CM5 test bench (as a service, see ARMOR-DEVOPS) or any computer with Node.js |
 | On real hardware | The CM5 test bench, in daily use: a real MQTT broker, real IP cameras, a real radar node on an ESP32-S3 board, Studio, the Android app and the voice and observation services against it |
@@ -58,11 +58,11 @@ Each line is one part of this repository and the light says how far it is today.
 | Area | State | What it means here |
 |---|---|---|
 | Software | 🟢 | The routes, sessions, encryption and evidence rules run in daily use on the CM5 test bench. |
-| Tests | 🟢 | 1152 tests pass (`npm test`), including a full HTTP integration suite against an isolated server and a check that every route is documented in the OpenAPI file. |
+| Tests | 🟢 | 1389 tests pass (`npm test`), including a full HTTP integration suite against an isolated server and a check that every route is documented in the OpenAPI file. |
 | Protocols and data | 🟡 | The radar messages come from a real board; the solar, electrical, alarm-panel and touch-panel routes are tested with generated messages, and ONVIF has not met a real ONVIF camera. |
-| Hardware | 🟡 | It runs on the CM5 test bench with a real MQTT broker, real IP cameras (live video, snapshots, recordings, PTZ on the Hi3510 units) and a real radar node; nothing has run on a Jetson. |
+| Hardware | 🟠 | It runs on the CM5 test bench with a real MQTT broker, real IP cameras (live video, snapshots, recordings, PTZ on the Hi3510 units) and a real radar node; nothing has run on a Jetson. |
 | Security | 🟡 | The sessions, encryption, evidence and login rules are covered by tests; there has been no independent review. |
-| Integration | 🟡 | Studio, the Android app and the voice and observation services use it every day on the bench; push through Firebase has never run against a real Firebase project. |
+| Integration | 🟠 | Studio, the Android app and the voice and observation services use it every day on the bench; push through Firebase has never run against a real Firebase project. |
 | Documentation | 🟢 | Eight languages, the route reference (OpenAPI and ROUTES), the environment and remote-access guides and the changelog are up to date. |
 
 ## 🎯 Overview
@@ -148,7 +148,7 @@ flowchart LR
 | Flooding the API | 240 requests a minute in general (node posts have their own budget of 6000 a minute); JSON bodies of 64 kB (9 MB for an installation file) |
 | A false or malformed node message | Checked at the boundary by the parsers of `src/contracts.ts`, tested with the shared vectors of ARMOR-COMMON: at most 15 tracks, lux up to 200 000, a node id of letters, digits, `_` and `-`; a token per node derived from the shared one and a strict mode (`ARMOR_INGEST_STRICT=1`) |
 | A session from outside the house | A second factor (`ARMOR_TOTP_REQUIRED`: off, remote, always), a policy for what it may do (`ARMOR_REMOTE_POLICY`: full, operate, view), proof of identity again for critical actions (5 minutes by default) and an alert on a sign-in from a new place |
-| A node panel used as an open proxy | The address never comes from the request; HTTPS is pinned to the SHA-256 fingerprint of the node's certificate |
+| A node panel used as an open proxy | The address never comes from the request; HTTPS is pinned to the SHA-256 fingerprint of the node's certificate; with `panel.separate_origin` (off by default) the panels come from a second origin (`ARMOR_PANEL_PORT`, `ARMOR_PANEL_ORIGIN`), entered with a ticket of one use that lasts 30 seconds, and the API refuses any request that comes from that origin. It has only run in the automated tests so far, not on the real server |
 | Voice: silencing without checking, long text, huge audio | The policy `voice.silence_confirmation` (off, pin, double_turn, challenge) travels with every turn; confirmation tied to the person; 200 characters, 8 languages, 30 requests a minute; audio of 480 000 bytes and a reply of 200 000 bytes at most |
 | Dangerous writes by mistake | Off unless `ARMOR_BATTERY_WRITE=1`, `ARMOR_ELECTRICAL_SWITCHING=1` or `ARMOR_ALARM_COMMANDS=1`, with a warning at start-up |
 
@@ -158,7 +158,7 @@ flowchart LR
 
 ## 🔌 Interfaces
 
-The route table (`docs/ROUTES.md`, generated from the code) lists every route with who may call it; the OpenAPI file of ARMOR-COMMON describes 248 paths and 321 operations, and a test fails if a route is missing from it. The ones that matter most:
+The route table (`docs/ROUTES.md`, generated from the code) lists every route with who may call it; the OpenAPI file of ARMOR-COMMON describes 249 paths and 322 operations, and a test fails if a route is missing from it. The ones that matter most:
 
 | Route | Auth | What it does |
 |---|---|---|
@@ -201,6 +201,7 @@ Copy `.env.example` to `.env` (ignored by Git), or let `run.bat` / `run.sh` gene
 | `ARMOR_ALARM_COMMANDS`  `ARMOR_BATTERY_WRITE`  `ARMOR_ELECTRICAL_SWITCHING`  `ARMOR_INGEST_STRICT`  `ARMOR_CONTROL_DISARM` | 0 | dangerous writes and strict modes, all off |
 | `ARMOR_COOKIE_SECURE`  `ARMOR_STUDIO_ORIGIN` | - | set `1` behind TLS; the origin of Studio |
 | `ARMOR_STRICT_ROUTES` | off | match the routes exactly as they are written: a different capitalization or a slash at the end of the path is then a 404 (off, Express accepts both) |
+| `ARMOR_PANEL_PORT`  `ARMOR_PANEL_ORIGIN` | 0  (empty) | the port and the public address of the second origin that serves the node panels while `panel.separate_origin` is on (0 = the port of the server plus one; the address is needed behind a proxy or with another name) |
 
 * Required: `ARMOR_INGEST_TOKEN` and `ARMOR_CONTROL_TOKEN` (24 characters or more, all different) and `ARMOR_STUDIO_USERNAME` / `ARMOR_STUDIO_PASSWORD` (the first administrator).
 * Common: `ARMOR_HOST` / `ARMOR_PORT`, `ARMOR_DATA_DIR`, `ARMOR_FFMPEG_PATH` (live video and capture), `ARMOR_MQTT_URL`, `ARMOR_MQTT_CA_FILE`, `ARMOR_STUDIO_ORIGIN`, `ARMOR_NODE_STALE_AFTER_S`, `ARMOR_CAMERA_CHECK_S`, `ARMOR_ALERT_DWELL_MS`, `ARMOR_ALERT_WEBHOOK_URL` and `ARMOR_COOKIE_SECURE` (set it to `1` behind TLS).
@@ -212,7 +213,7 @@ Copy `.env.example` to `.env` (ignored by Git), or let `run.bat` / `run.sh` gene
 ```powershell
 npm install           # dependencies
 npm run typecheck     # tsc --noEmit
-npm test              # 1152 tests: unit and full HTTP integration
+npm test              # 1389 tests: unit and full HTTP integration
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # development server with hot reload
 ```
@@ -274,7 +275,7 @@ ARMOR-SERVER/
 │   ├── cameras/                      vault, PTZ, RTSP, discovery, health
 │   ├── media/                        FFmpeg relay and evidence library
 │   └── devices/                      device model and its MQTT bridge
-├── tests/                            1152 tests, unit and HTTP integration
+├── tests/                            1389 tests, unit and HTTP integration
 ├── docs/                             8 guides, route table, environment
 ├── tools/                            generators of docs/ROUTES.md and docs/ENVIRONMENT.md, shared CI checks, launcher
 ├── images/                           banner, icon and the pictures of the README
