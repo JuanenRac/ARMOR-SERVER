@@ -381,7 +381,7 @@ def build_svg(spec: dict) -> str:
             stroke = st["stroke"]
             add(f'<rect x="{lx}" y="{ly - 12}" width="14" height="14" rx="3" fill="none" stroke="{stroke}" stroke-width="2"{dash}/>')
         cv.text(lx + 22, ly, label, 12, K.INK)
-        lx += need
+        lx = round(lx + need, 2)  # two decimals: no floating-point noise in the picture
     if spec.get("footer"):
         cv.text(36, 612 if ly > 560 else 604, spec["footer"], 12, K.FAINT)
     return cv.render(header)
