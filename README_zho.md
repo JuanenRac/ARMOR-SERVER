@@ -252,7 +252,7 @@ python -I tools/armor_ci_validate.py
 ## 📂 仓库结构
 
 <p align="center">
-  <img src="images/repository-structure.svg" alt="Repository structure of ARMOR-SERVER" width="100%">
+  <img src="images/repository-structure.svg" alt="ARMOR-SERVER 的仓库结构" width="100%">
 </p>
 
 <details>
