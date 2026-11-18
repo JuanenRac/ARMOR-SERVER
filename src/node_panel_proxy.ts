@@ -13,6 +13,7 @@ import tls from "node:tls";
 import type { Express, Request, Response } from "express";
 import type { AppContext } from "./context.js";
 import { durableRename } from "./durable.js";
+import { buildPanelOriginApp, PanelOrigin, PanelSessions, PanelTickets, type PanelGrant } from "./panel_origin.js";
 
 export type PanelScheme = "http" | "https";
 export type PanelEntry = { id: string; address: string; scheme: PanelScheme; port: number; /** SHA-256 of the certificate the node showed when the administrator trusted it, 64 lowercase hexadecimal digits. */ fingerprint?: string; label?: string };
@@ -117,10 +118,24 @@ export function fetchFingerprint(address: string, port: number, timeoutMs = 5_00
 
 type Jar = { cookies: Map<string, string>; last: number };
 
+/** Who is asking for a panel and where the panel is answered: the API (the session of Studio) or the second origin (a ticket that was exchanged). */
+type Access = { id: string; prefix: string; handle: string | undefined; actor: string | undefined; remote: boolean; /** The proof of identity was asked when the ticket was given. */ proved: boolean; /** Answered by the second origin. */ origin: boolean };
+
+/** What the application keeps for the second origin of the panels. */
+export type PanelOriginControl = {
+  /** Brings the listener of the second origin to what the option says (opens or closes it). */
+  sync(): Promise<void>;
+  /** Whether a request of the API comes from the second origin, which has no business with the API. */
+  refuses(request: Request): boolean;
+  close(): Promise<void>;
+  /** The port of the second origin while it is open. */
+  port(): number | undefined;
+};
+
 /** What the node answered, or why it could not be reached. */
 class UpstreamError extends Error { constructor(readonly code: "fingerprint_mismatch" | "not_pinned" | "unreachable" | "timeout" | "too_large") { super(code); } }
 
-export function registerNodePanelRoutes(app: Express, context: AppContext): void {
+export function registerNodePanelRoutes(app: Express, context: AppContext): PanelOriginControl {
   const { config, audit, studioUser, studioSessions, requireAdmin, requireElevated } = context;
   const testPort = () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0);
   const registry = new PanelRegistry(path.join(config.dataDir, "node_panels.json"), testPort() > 0);
@@ -131,6 +146,8 @@ export function registerNodePanelRoutes(app: Express, context: AppContext): void
   const elevatedOrNot = (request: Request, response: Response): boolean => { let ok = false; requireElevated(request, response, () => { ok = true; }); return ok; };
 
   const httpAllowed = (): boolean => context.securitySettings.get("panel.proxy_http") === true;
+  const separateOn = (): boolean => context.securitySettings.get("panel.separate_origin") === true;
+  const tickets = new PanelTickets(), panelSessions = new PanelSessions();
 
   const sweep = (): void => {
     const now = Date.now();
@@ -151,6 +168,7 @@ export function registerNodePanelRoutes(app: Express, context: AppContext): void
     if (before && (before.address !== entry.address || before.port !== entry.port) && !("fingerprint" in input)) delete entry.fingerprint;
     if (!registry.set(entry)) return response.status(409).json({ error: "too_many_panels" });
     for (const key of [...jars.keys()]) if (key.endsWith(`|${entry.id}`)) jars.delete(key);
+    panelSessions.endNode(entry.id);
     audit.record({ action: "admin.node-panel.set", outcome: "allowed", actor: actor(request), target: entry.id, detail: `${entry.scheme} ${entry.address}:${entry.port}${entry.fingerprint ? " pinned" : ""}` });
     return response.json(entry);
   });
@@ -166,6 +184,7 @@ export function registerNodePanelRoutes(app: Express, context: AppContext): void
       if (trust) {
         registry.set({ ...entry, fingerprint: seen });
         for (const key of [...jars.keys()]) if (key.endsWith(`|${entry.id}`)) jars.delete(key);
+        panelSessions.endNode(entry.id);
         audit.record({ action: "admin.node-panel.trust", outcome: "allowed", actor: actor(request), target: entry.id, detail: seen.slice(0, 16) });
       }
       return response.json({ fingerprint: seen, trusted: trust, previous: entry.fingerprint ?? null, changed: entry.fingerprint !== undefined && entry.fingerprint !== seen });
@@ -176,6 +195,7 @@ export function registerNodePanelRoutes(app: Express, context: AppContext): void
     const id = String(request.params.id ?? "");
     if (!registry.remove(id)) return response.status(404).json({ error: "unknown_panel" });
     for (const key of [...jars.keys()]) if (key.endsWith(`|${id}`)) jars.delete(key);
+    panelSessions.endNode(id);
     audit.record({ action: "admin.node-panel.remove", outcome: "allowed", actor: actor(request), target: id });
     return response.sendStatus(204);
   });
@@ -219,39 +239,39 @@ export function registerNodePanelRoutes(app: Express, context: AppContext): void
     socket.on("error", () => reject(new UpstreamError("unreachable")));
   });
 
-  const handle = async (request: Request, response: Response): Promise<unknown> => {
-    const id = String(request.params.nodeId ?? "");
+  const serve = async (request: Request, response: Response, access: Access): Promise<unknown> => {
+    const { id, prefix } = access;
+    const who = access.actor;
     const entry = NODE_ID.test(id) ? registry.get(id) : undefined;
     if (!entry) return response.status(404).json({ error: "unknown_panel" });
     // A panel registered over plain http before the option existed stays in the list but is not opened until the option is turned on.
     if (entry.scheme === "http" && !httpAllowed()) return response.status(403).json({ error: "the panel of this node is registered over plain http: register it over https or turn panel.proxy_http on", code: "panel_http_disabled" });
     if (!METHODS.has(request.method)) return response.status(405).json({ error: "method_not_allowed" });
-    const prefix = `/api/v1/nodes/${id}/panel`;
     const rest = request.originalUrl.slice(prefix.length);
     if (rest === "") return response.redirect(308, `${prefix}/`);
     const target = cleanPanelPath(rest);
     if (!target) return response.status(400).json({ error: "bad_path" });
     const relative = target.path.replace(/^\//, "");
     const write = request.method !== "GET" && request.method !== "HEAD";
-    const remote = studioSessions.originOf(request) === "remote";
+    const remote = access.remote;
     // The things that change the node itself stay in the house (or on the VPN) unless the installation allows everything from outside.
     if (remote && config.remotePolicy !== "full" && (DANGEROUS.test(relative) || (write && relative.startsWith("api/")) )) {
-      audit.record({ action: "node-panel.blocked", outcome: "denied", actor: actor(request), target: id, detail: `${request.method} ${relative}` });
+      audit.record({ action: "node-panel.blocked", outcome: "denied", actor: who, target: id, detail: `${request.method} ${relative}` });
       return response.status(403).json({ error: "this is only possible from the house or over the VPN", code: "remote_policy", needs: "vpn" });
     }
     sweep();
-    const handleOf = studioSessions.handleOf(request);
+    const handleOf = access.handle;
     if (!handleOf) return response.status(401).json({ error: "sign in first" });
     const key = `${handleOf}|${id}`;
     let jar = jars.get(key);
     // A new panel from outside the house asks for a new proof of identity; the open panel then goes on without asking again until it has sat unused.
     if (!jar) {
-      if (!elevatedOrNot(request, response)) return undefined;
+      if (!access.proved && !elevatedOrNot(request, response)) return undefined;
       if (jars.size >= MAX_JARS) { const oldest = [...jars.entries()].sort((a, b) => a[1].last - b[1].last)[0]; if (oldest) jars.delete(oldest[0]); }
       jar = { cookies: new Map(), last: Date.now() };
       jars.set(key, jar);
-      try { context.connections.panelOpened(context.sightingOf(request, actor(request)), id); } catch { /* the history never stops the panel */ }
-      audit.record({ action: "node-panel.open", outcome: "allowed", actor: actor(request), target: id, detail: `${studioSessions.originOf(request)} ${request.ip ?? ""}` });
+      try { context.connections.panelOpened(context.sightingOf(request, who), id); } catch { /* the history never stops the panel */ }
+      audit.record({ action: "node-panel.open", outcome: "allowed", actor: who, target: id, detail: `${access.remote ? "remote" : "local"} ${request.ip ?? ""}` });
     }
     jar.last = Date.now();
     const upload = relative === "api/v1/ota" || relative === "api/v1/config/import";
@@ -269,17 +289,17 @@ export function registerNodePanelRoutes(app: Express, context: AppContext): void
         if (/^Max-Age=0$/im.test(cookie) || value === "") jar.cookies.delete(name); else if (jar.cookies.size < 8 && value.length <= 512) jar.cookies.set(name, value);
       }
       if (write && relative.startsWith("api/")) {
-        audit.record({ action: "node-panel.write", outcome: (reply.statusCode ?? 500) < 400 ? "allowed" : "failed", actor: actor(request), target: id, detail: `${request.method} ${relative} ${reply.statusCode ?? 0} ${request.ip ?? ""}` });
+        audit.record({ action: "node-panel.write", outcome: (reply.statusCode ?? 500) < 400 ? "allowed" : "failed", actor: who, target: id, detail: `${request.method} ${relative} ${reply.statusCode ?? 0} ${request.ip ?? ""}` });
       }
       const status = reply.statusCode ?? 502;
       const location = reply.headers.location;
       // content-encoding too: a node keeps its page, script and style compressed (gzip) and says so; without it the browser shows the compressed bytes as text
       for (const name of ["content-type", "content-encoding", "content-length", "content-disposition", "etag", "last-modified"]) { const value = reply.headers[name]; if (typeof value === "string") response.setHeader(name, value); }
       response.setHeader("Cache-Control", "no-store");
-      response.setHeader("X-Frame-Options", "SAMEORIGIN");
+      response.setHeader("X-Frame-Options", access.origin ? "DENY" : "SAMEORIGIN");
       response.setHeader("X-Content-Type-Options", "nosniff");
       response.setHeader("Referrer-Policy", "no-referrer");
-      response.setHeader("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'self'");
+      response.setHeader("Content-Security-Policy", `default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors ${access.origin ? "'none'" : "'self'"}`);
       // A redirect of the node (always to a path of the node) is kept inside the panel.
       if (status >= 300 && status < 400 && typeof location === "string" && /^\/(?!\/)/.test(location)) response.setHeader("Location", `${prefix}${location}`);
       response.status(status);
@@ -293,7 +313,7 @@ export function registerNodePanelRoutes(app: Express, context: AppContext): void
     } catch (error) {
       if (!(error instanceof UpstreamError)) return response.status(502).json({ error: "unreachable" });
       if (error.code === "fingerprint_mismatch") {
-        audit.record({ action: "node-panel.fingerprint", outcome: "denied", actor: actor(request), target: id, detail: `the certificate of ${entry.address} is not the one that was trusted` });
+        audit.record({ action: "node-panel.fingerprint", outcome: "denied", actor: who, target: id, detail: `the certificate of ${entry.address} is not the one that was trusted` });
         return response.status(502).json({ error: "the node shows a different certificate from the one that was trusted", code: "fingerprint_mismatch" });
       }
       if (error.code === "not_pinned") return response.status(409).json({ error: "trust the certificate of the node first", code: "not_pinned" });
@@ -302,5 +322,60 @@ export function registerNodePanelRoutes(app: Express, context: AppContext): void
     } finally { if (write) busyWrites.delete(id); }
   };
 
+  /** The panel through the API, with the session of Studio: refused while the panels have their own origin, since a script of a node would run with that session. */
+  const handle = async (request: Request, response: Response): Promise<unknown> => {
+    if (separateOn()) return response.status(403).json({ error: "the panels of the nodes are served from their own origin: ask for a ticket (POST /api/v1/admin/node-panels/{id}/ticket) and open the address it gives", code: "panel_origin_required" });
+    const id = String(request.params.nodeId ?? "");
+    return serve(request, response, { id, prefix: `/api/v1/nodes/${id}/panel`, handle: studioSessions.handleOf(request), actor: actor(request), remote: studioSessions.originOf(request) === "remote", proved: false, origin: false });
+  };
+
   app.all(["/api/v1/nodes/:nodeId/panel", "/api/v1/nodes/:nodeId/panel/*rest"], requireAdmin, (request, response) => { void handle(request, response); });
+
+  // ---- the second origin (panel.separate_origin) ----------------------------------------------------------------------------------------------------------
+  const panelApp = buildPanelOriginApp({
+    tickets, sessions: panelSessions, enabled: separateOn, cookieSecure: config.cookieSecure, publicOrigin: config.panelOrigin,
+    alive: handleOf => studioSessions.alive(handleOf),
+    record: (action, outcome, who, target, detail) => audit.record({ action, outcome, actor: who, target, ...(detail ? { detail } : {}) }),
+    serve: (request, response, grant: PanelGrant) => serve(request, response, { id: grant.nodeId, prefix: `/panel/${grant.nodeId}`, handle: grant.handle, actor: grant.actor, remote: grant.remote, proved: true, origin: true }),
+  });
+  const origin = new PanelOrigin({ config, enabled: separateOn, app: panelApp, onClosed: () => { tickets.clear(); panelSessions.clear(); }, warn: message => console.warn(message) });
+  /** The address people open the second origin at: the one that was configured, or this host with the port of the listener. */
+  const originOf = (request: Request): string | undefined => {
+    if (config.panelOrigin !== null) return config.panelOrigin;
+    const port = origin.port, host = request.hostname;
+    if (port === undefined || !/^(\[[0-9a-fA-F:.]{2,45}\]|[A-Za-z0-9.-]{1,253})$/.test(host)) return undefined;
+    return `${request.protocol}://${host}:${port}`;
+  };
+
+  /** A ticket of one use for the panel of a node: good for seconds, bound to the session of Studio that asked and to that node. */
+  app.post("/api/v1/admin/node-panels/:id/ticket", requireAdmin, async (request, response) => {
+    response.setHeader("Cache-Control", "no-store");
+    if (!separateOn()) return response.status(409).json({ error: "the panels are served from the origin of the API: turn panel.separate_origin on to give each its own", code: "panel_origin_off" });
+    const id = String(request.params.id ?? "");
+    const entry = NODE_ID.test(id) ? registry.get(id) : undefined;
+    if (!entry) return response.status(404).json({ error: "unknown_panel" });
+    if (entry.scheme === "http" && !httpAllowed()) return response.status(403).json({ error: "the panel of this node is registered over plain http: register it over https or turn panel.proxy_http on", code: "panel_http_disabled" });
+    const handleOf = studioSessions.handleOf(request);
+    if (!handleOf) return response.status(401).json({ error: "sign in first" });
+    // Opening a panel from outside the house asks for a new proof of identity, as it did through the API; a panel that is already open goes on without asking again.
+    if (!jars.has(`${handleOf}|${id}`) && !elevatedOrNot(request, response)) return undefined;
+    await origin.sync();
+    const base = originOf(request);
+    if (!base) return response.status(503).json({ error: "the origin of the panels could not be opened", code: "panel_origin_unavailable" });
+    const ticket = tickets.issue({ nodeId: id, handle: handleOf, actor: actor(request), remote: studioSessions.originOf(request) === "remote" });
+    audit.record({ action: "node-panel.ticket", outcome: "allowed", actor: actor(request), target: id, detail: "given" });
+    return response.status(201).json({ url: `${base}/enter/${ticket}`, origin: base, expires_in_s: Math.round(tickets.ttlMs / 1000) });
+  });
+
+  const refuses = (request: Request): boolean => {
+    const header = request.headers.origin, port = origin.port;
+    if (typeof header !== "string" || port === undefined) return false;
+    try {
+      const parsed = new URL(header);
+      if (config.panelOrigin !== null && parsed.origin === config.panelOrigin) return true;
+      return parsed.hostname === request.hostname && Number(parsed.port || (parsed.protocol === "https:" ? 443 : 80)) === port;
+    } catch { return false; }
+  };
+  void origin.sync();
+  return { sync: () => origin.sync(), refuses, close: () => origin.close(), port: () => origin.port };
 }

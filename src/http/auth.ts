@@ -280,6 +280,12 @@ export class SessionStore {
     return this.has(request) ? keyOf(requestCookies(request)[this.#options.cookieName]!) : undefined;
   }
 
+  /** Whether the session a handle (see handleOf) stands for is still open: it has not expired, been closed or revoked. */
+  alive(handle: string): boolean {
+    const key = this.#real(handle), session = key ? this.#sessions.get(key) : undefined, now = this.#now();
+    return session !== undefined && session.expiry > now && !this.#tooOld(session, now);
+  }
+
   /** The user a valid session belongs to. */
   userId(request: HeaderSource): string | undefined {
     return this.has(request) ? this.#sessions.get(this.#real(keyOf(requestCookies(request)[this.#options.cookieName]))!)?.userId : undefined;
