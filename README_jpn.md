@@ -152,7 +152,7 @@ flowchart LR
 | 音声：確認なしの消音、長文、巨大な音声 | ポリシー `voice.silence_confirmation`（off、pin、double_turn、challenge）を毎ターン送信。確認は本人に紐づく。200 文字、8 言語、毎分 30 リクエスト、音声は最大 480 000 バイト、応答は最大 200 000 バイト |
 | 誤った危険な書き込み | `ARMOR_BATTERY_WRITE=1`、`ARMOR_ELECTRICAL_SWITCHING=1`、`ARMOR_ALARM_COMMANDS=1` を設定しない限りオフ。起動時に警告 |
 
-**Studio のスイッチ。** 調整できる保護は `security-settings.json`（モード 0600、アトミック書き込み）にある 43 項目で、どれも保守的な既定値です。下げた場合は監査に記録されます：`alarm.disarm_pin`、`alarm.arming_modes`、`alarm.mode_downgrade_pin`、`alarm.mode_schedule`、`alarm.mode_schedule_lowers`、`alarm.mode_panel_sync`、`voice.silence_confirmation`、`alarm.config_hash`、`alarm.siren_fault_notice`、`server.zone_feed`、`server.zone_feed_signature`、`server.alarm_state_signature`、`media.rtsp_proxy`、`network.login_secure_only`、`login.country_alert`、`electrical.set_aside_old_readings`、`voice.multipart_turn`、`panel.live_events`、`client.device_lock`、`nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`、`summary.daily`、`summary.log_days`、`summary.reading_every_s`、`summary.power_every_s`、`summary.false_alarm_s`、`vision.heatmap`、`vision.activity_events`、`vision.service_url`、`vision.service_remote`、`vision.service_token_set`、`voice.turn_max_bytes`、`voice.reply_audio_max_bytes`、`reports.timeout_s`、`reports.queue_max`、`reports.requests_per_minute`。
+**Studio のスイッチ。** 調整できる保護は `security-settings.json`（モード 0600、アトミック書き込み）にある 90 項目で、どれも保守的な既定値です。下げた場合は監査に記録されます。その一部：`alarm.disarm_pin`、`alarm.arming_modes`、`alarm.mode_downgrade_pin`、`alarm.mode_schedule`、`alarm.mode_schedule_lowers`、`alarm.mode_panel_sync`、`voice.silence_confirmation`、`alarm.config_hash`、`alarm.siren_fault_notice`、`server.zone_feed`、`server.zone_feed_signature`、`server.alarm_state_signature`、`media.rtsp_proxy`、`network.login_secure_only`、`login.country_alert`、`electrical.set_aside_old_readings`、`voice.multipart_turn`、`panel.live_events`、`client.device_lock`、`nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`、`summary.daily`、`summary.log_days`、`summary.reading_every_s`、`summary.power_every_s`、`summary.false_alarm_s`、`vision.heatmap`、`vision.activity_events`、`vision.service_url`、`vision.service_remote`、`vision.service_token_set`、`voice.turn_max_bytes`、`voice.reply_audio_max_bytes`、`reports.timeout_s`、`reports.queue_max`、`reports.requests_per_minute`。
 
 **決してしないこと：** カメラのパスワードを返す、話した内容を保存する（コマンドと結果のみ）、PIN・トークン・Cookie をログに書く。第三者によるセキュリティレビューはありません。
 
@@ -267,7 +267,7 @@ ARMOR-SERVER/
 │   ├── store.ts persistence.ts       ノード状態と再起動後も残るもの
 │   ├── alarms.ts escalation.ts       アラームセンターとエスカレーション
 │   ├── users.ts totp.ts              ユーザー、ロール、PIN、2 要素
-│   ├── security_settings.ts          Studio で変える 21 のスイッチ
+│   ├── security_settings.ts          Studio で変えるスイッチ
 │   ├── voice.ts voice_turn.ts        文字と音声のコマンド
 │   ├── firmware.ts installation.ts   ノードのファームウェアと自己更新
 │   ├── http/                         セッション、ノード別トークン、封印した認証情報

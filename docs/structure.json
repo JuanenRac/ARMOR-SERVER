@@ -104,14 +104,14 @@
     {
      "name": "security_settings.ts",
      "desc": {
-      "en": "the 21 switches Studio changes",
-      "es": "los 21 interruptores de Studio",
-      "de": "die 21 Schalter aus Studio",
-      "fr": "les 21 interrupteurs de Studio",
-      "it": "i 21 interruttori di Studio",
-      "ja": "Studio で変える 21 のスイッチ",
-      "zh": "Studio 修改的 21 个开关",
-      "pt": "os 21 interruptores do Studio"
+      "en": "the switches Studio changes",
+      "es": "los interruptores de Studio",
+      "de": "die Schalter aus Studio",
+      "fr": "les interrupteurs de Studio",
+      "it": "gli interruttori di Studio",
+      "ja": "Studio で変えるスイッチ",
+      "zh": "Studio 修改的开关",
+      "pt": "os interruptores do Studio"
      }
     },
     {
