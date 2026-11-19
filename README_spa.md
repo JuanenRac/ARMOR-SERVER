@@ -61,7 +61,7 @@ Cada línea es una parte de este repositorio y la luz dice hasta dónde llega ho
 | Pruebas | 🟢 | Pasan 1389 pruebas (`npm test`), incluida una suite de integración HTTP completa contra un servidor aislado y una comprobación de que cada ruta está documentada en el archivo OpenAPI. |
 | Protocolos y datos | 🟡 | Los mensajes del radar vienen de una placa real; las rutas solar, eléctrica, de panel de alarma y de panel táctil se prueban con mensajes generados, y ONVIF no se ha probado con una cámara ONVIF real. |
 | Hardware | 🟠 | Funciona en el banco de pruebas CM5 con un broker MQTT real, cámaras IP reales (vídeo en vivo, capturas, grabaciones, PTZ en las unidades Hi3510) y un nodo radar real; nada ha funcionado en una Jetson. |
-| Seguridad | 🟡 | Las reglas de sesiones, cifrado, evidencias y acceso están cubiertas por pruebas; no ha habido una revisión independiente. |
+| Seguridad | 🟠 | Las reglas de sesiones, cifrado, evidencias y acceso están cubiertas por pruebas; no ha habido una revisión independiente. |
 | Integración | 🟠 | Studio, la app de Android y los servicios de voz y observación lo usan a diario en el banco; el push mediante Firebase nunca se ha ejecutado contra un proyecto Firebase real. |
 | Documentación | 🟢 | Ocho idiomas, la referencia de rutas (OpenAPI y ROUTES), las guías de entorno y de acceso remoto y el historial de cambios están al día. |
 

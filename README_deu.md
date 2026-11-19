@@ -61,7 +61,7 @@ Jede Zeile ist ein Teil dieses Repositorys, und die Ampel sagt, wie weit er heut
 | Tests | 🟢 | 1389 Tests bestehen (`npm test`), darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server und eine Prüfung, dass jede Route in der OpenAPI-Datei dokumentiert ist. |
 | Protokolle und Daten | 🟡 | Die Radar-Nachrichten stammen von einer echten Platine; die Routen für Solar, Elektrik, Alarmzentrale und Touch-Panel sind mit erzeugten Nachrichten getestet, und ONVIF ist keiner echten ONVIF-Kamera begegnet. |
 | Hardware | 🟠 | Er läuft auf dem CM5-Prüfstand mit einem echten MQTT-Broker, echten IP-Kameras (Live-Video, Standbilder, Aufnahmen, PTZ an den Hi3510-Geräten) und einem echten Radar-Knoten; auf einem Jetson lief nichts. |
-| Sicherheit | 🟡 | Die Regeln für Sitzungen, Verschlüsselung, Beweise und Anmeldung sind durch Tests abgedeckt; es gab keine unabhängige Prüfung. |
+| Sicherheit | 🟠 | Die Regeln für Sitzungen, Verschlüsselung, Beweise und Anmeldung sind durch Tests abgedeckt; es gab keine unabhängige Prüfung. |
 | Integration | 🟠 | Studio, die Android-App und die Sprach- und Beobachtungsdienste nutzen ihn täglich auf dem Prüfstand; Push über Firebase lief nie gegen ein echtes Firebase-Projekt. |
 | Dokumentation | 🟢 | Acht Sprachen, die Routenreferenz (OpenAPI und ROUTES), die Anleitungen zu Umgebung und Fernzugriff und das Änderungsprotokoll sind aktuell. |
 
