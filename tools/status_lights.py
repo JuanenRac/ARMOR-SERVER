@@ -17,6 +17,7 @@ From those two fields, and from the files of the repository, the tool computes t
 
     Hardware, Integration   none / host-test / simulator: orange at most; bench: yellow at most; field: green
                             (a manifest with ``"hardware_bound": false`` has no hardware: these rows are not limited by the evidence)
+    Security, Updates, Writing   the same ceiling as Hardware when the manifest is hardware bound; Security is never green, bound or not
     Software, Tests, Documentation   green only when the repository has tests and a CI workflow (and, with --ci auto, the last run of the
                             default branch is green); otherwise yellow at most
     every row               a repository of maturity scaffolding / experimental / alpha / prototype: yellow at most
@@ -54,6 +55,7 @@ NAMES = {"red": RED, "orange": ORANGE, "yellow": YELLOW, "green": GREEN, "white"
 WORDS = {value: key for key, value in NAMES.items()}
 EVIDENCE_LEVELS = ("none", "host-test", "simulator", "bench", "field")
 EVIDENCE_CEILING = {"none": ORANGE, "host-test": ORANGE, "simulator": ORANGE, "bench": YELLOW, "field": GREEN}
+HARDWARE_LIKE = ("hardware", "integration", "security", "updates", "writing")   # the rows that share the ceiling of the hardware evidence
 LOW_MATURITY = {"scaffolding", "experimental", "alpha", "prototype"}
 LANGUAGE_FILES = ("README.md", "README_spa.md", "README_fra.md", "README_ita.md", "README_deu.md", "README_zho.md", "README_jpn.md", "README_por.md")
 HEADING = re.compile("^## (?:\U0001F6A6|\U0001F4A1) ")
@@ -74,6 +76,12 @@ def kind_of(label: str) -> str:
         return "integration"
     if "hardware" in text or "board" in text or "firmware on" in text:
         return "hardware"
+    if "security" in text:
+        return "security"
+    if text.startswith("update"):
+        return "updates"
+    if text.startswith("writing"):
+        return "writing"
     if text.startswith("test"):
         return "tests"
     if text.startswith("documentation") or text == "docs":
@@ -178,8 +186,10 @@ def ceiling(kind: str, manifest: dict, tests: bool, ci: bool, ci_now: str) -> tu
     if str(manifest.get("maturity", "")).lower() in LOW_MATURITY:
         lower(YELLOW, f"maturity {manifest.get('maturity')}")
     evidence = manifest.get("evidence", "none")
-    if kind in ("hardware", "integration") and manifest.get("hardware_bound", True) is not False:
+    if kind in HARDWARE_LIKE and manifest.get("hardware_bound", True) is not False:
         lower(EVIDENCE_CEILING.get(evidence, ORANGE), f"evidence {evidence}")
+    if kind == "security":
+        lower(YELLOW, "security is never green: no independent review shows it")
     if kind in ("software", "tests", "docs"):
         if not tests:
             lower(YELLOW, "no tests in the repository")
@@ -278,11 +288,12 @@ def patch_armor_source(root: Path, wanted: list[str]) -> str | None:
     if not source.is_file():
         return None
     text = source.read_bytes().decode("utf-8")
-    start = text.find('"status": [')
-    if start < 0:
+    found = re.search(r"""(["'])status\1: \[""", text)
+    if found is None:
         return None
+    start = found.start()
     depth, end = 0, None
-    for position in range(start + len('"status": '), len(text)):
+    for position in range(found.end() - 1, len(text)):
         if text[position] == "[":
             depth += 1
         elif text[position] == "]":
@@ -291,13 +302,13 @@ def patch_armor_source(root: Path, wanted: list[str]) -> str | None:
                 end = position + 1
                 break
     block = text[start:end]
-    pairs = list(re.finditer(r'("(\w+)",\s*")(green|yellow|orange|red)(")', block))
+    pairs = list(re.finditer(r"""((["'])(\w+)\2,\s*(["']))(green|yellow|orange|red)(\4)""", block))
     if len(pairs) != len(wanted):
         fail(f"{source.name}: {len(pairs)} rows in the source but {len(wanted)} in the README")
     out, last = [], 0
     for match, light in zip(pairs, wanted, strict=True):
-        out.append(block[last:match.start(3)] + WORDS[light])
-        last = match.end(3)
+        out.append(block[last:match.start(5)] + WORDS[light])
+        last = match.end(5)
     out.append(block[last:])
     new = text[:start] + "".join(out) + text[end:]
     if new != text:
@@ -360,7 +371,7 @@ def apply(root: Path, state: dict, allow_raise: bool) -> int:
         light = item["light"]
         if light in ORDER and ORDER.index(light) > ORDER.index(item["ceiling"]):
             light = item["ceiling"]
-        elif allow_raise and item["kind"] in ("hardware", "integration") and light in ORDER and ORDER.index(light) < ORDER.index(item["ceiling"]):
+        elif allow_raise and item["kind"] in ("hardware", "integration", "updates", "writing") and light in ORDER and ORDER.index(light) < ORDER.index(item["ceiling"]):
             light = ORDER[ORDER.index(light) + 1]
         wanted.append(light)
     changed = 0

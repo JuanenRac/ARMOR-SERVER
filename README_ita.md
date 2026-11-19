@@ -61,7 +61,7 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 | Test | 🟢 | Superano 1389 test (`npm test`), compresa una suite di integrazione HTTP completa contro un server isolato e un controllo che ogni rotta sia documentata nel file OpenAPI. |
 | Protocolli e dati | 🟡 | I messaggi del radar vengono da una scheda reale; le rotte solare, elettrica, della centralina d'allarme e del pannello touch sono provate con messaggi generati, e ONVIF non ha incontrato una vera telecamera ONVIF. |
 | Hardware | 🟠 | Gira sul banco di prova CM5 con un broker MQTT reale, telecamere IP reali (video dal vivo, istantanee, registrazioni, PTZ sulle unità Hi3510) e un nodo radar reale; nulla ha girato su una Jetson. |
-| Sicurezza | 🟡 | Le regole di sessioni, cifratura, prove e accesso sono coperte da test; non c'è stata una revisione indipendente. |
+| Sicurezza | 🟠 | Le regole di sessioni, cifratura, prove e accesso sono coperte da test; non c'è stata una revisione indipendente. |
 | Integrazione | 🟠 | Studio, l'app Android e i servizi di voce e osservazione lo usano ogni giorno sul banco; il push tramite Firebase non è mai stato eseguito contro un vero progetto Firebase. |
 | Documentazione | 🟢 | Otto lingue, il riferimento delle rotte (OpenAPI e ROUTES), le guide di ambiente e accesso remoto e il registro delle modifiche sono aggiornati. |
 
