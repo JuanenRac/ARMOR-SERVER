@@ -87,9 +87,43 @@ def L(value, lang: str) -> str:
     return "" if value is None else str(value)
 
 
+_FACT_CACHE: dict[tuple[str, str], str] = {}
+FACT_MARK = re.compile(r"\{\{fact:([A-Za-z0-9_:.\-]+)\|([^{}|]*)\}\}")
+
+
+def _fact_text(found: re.Match[str]) -> str:
+    """The value of `{{fact:NAME|LAST}}`: read from the repositories by tools/doc_facts.py when this runs where it (and the repository the figure comes from) is, else the last
+    value written after the bar. A name that means nothing stops the build. `doc_facts.py --structure` fails when LAST is not the real value, so the two never stay apart."""
+    try:
+        import doc_facts  # noqa: PLC0415  (only the ARMOR-DOCS checkout has it)
+    except ImportError:
+        return found.group(2)
+    key = (found.group(1), str(doc_facts.FAMILY))
+    if key in _FACT_CACHE:
+        return _FACT_CACHE[key]
+    try:
+        _FACT_CACHE[key] = doc_facts.value(found.group(1))   # read once per run: the same figure stands in every language of every repository
+        return _FACT_CACHE[key]
+    except doc_facts.Unavailable:
+        return found.group(2)
+    except KeyError:
+        raise SpecError(f"the figure {{{{fact:{found.group(1)}}}}} means nothing") from None
+
+
+def resolve_facts(node):
+    """The spec with every `{{fact:NAME|LAST}}` of its texts written as its figure."""
+    if isinstance(node, str):
+        return FACT_MARK.sub(_fact_text, node)
+    if isinstance(node, list):
+        return [resolve_facts(child) for child in node]
+    if isinstance(node, dict):
+        return {key: resolve_facts(child) for key, child in node.items()}
+    return node
+
+
 def load_spec(path: Path) -> dict:
     try:
-        spec = json.loads(path.read_text(encoding="utf-8"))
+        spec = resolve_facts(json.loads(path.read_text(encoding="utf-8")))
     except FileNotFoundError:
         raise SpecError(f"{path} does not exist") from None
     except json.JSONDecodeError as error:
