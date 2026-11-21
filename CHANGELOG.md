@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The contracts it says it was checked against are 0.8.1.6:** the version that the server reports as the one of the contracts follows the pin of the shared repository after its latest green run of the reverse dependencies.
+
 - **The contracts it says it was checked against are 0.8.1.5:** the answer of /api/v1/info carries the version of the contracts that the reverse-dependency run of ARMOR-COMMON last checked it against.
 
 ## [0.8.2.4] - Origin-separated node panels, signed node orders, per-node tokens, stricter gates and security switches
