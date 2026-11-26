@@ -10,12 +10,14 @@ export type StackCapacity = { capacity_ah: number | null; full_capacity_ah: numb
 
 /**
  * The charge left and the full capacity of one stack, both over the same modules. A module that says its full capacity and its state of charge but not its remaining charge counts with
- * the share its state of charge says. When no module says its full capacity the node's own figures are kept: there is nothing to check them against.
+ * the share its state of charge says. The node's own figures are kept when every module says both sides or neither.
  */
 export function stackCapacity(reading: SolarBattery): StackCapacity {
   const present = reading.stack.filter(module => module.present);
   const judged = present.filter(module => module.full_capacity_ah !== undefined && (module.capacity_ah !== undefined || module.soc_percent !== undefined));
-  if (judged.length === 0) return { capacity_ah: reading.capacity_ah ?? null, full_capacity_ah: reading.full_capacity_ah ?? null, energy_kwh: reading.energy_kwh ?? null };
+  // the node's own pair is only wrong when some module says one side and not the other; otherwise it is kept
+  const mismatched = present.some(module => (module.capacity_ah === undefined) !== (module.full_capacity_ah === undefined));
+  if (!mismatched || judged.length === 0) return { capacity_ah: reading.capacity_ah ?? null, full_capacity_ah: reading.full_capacity_ah ?? null, energy_kwh: reading.energy_kwh ?? null };
   let remaining = 0, full = 0, estimated = false;
   for (const module of judged) {
     const whole = module.full_capacity_ah as number;
