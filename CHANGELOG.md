@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **An unreadable serial port of a solar node is told:** when the node says in its health report that a port hears bytes and reads nothing, the node's health carries `port_problems` (port, cause, speed, pins, polarity, bytes heard and the last ones). It is listed for 30 minutes after the node last said it.
+
 ## [0.8.2.7] - The new solar equipment protocols
 
 - **More solar equipment can be declared:** the protocol table follows the shared one (PI00 / PI16, PI17, the VE.Direct Phoenix inverter and the monitor in hexadecimal mode) and four inverter families are added.
