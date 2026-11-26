@@ -12,7 +12,7 @@ const START = Date.UTC(2026, 0, 10, 12, 0, 0);
 
 const message = (volts: number, cell = 3.3): SolarMessage => ({
   kind: "battery", node_id: "solar-1", device: "pack", timestamp_ms: START, modules: 1,
-  stack: [{ n: 2, present: true, voltage_v: volts, current_a: 2, soc_percent: 80, temperature_c: 21, cells_v: [cell, cell + 0.01] }],
+  stack: [{ n: 2, present: true, voltage_v: volts, current_a: 2, soc_percent: 80, temperature_c: 21, cells_v: [cell, Number((cell + 0.01).toFixed(3))] }],
 }) as unknown as SolarMessage;
 
 function make(extra: Partial<BatteryHistoryOptions> = {}) {
