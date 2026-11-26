@@ -227,6 +227,8 @@ def test_project(project: Path, manifest: dict[str, object]) -> None:
         test_alarm(project)
     elif name == "ARMOR-NODE-HMI":
         test_hmi(project)
+    elif name == "ARMOR-NODE-SOLAR-HMI":
+        test_solar_hmi(project)
     elif name == "ARMOR-ANDROID-CONTROL":
         gradle = "gradlew.bat" if os.name == "nt" and (project / "gradlew.bat").is_file() else ("./gradlew" if (project / "gradlew").is_file() else check_tool("gradle", "Gradle or the project wrapper is required; open the project in Android Studio once to generate/restore it"))
         command(project, [gradle, "test", "assembleDebug"])
@@ -275,6 +277,15 @@ def test_project(project: Path, manifest: dict[str, object]) -> None:
         unit_tests(project)
     else:
         raise RuntimeError(f"no build rule registered for {name}")
+
+
+def test_solar_hmi(project: Path) -> None:
+    """Build and run ARMOR-NODE-SOLAR-HMI's host tests (what the screen reads of the solar equipment, what it decides about it, its PIN and its simulator). Needs CMake and a C++17 compiler."""
+    cmake = check_tool("cmake", "CMake and a C++17 compiler are required to test ARMOR-NODE-SOLAR-HMI (use Linux, WSL or MSYS2)")
+    build = project / "build" / "host"
+    command(project, [cmake, "-S", "tests", "-B", str(build), "-DCMAKE_BUILD_TYPE=Debug"])
+    command(project, [cmake, "--build", str(build)])
+    host_tests(project, build)
 
 
 def check_broker(project: Path, samples: str = "") -> None:
@@ -563,7 +574,7 @@ def run_project(project: Path, manifest: dict[str, object]) -> None:
         command(project, [NPM, "run", "dev"], environment)
     elif name == "ARMOR-DEVOPS":
         command(project, ["docker", "compose", "up", "--build"])
-    elif name in {"ARMOR-NODE-RADAR", "ARMOR-NODE-SOLAR", "ARMOR-NODE-ELECTRICAL", "ARMOR-NODE-ALARM", "ARMOR-NODE-HMI", "ARMOR-ANDROID-CONTROL", "ARMOR-IOS-CONTROL", "ARMOR-HARDWARE", "ARMOR-DOCS", "ARMOR-UPDATER", "ARMOR-WATCH"}:
+    elif name in {"ARMOR-NODE-RADAR", "ARMOR-NODE-SOLAR", "ARMOR-NODE-ELECTRICAL", "ARMOR-NODE-ALARM", "ARMOR-NODE-HMI", "ARMOR-NODE-SOLAR-HMI", "ARMOR-ANDROID-CONTROL", "ARMOR-IOS-CONTROL", "ARMOR-HARDWARE", "ARMOR-DOCS", "ARMOR-UPDATER", "ARMOR-WATCH"}:
         print(f"{name} has no safe generic runtime command. Use build-test to validate it, then follow its project documentation for hardware or IDE deployment.")
     else:
         raise RuntimeError(f"no run rule registered for {name}")

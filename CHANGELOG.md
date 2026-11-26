@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The shared project tool is the current one:** the copy follows the shared repository, which now knows the new solar panel node.
+
 - **The shared CI workflow pins the current setup-java action:** the line follows the template of the shared repository.
 
 - **The catalogue of solar protocols and the equipment it brings:** `GET /api/v1/solar` also lists the protocols a gateway node reads (`catalog.protocols`: serial line, questions, message fields and state), and the equipment that can be declared now includes Modbus inverters and chargers (EASun SMG II, SRNE), PI41 and PI34, Victron VE.Direct, and DALY, JBD and JK boards. The EASun iSolar family that was named SMG II under the PI30 protocol is split: SMV II speaks PI30, SMG II Modbus.
