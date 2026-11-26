@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The battery totals are whole while some battery has not said its capacity:** when every battery of a stack that told its full capacity told the same one and no two name different models, the others count as those, whatever the node adds up (an older node adds up only the ones that said it). With different capacities or models nothing is assumed.
+
 ## [0.8.2.5] - Correct solar battery totals and the catalogue of equipment protocols
 
 - **The shared project tool is the current one:** the copy follows the shared repository, which now knows the new solar panel node.
