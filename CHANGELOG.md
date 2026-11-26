@@ -4,6 +4,9 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The history of every battery and cell is kept by the server:** `GET /api/v1/solar/history` takes `module` and answers that battery module and its cells. It is written to daily files in the data directory: a point per module every `ARMOR_BATTERY_HISTORY_EVERY_S` seconds (60) for the last day and five-minute averages for `ARMOR_BATTERY_HISTORY_DAYS` days (30; 0 records nothing), never more than `ARMOR_BATTERY_HISTORY_MAX_BYTES` (32 MiB), the oldest day going first. Example readings are not recorded and removing a device removes its history.
+- **The root console asks for the second factor from outside the house:** unlocking takes a code besides the password, and an account without a second factor cannot unlock it from there (security setting `remote.console_second_factor`, on by default).
+
 ## [0.8.2.5] - Correct solar battery totals and the catalogue of equipment protocols
 
 - **The shared project tool is the current one:** the copy follows the shared repository, which now knows the new solar panel node.

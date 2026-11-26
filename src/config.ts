@@ -66,6 +66,10 @@ export type ArmorConfig = {
   alarmStateKeyFile: string;
   /** The daily log (see daily_log.ts): where the days kept, the two sampling intervals and the false-alarm window start (Studio can change them), and the bounds only the environment sets. */
   dailyLogDays: number;
+  /** The history by battery module and cell (see battery_history.ts): days kept (ARMOR_BATTERY_HISTORY_DAYS, 0 to 30, 0 records nothing), seconds between two points of the last day and the most bytes of its files. */
+  batteryHistoryDays: number;
+  batteryHistoryEveryS: number;
+  batteryHistoryMaxBytes: number;
   dailyLogReadingEveryS: number;
   dailyLogPowerEveryS: number;
   dailyFalseAlarmS: number;
@@ -509,6 +513,9 @@ export function readConfig(env: Env = process.env): ArmorConfig {
     heartbeatIntervalS: integer(env, "ARMOR_HEARTBEAT_INTERVAL_S", 60, 10, 3600),
     alarmStateKeyFile: path.resolve(env.ARMOR_ALARM_STATE_KEY_FILE?.trim() || path.join(dataDir, "alarm-state.key")),
     dailyLogDays: integer(env, "ARMOR_DAILY_LOG_DAYS", 14, 1, 90),
+    batteryHistoryDays: integer(env, "ARMOR_BATTERY_HISTORY_DAYS", 30, 0, 30),
+    batteryHistoryEveryS: integer(env, "ARMOR_BATTERY_HISTORY_EVERY_S", 60, 10, 3600),
+    batteryHistoryMaxBytes: integer(env, "ARMOR_BATTERY_HISTORY_MAX_BYTES", 32 * 1024 ** 2, 1024 ** 2, 512 * 1024 ** 2),
     dailyLogReadingEveryS: integer(env, "ARMOR_DAILY_LOG_READING_EVERY_S", 300, 10, 3600),
     dailyLogPowerEveryS: integer(env, "ARMOR_DAILY_LOG_POWER_EVERY_S", 60, 5, 3600),
     dailyFalseAlarmS: integer(env, "ARMOR_DAILY_FALSE_ALARM_S", 60, 0, 600),

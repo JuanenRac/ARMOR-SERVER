@@ -2,7 +2,8 @@
  * Maintenance from Studio: the A.R.M.O.R. programs of this machine against the newest release of each one on GitHub (install them one by one or all, or put the previous one back),
  * the operating system's own updates and its reboot, and a root console for the day nothing else works. Administrators only, every action in the audit trail.
  * Nothing here is privileged: the privileged part is the maintenance agent (ARMOR-DEVOPS), asked over its own Unix socket. The console is a door that is shut twice: the agent
- * has it off unless it was turned on in its environment, and here an administrator must give the password again before the first command and every ten minutes of use.
+ * has it off unless it was turned on in its environment, and here an administrator must give the password again before the first command and every ten minutes of use
+ * (and, from outside the house, a code of the second factor: remote.console_second_factor).
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import { timingSafeEqual } from "node:crypto";
@@ -17,7 +18,7 @@ const JOB_ID = /^[A-Za-z0-9-]{1,40}$/;
 const relay = (response: Response, reply: AdminReply) => response.status(reply.status).json(reply.body);
 
 export function registerMaintenanceRoutes(app: Express, context: AppContext): void {
-  const { maintenance, audit, requireAdmin, studioUser, studioSessions, users, config, store, alarmNodes } = context;
+  const { maintenance, audit, requireAdmin, studioUser, studioSessions, users, config, store, alarmNodes, totp, originOfRequest, securitySettings } = context;
   const actor = (request: Request) => studioUser(request)?.username;
   /** The one-time code of the administrator's authenticator, when the agent asks for one on the calls it guards: it is only handed on, and never written down. */
   const approval = (request: Request): Record<string, string> => {
@@ -26,9 +27,16 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
   };
   const body = (request: Request): Record<string, unknown> => (typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : {});
   /** Who has the console open: the SESSION that typed the password (not the person: another session of the same person, a stolen cookie or one from outside, does not inherit it). */
-  const unlocked = new Map<string, number>();
+  const unlocked = new Map<string, { until: number; code: boolean }>();
   const sessionOf = (request: Request): string => studioSessions.handleOf(request) ?? "";
-  const dropExpired = (): void => { const now = Date.now(); for (const [key, until] of unlocked) if (until <= now) unlocked.delete(key); };
+  const dropExpired = (): void => { const now = Date.now(); for (const [key, open] of unlocked) if (open.until <= now) unlocked.delete(key); };
+  /** From outside the house a code of the second factor is asked besides the password (remote.console_second_factor, on): a session opened outside, or a request that comes from outside. */
+  const needsCode = (request: Request): boolean => securitySettings.get("remote.console_second_factor") && (studioSessions.originOf(request) === "remote" || originOfRequest(request) === "remote");
+  /** Until when the console is open for this request (0: locked). An unlock made without a code does not serve outside the house. */
+  const openUntil = (request: Request): number => {
+    const open = unlocked.get(sessionOf(request));
+    return sessionOf(request) !== "" && open && open.until > Date.now() && (open.code || !needsCode(request)) ? open.until : 0;
+  };
   const failures = new Map<string, number[]>();
   const ended = new Set<string>();
 
@@ -150,10 +158,10 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
 
   // ---- the console ----
   app.get("/api/v1/admin/console", requireAdmin, async (request, response) => {
-    const until = unlocked.get(sessionOf(request)) ?? 0;
-    if (!maintenance) return response.json({ available: false, enabled: false, unlocked_until: 0 });
-    try { const reply = await maintenance.request("GET", "/v1/console"); return response.json({ available: reply.status === 200, enabled: reply.body.enabled === true, unlocked_until: until > Date.now() ? until : 0 }); }
-    catch { return response.json({ available: false, enabled: false, unlocked_until: 0 }); }
+    const second_factor = needsCode(request);
+    if (!maintenance) return response.json({ available: false, enabled: false, unlocked_until: 0, second_factor });
+    try { const reply = await maintenance.request("GET", "/v1/console"); return response.json({ available: reply.status === 200, enabled: reply.body.enabled === true, unlocked_until: openUntil(request), second_factor }); }
+    catch { return response.json({ available: false, enabled: false, unlocked_until: 0, second_factor }); }
   });
 
   app.post("/api/v1/admin/console/unlock", requireAdmin, async (request, response) => {
@@ -170,10 +178,20 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
       return response.status(403).json({ error: "wrong_password" });
     }
     failures.delete(name);
+    const demanded = needsCode(request);
+    if (demanded) {
+      // The same second factor as the sign-in: its replay protection and its growing wait after wrong codes apply here too.
+      const userId = studioUser(request)!.id, code = typeof body(request).code === "string" ? (body(request).code as string).trim() : "";
+      const refuse = (status: number, error: string, detail: string) => { audit.record({ action: "console.unlock", outcome: "denied", actor: name, detail }); return response.status(status).json({ error }); };
+      if (!totp.enabled(userId)) return refuse(403, "totp_setup_required", "from outside the house without a second factor");
+      if (!code) return refuse(403, "totp_required", "from outside the house without a code");
+      if (totp.waitFor(userId) > 0) return refuse(429, "totp_locked", "too many wrong codes");
+      if (!totp.verify(userId, code)) return refuse(403, "wrong_code", "wrong code");
+    }
     const until = Date.now() + UNLOCK_MS;
     dropExpired();
-    if (sessionOf(request)) unlocked.set(sessionOf(request), until);
-    audit.record({ action: "console.unlock", outcome: "allowed", actor: name });
+    if (sessionOf(request)) unlocked.set(sessionOf(request), { until, code: demanded });
+    audit.record({ action: "console.unlock", outcome: "allowed", actor: name, ...(demanded ? { detail: "with the second factor" } : {}) });
     return response.json({ unlocked_until: until });
   });
 
@@ -183,7 +201,7 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
     response.json({ unlocked_until: 0 });
   });
 
-  const isUnlocked = (request: Request) => sessionOf(request) !== "" && (unlocked.get(sessionOf(request)) ?? 0) > Date.now();
+  const isUnlocked = (request: Request) => openUntil(request) > 0;
 
   app.post("/api/v1/admin/console/run", requireAdmin, async (request, response) => {
     if (!isUnlocked(request)) return response.status(403).json({ error: "console_locked" });
@@ -198,7 +216,8 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
     const reply = await ask(response, "POST", "/v1/console/run", { command, cwd, timeout });
     if (!reply) { audit.record({ action: "console.run", outcome: "failed", actor: actor(request), target: cwd, detail: "the agent did not answer: the command may have run" }); return; }
     audit.record({ action: "console.run", outcome: reply.status < 300 ? "allowed" : "failed", actor: actor(request), target: cwd, detail: `answered ${reply.status}` });
-    if (reply.status < 300) unlocked.set(sessionOf(request), Date.now() + UNLOCK_MS);   // using it keeps it open
+    const open = unlocked.get(sessionOf(request));
+    if (reply.status < 300 && open) open.until = Date.now() + UNLOCK_MS;   // using it keeps it open
     relay(response, reply);
   });
 
