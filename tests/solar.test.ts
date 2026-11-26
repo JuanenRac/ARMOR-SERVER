@@ -371,3 +371,38 @@ test("an inverter may say that its warnings are unknown, and only with a boolean
   assert.equal((known as SolarInverter).warnings_known, false);
   assert.throws(() => parseSolarMessage(JSON.parse(JSON.stringify({ ...inverter(), warnings_known: "no" }))), /warnings_known/);
 });
+
+// Three sockets of Pylontech batteries with eight batteries in all, of 15 cells each: what each socket says is what its node adds up, with the batteries that say less than the others.
+const pylon = (device: string, count: number, soc: number, silent: number[] = []): SolarBattery => {
+  const stack = Array.from({ length: count }, (_, index) => ({
+    n: index + 1, present: true, soc_percent: soc, voltage_v: 49.5, current_a: -1, cells_v: Array.from({ length: 15 }, () => 3.3), full_capacity_ah: 50, ...(silent.includes(index + 1) ? {} : { capacity_ah: 50 * soc / 100 }),
+  }));
+  const said = stack.reduce((sum, module) => sum + (module.capacity_ah ?? 0), 0);   // what the node adds up: only the batteries that say it
+  return battery({ device, modules: count, stack, soc_percent: soc, voltage_v: 49.5, current_a: -count, capacity_ah: said, full_capacity_ah: 50 * count, energy_kwh: Math.round(said * 49.5 / 10) / 100 });
+};
+
+test("several sockets of Pylontech batteries add up battery by battery, and the charge is weighted by what each socket holds", () => {
+  const store = new SolarStore();
+  store.ingest(pylon("bank-a", 1, 100));
+  store.ingest(pylon("bank-b", 3, 60, [2]));
+  store.ingest(pylon("bank-c", 4, 40));
+  const totals = store.totals();
+  assert.equal(totals.batteries, 3);                                    // the sockets
+  assert.equal(totals.full_capacity_ah, 400);                           // eight batteries of 50 Ah
+  assert.equal(totals.capacity_ah, 220);                                // 50 + 3 * 30 + 4 * 20, with the battery that only says its percentage
+  assert.equal(totals.soc_percent, 55);                                 // 220 of 400, not the mean of the three sockets (67)
+  assert.equal(totals.energy_kwh, 10.9);
+  assert.equal(totals.battery_w, Math.round(49.5 * -8));
+});
+
+test("an example stays out of the totals while a real stack reports, and a parallel system counts its output once", () => {
+  const store = new SolarStore();
+  store.ingest(pylon("bank-a", 2, 50));
+  store.ingest(pylon("bank-x", 8, 90), { example: true });
+  assert.deepEqual([store.totals().batteries, store.totals().full_capacity_ah, store.totals().soc_percent], [1, 100, 50]);
+  const units = [{ unit: 0, mode: "line" as const, serial: "92000000000001" }, { unit: 1, mode: "line" as const, serial: "92000000000002" }];
+  store.ingest(inverter({ units, total_out_w: 900, out_w: 450 }));
+  store.ingest(inverter({ device: "axpert-2", units, total_out_w: 900, out_w: 450 }));
+  assert.equal(store.totals().load_w, 900);
+});
+
