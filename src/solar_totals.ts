@@ -9,15 +9,30 @@ import type { SolarBattery, SolarInverter } from "./solar.js";
 export type StackCapacity = { capacity_ah: number | null; full_capacity_ah: number | null; energy_kwh: number | null };
 
 /**
+ * The full capacity to take for a battery that has not said its own: that of the others of the stack, only when every one that said it said the same and no two batteries name different
+ * models. null: nothing is assumed. The node counts its own total the same way (ARMOR-NODE-SOLAR core/pylontech.hpp, shared_capacity); an older node does not.
+ */
+export function sharedCapacity(present: ReadonlyArray<{ model?: string; full_capacity_ah?: number }>): number | null {
+  const models = new Set(present.map(module => module.model).filter(model => model !== undefined && model !== ""));
+  const said = present.map(module => module.full_capacity_ah).filter((value): value is number => value !== undefined);
+  if (models.size > 1 || said.length === 0 || said.some(value => Math.abs(value - said[0]) > 0.005)) return null;
+  return said[0];
+}
+
+/**
  * The charge left and the full capacity of one stack, both over the same modules. A module that says its full capacity and its state of charge but not its remaining charge counts with
- * the share its state of charge says. The node's own figures are kept when every module says both sides or neither.
+ * the share its state of charge says. A module that does not say its full capacity counts as the others when they are all alike (sharedCapacity). The node's own figures are kept when
+ * every module says both sides or neither.
  */
 export function stackCapacity(reading: SolarBattery): StackCapacity {
-  const present = reading.stack.filter(module => module.present);
+  const listed = reading.stack.filter(module => module.present);
+  const each = sharedCapacity(listed);
+  const filled = each !== null && listed.some(module => module.full_capacity_ah === undefined);
+  const present = filled ? listed.map(module => (module.full_capacity_ah === undefined ? { ...module, full_capacity_ah: each as number } : module)) : listed;
   const judged = present.filter(module => module.full_capacity_ah !== undefined && (module.capacity_ah !== undefined || module.soc_percent !== undefined));
   // the node's own pair is only wrong when some module says one side and not the other; otherwise it is kept
   const mismatched = present.some(module => (module.capacity_ah === undefined) !== (module.full_capacity_ah === undefined));
-  if (!mismatched || judged.length === 0) return { capacity_ah: reading.capacity_ah ?? null, full_capacity_ah: reading.full_capacity_ah ?? null, energy_kwh: reading.energy_kwh ?? null };
+  if ((!mismatched && !filled) || judged.length === 0) return { capacity_ah: reading.capacity_ah ?? null, full_capacity_ah: reading.full_capacity_ah ?? null, energy_kwh: reading.energy_kwh ?? null };
   let remaining = 0, full = 0, estimated = false;
   for (const module of judged) {
     const whole = module.full_capacity_ah as number;

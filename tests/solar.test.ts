@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { AlarmCentre, AlarmRules } from "../src/alarms.js";
 import { parseSolarMessage, SolarStore, solarTopic, type SolarBattery, type SolarInverter } from "../src/solar.js";
+import { stackCapacity } from "../src/solar_totals.js";
 import { SECRETS, startServer, studioCookie, tempDir } from "./helpers.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -393,6 +394,33 @@ test("several sockets of Pylontech batteries add up battery by battery, and the 
   assert.equal(totals.soc_percent, 55);                                 // 220 of 400, not the mean of the three sockets (67)
   assert.equal(totals.energy_kwh, 10.9);
   assert.equal(totals.battery_w, Math.round(49.5 * -8));
+});
+
+// Packs in which only some batteries have said their sheet (`info`): 2 of 8 and 7 of 8. The node adds up the ones that did, or, a newer one, leaves the total out or estimates it.
+const sheets = (device: string, withSheet: number[], total: "partial" | "none" | "estimated", other: Record<string, unknown> = {}): SolarBattery => {
+  const stack = Array.from({ length: 8 }, (_, index) => ({
+    n: index + 1, present: true, soc_percent: 100, capacity_ah: 50, ...(withSheet.includes(index + 1) ? { model: "US2000C", full_capacity_ah: 50 } : {}), ...(index === 7 ? other : {}),
+  }));
+  const full = total === "partial" ? { full_capacity_ah: 50 * withSheet.length } : total === "estimated" ? { full_capacity_ah: 400 } : {};
+  const reading = battery({ device, modules: 8, stack, soc_percent: 100, voltage_v: 50, current_a: 0, capacity_ah: 400, energy_kwh: 20, model: "US2000C", ...full });
+  if (total === "none") delete (reading as { full_capacity_ah?: number }).full_capacity_ah;
+  return reading;
+};
+
+test("a stack in which some batteries have not said their capacity counts them as the others when they are all alike", () => {
+  for (const total of ["partial", "none", "estimated"] as const) {
+    const store = new SolarStore();
+    store.ingest(sheets("bank-a", [1, 2], total));
+    store.ingest(sheets("bank-b", [1, 2, 3, 4, 5, 6, 8], total));
+    const totals = store.totals();
+    assert.deepEqual([totals.capacity_ah, totals.full_capacity_ah, totals.energy_kwh], [800, 800, 40], total);
+  }
+  // another capacity or another model among the batteries: nothing is assumed, only the ones that said it are added up
+  for (const other of [{ model: "US3000C" }, { full_capacity_ah: 74 }]) {
+    const reading = sheets("bank-a", [1, 2], "none", other);
+    const held = stackCapacity(reading);
+    assert.equal(held.full_capacity_ah, "full_capacity_ah" in other ? 174 : 100);
+  }
 });
 
 test("an example stays out of the totals while a real stack reports, and a parallel system counts its output once", () => {
