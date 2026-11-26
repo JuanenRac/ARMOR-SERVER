@@ -14,7 +14,7 @@ import { durableRename } from "./durable.js";
  * is what a gateway node's port has to be set to ("auto" lets the node look for it). A family is a name for a group of look-alike models, not a promise that every unit of it
  * answers: none has been connected yet.
  */
-export type InverterDialect = "auto" | "pi30" | "revo" | "pi18" | "pi41" | "pi34" | "smg2" | "srne-hybrid" | "srne-mppt" | "mppt";
+export type InverterDialect = "auto" | "pi30" | "revo" | "pi18" | "pi41" | "pi34" | "pi00" | "pi17" | "smg2" | "srne-hybrid" | "srne-mppt" | "mppt" | "inverter";
 export const INVERTER_FAMILIES: Record<string, { label: string; dialect: InverterDialect }> = {
   voltronic: { label: "Voltronic (Axpert, PIP)", dialect: "auto" },
   "mpp-solar": { label: "MPP Solar (Axpert, PIP, InfiniSolar)", dialect: "auto" },
@@ -29,6 +29,9 @@ export const INVERTER_FAMILIES: Record<string, { label: string; dialect: Inverte
   "easun-isolar": { label: "EASun iSolar SMV II (PI30)", dialect: "pi30" },
   "easun-smg-ii": { label: "EASun iSolar SMG II (Modbus)", dialect: "smg2" },
   "must-ph18": { label: "Must PV18 / PH18 (PI30 compatible)", dialect: "pi30" },
+  "voltronic-no-crc": { label: "Older inverter that is asked without CRC (PI00)", dialect: "pi00" },
+  "infinisolar-sunny": { label: "InfiniSolar hybrid, SUNNY protocol (PI16)", dialect: "pi00" },
+  "infinisolar-lv6k-wp": { label: "InfiniSolar 5K / LV6K / WP / TWIN (PI17)", dialect: "pi17" },
   "revo-vm-iii": { label: "Revo VM III / Revo II (checksum replies)", dialect: "revo" },
   "infinisolar-v": { label: "MPP Solar InfiniSolar V", dialect: "pi18" },
   "lv5048-hybrid": { label: "MPP Solar LV5048 Hybrid / LV6048", dialect: "pi18" },
@@ -38,6 +41,7 @@ export const INVERTER_FAMILIES: Record<string, { label: string; dialect: Inverte
   "srne-hybrid": { label: "SRNE hybrid inverter (Modbus)", dialect: "srne-hybrid" },
   "srne-mppt": { label: "SRNE MPPT charge controller (Modbus)", dialect: "srne-mppt" },
   "victron-mppt": { label: "Victron SmartSolar / BlueSolar (VE.Direct)", dialect: "mppt" },
+  "victron-phoenix": { label: "Victron Phoenix inverter (VE.Direct)", dialect: "inverter" },
 };
 export const INVERTER_MODELS = [...Object.keys(INVERTER_FAMILIES), "other"] as const;
 

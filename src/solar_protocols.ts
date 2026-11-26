@@ -46,7 +46,81 @@ export const SOLAR_PROTOCOLS = {
     "warnings"
    ],
    "status": "decoded",
-   "note": "ASCII with CRC-16/XMODEM; covers the PI30 MS/MSX, MAX and PIP-GK/MK variants."
+   "note": "ASCII with CRC-16/XMODEM; covers the PI30 HS/MS/MSX, MAX and PIP-GK/MK variants (modes C, Y and E, and the fault code digits among the warning flags)."
+  },
+  {
+   "id": "pi00",
+   "label": "PI00 / PI16 (older units, InfiniSolar hybrids: questions without CRC)",
+   "message": "inverter",
+   "port_kind": "voltronic",
+   "dialect": "pi00",
+   "baud": 2400,
+   "framing": "8N1",
+   "physical": "rs232",
+   "commands": [
+    "QPIGS",
+    "QMOD",
+    "QPIWS",
+    "QID",
+    "QVFW",
+    "QET"
+   ],
+   "fields": [
+    "mode",
+    "grid_v",
+    "grid_hz",
+    "out_v",
+    "out_hz",
+    "out_va",
+    "out_w",
+    "load_percent",
+    "battery_v",
+    "battery_a",
+    "battery_percent",
+    "pv_v",
+    "pv_a",
+    "pv_w",
+    "heatsink_c",
+    "warnings"
+   ],
+   "status": "decoded",
+   "note": "The questions carry no CRC; answers are taken with or without one, in the PI30, PI00 or PI16 arrangement. An answer without CRC has no integrity check."
+  },
+  {
+   "id": "pi17",
+   "label": "PI17 (InfiniSolar 5 kW, LV 6K, WP, TWIN)",
+   "message": "inverter",
+   "port_kind": "voltronic",
+   "dialect": "pi17",
+   "baud": 2400,
+   "framing": "8N1",
+   "physical": "rs232",
+   "commands": [
+    "^P003GS",
+    "^P003PS",
+    "^P004MOD",
+    "^P003WS"
+   ],
+   "fields": [
+    "mode",
+    "grid_v",
+    "grid_hz",
+    "out_v",
+    "out_hz",
+    "out_va",
+    "out_w",
+    "load_percent",
+    "battery_v",
+    "battery_a",
+    "battery_percent",
+    "pv_v",
+    "pv_a",
+    "pv_w",
+    "heatsink_c",
+    "warnings"
+   ],
+   "status": "partial",
+   "note": "Questions without CRC, answers with it. Only phase R and the totals of a three-phase unit are told; the makers' templates and field lists do not agree everywhere."
   },
   {
    "id": "pi30-revo",
@@ -221,7 +295,8 @@ export const SOLAR_PROTOCOLS = {
    "physical": "rs232 or rs485",
    "commands": [
     "03 0x0100..0x010E",
-    "03 0x0210..0x0221"
+    "03 0x0210..0x0221",
+    "03 0x0204..0x0207"
    ],
    "fields": [
     "mode",
@@ -242,7 +317,7 @@ export const SOLAR_PROTOCOLS = {
     "warnings"
    ],
    "status": "partial",
-   "note": "Register map read from a hard to follow table; needs a capture. No faults."
+   "note": "Register map read from a hard to follow table; needs a capture."
   },
   {
    "id": "modbus-srne-mppt",
@@ -293,6 +368,27 @@ export const SOLAR_PROTOCOLS = {
    "note": "Text mode, listen only. A charger: the AC fields are zero."
   },
   {
+   "id": "vedirect-inverter",
+   "label": "Victron VE.Direct Phoenix inverter",
+   "message": "inverter",
+   "port_kind": "vedirect",
+   "dialect": "inverter",
+   "baud": 19200,
+   "framing": "8N1",
+   "physical": "ttl 5 V or 3.3 V",
+   "commands": [],
+   "fields": [
+    "mode",
+    "battery_v",
+    "out_v",
+    "out_va",
+    "out_w",
+    "warnings"
+   ],
+   "status": "decoded",
+   "note": "Text mode, listen only. The inverter tells its apparent power only: it is given as the watts too."
+  },
+  {
    "id": "vedirect-monitor",
    "label": "Victron VE.Direct battery monitor (BMV, SmartShunt)",
    "message": "battery",
@@ -310,6 +406,34 @@ export const SOLAR_PROTOCOLS = {
    ],
    "status": "decoded",
    "note": "Text mode, listen only."
+  },
+  {
+   "id": "vedirect-monitor-hex",
+   "label": "Victron VE.Direct battery monitor, hexadecimal mode",
+   "message": "battery",
+   "port_kind": "vedirect",
+   "dialect": "monitor-hex",
+   "baud": 19200,
+   "framing": "8N1",
+   "physical": "ttl 5 V or 3.3 V",
+   "commands": [
+    "Get 0xED8D",
+    "Get 0xED8F",
+    "Get 0x0FFF",
+    "Get 0xEDEC",
+    "Get 0x1000",
+    "Get 0x0303"
+   ],
+   "fields": [
+    "voltage_v",
+    "current_a",
+    "soc_percent",
+    "temperatures_c",
+    "full_capacity_ah",
+    "cycles"
+   ],
+   "status": "decoded",
+   "note": "The node asks for each value: its transmit line must be wired. Reading only."
   },
   {
    "id": "pylontech-console",
@@ -371,10 +495,13 @@ export const SOLAR_PROTOCOLS = {
    "physical": "ttl 3.3 V or rs485",
    "commands": [
     "0x90",
+    "0x91",
+    "0x92",
     "0x93",
     "0x94",
     "0x95",
     "0x96",
+    "0x97",
     "0x98"
    ],
    "fields": [
@@ -398,7 +525,8 @@ export const SOLAR_PROTOCOLS = {
    "physical": "ttl 3.3 V",
    "commands": [
     "DD A5 03",
-    "DD A5 04"
+    "DD A5 04",
+    "DD A5 05"
    ],
    "fields": [
     "voltage_v",
@@ -435,18 +563,6 @@ export const SOLAR_PROTOCOLS = {
  ],
  "not_implemented": [
   {
-   "id": "pi00",
-   "reason": "Old three-phase family whose frames carry no checksum: a reading could not be verified. Needs a capture."
-  },
-  {
-   "id": "pi16",
-   "reason": "Three-phase grid-tie family; its document shows no checksum and its fields do not fit the single-phase message. Needs a capture."
-  },
-  {
-   "id": "pi17",
-   "reason": "InfiniSolar 3-phase: the powers are split between ^P003GS and ^P003PS per phase and do not fit the message. Needs a capture."
-  },
-  {
    "id": "daly-can",
    "reason": "CAN bus: the node has no CAN transceiver."
   },
@@ -457,10 +573,6 @@ export const SOLAR_PROTOCOLS = {
   {
    "id": "jk-modbus",
    "reason": "The JK PB series speaks Modbus with another register map; not verified against its document."
-  },
-  {
-   "id": "vedirect-hex",
-   "reason": "Register protocol for configuration; the text mode already gives the readings."
   },
   {
    "id": "pylontech-rs485",
