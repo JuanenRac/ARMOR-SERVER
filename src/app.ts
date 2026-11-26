@@ -408,6 +408,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   const nodeHealthFile = new JsonFile<ReturnType<typeof context.nodeHealth.export>>(path.join(config.dataDir, "node-health.json"));
   context.nodeHealth.import(nodeHealthFile.read());
   const saveHistory = (): void => {
+    context.batteryHistory.flush();   // it says itself when it cannot write
     try { solarHistoryFile.write(context.solar.exportHistory()); electricalHistoryFile.write(context.electricalNodes.exportHistory()); electricalEnergyFile.write(context.electricalEnergy.export()); nodeHealthFile.write(context.nodeHealth.export()); context.dailyLog.flush(); }
     catch (error) { console.warn("ARMOR_HISTORY=NOT_SAVED", error instanceof Error ? error.message : "unknown error"); }
   };
@@ -454,6 +455,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       context.systemMonitor.stop();
       context.heartbeat.stop();
       saveHistory();
+      context.batteryHistory.close();
       for (const timer of watchdogs) clearTimeout(timer);
       context.store.flush(); context.knownNodes.flush();
       context.studioSessions.flush(); context.connections.registry.flush(); context.nodeLife.flush();

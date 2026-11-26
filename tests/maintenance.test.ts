@@ -4,6 +4,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fromBase32, stepOf, totpCode } from "../src/totp.js";
 import { SECRETS, startServer, studioCookie, type Running } from "./helpers.js";
 
 const json = { "Content-Type": "application/json" };
@@ -163,6 +164,42 @@ test("the console is locked until the password is given again, and every command
     assert.match(audit, /systemctl restart armor-server/);
     assert.match(audit, /console\.exit/);
     assert.doesNotMatch(audit, /not the password|correct-horse-battery/, "no password is written in the audit trail");
+  } finally { await running.stop(); await agent.close(); }
+});
+
+test("from outside the house the console asks for the second factor besides the password", async () => {
+  const agent = await fakeAgent();
+  // the test client (127.0.0.1) is "outside": the account sets its second factor up first
+  const running = await startServer({ ARMOR_MAINT_SOCKET: agent.socket, ARMOR_MAINT_TOKEN: TOKEN, ARMOR_LOCAL_NETWORKS: "10.99.0.0/16" });
+  try {
+    const cookie = await studioCookie(running.base);
+    const password = SECRETS.ARMOR_STUDIO_PASSWORD;
+    assert.equal((await call(running, cookie, "GET", "/api/v1/admin/console")).body.second_factor, true);
+    const none = await call(running, cookie, "POST", "/api/v1/admin/console/unlock", { password });
+    assert.deepEqual([none.status, none.body.error], [403, "totp_setup_required"]);
+    const setup = await call(running, cookie, "POST", "/api/v1/studio/totp/setup", { password });
+    const secret = fromBase32(String(setup.body.secret));
+    const enabled = await call(running, cookie, "POST", "/api/v1/studio/totp/enable", { code: totpCode(secret, stepOf(Date.now()) - 1) });
+    assert.equal(enabled.status, 200);
+    const asked = await call(running, cookie, "POST", "/api/v1/admin/console/unlock", { password });
+    assert.deepEqual([asked.status, asked.body.error], [403, "totp_required"]);
+    const wrong = await call(running, cookie, "POST", "/api/v1/admin/console/unlock", { password, code: "not-a-code" });
+    assert.deepEqual([wrong.status, wrong.body.error], [403, "wrong_code"]);
+    assert.equal((await call(running, cookie, "POST", "/api/v1/admin/console/run", { command: "id" })).status, 403);
+    const opened = await call(running, cookie, "POST", "/api/v1/admin/console/unlock", { password, code: String((enabled.body.recovery_codes as string[])[0]) });
+    assert.equal(opened.status, 200);
+    assert.equal((await call(running, cookie, "POST", "/api/v1/admin/console/run", { command: "id" })).status, 202);
+  } finally { await running.stop(); await agent.close(); }
+});
+
+test("with remote.console_second_factor off the password alone unlocks the console from outside", async () => {
+  const agent = await fakeAgent();
+  const running = await startServer({ ARMOR_MAINT_SOCKET: agent.socket, ARMOR_MAINT_TOKEN: TOKEN, ARMOR_LOCAL_NETWORKS: "10.99.0.0/16" });
+  try {
+    const cookie = await studioCookie(running.base);
+    running.app.context.securitySettings.update({ "remote.console_second_factor": false });
+    assert.equal((await call(running, cookie, "GET", "/api/v1/admin/console")).body.second_factor, false);
+    assert.equal((await call(running, cookie, "POST", "/api/v1/admin/console/unlock", { password: SECRETS.ARMOR_STUDIO_PASSWORD })).status, 200);
   } finally { await running.stop(); await agent.close(); }
 });
 
