@@ -17,7 +17,7 @@ const NODE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const DEVICE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
 export function registerSolarRoutes(app: Express, context: AppContext): void {
-  const { solar, solarRegistry, requireOperator, audit, studioUser } = context;
+  const { solar, solarRegistry, batteryHistory, requireOperator, audit, studioUser } = context;
   const actor = (request: Parameters<typeof studioUser>[0]): string => studioUser(request)?.username ?? "operator";
   const ingestLimit = rateLimit({ windowMs: 60_000, limit: 6_000, standardHeaders: "draft-8", legacyHeaders: false });
 
@@ -69,6 +69,7 @@ export function registerSolarRoutes(app: Express, context: AppContext): void {
     if (!NODE.test(node) || !DEVICE.test(device)) return response.status(400).json({ error: "node and device are required" });
     const removed = solarRegistry.remove(node, device);
     solar.remove(node, device);
+    batteryHistory.forget(node, device);
     if (!removed) return response.status(404).json({ error: "unknown solar device" });
     audit.record({ action: "solar.delete", outcome: "allowed", actor: actor(request), target: `${node}/${device}` });
     return response.sendStatus(204);
@@ -120,12 +121,20 @@ export function registerSolarRoutes(app: Express, context: AppContext): void {
     }
   });
 
-  app.get("/api/v1/solar/history", requireOperator, (request, response) => {
+  app.get("/api/v1/solar/history", requireOperator, async (request, response) => {
     const node = typeof request.query.node === "string" ? request.query.node : "";
     const device = typeof request.query.device === "string" ? request.query.device : "";
     if (!NODE.test(node) || !DEVICE.test(device)) return response.status(400).json({ error: "node and device are required" });
     const asked = Number(request.query.minutes ?? 60);
     const minutes = Number.isFinite(asked) ? Math.min(43_200, Math.max(1, Math.round(asked))) : 60;
+    // With `module`, that battery module and its cells, as the server recorded them on disk (a device that has not reported since a restart still has its history).
+    if (request.query.module !== undefined) {
+      const module = Number(request.query.module);
+      if (!Number.isInteger(module) || module < 1 || module > 32) return response.status(400).json({ error: "module is a whole number from 1 to 32" });
+      const samples = await batteryHistory.query(node, device, module, minutes);
+      if (samples.length === 0 && !solar.history(node, device, 1) && !solarRegistry.get(node, device)) return response.status(404).json({ error: "unknown solar device" });
+      return response.json({ node_id: node, device, kind: "battery", minutes, module, every_s: batteryHistory.everyS, retention_days: batteryHistory.days, samples });
+    }
     const history = solar.history(node, device, minutes);
     if (!history) return response.status(404).json({ error: "unknown solar device" });
     return response.json({ node_id: node, device, kind: history.kind, minutes, samples: history.samples });

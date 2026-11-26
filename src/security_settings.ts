@@ -85,6 +85,7 @@
  *   nodes.maintenance_max_s      60 to 86400              the most seconds a node's own announcement or health report of planned maintenance holds back its offline alerts; a longer one is cut to this (ARMOR_NODE_MAINTENANCE_MAX_S is where it starts; 600)
  *   nodes.maintenance_max_s      60 to 86400              the most seconds a node's own announcement or health report of planned maintenance holds back its offline alerts; a longer one is cut to this (ARMOR_NODE_MAINTENANCE_MAX_S is where it starts; 600)
  *   nodes.maintenance_max_s      60 to 86400              the most seconds a node's own announcement or health report of planned maintenance holds back its offline alerts; a longer one is cut to this (ARMOR_NODE_MAINTENANCE_MAX_S is where it starts; 600)
+ *   remote.console_second_factor on | off                  from outside the house, unlocking the root console asks for a code of the second factor besides the password, and an account without a second factor cannot unlock it there (on, the default; off: the password alone)
  *   remote.gate_by_route         on | off                  from outside the house, with the remote policy operate or view, every route that asks for an administrator is closed by the route itself and not by a list of paths (on, the default: only the few routes that operate the house stay open under operate, and a secret is not read; off: only the older list of paths closes administering from outside)
  *   panel.proxy_http             on | off                  the proxy of the node panels may open a panel registered over plain http (the HTML and the scripts of the node, and anything on the way, would run in the page of the server with the session of the administrator who opens it); off, the default: only an https panel with the fingerprint of its certificate trusted is opened, and a panel over plain http answers 403 panel_http_disabled
  *   panel.separate_origin        on | off                  the panels of the nodes are served from a second origin (another port, ARMOR_PANEL_PORT, or another name, ARMOR_PANEL_ORIGIN) and not from the origin of the API, entered with a ticket of one use that lasts seconds (POST /api/v1/admin/node-panels/{id}/ticket); the scripts of a node then run without the session of the administrator, and the route /api/v1/nodes/{id}/panel/ of the API answers 403 panel_origin_required; off, the default: the panels are served from the origin of the API as they always were
@@ -169,6 +170,7 @@ export type SecuritySettingsValues = {
   "media.rtsp_proxy": boolean;
   "cameras.allow_public_hosts": boolean;
   "network.login_secure_only": boolean;
+  "remote.console_second_factor": boolean;
   "remote.gate_by_route": boolean;
   "panel.proxy_http": boolean;
   "panel.separate_origin": boolean;
@@ -263,6 +265,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "media.rtsp_proxy": true,
   "cameras.allow_public_hosts": true,
   "network.login_secure_only": false,
+  "remote.console_second_factor": true,
   "remote.gate_by_route": true,
   "panel.proxy_http": false,
   "panel.separate_origin": false,
