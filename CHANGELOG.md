@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.8.2.5] - Correct solar battery totals and the catalogue of equipment protocols
+
 - **The shared project tool is the current one:** the copy follows the shared repository, which now knows the new solar panel node.
 
 - **The shared CI workflow pins the current setup-java action:** the line follows the template of the shared repository.
