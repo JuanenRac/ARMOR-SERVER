@@ -14,7 +14,7 @@ import { durableRename } from "./durable.js";
  * is what a gateway node's port has to be set to ("auto" lets the node look for it). A family is a name for a group of look-alike models, not a promise that every unit of it
  * answers: none has been connected yet.
  */
-export type InverterDialect = "auto" | "pi30" | "revo" | "pi18";
+export type InverterDialect = "auto" | "pi30" | "revo" | "pi18" | "pi41" | "pi34" | "smg2" | "srne-hybrid" | "srne-mppt" | "mppt";
 export const INVERTER_FAMILIES: Record<string, { label: string; dialect: InverterDialect }> = {
   voltronic: { label: "Voltronic (Axpert, PIP)", dialect: "auto" },
   "mpp-solar": { label: "MPP Solar (Axpert, PIP, InfiniSolar)", dialect: "auto" },
@@ -26,12 +26,18 @@ export const INVERTER_FAMILIES: Record<string, { label: string; dialect: Inverte
   "pip-ms": { label: "MPP Solar PIP MS / MSD / MSE / MSX", dialect: "pi30" },
   "pip-hs": { label: "MPP Solar PIP HS / HSE / LV", dialect: "pi30" },
   "pip-gk": { label: "MPP Solar PIP-GK / MK", dialect: "pi30" },
-  "easun-isolar": { label: "EASun iSolar SMG II / SMH II", dialect: "pi30" },
+  "easun-isolar": { label: "EASun iSolar SMV II (PI30)", dialect: "pi30" },
+  "easun-smg-ii": { label: "EASun iSolar SMG II (Modbus)", dialect: "smg2" },
   "must-ph18": { label: "Must PV18 / PH18 (PI30 compatible)", dialect: "pi30" },
   "revo-vm-iii": { label: "Revo VM III / Revo II (checksum replies)", dialect: "revo" },
   "infinisolar-v": { label: "MPP Solar InfiniSolar V", dialect: "pi18" },
   "lv5048-hybrid": { label: "MPP Solar LV5048 Hybrid / LV6048", dialect: "pi18" },
   "sungoldpower": { label: "SunGoldPower SPH / SPF hybrid", dialect: "pi18" },
+  "voltronic-pi41": { label: "Voltronic PI41 family (LV5048 split phase)", dialect: "pi41" },
+  "mppt-pi34": { label: "MPPT charge controller (PI34)", dialect: "pi34" },
+  "srne-hybrid": { label: "SRNE hybrid inverter (Modbus)", dialect: "srne-hybrid" },
+  "srne-mppt": { label: "SRNE MPPT charge controller (Modbus)", dialect: "srne-mppt" },
+  "victron-mppt": { label: "Victron SmartSolar / BlueSolar (VE.Direct)", dialect: "mppt" },
 };
 export const INVERTER_MODELS = [...Object.keys(INVERTER_FAMILIES), "other"] as const;
 
@@ -71,6 +77,10 @@ export const BATTERY_FAMILIES: Record<string, BatteryShape> = {
   "pylontech-force-l2": { modules: 2, cells: 15, ah: 142, label: "Pylontech Force L2" },
   "pytes-e-box": { modules: 2, cells: 16, ah: 100, label: "Pytes E-Box 48100R" },
   "ant-bms": { modules: 1, cells: 16, ah: 100, label: "ANT-BMS (own battery)" },
+  "daly-bms": { modules: 1, cells: 16, ah: 100, label: "DALY BMS (own battery)" },
+  "jbd-bms": { modules: 1, cells: 16, ah: 100, label: "JBD / Jiabaida BMS (own battery)" },
+  "jk-bms": { modules: 1, cells: 16, ah: 100, label: "JK BMS (own battery)" },
+  "victron-monitor": { modules: 1, cells: 16, ah: 100, label: "Victron BMV / SmartShunt (VE.Direct)" },
   other: { modules: 1, cells: 15, ah: 100, label: "Battery" },
 };
 
