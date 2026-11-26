@@ -183,6 +183,32 @@ def validate_local_markdown_links() -> None:
         fail(f"broken local Markdown link(s): {preview}{suffix}")
 
 
+def validate_served_javascript() -> None:
+    """Every script the browser is served (panel/, public/) must at least parse: `node --check`, no build, no dependencies.
+    A missing comma in a locale table stops the whole script and the page comes up blank, and nothing else in CI opens it."""
+    import shutil
+    import subprocess
+
+    scripts = sorted(path for folder in ("panel", "public") if (ROOT / folder).is_dir() for suffix in ("*.js", "*.mjs") for path in (ROOT / folder).rglob(suffix)
+                     if not any(part in ("node_modules", "dist", "build") for part in path.parts) and not path.name.endswith(".min.js"))
+    if not scripts:
+        return
+    node = shutil.which("node")
+    if node is None:
+        if os.environ.get("GITHUB_ACTIONS"):
+            fail("node is required to syntax-check the scripts served to the browser (panel/, public/) and was not found")
+        print("warning: node not found, the scripts served to the browser were not syntax-checked", file=sys.stderr)
+        return
+    broken: list[str] = []
+    for script in scripts:
+        result = subprocess.run([node, "--check", str(script)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+        if result.returncode != 0:
+            detail = next((line.strip() for line in result.stderr.splitlines() if "Error" in line), result.stderr.strip()[:120])
+            broken.append(f"{script.relative_to(ROOT).as_posix()}: {detail}")
+    if broken:
+        fail(f"a script served to the browser does not parse (node --check): {'; '.join(broken[:5])}")
+
+
 def main() -> int:
     try:
         manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
@@ -251,6 +277,7 @@ def main() -> int:
             fail(".env exists locally and must be excluded by .gitignore")
 
     validate_local_markdown_links()
+    validate_served_javascript()
 
     for readme_problem in check_readme_section_parity(ROOT):
         fail(readme_problem)
