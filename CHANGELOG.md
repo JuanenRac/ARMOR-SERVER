@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.8.2.7] - The new solar equipment protocols
+
 - **More solar equipment can be declared:** the protocol table follows the shared one (PI00 / PI16, PI17, the VE.Direct Phoenix inverter and the monitor in hexadecimal mode) and four inverter families are added.
 
 ## [0.8.2.6] - Whole battery totals, a history kept on the server and a second factor for the console
