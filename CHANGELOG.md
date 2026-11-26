@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The catalogue of solar protocols and the equipment it brings:** `GET /api/v1/solar` also lists the protocols a gateway node reads (`catalog.protocols`: serial line, questions, message fields and state), and the equipment that can be declared now includes Modbus inverters and chargers (EASun SMG II, SRNE), PI41 and PI34, Victron VE.Direct, and DALY, JBD and JK boards. The EASun iSolar family that was named SMG II under the PI30 protocol is split: SMV II speaks PI30, SMG II Modbus.
+
 - **The battery totals add up the same modules:** with several sockets of Pylontech batteries, the charge that is left, the full capacity and the energy are taken from the same modules of each stack, so a module that does not say its remaining charge counts with the share its state of charge gives instead of vanishing from one side of the figure.
 
 - **The state of charge is weighted by capacity:** a stack of one battery no longer weighs as much as a stack of six.

@@ -21,6 +21,8 @@ The link to the broker can be encrypted (optional, off by default): with an `mqt
 
 The server also subscribes to `armor/solar/+/+/state` and `armor/electrical/+/state` (QoS 1), the messages of the solar gateway nodes and of the electrical nodes, and accepts the same messages over `POST /api/v1/solar` and `POST /api/v1/electrical/readings` with the ingest token. Over MQTT the `node_id` in a body must be the node of its topic. An operator reads them with `GET /api/v1/solar` and `GET /api/v1/electrical/readings` (with their `/history`); the Electrical Designer's drawing is kept at `GET`/`PUT /api/v1/electrical/design`. The broker's ACL for `armor-server` needs `topic read armor/solar/#` and `topic read armor/electrical/#`.
 
+`GET /api/v1/solar` also carries `catalog.protocols`, the equipment protocols a gateway node reads (id, message, node port setting, serial line, questions, message fields, state): the server's copy of ARMOR-COMMON's `solar_protocols.json`.
+
 ### The topics the server reads and writes
 
 | Topic | Direction | When |
