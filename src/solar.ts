@@ -11,6 +11,7 @@ import { checkAgainstContract, finite, integer, onlyKnown, record } from "./cont
 import { CoarseTier, type Sample } from "./history.js";
 import { dayOf } from "./day.js";
 import { refresh, sweepStale } from "./staleness.js";
+import { countable, inverterLoad, stackCapacity, weightedSoc } from "./solar_totals.js";
 
 /** The shapes of the solar messages are the ones ARMOR-COMMON generates from its schemas. */
 export type SolarInverter = Generated.SolarInverter;
@@ -108,7 +109,7 @@ export type SolarTotals = {
   pv_w: number; load_w: number;
   /** Battery power in watts: positive while charging (the stacks' own figures when there are any, else the inverters'); null when nothing reports it. */
   battery_w: number | null;
-  /** Mean state of charge in percent; null when nothing reports it. */
+  /** State of charge in percent, each stack weighted by what it holds; null when nothing reports it. */
   soc_percent: number | null;
   /** What the battery stacks hold: remaining and full capacity in ampere-hours and the energy left in kilowatt-hours (null when no stack says). */
   capacity_ah: number | null; full_capacity_ah: number | null; energy_kwh: number | null;
@@ -234,16 +235,17 @@ export class SolarStore {
     let pv = 0, load = 0, inverters = 0, batteries = 0, stale = 0;
     let stackPower = 0, stackCount = 0, inverterPower = 0, inverterCount = 0;
     let capacity: number | null = null, full: number | null = null, energy: number | null = null;
-    const socStacks: number[] = [], socInverters: number[] = [];
+    const socStacks: Array<{ soc: number; full_capacity_ah: number | null; modules: number }> = [], socInverters: number[] = [];
+    const parallelUnits = new Set<string>();
     let grid = false;
     let mode: SolarMode | null = null;
-    for (const entry of this.#entries.values()) {
+    for (const entry of countable([...this.#entries.values()])) {
       if (entry.stale) { stale += 1; }
       const reading = entry.reading;
       if (reading.kind === "inverter") {
         inverters += 1;
         if (entry.stale) continue;
-        pv += reading.pv_w; load += reading.out_w;
+        pv += reading.pv_w; load += inverterLoad(reading, parallelUnits);
         inverterPower += reading.battery_v * reading.battery_a; inverterCount += 1;
         socInverters.push(reading.battery_percent);
         if (reading.grid_v > 100) grid = true;
@@ -252,17 +254,18 @@ export class SolarStore {
         batteries += 1;
         if (entry.stale || reading.modules === 0) continue;
         if (reading.voltage_v !== undefined && reading.current_a !== undefined) { stackPower += reading.voltage_v * reading.current_a; stackCount += 1; }
-        if (reading.soc_percent !== undefined) socStacks.push(reading.soc_percent);
-        if (reading.capacity_ah !== undefined) capacity = (capacity ?? 0) + reading.capacity_ah;
-        if (reading.full_capacity_ah !== undefined) full = (full ?? 0) + reading.full_capacity_ah;
-        if (reading.energy_kwh !== undefined) energy = (energy ?? 0) + reading.energy_kwh;
+        const held = stackCapacity(reading);
+        if (reading.soc_percent !== undefined) socStacks.push({ soc: reading.soc_percent, full_capacity_ah: held.full_capacity_ah, modules: reading.stack.filter(module => module.present).length });
+        if (held.capacity_ah !== null) capacity = (capacity ?? 0) + held.capacity_ah;
+        if (held.full_capacity_ah !== null) full = (full ?? 0) + held.full_capacity_ah;
+        if (held.energy_kwh !== null) energy = (energy ?? 0) + held.energy_kwh;
       }
     }
-    const soc = socStacks.length ? socStacks : socInverters;
+    const soc = socStacks.length ? weightedSoc(socStacks) : socInverters.length ? Math.round(socInverters.reduce((sum, value) => sum + value, 0) / socInverters.length) : null;
     return {
       inverters, batteries, stale, pv_w: round(pv, 0), load_w: round(load, 0),
       battery_w: stackCount > 0 ? round(stackPower, 0) : inverterCount > 0 ? round(inverterPower, 0) : null,
-      soc_percent: soc.length ? Math.round(soc.reduce((sum, value) => sum + value, 0) / soc.length) : null,
+      soc_percent: soc,
       capacity_ah: capacity === null ? null : round(capacity, 1), full_capacity_ah: full === null ? null : round(full, 1), energy_kwh: energy === null ? null : round(energy, 2),
       grid_present: grid, mode,
     };
