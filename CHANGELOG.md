@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.8.2.6] - Whole battery totals, a history kept on the server and a second factor for the console
+
 - **The battery totals are whole while some battery has not said its capacity:** when every battery of a stack that told its full capacity told the same one and no two name different models, the others count as those, whatever the node adds up (an older node adds up only the ones that said it). With different capacities or models nothing is assumed.
 - **The history of every battery and cell is kept by the server:** `GET /api/v1/solar/history` takes `module` and answers that battery module and its cells. It is written to daily files in the data directory: a point per module every `ARMOR_BATTERY_HISTORY_EVERY_S` seconds (60) for the last day and five-minute averages for `ARMOR_BATTERY_HISTORY_DAYS` days (30; 0 records nothing), never more than `ARMOR_BATTERY_HISTORY_MAX_BYTES` (32 MiB), the oldest day going first. Example readings are not recorded and removing a device removes its history.
 - **The root console asks for the second factor from outside the house:** unlocking takes a code besides the password, and an account without a second factor cannot unlock it from there (security setting `remote.console_second_factor`, on by default).
