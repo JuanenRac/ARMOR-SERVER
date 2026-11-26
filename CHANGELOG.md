@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **More solar equipment can be declared:** the protocol table follows the shared one (PI00 / PI16, PI17, the VE.Direct Phoenix inverter and the monitor in hexadecimal mode) and four inverter families are added.
+
 ## [0.8.2.6] - Whole battery totals, a history kept on the server and a second factor for the console
 
 - **The battery totals are whole while some battery has not said its capacity:** when every battery of a stack that told its full capacity told the same one and no two name different models, the others count as those, whatever the node adds up (an older node adds up only the ones that said it). With different capacities or models nothing is assumed.
