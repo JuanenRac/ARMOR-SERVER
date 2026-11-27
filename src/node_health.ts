@@ -17,6 +17,7 @@
 import { checkAgainstContract, onlyKnown, record } from "./contracts.js";
 import type { MaintenanceReason } from "./node_control.js";
 import { parseBootReport, parseConfigCheck, parseCoredumpFact, parseMemoryGate, parseRadarFacts, parseSensors, type BootReport, type ConfigCheck, type CoredumpFact, type MemoryGate, type RadarFacts, type SensorHealth } from "./node_diag_contract.js";
+import { currentPortProblems, notePortProblem, type KeptPortProblem, type PortProblemView } from "./port_problem.js";
 
 export const HEALTH_FAMILIES = ["radar", "solar", "electrical", "alarm", "hmi"] as const;
 export type HealthFamily = (typeof HEALTH_FAMILIES)[number];
@@ -135,6 +136,8 @@ export type NodeHealthView = {
   last_restart?: RestartPublic;
   /** What remote control has done to the node, in the words the consoles show ("paused", "standby since ... by ...", "maintenance"); absent while nothing is known. */
   control?: ControlView;
+  /** Serial ports of a solar gateway node that hear bytes and read nothing (see port_problem.ts); absent when there is none. */
+  port_problems?: PortProblemView[];
 };
 /** The control state of a node as a console reads it. `source` says who knows: the node's own report, or what the server remembers of the orders it gave (an older firmware). */
 export type ControlView = { state: ControlState; maintenance: boolean; since_ms?: number; by?: string; until_s?: number; maintenance_until_s?: number; window?: ControlWindow; source: "node" | "server" };
@@ -143,7 +146,7 @@ export type ControlWindow = { source: "node" | "operator" | "both"; reason: Main
 export type NodeHealthDetail = NodeHealthView & { samples: HealthSample[]; restarts: RestartPublic[] };
 export type NodeHealthTotals = { nodes: number; stale: number; with_warnings: number };
 
-type Entry = { report: NodeHealthMessage; receivedAtMs: number; samples: HealthSample[]; restarts: RestartRecord[]; warnings: HealthWarning[] };
+type Entry = { report: NodeHealthMessage; receivedAtMs: number; samples: HealthSample[]; restarts: RestartRecord[]; warnings: HealthWarning[]; ports?: Map<number, KeptPortProblem> };
 export type NodeHealthSaved = { nodes: Record<string, { report: NodeHealthMessage; received_at_ms: number; restarts: RestartRecord[] }> };
 
 export type NodeHealthOptions = {
@@ -208,6 +211,10 @@ export class NodeHealthStore {
     }
     entry.report = report;
     entry.receivedAtMs = now;
+    if (report.family === "solar") {
+      if (restarted && !repeated) entry.ports = undefined;   // a node that started again says its ports again if they still fail
+      notePortProblem((entry.ports ??= new Map()), report.last_error, now);
+    }
     entry.samples.push({ at: now, heap_free: report.heap_free, heap_min: report.heap_min, ...(report.heap_internal_free !== undefined ? { heap_internal_free: report.heap_internal_free, heap_internal_largest: report.heap_internal_largest } : {}), ...(report.rssi_dbm !== undefined ? { rssi_dbm: report.rssi_dbm } : {}), link_up: report.link_up, uptime_s: report.uptime_s, broker_reconnects: report.broker_reconnects });
     if (entry.samples.length > MAX_SAMPLES) entry.samples.splice(0, entry.samples.length - MAX_SAMPLES);
     entry.warnings = this.#judge(entry, now);
@@ -269,6 +276,7 @@ export class NodeHealthStore {
       restarts_24h: entry.restarts.filter(item => now - Date.parse(item.at) < DAY_MS).length,
       ...(last ? { last_restart: publicRestart(last) } : {}),
       ...this.#control(id, entry.report),
+      ...(entry.ports && currentPortProblems(entry.ports, now).length > 0 ? { port_problems: currentPortProblems(entry.ports, now) } : {}),
     };
   }
 
