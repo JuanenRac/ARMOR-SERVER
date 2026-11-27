@@ -11,6 +11,7 @@ test("the line a node writes about an unreadable port is read back", () => {
   assert.deepEqual(parsePortProblem(LINE), { port: 3, cause: "flat", baud: 115200, rx: 16, tx: 15, inverted: false, bytes_heard: 230, sample: "00 00 00 00 00 00" });
   assert.deepEqual(parsePortProblem("armor-ports: port 10 unreadable noise 2400bd rx-1 tx-1 inv n7 [9A 13]"), { port: 10, cause: "noise", baud: 2400, rx: -1, tx: -1, inverted: true, bytes_heard: 7, sample: "9A 13" });
   assert.equal(parsePortProblem("port 1 unreadable echo 9600bd rx4 tx5 n5 []")?.sample, "");
+  assert.deepEqual(parsePortProblem("armor-ports: port 6 unreadable slave 115200bd rx2 tx1 mod4 n900 []"), { port: 6, cause: "slave", baud: 115200, rx: 2, tx: 1, inverted: false, bytes_heard: 900, sample: "", module: 4 });
   for (const other of [undefined, "", "armor-mqtt: the broker refused the identity", "armor-ports: port 3 could not be opened (pins): it stays off",
     "armor-ports: port 0 unreadable flat 115200bd rx16 tx15 n1 [00]", "armor-ports: port 3 unreadable broken 115200bd rx16 tx15 n1 [00]",
     "armor-ports: port 3 unreadable flat 115200bd rx16 tx15 n230 [00 00 00", "armor-ports: port 3 unreadable flat 115200bd rx16 tx15 n230 [00] and more"]) {

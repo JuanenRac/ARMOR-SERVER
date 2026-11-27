@@ -4,7 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-- **An unreadable serial port of a solar node is told:** when the node says in its health report that a port hears bytes and reads nothing, the node's health carries `port_problems` (port, cause, speed, pins, polarity, bytes heard and the last ones). It is listed for 30 minutes after the node last said it.
+- **An unreadable serial port of a solar node is told:** when the node says in its health report that a port hears bytes and reads nothing, the node's health carries `port_problems` (port, cause, speed, pins, polarity, bytes heard and the last ones; for the console of a slave battery of a stack, its place in it). It is listed for 30 minutes after the node last said it.
 
 ## [0.8.2.7] - The new solar equipment protocols
 
