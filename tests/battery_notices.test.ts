@@ -36,7 +36,7 @@ test("a problem is new once; the same one again is known, until it has been over
 });
 
 test("a problem that gets worse is new again: a protection that trips, another weak cell", () => {
-  const { rules, quiet } = rig();
+  const { rules, quiet, centre } = rig();
   const on = (extra: Partial<SolarBattery>, soh: number[] = [2]) => ({ ...battery([[3.33, 3.34, 3.33, 3.34]], { alarm: true, ...extra }), stack: [{ n: 1, present: true, soh_counts: [0], soh_abnormal: soh }] });
   rules.handleSolar(on({}));
   rules.handleSolar({ ...on({}), alarm: false });
