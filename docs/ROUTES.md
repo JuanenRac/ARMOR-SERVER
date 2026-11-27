@@ -33,7 +33,7 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/admin/incident` | administrator | `routes/media.ts` |
 | POST | `/api/v1/admin/incident/verify` | administrator | `routes/media.ts` |
 | GET | `/api/v1/admin/installation` | administrator | `routes/admin.ts` |
-| POST | `/api/v1/admin/installation` | administrator | `routes/admin.ts` |
+| POST | `/api/v1/admin/installation` | administrator, fresh proof of identity | `routes/admin.ts` |
 | GET | `/api/v1/admin/lan-ca` | administrator | `routes/admin.ts` |
 | POST | `/api/v1/admin/lan-ca` | administrator | `routes/admin.ts` |
 | GET | `/api/v1/admin/machine-update` | administrator | `routes/machine_update.ts` |
@@ -70,12 +70,12 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/admin/services` | administrator | `routes/admin.ts` |
 | POST | `/api/v1/admin/services/:id/:action` | administrator | `routes/admin.ts` |
 | GET | `/api/v1/admin/status` | administrator | `routes/admin.ts` |
-| POST | `/api/v1/admin/system/${action}` | administrator | `routes/maintenance.ts` |
+| POST | `/api/v1/admin/system/${action}` | administrator, fresh proof of identity | `routes/maintenance.ts` |
 | GET | `/api/v1/admin/system/auto-updates` | administrator | `routes/maintenance.ts` |
 | PUT | `/api/v1/admin/system/auto-updates` | administrator | `routes/maintenance.ts` |
 | GET | `/api/v1/admin/updates` | administrator | `routes/maintenance.ts` |
-| POST | `/api/v1/admin/updates` | administrator | `routes/maintenance.ts` |
-| POST | `/api/v1/admin/updates/:id/rollback` | administrator | `routes/maintenance.ts` |
+| POST | `/api/v1/admin/updates` | administrator, fresh proof of identity | `routes/maintenance.ts` |
+| POST | `/api/v1/admin/updates/:id/rollback` | administrator, fresh proof of identity | `routes/maintenance.ts` |
 | DELETE | `/api/v1/admin/updates/history` | administrator | `routes/maintenance.ts` |
 | POST | `/api/v1/ai/activity-events` | AI service | `routes/ai.ts` |
 | GET | `/api/v1/ai/cameras/:id/frame` | AI service | `routes/ai.ts` |
