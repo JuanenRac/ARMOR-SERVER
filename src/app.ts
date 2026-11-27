@@ -28,6 +28,7 @@ import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerSolarRoutes } from "./routes/solar.js";
 import { registerElectricalRoutes } from "./routes/electrical.js";
 import { registerBatteryOpsRoutes } from "./routes/battery_ops.js";
+import { registerPanelSolarRoutes } from "./routes/panel_solar.js";
 import { batteryTopic, parseBatteryResult } from "./battery_ops.js";
 import { registerNetworkRoutes } from "./routes/network.js";
 import { registerAlarmDesignRoutes } from "./routes/alarm_design.js";
@@ -194,6 +195,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   registerSolarRoutes(app, context);
   registerElectricalRoutes(app, context);
   registerBatteryOpsRoutes(app, context);
+  registerPanelSolarRoutes(app, context);
   registerAlarmNodeRoutes(app, context);
   registerPushRoutes(app, context);
   registerNetworkRoutes(app, context);
