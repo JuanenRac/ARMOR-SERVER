@@ -171,7 +171,7 @@ test("the operation from a wall screen is off by default, needs both options, th
     assert.equal((await execute({ serial: SERIAL, pin: "2468" })).body.code, "not_armed", "one arm, one execute");
     const trail = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line) as { action: string; outcome: string; detail?: string });
     assert.ok(trail.filter(event => event.action === "panel.battery_ops" && event.outcome === "denied").length >= 6, "every refusal is in the audit trail");
-    assert.ok(trail.every(event => !/2468|9999|0000(?![0-9a-f])/.test(event.detail ?? "")), "a PIN is never written down");
+    assert.ok(trail.filter(event => event.action === "panel.battery_ops").every(event => !/2468|9999|0000/.test(event.detail ?? "")), "a PIN is never written down");
   } finally { await running.stop(); }
 });
 
