@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The shared tools read the output of processes as UTF-8:** `tools/status_lights.py`, `tools/sync_manifests.py` and `tools/universal_readme_check.py` are the current copies; on Windows a character outside the code page no longer breaks a check.
+
 ## [0.8.2.8] - An unreadable serial port of a solar node is told
 
 - **An unreadable serial port of a solar node is told:** when the node says in its health report that a port hears bytes and reads nothing, the node's health carries `port_problems` (port, cause, speed, pins, polarity, bytes heard and the last ones; for the console of a slave battery of a stack, its place in it). It is listed for 30 minutes after the node last said it.

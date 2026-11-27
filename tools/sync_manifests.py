@@ -219,7 +219,7 @@ class Gh:
         if self.calls >= self.max_calls:
             return "budget"
         self.calls += 1
-        result = subprocess.run(["gh", "api", endpoint, "--jq", query], capture_output=True, text=True, timeout=60)
+        result = subprocess.run(["gh", "api", endpoint, "--jq", query], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
         value = result.stdout.strip() if result.returncode == 0 else ("none" if "404" in result.stderr else "error")
         if value != "error":
             self.cache[key] = {"at": time.time(), "value": value}

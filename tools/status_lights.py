@@ -17,7 +17,7 @@ From those two fields, and from the files of the repository, the tool computes t
 
     Hardware, Integration   none / host-test / simulator: orange at most; bench: yellow at most; field: green
                             (a manifest with ``"hardware_bound": false`` has no hardware: these rows are not limited by the evidence)
-    Security, Updates, Writing   the same ceiling as Hardware when the manifest is hardware bound; Security is never green, bound or not
+    Security, Updates, Writing   A.R.M.O.R. repositories only: the same ceiling as Hardware when the manifest is hardware bound; Security is never green
     Software, Tests, Documentation   green only when the repository has tests and a CI workflow (and, with --ci auto, the last run of the
                             default branch is green); otherwise yellow at most
     every row               a repository of maturity scaffolding / experimental / alpha / prototype: yellow at most
@@ -56,6 +56,7 @@ WORDS = {value: key for key, value in NAMES.items()}
 EVIDENCE_LEVELS = ("none", "host-test", "simulator", "bench", "field")
 EVIDENCE_CEILING = {"none": ORANGE, "host-test": ORANGE, "simulator": ORANGE, "bench": YELLOW, "field": GREEN}
 HARDWARE_LIKE = ("hardware", "integration", "security", "updates", "writing")   # the rows that share the ceiling of the hardware evidence
+ARMOR_ONLY = ("security", "updates", "writing")   # in the other families these rows are read as "other"
 LOW_MATURITY = {"scaffolding", "experimental", "alpha", "prototype"}
 LANGUAGE_FILES = ("README.md", "README_spa.md", "README_fra.md", "README_ita.md", "README_deu.md", "README_zho.md", "README_jpn.md", "README_por.md")
 HEADING = re.compile("^## (?:\U0001F6A6|\U0001F4A1) ")
@@ -120,7 +121,7 @@ def has_ci(root: Path) -> bool:
 def ci_state(root: Path) -> str:
     """'green', 'red' or 'unknown' from the last completed run of the default branch (needs gh)."""
     try:
-        out = subprocess.run(["gh", "run", "list", "--limit", "5", "--json", "conclusion,status,headBranch"], cwd=root, capture_output=True, text=True, timeout=60)
+        out = subprocess.run(["gh", "run", "list", "--limit", "5", "--json", "conclusion,status,headBranch"], cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
         runs = [r for r in json.loads(out.stdout or "[]") if r.get("status") == "completed" and r.get("headBranch") in ("main", "master")]
     except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
         return "unknown"
@@ -215,6 +216,8 @@ def evaluate(root: Path, ci_mode: str) -> dict:
     for number, row in enumerate(rows):
         label, light = row[0], row[1]
         kind = kind_of(label)
+        if kind in ARMOR_ONLY and not (root / "armor.project.json").is_file():
+            kind = "other"
         top, why = ceiling(kind, manifest, tests, ci, ci_now)
         items.append({"index": number, "label": label, "kind": kind, "light": light, "ceiling": top, "why": why})
     return {"manifest": manifest, "items": items, "ci": ci_now}
