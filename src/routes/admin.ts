@@ -335,7 +335,7 @@ export function registerAdminRoutes(app: Express, context: AppContext): void {
     response.set({ "Cache-Control": "no-store", "Content-Disposition": `attachment; filename="armor-installation.json"` });
     return response.json(bundle);
   });
-  app.post("/api/v1/admin/installation", requireAdmin, installationJson, (request, response) => {
+  app.post("/api/v1/admin/installation", requireAdmin, context.requireElevated, installationJson, (request, response) => {
     const input = body(request);
     const bundle = parseBundle(input.bundle);
     if (!bundle) {

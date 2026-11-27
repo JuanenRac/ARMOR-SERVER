@@ -71,7 +71,7 @@ const MAX_KEPT = 400;
 const HARD_MAX = 2000;
 /** Open ports that a house rarely wants open on something anyone on the network can reach: an old remote shell, an unencrypted file transfer, a remote desktop, a database, the provider's remote management. */
 const RISKY_PORTS = new Set([21, 23, 445, 3306, 3389, 5432, 5900, 6379, 7547]);
-export type AlarmCentreOptions = { file: string; now?: () => Date; onEvent?: (body: ArmorEventBody) => void; onRaised?: (alarm: Alarm) => void; onCleared?: (alarm: Alarm) => void; warn?: (message: string) => void };
+export type AlarmCentreOptions = { file: string; now?: () => Date; onEvent?: (body: ArmorEventBody) => void; onRaised?: (alarm: Alarm) => void; onCleared?: (alarm: Alarm) => void; warn?: (message: string) => void; /** Why a raised alarm is not announced (asked before its event goes out). */ judge?: (alarm: Alarm) => "known" | "silenced" | undefined };
 
 export class AlarmCentre {
   readonly #options: AlarmCentreOptions;
@@ -110,7 +110,9 @@ export class AlarmCentre {
   }
 
   #emit(alarm: Alarm, state: "raised" | "acknowledged" | "cleared"): void {
-    this.#options.onEvent?.({ type: "alarm", alarm_id: alarm.id, state, severity: alarm.severity, source: alarm.source.id, source_type: alarm.source.type, code: alarm.code, ...(alarm.silent ? { silent: true as const } : {}) });
+    // judged before the event goes out, so that no place is told of an alarm that must not be announced
+    const quiet = state === "raised" ? this.#options.judge?.(alarm) : undefined;
+    this.#options.onEvent?.({ type: "alarm", alarm_id: alarm.id, state, severity: alarm.severity, source: alarm.source.id, source_type: alarm.source.type, code: alarm.code, ...(alarm.silent ? { silent: true as const } : {}), ...(quiet ? { quiet } : {}) });
   }
 
   /** The open alarm (its cause has not ended) for a key. */

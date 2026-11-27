@@ -66,6 +66,8 @@ export function alertMessageFor(event: ArmorEvent, mode: SecurityMode): AlertMes
 
 function alertMessageForEvent(event: ArmorEvent, mode: SecurityMode): AlertMessage | null {
   const base = { service: "armor-server" as const, at: event.at, mode };
+  // a battery problem told before (or silenced) stays in the history and on the screens, and is not announced again
+  if (event.type === "alarm" && event.quiet) return null;
   if (event.type === "alert") {
     if (event.to === "high") return { ...base, event: "alert.raised", node_id: event.node_id, targets: event.targets };
     if (event.from === "high") return { ...base, event: "alert.cleared", node_id: event.node_id, targets: event.targets };

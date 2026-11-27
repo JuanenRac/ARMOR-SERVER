@@ -167,6 +167,7 @@ export type SolarModule = {
   soh_abnormal?: number[];
   last_event?: SolarModuleLastEvent;
   flags?: SolarModuleFlags[];
+  left_out?: string[];
   cells_unread?: number[];
   manufacturer?: string;
   manufacturer_source?: "reported" | "deduced";
