@@ -72,7 +72,7 @@ export function parseSolarInverter(value: unknown): SolarInverter {
   return body as unknown as SolarInverter;
 }
 
-const MODULE_KEYS = ["n", "present", "voltage_v", "current_a", "temperature_c", "soc_percent", "state", "cells_v", "temperatures_c", "capacity_ah", "full_capacity_ah", "cycles", "health_percent", "counters", "model", "board_version", "main_soft_version", "soft_version", "cell_count", "max_charge_a", "max_discharge_a", "console_baud", "soh_counts", "soh_abnormal", "last_event"];
+const MODULE_KEYS = ["n", "present", "voltage_v", "current_a", "temperature_c", "soc_percent", "state", "cells_v", "temperatures_c", "capacity_ah", "full_capacity_ah", "cycles", "health_percent", "counters", "model", "board_version", "main_soft_version", "soft_version", "cell_count", "max_charge_a", "max_discharge_a", "console_baud", "soh_counts", "soh_abnormal", "last_event", "serial", "board", "chip", "specification", "boot_version", "comm_version", "release_date"];
 
 export function parseSolarBattery(value: unknown): SolarBattery {
   const body = record(value, "battery");

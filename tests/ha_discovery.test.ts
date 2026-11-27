@@ -24,6 +24,13 @@ const alarm: AlarmNodeView = {
   state: { kind: "alarm", node_id: "alarm-1", timestamp_ms: 1, phase: "disarmed", mode: "disarmed", siren: false, locked_out: false, commands_enabled: false, zones: [{ id: "front-door", name: "Front door", kind: "entry", state: "normal", bypassed: false }, { id: "Bad Zone", kind: "instant", state: "normal", bypassed: false }], open_zones: [], events: [] },
 };
 
+test("no serial number of a battery goes into the messages the server leaves on the broker", () => {
+  const known: SolarDeviceView = { ...stack, reading: { kind: "battery", node_id: "solar-1", device: "us3000-1", timestamp_ms: 1, modules: 1, stack: [{ n: 1, present: true, serial: "TEST00AE20000001" }], soc_percent: 80, voltage_v: 51, current_a: 2 } };
+  const messages = discoveryMessages("homeassistant", [known], [], []);
+  assert.ok(messages.length > 0);
+  assert.doesNotMatch(JSON.stringify(messages), /TEST00AE20000001/);
+});
+
 test("every entity is described once, read-only, under the discovery prefix", () => {
   const messages = discoveryMessages("homeassistant", [inverter, stack, exampleReading], [electrical], [alarm]);
   const topics = messages.map(message => message.topic);

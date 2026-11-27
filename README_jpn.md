@@ -41,7 +41,7 @@
 | 役割 | ファミリーの中央セキュリティコーディネーター：ノード、アラーム、デバイス、エネルギー、カメラ、ネットワーク |
 | 技術 | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | テスト | 1408 件（`npm test`：単体と完全な HTTP 結合） |
-| 契約 | HTTP パス 249 本、322 操作（OpenAPI は ARMOR-COMMON）、ルート表は `docs/ROUTES.md` |
+| 契約 | HTTP パス 255 本、328 操作（OpenAPI は ARMOR-COMMON）、ルート表は `docs/ROUTES.md` |
 | 待ち受け | `127.0.0.1:18080`（`ARMOR_HOST`、`ARMOR_PORT`） |
 | 動作環境 | CM5 テストベンチ（サービスとして。ARMOR-DEVOPS 参照）または Node.js のある任意のコンピューター |
 | 実機での確認 | CM5 テストベンチでの日常使用：実際の MQTT ブローカー、実際の IP カメラ、ESP32-S3 基板上の実際のレーダーノード、これに接続する Studio、Android アプリ、音声・観察サービス |
@@ -154,13 +154,13 @@ flowchart LR
 | 音声：確認なしの消音、長文、巨大な音声 | ポリシー `voice.silence_confirmation`（off、pin、double_turn、challenge）を毎ターン送信。確認は本人に紐づく。200 文字、8 言語、毎分 30 リクエスト、音声は最大 480 000 バイト、応答は最大 200 000 バイト |
 | 誤った危険な書き込み | `ARMOR_BATTERY_WRITE=1`、`ARMOR_ELECTRICAL_SWITCHING=1`、`ARMOR_ALARM_COMMANDS=1` を設定しない限りオフ。起動時に警告 |
 
-**Studio のスイッチ。** 調整できる保護は `security-settings.json`（モード 0600、アトミック書き込み）にある 91 項目で、どれも保守的な既定値です。下げた場合は監査に記録されます。その一部：`alarm.disarm_pin`、`alarm.arming_modes`、`alarm.mode_downgrade_pin`、`alarm.mode_schedule`、`alarm.mode_schedule_lowers`、`alarm.mode_panel_sync`、`voice.silence_confirmation`、`alarm.config_hash`、`alarm.siren_fault_notice`、`server.zone_feed`、`server.zone_feed_signature`、`server.alarm_state_signature`、`media.rtsp_proxy`、`network.login_secure_only`、`login.country_alert`、`electrical.set_aside_old_readings`、`voice.multipart_turn`、`panel.live_events`、`client.device_lock`、`nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`、`summary.daily`、`summary.log_days`、`summary.reading_every_s`、`summary.power_every_s`、`summary.false_alarm_s`、`vision.heatmap`、`vision.activity_events`、`vision.service_url`、`vision.service_remote`、`vision.service_token_set`、`voice.turn_max_bytes`、`voice.reply_audio_max_bytes`、`reports.timeout_s`、`reports.queue_max`、`reports.requests_per_minute`。
+**Studio のスイッチ。** 調整できる保護は `security-settings.json`（モード 0600、アトミック書き込み）にある 93 項目で、どれも保守的な既定値です。下げた場合は監査に記録されます。その一部：`alarm.disarm_pin`、`alarm.arming_modes`、`alarm.mode_downgrade_pin`、`alarm.mode_schedule`、`alarm.mode_schedule_lowers`、`alarm.mode_panel_sync`、`voice.silence_confirmation`、`alarm.config_hash`、`alarm.siren_fault_notice`、`server.zone_feed`、`server.zone_feed_signature`、`server.alarm_state_signature`、`media.rtsp_proxy`、`network.login_secure_only`、`login.country_alert`、`electrical.set_aside_old_readings`、`voice.multipart_turn`、`panel.live_events`、`client.device_lock`、`nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`、`summary.daily`、`summary.log_days`、`summary.reading_every_s`、`summary.power_every_s`、`summary.false_alarm_s`、`vision.heatmap`、`vision.activity_events`、`vision.service_url`、`vision.service_remote`、`vision.service_token_set`、`voice.turn_max_bytes`、`voice.reply_audio_max_bytes`、`reports.timeout_s`、`reports.queue_max`、`reports.requests_per_minute`。
 
 **決してしないこと：** カメラのパスワードを返す、話した内容を保存する（コマンドと結果のみ）、PIN・トークン・Cookie をログに書く。第三者によるセキュリティレビューはありません。
 
 ## 🔌 インターフェース
 
-ルート表（`docs/ROUTES.md`、コードから生成）は各ルートと呼び出せる主体を一覧にします。ARMOR-COMMON の OpenAPI は 249 パス・322 操作を記述し、欠けているルートがあるとテストが失敗します。主なもの：
+ルート表（`docs/ROUTES.md`、コードから生成）は各ルートと呼び出せる主体を一覧にします。ARMOR-COMMON の OpenAPI は 255 パス・328 操作を記述し、欠けているルートがあるとテストが失敗します。主なもの：
 
 | ルート | 認証 | 内容 |
 |---|---|---|

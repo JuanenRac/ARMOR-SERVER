@@ -5,6 +5,9 @@ All notable changes to this project are documented here.
 ## [Unreleased]
 
 - **The shared tools read the output of processes as UTF-8:** `tools/status_lights.py`, `tools/sync_manifests.py` and `tools/universal_readme_check.py` are the current copies; on Windows a character outside the code page no longer breaks a check.
+- **The serial number, Board and chip of each battery module:** the server takes them with the readings of a solar node and gives them to signed-in people (a wall panel account has no access to the readings). The serial number is private data: the optional copy of the node traffic has zeros in its place, and the discovery messages for Home Assistant do not carry it. Tested on a computer with invented data.
+- **A small wall screen can read the solar equipment:** `GET /api/v1/panel/solar` (the devices with their figures and the totals), `.../devices/{node}/{device}` (one device with its modules and cells) and `.../history` (a few points of up to a day), cut down to what the reader of a node takes. The account of a wall panel reads them only while the new security option `panel.solar` is on (off by default).
+- **One operation on a battery from a wall screen, off by default:** the account of a wall panel may reset the statistics counters of a battery, and nothing else, while the new option `solar.panel_battery_ops` and `solar.battery_write` are both on, from the house or the VPN, with its PIN at every step (the same lockout as disarming; the duress PIN raises the silent alarm). Every attempt is audited. No node that writes to a battery has been tried.
 
 ## [0.8.2.8] - An unreadable serial port of a solar node is told
 

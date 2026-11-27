@@ -41,7 +41,7 @@
 | Role | Central security coordinator of the family: nodes, alarms, devices, energy, cameras, network |
 | Stack | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | Tests | 1408 (`npm test`: unit and full HTTP integration) |
-| Contract | 249 HTTP paths, 322 operations (OpenAPI in ARMOR-COMMON), route table in `docs/ROUTES.md` |
+| Contract | 255 HTTP paths, 328 operations (OpenAPI in ARMOR-COMMON), route table in `docs/ROUTES.md` |
 | Listens on | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Runs on | The CM5 test bench (as a service, see ARMOR-DEVOPS) or any computer with Node.js |
 | On real hardware | The CM5 test bench, in daily use: a real MQTT broker, real IP cameras, a real radar node on an ESP32-S3 board, Studio, the Android app and the voice and observation services against it |
@@ -154,13 +154,13 @@ flowchart LR
 | Voice: silencing without checking, long text, huge audio | The policy `voice.silence_confirmation` (off, pin, double_turn, challenge) travels with every turn; confirmation tied to the person; 200 characters, 8 languages, 30 requests a minute; audio of 480 000 bytes and a reply of 200 000 bytes at most |
 | Dangerous writes by mistake | Off unless `ARMOR_BATTERY_WRITE=1`, `ARMOR_ELECTRICAL_SWITCHING=1` or `ARMOR_ALARM_COMMANDS=1`, with a warning at start-up |
 
-**Switches in Studio.** The protections that can be tuned are 91 settings kept in `security-settings.json` (mode 0600, atomic writes), each with a conservative default, and lowering one is written in the audit. Some of them: `alarm.disarm_pin`, `alarm.arming_modes`, `alarm.mode_downgrade_pin`, `alarm.mode_schedule`, `alarm.mode_schedule_lowers`, `alarm.mode_panel_sync`, `voice.silence_confirmation`, `alarm.config_hash`, `alarm.siren_fault_notice`, `server.zone_feed`, `server.zone_feed_signature`, `server.alarm_state_signature`, `media.rtsp_proxy`, `network.login_secure_only`, `login.country_alert`, `electrical.set_aside_old_readings`, `voice.multipart_turn`, `panel.live_events`, `client.device_lock`, `client.trusted_devices`, `client.trusted_session_h`, `nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`, `summary.daily`, `summary.log_days`, `summary.reading_every_s`, `summary.power_every_s`, `summary.false_alarm_s`, `vision.heatmap`, `vision.activity_events`, `vision.service_url`, `vision.service_remote`, `vision.service_token_set`, `voice.turn_max_bytes`, `voice.reply_audio_max_bytes`, `reports.timeout_s`, `reports.queue_max` and `reports.requests_per_minute`.
+**Switches in Studio.** The protections that can be tuned are 93 settings kept in `security-settings.json` (mode 0600, atomic writes), each with a conservative default, and lowering one is written in the audit. Some of them: `alarm.disarm_pin`, `alarm.arming_modes`, `alarm.mode_downgrade_pin`, `alarm.mode_schedule`, `alarm.mode_schedule_lowers`, `alarm.mode_panel_sync`, `voice.silence_confirmation`, `alarm.config_hash`, `alarm.siren_fault_notice`, `server.zone_feed`, `server.zone_feed_signature`, `server.alarm_state_signature`, `media.rtsp_proxy`, `network.login_secure_only`, `login.country_alert`, `electrical.set_aside_old_readings`, `voice.multipart_turn`, `panel.live_events`, `client.device_lock`, `client.trusted_devices`, `client.trusted_session_h`, `nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`, `summary.daily`, `summary.log_days`, `summary.reading_every_s`, `summary.power_every_s`, `summary.false_alarm_s`, `vision.heatmap`, `vision.activity_events`, `vision.service_url`, `vision.service_remote`, `vision.service_token_set`, `voice.turn_max_bytes`, `voice.reply_audio_max_bytes`, `reports.timeout_s`, `reports.queue_max` and `reports.requests_per_minute`.
 
 **What it never does:** return a camera password, keep the words that were spoken (only the command and its result), or write a PIN, a token or a cookie in a log. There has been no independent security review.
 
 ## 🔌 Interfaces
 
-The route table (`docs/ROUTES.md`, generated from the code) lists every route with who may call it; the OpenAPI file of ARMOR-COMMON describes 249 paths and 322 operations, and a test fails if a route is missing from it. The ones that matter most:
+The route table (`docs/ROUTES.md`, generated from the code) lists every route with who may call it; the OpenAPI file of ARMOR-COMMON describes 255 paths and 328 operations, and a test fails if a route is missing from it. The ones that matter most:
 
 | Route | Auth | What it does |
 |---|---|---|

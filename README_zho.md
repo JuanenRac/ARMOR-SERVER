@@ -41,7 +41,7 @@
 | 角色 | 家族的中央安全协调器：节点、报警、设备、能源、摄像头、网络 |
 | 技术栈 | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
 | 测试 | 1408 项（`npm test`：单元与完整 HTTP 集成） |
-| 契约 | 249 条 HTTP 路径、322 个操作（OpenAPI 在 ARMOR-COMMON 中），路由表见 `docs/ROUTES.md` |
+| 契约 | 255 条 HTTP 路径、328 个操作（OpenAPI 在 ARMOR-COMMON 中），路由表见 `docs/ROUTES.md` |
 | 监听地址 | `127.0.0.1:18080`（`ARMOR_HOST`、`ARMOR_PORT`） |
 | 运行位置 | CM5 测试台（作为服务，见 ARMOR-DEVOPS）或任何装有 Node.js 的计算机 |
 | 真实硬件 | CM5 测试台的日常使用：真实的 MQTT 代理、真实的 IP 摄像头、ESP32-S3 板上的真实雷达节点，以及与之配合的 Studio、Android 应用和语音、观察服务 |
@@ -154,13 +154,13 @@ flowchart LR
 | 语音：未确认就静音、超长文本、超大音频 | 策略 `voice.silence_confirmation`（off、pin、double_turn、challenge）随每个轮次发送；确认与本人绑定；200 个字符、8 种语言、每分钟 30 个请求；音频最多 480 000 字节，回复最多 200 000 字节 |
 | 误操作的危险写入 | 除非设置 `ARMOR_BATTERY_WRITE=1`、`ARMOR_ELECTRICAL_SWITCHING=1` 或 `ARMOR_ALARM_COMMANDS=1`，否则关闭；启动时给出警告 |
 
-**Studio 中的开关。** 可调的保护措施是保存在 `security-settings.json`（权限 0600，原子写入）中的 91 项设置，每项都有保守的默认值，调低任何一项都会写入审计。其中一部分：`alarm.disarm_pin`、`alarm.arming_modes`、`alarm.mode_downgrade_pin`、`alarm.mode_schedule`、`alarm.mode_schedule_lowers`、`alarm.mode_panel_sync`、`voice.silence_confirmation`、`alarm.config_hash`、`alarm.siren_fault_notice`、`server.zone_feed`、`server.zone_feed_signature`、`server.alarm_state_signature`、`media.rtsp_proxy`、`network.login_secure_only`、`login.country_alert`、`electrical.set_aside_old_readings`、`voice.multipart_turn`、`panel.live_events`、`client.device_lock`、`nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`、`summary.daily`、`summary.log_days`、`summary.reading_every_s`、`summary.power_every_s`、`summary.false_alarm_s`、`vision.heatmap`、`vision.activity_events`、`vision.service_url`、`vision.service_remote`、`vision.service_token_set`、`voice.turn_max_bytes`、`voice.reply_audio_max_bytes`、`reports.timeout_s`、`reports.queue_max` 和 `reports.requests_per_minute`。
+**Studio 中的开关。** 可调的保护措施是保存在 `security-settings.json`（权限 0600，原子写入）中的 93 项设置，每项都有保守的默认值，调低任何一项都会写入审计。其中一部分：`alarm.disarm_pin`、`alarm.arming_modes`、`alarm.mode_downgrade_pin`、`alarm.mode_schedule`、`alarm.mode_schedule_lowers`、`alarm.mode_panel_sync`、`voice.silence_confirmation`、`alarm.config_hash`、`alarm.siren_fault_notice`、`server.zone_feed`、`server.zone_feed_signature`、`server.alarm_state_signature`、`media.rtsp_proxy`、`network.login_secure_only`、`login.country_alert`、`electrical.set_aside_old_readings`、`voice.multipart_turn`、`panel.live_events`、`client.device_lock`、`nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`、`summary.daily`、`summary.log_days`、`summary.reading_every_s`、`summary.power_every_s`、`summary.false_alarm_s`、`vision.heatmap`、`vision.activity_events`、`vision.service_url`、`vision.service_remote`、`vision.service_token_set`、`voice.turn_max_bytes`、`voice.reply_audio_max_bytes`、`reports.timeout_s`、`reports.queue_max` 和 `reports.requests_per_minute`。
 
 **它绝不会：** 返回摄像头密码、保存所说的话（只保留命令及其结果），或把 PIN、令牌或 Cookie 写进日志。没有独立的安全审查。
 
 ## 🔌 接口
 
-路由表（`docs/ROUTES.md`，由代码生成）列出每条路由及可调用者；ARMOR-COMMON 的 OpenAPI 文件描述了 249 条路径和 322 个操作，缺少任何路由时测试会失败。最重要的几条：
+路由表（`docs/ROUTES.md`，由代码生成）列出每条路由及可调用者；ARMOR-COMMON 的 OpenAPI 文件描述了 255 条路径和 328 个操作，缺少任何路由时测试会失败。最重要的几条：
 
 | 路由 | 认证 | 作用 |
 |---|---|---|

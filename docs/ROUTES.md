@@ -231,6 +231,12 @@ Every route the code registers, with who may call it and the file that registers
 | GET | `/api/v1/nodes/maintenance` | operator | `routes/node_control.ts` |
 | DELETE | `/api/v1/operator/session` | operator | `routes/sessions.ts` |
 | POST | `/api/v1/operator/session` | none here | `routes/sessions.ts` |
+| GET | `/api/v1/panel/solar` | operator | `routes/panel_solar.ts` |
+| POST | `/api/v1/panel/solar/battery-ops` | operator | `routes/panel_solar.ts` |
+| GET | `/api/v1/panel/solar/battery-ops/:id` | operator | `routes/panel_solar.ts` |
+| POST | `/api/v1/panel/solar/battery-ops/:id/execute` | operator | `routes/panel_solar.ts` |
+| GET | `/api/v1/panel/solar/devices/:node/:device` | operator | `routes/panel_solar.ts` |
+| GET | `/api/v1/panel/solar/history` | operator | `routes/panel_solar.ts` |
 | GET | `/api/v1/panel/summary` | operator | `routes/system.ts` |
 | GET | `/api/v1/preferences` | none here | `routes/preferences.ts` |
 | PUT | `/api/v1/preferences` | none here | `routes/preferences.ts` |

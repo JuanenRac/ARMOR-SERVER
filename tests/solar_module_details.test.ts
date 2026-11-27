@@ -19,6 +19,19 @@ test("the details of a module are accepted when they are in range and refused wh
   }
 });
 
+test("the serial number, the Board and the chip of a module are accepted when they are well formed and kept in the reading", () => {
+  const identity = { serial: "TEST00AE20000001", board: "NF4.E2", chip: "newer", specification: "48V/74AH", boot_version: "V2.1", comm_version: "V2.0", release_date: "00-01-01" };
+  const parsed = parseSolarMessage(withModule(identity)) as SolarBattery;
+  assert.deepEqual(parsed.stack[0], { n: 1, present: true, ...identity });
+  assert.doesNotThrow(() => parseSolarMessage(withModule({ chip: "unknown" })), "no serial number: the chip cannot be told");
+  for (const bad of [{ serial: "" }, { serial: "TEST 0001" }, { serial: "T".repeat(25) }, { board: "NF4 E2" }, { board: "" }, { chip: "guess" }, { specification: "" }, { boot_version: "x".repeat(25) }]) {
+    assert.throws(() => parseSolarMessage(withModule(bad)), /invalid|unknown/, JSON.stringify(bad));
+  }
+  const store = new SolarStore();
+  store.ingest(parsed);
+  assert.equal((store.list()[0]!.reading as SolarBattery).stack[0]!.serial, "TEST00AE20000001");
+});
+
 test("a cell the console calls abnormal is told, once, and ends when the module is well again", () => {
   const raised: Alarm[] = [];
   const centre = new AlarmCentre({ file: path.join(tempDir(), "alarms.json"), onRaised: alarm => { raised.push(alarm); } });
