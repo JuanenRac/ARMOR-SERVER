@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The serial number, Board and chip of each battery module:** the server takes them with the readings of a solar node and gives them to signed-in people (a wall panel account has no access to the readings). The serial number is private data: the optional copy of the node traffic has zeros in its place, and the discovery messages for Home Assistant do not carry it. Tested on a computer with invented data.
+
 ## [0.8.2.8] - An unreadable serial port of a solar node is told
 
 - **An unreadable serial port of a solar node is told:** when the node says in its health report that a port hears bytes and reads nothing, the node's health carries `port_problems` (port, cause, speed, pins, polarity, bytes heard and the last ones; for the console of a slave battery of a stack, its place in it). It is listed for 30 minutes after the node last said it.

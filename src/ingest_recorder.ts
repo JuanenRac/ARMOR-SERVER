@@ -3,6 +3,7 @@
  * ({"topic","payload"} and, besides, "at" (when the server received it), "accepted" and "reason" (why it was refused)).
  * It writes only while the option ingest.recording is on (off by default), keeps the file under a size limit and rotates it (ARMOR_INGEST_RECORD_MAX_BYTES, ARMOR_INGEST_RECORD_FILES),
  * and never writes what looks like a secret: orders to the nodes are not copied at all, and a field named like a token, a key, a password or a PIN is left out of the copy.
+ * A serial number (of a battery module or an inverter) is private: the copy has a row of zeros in its place, so the message can still be played.
  * Copyright (C) 2026 JuanenRac (Electro Hobby 3D). GPL-3.0-or-later.
  */
 import fs from "node:fs";
@@ -25,13 +26,16 @@ const SECRET_NAME = /token|secret|passw|passcode|pin$|^pin_|key|credential|autho
 /** Orders to the nodes and maintenance traffic carry one-time tokens: they are not node traffic and are never copied. */
 const NOT_RECORDED = /^armor\/(control\/|solar\/[^/]+\/maintenance\/)/;
 
-/** The copy of a payload without the fields that look like a secret (at any depth). */
+/** What stands in the copy for a serial number: it fits every rule of the contract, so the message still plays. */
+export const HIDDEN_SERIAL = "0000000000";
+
+/** The copy of a payload without the fields that look like a secret, and with its serial numbers hidden (at any depth). */
 export function withoutSecrets(value: unknown, depth = 0): unknown {
   if (depth > 12) return null;
   if (Array.isArray(value)) return value.map(item => withoutSecrets(item, depth + 1));
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
-    for (const [name, item] of Object.entries(value as Record<string, unknown>)) if (!SECRET_NAME.test(name)) out[name] = withoutSecrets(item, depth + 1);
+    for (const [name, item] of Object.entries(value as Record<string, unknown>)) if (!SECRET_NAME.test(name)) out[name] = name === "serial" && typeof item === "string" && item !== "" ? HIDDEN_SERIAL : withoutSecrets(item, depth + 1);
     return out;
   }
   return value;
