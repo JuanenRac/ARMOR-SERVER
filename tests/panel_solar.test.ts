@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { parseBatteryResult } from "../src/battery_ops.js";
 import { PANEL_HISTORY_POINTS, PANEL_MAX_DEVICES, panelDevice, panelDevices, thinHistory } from "../src/panel_solar.js";
 import { lowers, SECURITY_DEFAULTS } from "../src/security_settings.js";
 import type { SolarBattery, SolarDeviceView } from "../src/solar.js";
@@ -109,6 +110,7 @@ test("a wall screen reads the solar equipment only while the option is on", asyn
     assert.equal(list.body.devices.length, 1);
     assert.equal(list.body.totals.batteries, 1);
     const one = await call(running, who.panel, "GET", "/api/v1/panel/solar/devices/solar-1/pack-1");
+    assert.ok(![list, one].some(answer => JSON.stringify(answer.body).includes("PRIVATE-SERIAL")), "no serial number leaves by these routes");
     assert.equal(one.body.devices[0].reading.stack.length, 2);
     const history = await call(running, who.panel, "GET", "/api/v1/panel/solar/history?node=solar-1&device=pack-1");
     assert.equal(history.status, 200);
@@ -150,12 +152,23 @@ test("the operation from a wall screen is off by default, needs both options, th
     assert.equal(JSON.parse(published[0]).op, "clear_stats");
     assert.equal((await call(running, who.panel, "GET", `/api/v1/panel/solar/battery-ops/${armed.body.id}`)).status, 200);
     assert.equal((await call(running, who.operator, "GET", `/api/v1/panel/solar/battery-ops/${armed.body.id}`)).status, 403);
+    // the node says who the battery is; the screen is told the model and never the serial number
+    const asked = JSON.parse(published[0]) as { command_id: string };
+    running.app.context.batteryWrite.handleResult(parseBatteryResult({ kind: "solar_battery_result", node_id: "solar-1", timestamp_ms: 9, port: 2, accepted: true, refusal: "none", command_id: asked.command_id,
+      action: "arm", op: "clear_stats", stage: "armed", token: "0123456789abcdef0123456789abcdef", canonical: "clear_stats", summary: "clear the counters", risk: "medium", atomic: false,
+      battery: { model: "US3000C", serial: SERIAL, soft_version: "V3.0", board: "" } }), "solar-1");
+    const ready = await call(running, who.panel, "GET", `/api/v1/panel/solar/battery-ops/${armed.body.id}`);
+    assert.deepEqual([ready.body.stage, ready.body.battery.model], ["armed", "US3000C"]);
+    assert.ok(!JSON.stringify(ready.body).includes(SERIAL) && !JSON.stringify(ready.body).includes("0123456789abcdef0123"), "no serial number and no token");
     assert.equal((await call(running, who.panel, "GET", "/api/v1/panel/solar/battery-ops/0000000000000000")).status, 404);
     // the second step asks the PIN again, and the node has not accepted yet
     const execute = (body: unknown) => call(running, who.panel, "POST", `/api/v1/panel/solar/battery-ops/${armed.body.id}/execute`, body);
     assert.equal((await execute({ serial: SERIAL })).body.code, "pin_required");
     assert.equal((await execute({ serial: SERIAL, pin: "0000" })).body.code, "wrong_pin");
-    assert.equal((await execute({ serial: SERIAL, pin: "2468" })).body.code, "not_armed");
+    const executed = await execute({ serial: SERIAL, pin: "2468" });
+    assert.deepEqual([executed.status, executed.body.stage], [202, "starting"]);
+    assert.ok(!JSON.stringify(executed.body).includes(SERIAL));
+    assert.equal((await execute({ serial: SERIAL, pin: "2468" })).body.code, "not_armed", "one arm, one execute");
     const trail = fs.readFileSync(path.join(running.config.dataDir, "audit.log"), "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line) as { action: string; outcome: string; detail?: string });
     assert.ok(trail.filter(event => event.action === "panel.battery_ops" && event.outcome === "denied").length >= 6, "every refusal is in the audit trail");
     assert.ok(trail.every(event => !/2468|9999|0000(?![0-9a-f])/.test(event.detail ?? "")), "a PIN is never written down");

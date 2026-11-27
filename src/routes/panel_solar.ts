@@ -20,9 +20,10 @@ const ID = /^[a-z0-9]{8,32}$/;
 /** The only operation a wall screen may order. */
 export const PANEL_BATTERY_OPERATION = "clear_stats";
 
-/** What a screen is shown of an operation: how far it is and how it ended, never the transcript. */
+/** What a screen is shown of an operation: how far it is and how it ended; never the transcript, and never the serial number of the battery (private: the person typed it). */
 const shown = (operation: BatteryOperation) => ({
-  id: operation.id, node: operation.node, port: operation.port, op: operation.op, stage: operation.stage, risk: operation.risk, summary: operation.summary, battery: operation.battery,
+  id: operation.id, node: operation.node, port: operation.port, op: operation.op, stage: operation.stage, risk: operation.risk, summary: operation.summary,
+  ...(operation.battery ? { battery: { model: operation.battery.model, capacity_ah: operation.battery.capacity_ah } } : {}),
   refusal: operation.refusal, outcome: operation.outcome, code: operation.code, armed_until: operation.armed_until,
 });
 
