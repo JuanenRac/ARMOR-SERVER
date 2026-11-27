@@ -213,7 +213,7 @@ test("a PIN to disarm: kept as a hash, wrong ones lock the user for longer each 
   assert.equal(user.hasPin, true);
   assert.equal(user.hasDuress, true);
   // the PIN as a value of its own: four digits can turn up by chance inside a salt or a digest written in hexadecimal
-  assert.ok(!/"4321"|:4321b/.test(fs.readFileSync(file, "utf8")), "only a hash is kept");
+  assert.ok(!/"4321"|:4321\b/.test(fs.readFileSync(file, "utf8")), "only a hash is kept");
   assert.ok(!JSON.stringify(users.list()).includes("hash"));
   let now = 1_000_000;
   assert.equal(users.verifyPin(id, "4321", now), "ok");
