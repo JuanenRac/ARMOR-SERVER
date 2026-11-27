@@ -544,7 +544,7 @@ export type NodeControlResult = {
   operation: "restart" | "pause" | "resume" | "standby" | "identify" | "diagnostics" | "maintenance_on" | "maintenance_off";
   stage: "armed" | "restarting" | "applied" | "diagnostics" | "rejected";
   accepted: boolean;
-  refusal: "none" | "not_armed" | "invalid_token" | "token_expired" | "rate_limited" | "already_restarting" | "already_in_state" | "busy_update" | "busy_upload" | "busy_slot_copy" | "busy_battery" | "unavailable";
+  refusal: "none" | "not_armed" | "invalid_token" | "token_expired" | "rate_limited" | "already_restarting" | "already_in_state" | "busy_update" | "busy_upload" | "busy_slot_copy" | "busy_battery" | "busy_guarding" | "unavailable";
   token?: string;
   token_ttl_s?: number;
   reason?: "requested_by_server";

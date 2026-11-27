@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **A node that guards can refuse a pause or a standby:** the refusal `busy_guarding` is understood.
 - **A battery problem is announced once:** the phones, Telegram and the other places are told when a battery alarm is new or got worse, not each time the same problem comes back (the event history keeps all of them, marked `quiet`); a fault of the battery management system is always announced.
 - **A battery fault names the code of the battery** (`SysError 0x40 VOLT err`) when the node read it.
 - **Figures that a node left out as impossible reach the screens** (`left_out` of a battery module), and the wall screen's solar view gives the maker, the states, the cells not read and the figures left out.
