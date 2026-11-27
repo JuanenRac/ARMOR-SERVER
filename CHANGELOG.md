@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **A battery fault is told apart and named:** a new alarm (`solar_battery_fault`) for a module whose electronics fail (SysError, or cells it does not read: said by the node, or 0 V in two readings in a row), with the module, the cells and the battery's word; the battery alarm now names the module, column, cell and word too. A silenced battery stays quiet but the fault stays listed while it lasts. A "High" or "Low" is not an alarm.
+- **The manufacturer of solar equipment, and the battery states of a newer node, are kept:** `manufacturer`, `manufacturer_source`, `flags` and `cells_unread` of the solar messages are read and served.
 ## [0.8.3.0] - Battery firmware campaigns and discreet battery alarms
 
 - **Battery alarms can be discreet:** by default (`once`) every battery alarm read from `/api/v1/alarms` says `quiet`, so a client keeps it to a mark: `new` the first time and when it gets worse (a protection that trips, new weak cells, a gap that doubles), `known` when the same problem comes back within 24 hours of having ended, `silenced` for a silenced battery or module. The setting `classic` is as before. Kept across restarts. The alarms raised, the history and the notifications to phones and other services are not changed. Tested on a computer with invented data.

@@ -14,7 +14,7 @@ export type Silenced = { id: string; since: string; by: string };
 export type Quiet = "new" | "known" | "silenced";
 
 export const BATTERY_CODES: ReadonlySet<string> = new Set(["solar_battery_alarm", "solar_battery_low", "solar_battery_overvoltage", "solar_cells_unbalanced", "solar_battery_hot",
-  "solar_battery_cold", "solar_cell_soh_abnormal", "solar_module_overcurrent", "solar_counter_rose", "solar_battery_worn"]);
+  "solar_battery_cold", "solar_cell_soh_abnormal", "solar_module_overcurrent", "solar_counter_rose", "solar_battery_worn", "solar_battery_fault"]);
 const ID = /^[a-z0-9][a-z0-9_-]{0,63}\/[a-z0-9][a-z0-9_-]{0,31}(\/([1-9]|[12][0-9]|3[0-2]))?$/;
 const RANK = { warning: 0, high: 1, critical: 2 } as const;
 const MAX_PROBLEMS = 512, MAX_ALARMS = 2000, MAX_SILENCED = 128;

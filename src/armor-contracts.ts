@@ -113,6 +113,8 @@ export type SolarInverter = {
   units?: SolarInverterUnits[];
   bus_v?: number;
   serial?: string;
+  manufacturer?: string;
+  manufacturer_source?: "reported" | "deduced";
   firmware?: string;
   pv_energy_total_wh?: number;
   ratings?: SolarInverterRatings;
@@ -133,6 +135,12 @@ export type SolarModuleLastEvent = {
   power_events?: string;
   battery_events?: string;
   system_fault?: string;
+};
+
+export type SolarModuleFlags = {
+  column: "base" | "voltage" | "current" | "temperature" | "cell_voltage" | "cell_temperature" | "mosfet_temperature" | "system";
+  word: string;
+  cell?: number;
 };
 
 export type SolarModule = {
@@ -158,6 +166,10 @@ export type SolarModule = {
   soh_counts?: number[];
   soh_abnormal?: number[];
   last_event?: SolarModuleLastEvent;
+  flags?: SolarModuleFlags[];
+  cells_unread?: number[];
+  manufacturer?: string;
+  manufacturer_source?: "reported" | "deduced";
   serial?: string;
   board?: string;
   chip?: "older" | "newer" | "unknown";
@@ -186,6 +198,8 @@ export type SolarBattery = {
   soc_percent?: number;
   alarm?: boolean;
   stack: SolarModule[];
+  manufacturer?: string;
+  manufacturer_source?: "reported" | "deduced";
   model?: string;
   capacity_ah?: number;
   full_capacity_ah?: number;
