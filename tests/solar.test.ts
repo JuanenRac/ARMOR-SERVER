@@ -4,6 +4,8 @@ import test from "node:test";
 import { AlarmCentre, AlarmRules } from "../src/alarms.js";
 import { parseSolarMessage, SolarStore, solarTopic, type SolarBattery, type SolarInverter } from "../src/solar.js";
 import { stackCapacity } from "../src/solar_totals.js";
+import { IngestLog } from "../src/ingest_log.js";
+import { routeMessage, type RouteTable } from "../src/mqtt_router.js";
 import { SECRETS, startServer, studioCookie, tempDir } from "./helpers.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -434,3 +436,34 @@ test("an example stays out of the totals while a real stack reports, and a paral
   assert.equal(store.totals().load_w, 900);
 });
 
+// Ten modules with every detail a node reads and a hundred cells balancing at once (and the largest stack the contract names): the whole message was refused when the cells balancing could not pass 64.
+test("a large stack with many cells balancing is taken whole, over MQTT and over HTTP", async () => {
+  const stack = (modules: number) => Array.from({ length: modules }, (_, index) => ({
+    n: index + 1, present: true, model: "US3000C", state: "Charge", voltage_v: 51.2, current_a: 90.5, temperature_c: 24.5, soc_percent: 93,
+    cells_v: Array.from({ length: 16 }, () => 3.456), soh_counts: Array.from({ length: 16 }, () => 0), soh_abnormal: [], capacity_ah: 68.82, full_capacity_ah: 74, cycles: 120, health_percent: 100,
+    cell_count: 16, serial: `TEST00000000${String(index).padStart(4, "0")}`, board: "NF4.E2", chip: "newer" as const, specification: "48V/74AH",
+    counters: Object.fromEntries(Array.from({ length: 44 }, (_, counter) => [`counter_${counter}_times`, 1234567])),
+    last_event: { index: 4000, time: "26-01-01 12:00:00", voltage_v: 51.2, current_a: 9.5, temperature_c: 24.5, percent: 93, base_state: "Charge", voltage_state: "Normal", current_state: "Normal", temperature_state: "Normal", coulomb_state: "Normal", power_events: "0x0", battery_events: "0x4 BVNOR", system_fault: "0x0" },
+  }));
+  const large = (modules: number, balancing: number) => battery({ device: `bank-${modules}`, modules, balancing, current_a: modules * 90.5, state: "charging", stack: stack(modules) });
+  const messages = [large(10, 100), large(16, 256)];
+
+  const store = new SolarStore();
+  const refused: string[] = [];
+  const routes: RouteTable = [{ subscribe: ["armor/solar/+/+/state"], named: solarTopic, parse: parseSolarMessage, fallback: "invalid solar payload",
+    matches: (message: ReturnType<typeof parseSolarMessage>, named: [string, string]) => message.node_id === named[0] && message.device === named[1], apply: message => store.ingest(message) }];
+  for (const message of messages) routeMessage(routes, new IngestLog(), (_topic, _raw, error) => refused.push(String(error)), `armor/solar/solar-1/${message.device}/state`, Buffer.from(JSON.stringify(message)));
+  assert.deepEqual(refused, []);
+  assert.deepEqual(store.list().map(view => view.reading.kind === "battery" ? [view.reading.modules, view.reading.balancing, view.reading.stack.length] : []).sort((a, b) => a[0]! - b[0]!), [[10, 100, 10], [16, 256, 16]]);
+
+  const running = await startServer();
+  try {
+    for (const message of messages) {
+      const answer = await fetch(`${running.base}/api/v1/solar`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${SECRETS.ARMOR_INGEST_TOKEN}` }, body: JSON.stringify(message) });
+      assert.equal(answer.status, 202, await answer.text());
+    }
+    const cookie = await studioCookie(running.base);
+    const list = await (await fetch(`${running.base}/api/v1/solar`, { headers: { cookie } })).json() as { devices: Array<{ device: string; reading: { balancing?: number } }> };
+    assert.deepEqual(list.devices.map(view => [view.device, view.reading.balancing]), [["bank-10", 100], ["bank-16", 256]]);
+  } finally { await running.stop(); }
+});
