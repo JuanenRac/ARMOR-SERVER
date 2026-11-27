@@ -47,7 +47,7 @@ export type SolarMessage = SolarInverter | SolarBattery;
 const deviceName = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 const INVERTER_KEYS = ["kind", "node_id", "device", "timestamp_ms", "mode", "grid_v", "grid_hz", "out_v", "out_hz", "out_va", "out_w", "load_percent", "battery_v", "battery_a", "battery_percent",
   "pv_v", "pv_a", "pv_w", "heatsink_c", "ac_charging", "pv_charging", "load_on", "warnings"] as const;
-const INVERTER_OPTIONAL_KEYS = ["warnings_known", "bus_v", "pv2_v", "pv2_a", "pv2_w", "total_out_w", "total_out_va", "total_load_percent", "total_charging_a", "units", "serial", "firmware", "pv_energy_total_wh", "ratings", "clamped"] as const;
+const INVERTER_OPTIONAL_KEYS = ["warnings_known", "bus_v", "pv2_v", "pv2_a", "pv2_w", "total_out_w", "total_out_va", "total_load_percent", "total_charging_a", "units", "serial", "firmware", "pv_energy_total_wh", "ratings", "clamped", "manufacturer", "manufacturer_source"] as const;
 const RATINGS_RANGES: Record<string, readonly [number, number]> = {
   grid_rating_v: [0, 600], out_rating_v: [0, 600], out_rating_hz: [0, 100], out_rating_va: [0, 1_000_000], out_rating_w: [0, 1_000_000], battery_rating_v: [0, 600], battery_recharge_v: [0, 600],
   battery_under_v: [0, 600], battery_bulk_v: [0, 600], battery_float_v: [0, 600], max_charge_a: [0, 2000], max_ac_charge_a: [0, 2000],
@@ -72,13 +72,16 @@ export function parseSolarInverter(value: unknown): SolarInverter {
   return body as unknown as SolarInverter;
 }
 
-const MODULE_KEYS = ["n", "present", "voltage_v", "current_a", "temperature_c", "soc_percent", "state", "cells_v", "temperatures_c", "capacity_ah", "full_capacity_ah", "cycles", "health_percent", "counters", "model", "board_version", "main_soft_version", "soft_version", "cell_count", "max_charge_a", "max_discharge_a", "console_baud", "soh_counts", "soh_abnormal", "last_event", "serial", "board", "chip", "specification", "boot_version", "comm_version", "release_date"];
+const MODULE_KEYS = ["n", "present", "voltage_v", "current_a", "temperature_c", "soc_percent", "state", "cells_v", "temperatures_c", "capacity_ah", "full_capacity_ah", "cycles", "health_percent", "counters", "model", "board_version", "main_soft_version", "soft_version", "cell_count", "max_charge_a", "max_discharge_a", "console_baud", "soh_counts", "soh_abnormal", "last_event", "serial", "board", "chip", "specification", "boot_version", "comm_version", "release_date",
+  "manufacturer", "manufacturer_source", "flags", "cells_unread"];
 
 export function parseSolarBattery(value: unknown): SolarBattery {
   const body = record(value, "battery");
-  onlyKnown(body, ["kind", "node_id", "device", "timestamp_ms", "modules", "stack", "state", "voltage_v", "current_a", "temperature_min_c", "temperature_max_c", "cell_min_v", "cell_max_v", "soc_percent", "alarm", "model", "capacity_ah", "full_capacity_ah", "energy_kwh", "cycles", "health_percent", "power_w", "balancing", "protecting", "charge_mos", "discharge_mos"], "battery");
+  onlyKnown(body, ["kind", "node_id", "device", "timestamp_ms", "modules", "stack", "state", "voltage_v", "current_a", "temperature_min_c", "temperature_max_c", "cell_min_v", "cell_max_v", "soc_percent", "alarm", "model", "capacity_ah", "full_capacity_ah", "energy_kwh", "cycles", "health_percent", "power_w", "balancing", "protecting", "charge_mos", "discharge_mos", "manufacturer", "manufacturer_source"], "battery");
   if (Array.isArray(body.stack)) body.stack.forEach((module, index) => {
     onlyKnownIn(module, MODULE_KEYS, `module ${index}`);
+    const flags = (module as Record<string, unknown> | null)?.flags;
+    if (Array.isArray(flags)) flags.forEach(flag => onlyKnownIn(flag, ["column", "word", "cell"], `module ${index} state`));
     if (module && typeof module === "object" && "last_event" in module) parseSolarEvent((module as Record<string, unknown>).last_event, `module ${index}.last_event`);
   });
   checkAgainstContract("solar_battery", body);

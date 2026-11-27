@@ -18,6 +18,7 @@ import { HEALTH_CODES, type NodeHealthView } from "./node_health.js";
 import { ENERGY_ALARM_DEFAULTS, type EnergyAlarmSettings } from "./energy_alarms.js";
 import type { SecurityMode } from "./store.js";
 import { BATTERY_NOTICE_DEFAULTS, GapGate, type BatteryNoticeSettings } from "./battery_notices.js";
+import { firstProtection, moduleFault, UnreadCells } from "./battery_faults.js";
 import { durableRename } from "./durable.js";
 
 /** What a list of alarms is for: `silent` (an administrator's list) takes in every silent alarm; `shown` (a wall panel, a console) the silent ones that are also `shown`; `hidden` leaves out the alarms a session is kept from seeing. */
@@ -328,6 +329,7 @@ export class AlarmRules {
 
   /** Since when each battery has had its cells further apart than the level (the time of the first message of the stretch), for the alarm that wants the gap to persist. */
   readonly #spreadSince = new Map<string, number>();
+  readonly #unread = new UnreadCells();
 
   /** Since when each network node has seen the name of the house point elsewhere than its public address (the time of the first message of the stretch). */
   readonly #dnsSince = new Map<string, number>();
@@ -492,8 +494,20 @@ export class AlarmRules {
       if (message.heatsink_c >= level.heatsink_high_c) this.centre.raise(`${base}:hot`, { source, severity: "warning", code: "solar_inverter_hot" });
       else if (message.heatsink_c < level.heatsink_high_c - 5) this.centre.clear(`${base}:hot`);
     } else if (message.modules > 0) {
+      // a fault of a module's electronics is its own alarm, named by module, cells (counted from 1) and the battery's word; it lasts as long as the module says it
+      for (const module of message.stack) {
+        if (!module.present) continue;
+        const key = `${base}:fault:${module.n}`;
+        const fault = moduleFault(module, this.#unread.judge(`${id}/${module.n}`, module, message.timestamp_ms));
+        if (!fault) { this.centre.clear(key); continue; }
+        const detail = { module: module.n, ...(fault.cells.length ? { cell: fault.cells.map(cell => cell + 1).join(", ") } : {}), bms_word: fault.word ?? "0 V" };
+        this.centre.raise(key, { source, severity: "high", code: "solar_battery_fault", detail });
+        this.centre.update(key, detail);
+        this.batteryWorse?.(key, this.centre.openId(key), [...fault.cells.map(String), ...(fault.word ? [fault.word] : [])]);
+      }
       if (message.alarm === true) {
-        this.centre.raise(`${base}:battery_alarm`, { source, severity: "high", code: "solar_battery_alarm" });
+        const said = firstProtection(message.stack);
+        this.centre.raise(`${base}:battery_alarm`, { source, severity: "high", code: "solar_battery_alarm", ...(said ? { detail: { module: said.module, column: said.column, bms_word: said.word, ...(said.cell !== undefined ? { cell: said.cell + 1 } : {}) } } : {}) });
         this.batteryWorse?.(`${base}:battery_alarm`, this.centre.openId(`${base}:battery_alarm`), message.protecting === true ? ["protection"] : []);
       } else this.centre.clear(`${base}:battery_alarm`);
       // over the voltage at which the battery's own protection acts (its model's figure; a model with none is not judged)
