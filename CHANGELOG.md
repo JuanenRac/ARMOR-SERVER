@@ -4,6 +4,7 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The readings of a large battery stack are taken again:** a stack with more than 64 cells balancing at once (ten modules reach a hundred) was refused as a whole message, so Studio showed no readings of that battery although the node was reading it. The limit is now 512 and the current of a stack may reach 16000 A; the refusal of any message is still listed in the system menu with the field that was wrong.
 - **The shared tools read the output of processes as UTF-8:** `tools/status_lights.py`, `tools/sync_manifests.py` and `tools/universal_readme_check.py` are the current copies; on Windows a character outside the code page no longer breaks a check.
 - **The serial number, Board and chip of each battery module:** the server takes them with the readings of a solar node and gives them to signed-in people (a wall panel account has no access to the readings). The serial number is private data: the optional copy of the node traffic has zeros in its place, and the discovery messages for Home Assistant do not carry it. Tested on a computer with invented data.
 - **A small wall screen can read the solar equipment:** `GET /api/v1/panel/solar` (the devices with their figures and the totals), `.../devices/{node}/{device}` (one device with its modules and cells) and `.../history` (a few points of up to a day), cut down to what the reader of a node takes. The account of a wall panel reads them only while the new security option `panel.solar` is on (off by default).
