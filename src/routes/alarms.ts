@@ -83,7 +83,7 @@ export function registerAlarmRoutes(app: Express, context: AppContext): void {
   });
 
   // ---- alarms ----
-  app.get("/api/v1/alarms", requireOperator, (request, response) => response.json({ active: alarms.active(sees(request)), recent: alarms.recent(50, sees(request)) }));
+  app.get("/api/v1/alarms", requireOperator, (request, response) => response.json({ active: alarms.active(sees(request)).map(alarm => context.batteryNotices.view(alarm)), recent: alarms.recent(50, sees(request)).map(alarm => context.batteryNotices.view(alarm)) }));
   /**
    * The wall panel's account proves nobody is standing there (anyone can tap): what it acknowledges stays unverified and a critical alarm keeps being escalated. When the person at
    * the panel types the PIN of the panel's account (the body carries `pin`) it counts as verified: the PIN is checked under the same lockout as a disarm, a wrong one is refused

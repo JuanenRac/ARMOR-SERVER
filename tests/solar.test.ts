@@ -301,11 +301,13 @@ test("the levels of the alarms of batteries and inverters are the operator's: ce
   rules.handleSolar(stack());
   assert.deepEqual(codes(), []);
   rules.handleSolar(stack({ cell_max_v: 3.46 }));                                  // 140 mV apart: over 100
+  rules.handleSolar(stack({ cell_max_v: 3.461 }));                                 // seen in a second reading
   assert.deepEqual(codes(), ["solar_cells_unbalanced"]);
   rules.handleSolar(stack({ cell_max_v: 3.39 }));                                  // 70 mV: under 100 but not yet under 80 % of it? it is: 70 < 80
   assert.deepEqual(codes(), []);
   level = { ...level, cell_spread_mv: 50 };                                         // the operator is stricter
   rules.handleSolar(stack({ cell_max_v: 3.39 }));
+  rules.handleSolar(stack({ cell_max_v: 3.391 }));
   assert.deepEqual(codes(), ["solar_cells_unbalanced"]);
   level = { ...ENERGY_ALARM_DEFAULTS };
   rules.handleSolar(stack());
