@@ -7,6 +7,7 @@ import test from "node:test";
 import type { AuditEvent, AuditLog } from "../src/audit.js";
 import { BATTERY_CATALOG } from "../src/battery_catalog.js";
 import { batteryTopic, crc32, describeImage, differences, expertLine, outputBefore, parseBatteryCommand, parseBatteryResult, validateBatteryParams, BatteryOpsError, type BatteryResult } from "../src/battery_ops.js";
+import { BatteryCampaignService, expectedBoard, moduleProblem } from "../src/battery_campaign.js";
 import { BatteryWriteService } from "../src/battery_write.js";
 import { SolarStore, type SolarBattery } from "../src/solar.js";
 import { SECRETS, startServer, studioCookie, tempDir } from "./helpers.js";
@@ -445,4 +446,122 @@ test("a node that is forgotten leaves nothing armed behind, and what already end
   assert.equal(code(() => b.service.execute("ana", armedOne.id, outputOff.serial)), "not_armed", "the token is no longer good");
   b.service.forget("solar-1");
   assert.equal(b.service.get(armedOne.id)!.stage, "withdrawn", "forgetting twice changes nothing");
+});
+
+// ---- the campaign: one module of a stack at a time --------------------------------------------------------------------------------------------
+
+const firmware = (): Buffer => {
+  const bytes = Buffer.alloc(100_000, 0x5a);
+  bytes[0x400] = 0; bytes[0x401] = 3;
+  bytes.fill(0, 0x418, 0x423);
+  bytes.write("US2000C", 0x418, "ascii");
+  return bytes;
+};
+const serials = ["PPTBH00000000001", "PPTBH00000000002", "PPTBH00000000003"];
+const stackOf = (over: Record<string, unknown> = {}): SolarBattery => ({ kind: "battery", node_id: "solar-1", device: "pack", timestamp_ms: 1, modules: 3, voltage_v: 51, current_a: 0,
+  stack: serials.map((serial, index) => ({ n: index + 1, present: true, serial, model: "US3000C", board: "", chip: "older", soft_version: "V2.6", ...(index === 1 ? over : {}) })) }) as unknown as SolarBattery;
+
+function campaignBench(over: Record<string, unknown> = {}, file?: string) {
+  let clock = 1_000_000;
+  const sent: Array<Record<string, unknown>> = [];
+  const audit: AuditEvent[] = [];
+  const log: AuditLog = { record: event => { audit.push(event); } };
+  const solar = new SolarStore({ now: () => clock });
+  solar.ingest(stackOf(over));
+  let counter = 0;
+  const random = () => `${String(++counter).padStart(16, "0")}`;
+  let service!: BatteryWriteService;
+  const answer = (command: Record<string, unknown>, fields: Record<string, unknown>) => service.handleResult(parseBatteryResult({
+    kind: "solar_battery_result", node_id: "solar-1", timestamp_ms: 9, port: 2, accepted: true, refusal: "none", command_id: command.command_id, action: command.action, ...fields }), "solar-1");
+  service = new BatteryWriteService({ enabled: true, solar, audit: log, now: () => clock, random,
+    publish: (_topic, payload) => { const command = JSON.parse(payload) as Record<string, unknown>; sent.push(command); if (command.action === "stage") queueMicrotask(() => answer(command, { stage: "staged", received: 1 })); } });
+  const campaigns = new BatteryCampaignService({ batteryWrite: service, solar, audit: log, now: () => clock, random, file });
+  const imageId = service.storeImage("ana", firmware()).image_id;
+  const orders = (action: string) => sent.filter(command => command.action === action);
+  const settle = async (count: number) => { for (let turn = 0; turn < 2000 && orders("arm").length < count; turn += 1) await new Promise(resolve => setImmediate(resolve)); assert.equal(orders("arm").length, count); };
+  const armedAs = (serial: string, over2: Record<string, unknown> = {}) => answer(orders("arm").at(-1)!, { op: "firmware_update", stage: "armed", token: "0123456789abcdef0123456789abcdef", canonical: "firmware_update", summary: "send firmware", risk: "irreversible", atomic: true,
+    battery: { model: "US3000C", serial, soft_version: "V2.6", board: "" }, ...over2 });
+  const refused = (refusal: string, code2?: string) => answer(orders("arm").at(-1)!, { op: "firmware_update", stage: "rejected", accepted: false, refusal, ...(code2 ? { code: code2 } : {}) });
+  const ended = (outcome: string, code2?: string) => answer(orders("execute").at(-1)!, { stage: "final", outcome, ...(code2 ? { code: code2 } : {}) });
+  return { campaigns, service, solar, audit, imageId, orders, settle, armedAs, refused, ended, tick: (ms: number) => { clock += ms; } };
+}
+const only = (b: ReturnType<typeof campaignBench>) => b.campaigns.list()[0];
+
+test("the image a module needs follows its model and chip, and without a rule there is none", () => {
+  assert.equal(expectedBoard("US3000C", "older", "3.0"), "US2000C");
+  assert.equal(expectedBoard("US3000C", "newer", "2.4"), "US2000C_NF4");
+  assert.equal(expectedBoard("US5000", "newer", "1.7"), "E32000C_NF4");
+  assert.equal(expectedBoard("US5000", "newer", "2.0"), "US2000C_NF4");
+  assert.equal(expectedBoard("US5000", "older", "1.4"), "US5000");
+  assert.equal(expectedBoard("US3000C", "unknown", "3.0"), undefined);
+  assert.equal(expectedBoard("US2KBPL", "older", "3.4"), undefined);
+  const image2 = { board: "US2000C", version: "3.0" };
+  assert.equal(moduleProblem({ serial: "PPTBH00000000001", model: "US2KBPL", chip: "older" }, image2), "unsupported_model");
+  assert.equal(moduleProblem({ serial: "Specification", model: "US3000C", chip: "older" }, image2), "serial_unreadable");
+  assert.equal(moduleProblem({ serial: "PPTBH00000000001", model: "US3000C", chip: "newer" }, image2), "image_mismatch");
+});
+
+test("a campaign is blocked as a whole by one module whose chip cannot be told", () => {
+  const b = campaignBench({ chip: "unknown" });
+  assert.equal(code(() => b.campaigns.create("ana", { node: "solar-1", port: 2, device: "pack", image_id: b.imageId })), "campaign_blocked");
+  assert.equal(b.campaigns.list().length, 0);
+  assert.equal(b.orders("arm").length, 0);
+});
+
+test("a campaign goes module by module: wrong module, a failure that stops it, taken up again and the cable returned", async () => {
+  const file = path.join(tempDir(), "campaigns.json");
+  const b = campaignBench({}, file);
+  const started = b.campaigns.create("ana", { node: "solar-1", port: 2, device: "pack", image_id: b.imageId });
+  assert.deepEqual([started.state, started.modules.length, started.modules[0].status], ["active", 3, "pending"]);
+  assert.equal(code(() => b.campaigns.create("ana", { node: "solar-1", port: 2, device: "pack", image_id: b.imageId })), "busy");
+  assert.equal(code(() => b.campaigns.execute("ana", started.id, serials[0])), "campaign_state");
+  // the cable is still on another battery: nothing happens, and the module waits
+  b.campaigns.check("ana", started.id);
+  await b.settle(1);
+  b.refused("serial_mismatch");
+  assert.deepEqual([only(b).state, only(b).modules[0].status, only(b).modules[0].code], ["active", "pending", "serial_mismatch"]);
+  // module 1: checked, confirmed with its serial, done
+  b.campaigns.check("ana", started.id);
+  await b.settle(2);
+  b.armedAs(serials[0]);
+  assert.equal(only(b).modules[0].status, "ready");
+  assert.equal(code(() => b.campaigns.execute("ana", started.id, serials[1])), "serial_mismatch");
+  b.campaigns.execute("ana", started.id, serials[0]);
+  assert.equal(code(() => b.campaigns.cancel("ana", started.id)), "busy");
+  b.ended("ok");
+  assert.deepEqual([only(b).current, only(b).modules[0].status, only(b).modules[0].version_after], [1, "done", "V3.0"]);
+  // the campaign is kept for a server that starts again
+  assert.equal(new BatteryCampaignService({ batteryWrite: b.service, solar: b.solar, audit: { record: () => {} }, file }).list()[0].current, 1);
+  // module 2: the transfer is cut, which stops the campaign
+  b.tick(31_000);
+  b.campaigns.check("ana", started.id);
+  await b.settle(3);
+  b.armedAs(serials[1]);
+  b.campaigns.execute("ana", started.id, serials[1]);
+  b.ended("partial", "firmware:battery_reported_error");
+  assert.deepEqual([only(b).state, only(b).modules[1].status, only(b).stop_reason], ["stopped", "failed", "firmware:battery_reported_error"]);
+  assert.equal(code(() => b.campaigns.check("ana", started.id)), "campaign_state");
+  // taken up again: the same image is tried again on the battery in its bootloader
+  b.campaigns.retry("ana", started.id);
+  assert.equal(only(b).modules[1].resume, true);
+  b.campaigns.check("ana", started.id);
+  await b.settle(4);
+  assert.equal((b.orders("arm").at(-1)!.params as Record<string, unknown>).resume, true);
+  b.armedAs(serials[1]);
+  b.campaigns.execute("ana", started.id, serials[1]);
+  b.ended("ok");
+  // module 3: the chip is doubtful at the console, which stops the campaign
+  b.campaigns.check("ana", started.id);
+  await b.settle(5);
+  b.refused("chip_unknown");
+  assert.deepEqual([only(b).state, only(b).stop_reason], ["stopped", "chip_unknown"]);
+  b.campaigns.retry("ana", started.id);
+  b.campaigns.check("ana", started.id);
+  await b.settle(6);
+  b.armedAs(serials[2]);
+  b.campaigns.execute("ana", started.id, serials[2]);
+  b.ended("ok");
+  assert.equal(only(b).state, "return_cable");
+  assert.equal(b.campaigns.finish("ana", started.id).state, "done");
+  assert.ok(b.audit.some(event => event.action === "battery.campaign" && event.outcome === "failed"));
 });

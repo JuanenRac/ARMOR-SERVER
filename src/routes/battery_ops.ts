@@ -11,7 +11,7 @@ import { BatteryOpsError } from "../battery_ops.js";
 const ID = /^[a-z0-9]{8,32}$/;
 
 export function registerBatteryOpsRoutes(app: Express, context: AppContext): void {
-  const { batteryWrite, requireOperator, requireAdmin, studioSessions, audit, studioUser } = context;
+  const { batteryWrite, batteryCampaigns, requireOperator, requireAdmin, studioSessions, audit, studioUser } = context;
   const actor = (request: Request): string => studioUser(request)?.username ?? "administrator";
   const orderLimit = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "too many orders to batteries", code: "rate_limited" } });
   /** A fresh proof, always: unlike the other critical actions this is asked inside the house too, because a wrong order destroys a battery. */
@@ -36,6 +36,25 @@ export function registerBatteryOpsRoutes(app: Express, context: AppContext): voi
     if (!Buffer.isBuffer(request.body)) return response.status(415).json({ error: "send the .bin as application/octet-stream", code: "send_the_bin_as_octet_stream" });
     try { return response.status(201).json(batteryWrite.storeImage(actor(request), request.body)); } catch (error) { return fail(response, error); }
   });
+
+  // A firmware campaign on a stack: one module at a time, with the console cable moved to each one.
+  app.get("/api/v1/solar/battery-campaigns", requireAdmin, (_request, response) => response.json({ enabled: batteryWrite.enabled, campaigns: batteryCampaigns.list() }));
+
+  app.post("/api/v1/solar/battery-campaigns", requireAdmin, requireFreshProof, orderLimit, (request, response) => {
+    const input = body(request);
+    try { return response.status(201).json(batteryCampaigns.create(actor(request), { node: input.node, port: input.port, device: input.device, image_id: input.image_id })); } catch (error) { return fail(response, error); }
+  });
+
+  const campaignStep = (run: (request: Request, id: string) => unknown): RequestHandler => (request, response) => {
+    const id = String(request.params.id);
+    if (!ID.test(id)) return response.status(404).json({ error: "no such campaign", code: "unknown_campaign" });
+    try { return response.status(202).json(run(request, id)); } catch (error) { return fail(response, error); }
+  };
+  app.post("/api/v1/solar/battery-campaigns/:id/check", requireAdmin, requireFreshProof, orderLimit, campaignStep((request, id) => batteryCampaigns.check(actor(request), id, body(request).image_id)));
+  app.post("/api/v1/solar/battery-campaigns/:id/execute", requireAdmin, requireFreshProof, orderLimit, campaignStep((request, id) => batteryCampaigns.execute(actor(request), id, body(request).serial)));
+  app.post("/api/v1/solar/battery-campaigns/:id/retry", requireAdmin, requireFreshProof, orderLimit, campaignStep((request, id) => batteryCampaigns.retry(actor(request), id)));
+  app.post("/api/v1/solar/battery-campaigns/:id/cancel", requireAdmin, orderLimit, campaignStep((request, id) => batteryCampaigns.cancel(actor(request), id)));
+  app.post("/api/v1/solar/battery-campaigns/:id/finish", requireAdmin, orderLimit, campaignStep((request, id) => batteryCampaigns.finish(actor(request), id)));
 
   app.get("/api/v1/solar/battery-ops/:id", requireAdmin, (request, response) => {
     const id = String(request.params.id);

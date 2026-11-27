@@ -111,6 +111,14 @@ export class BatteryWriteService {
     return { ...info, image_id: id };
   }
 
+  /** What is known of a kept image; asking keeps it for another hour (a campaign takes longer than one). */
+  imageInfo(id: string): ImageInfo | undefined {
+    const kept = this.#images.get(id);
+    if (!kept || this.#o.now() - kept.atMs > this.#o.imageTtlMs) return undefined;
+    kept.atMs = this.#o.now();
+    return { ...kept.info };
+  }
+
   // ---- the order: arm ---------------------------------------------------------------------------------------------------------------------------
 
   /** Step one. Resolves with the operation (still arming: the node's answer arrives later, see `handleResult`); throws a BatteryOpsError when it must not be sent. */
@@ -132,7 +140,7 @@ export class BatteryWriteService {
         imageId = typeof given.image_id === "string" ? given.image_id : undefined;
         const kept = imageId ? this.#images.get(imageId) : undefined;
         if (!kept || this.#o.now() - kept.atMs > this.#o.imageTtlMs) return denied("image_missing", "keep the firmware image first (it is kept for an hour)", 409);
-        sentParams = validateBatteryParams(op, { image_size: kept.info.size, image_crc32: kept.info.crc32, image_version: kept.info.version, ...(given.clear_eeprom === true ? { clear_eeprom: true } : {}) });
+        sentParams = validateBatteryParams(op, { image_size: kept.info.size, image_crc32: kept.info.crc32, image_version: kept.info.version, ...(given.clear_eeprom === true ? { clear_eeprom: true } : {}), ...(given.resume === true ? { resume: true } : {}) });
       } else {
         sentParams = validateBatteryParams(op, input.params);
       }
@@ -140,7 +148,10 @@ export class BatteryWriteService {
       if (error instanceof BatteryOpsError) return denied(error.code, error.message, error.status);
       throw error;
     }
-    if (!this.#o.solar.list().some(view => view.node_id === node && view.kind === "battery" && !view.stale && !view.example)) return denied("unknown_node", "no battery of that node is reporting", 404);
+    // On the console of another battery of a stack, or on one left in its bootloader, the node publishes no readings: for the firmware and the serial number a node that has reported a
+    // battery before is enough, and the node itself checks what answers on the console.
+    const quiet = op === "firmware_update" || op === "write_barcode";
+    if (!this.#o.solar.list().some(view => view.node_id === node && view.kind === "battery" && (quiet || !view.stale) && !view.example)) return denied("unknown_node", "no battery of that node is reporting", 404);
     this.#sweepNow();
     for (const record of this.#records.values()) {
       if (record.node !== node || record.port !== port) continue;
@@ -305,7 +316,7 @@ export class BatteryWriteService {
       case "rejected": {
         this.#pending.delete(result.command_id);
         if (pending.kind === "cancel") { this.#o.audit.record({ action: "battery.cancel", outcome: "denied", actor: record.actor, target: `${record.node}/${record.port}`, detail: `${record.op} ${record.id}: ${result.refusal}` }); break; }
-        this.#finish(record, "rejected", { refusal: result.refusal });
+        this.#finish(record, "rejected", { refusal: result.refusal, code: result.code });
         break;
       }
       case "started": record.stage = "running"; break;   // the execute stays pending: its progress and its final answer carry its command id

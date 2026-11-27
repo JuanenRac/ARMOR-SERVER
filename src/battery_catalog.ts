@@ -263,6 +263,10 @@ export const BATTERY_CATALOG = {
     "clear_eeprom": {
      "type": "boolean",
      "required": false
+    },
+    "resume": {
+     "type": "boolean",
+     "required": false
     }
    }
   },

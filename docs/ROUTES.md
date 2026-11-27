@@ -265,6 +265,13 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/solar` | none here | `routes/solar.ts` |
 | GET | `/api/v1/solar/alarms` | operator | `routes/solar.ts` |
 | PUT | `/api/v1/solar/alarms` | operator | `routes/solar.ts` |
+| GET | `/api/v1/solar/battery-campaigns` | administrator | `routes/battery_ops.ts` |
+| POST | `/api/v1/solar/battery-campaigns` | administrator | `routes/battery_ops.ts` |
+| POST | `/api/v1/solar/battery-campaigns/:id/cancel` | administrator | `routes/battery_ops.ts` |
+| POST | `/api/v1/solar/battery-campaigns/:id/check` | administrator | `routes/battery_ops.ts` |
+| POST | `/api/v1/solar/battery-campaigns/:id/execute` | administrator | `routes/battery_ops.ts` |
+| POST | `/api/v1/solar/battery-campaigns/:id/finish` | administrator | `routes/battery_ops.ts` |
+| POST | `/api/v1/solar/battery-campaigns/:id/retry` | administrator | `routes/battery_ops.ts` |
 | GET | `/api/v1/solar/battery-ops` | administrator | `routes/battery_ops.ts` |
 | POST | `/api/v1/solar/battery-ops` | administrator | `routes/battery_ops.ts` |
 | GET | `/api/v1/solar/battery-ops/:id` | administrator | `routes/battery_ops.ts` |
