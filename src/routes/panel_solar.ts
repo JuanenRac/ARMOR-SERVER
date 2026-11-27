@@ -63,7 +63,7 @@ export function registerPanelSolarRoutes(app: Express, context: AppContext): voi
 
   // ---- the one operation --------------------------------------------------------------------------------------------------------------------
 
-  const orderLimit = rateLimit({ windowMs: 60_000, limit: 10, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "too many orders to batteries", code: "rate_limited" } });
+  const orderLimit = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false, message: { error: "too many orders to batteries", code: "rate_limited" } });
 
   const refuse = (request: Request, response: Response, status: number, code: string, error: string, extra: Record<string, unknown> = {}): undefined => {
     audit.record({ action: "panel.battery_ops", outcome: "denied", actor: studioUser(request)?.username, target: `${request.method} ${request.path}`, detail: code });
@@ -103,7 +103,7 @@ export function registerPanelSolarRoutes(app: Express, context: AppContext): voi
     return operation && operation.actor === username && operation.op === PANEL_BATTERY_OPERATION ? operation : undefined;
   };
 
-  app.post("/api/v1/panel/solar/battery-ops", orderLimit, requireOperator, async (request, response) => {
+  app.post("/api/v1/panel/solar/battery-ops", requireOperator, orderLimit, async (request, response) => {
     const user = panelAccount(request, response);
     if (!user) return;
     const input = body(request);
@@ -123,7 +123,7 @@ export function registerPanelSolarRoutes(app: Express, context: AppContext): voi
     response.json(shown(operation));
   });
 
-  app.post("/api/v1/panel/solar/battery-ops/:id/execute", orderLimit, requireOperator, async (request, response) => {
+  app.post("/api/v1/panel/solar/battery-ops/:id/execute", requireOperator, orderLimit, async (request, response) => {
     const user = panelAccount(request, response);
     if (!user) return;
     const operation = own(String(request.params.id), user.username);
