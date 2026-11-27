@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { IngestRecorder, withoutSecrets } from "../src/ingest_recorder.js";
+import { HIDDEN_SERIAL, IngestRecorder, withoutSecrets } from "../src/ingest_recorder.js";
+import { parseSolarMessage } from "../src/solar.js";
 import { brokerTopicOf } from "../src/ingest_log.js";
 import { readConfig } from "../src/config.js";
 import { SECRETS, startServer, studioCookie, tempDir, testConfig } from "./helpers.js";
@@ -50,6 +51,19 @@ test("what the simulator cannot play is not written, and no secret is", () => {
   assert.equal(recorder.state().skipped, 2);
   assert.doesNotMatch(fs.readFileSync(path.join(dir, "ingest.jsonl"), "utf8"), /hunter2|t0k3n|one-time|1234/);
   assert.deepEqual(withoutSecrets({ a: { Authorization: "x", b: 1 } }), { a: { b: 1 } });
+});
+
+test("a serial number is hidden in the copy, which still plays", () => {
+  const dir = path.join(tempDir(), "rec");
+  const recorder = new IngestRecorder({ dir, enabled: () => true, maxBytes: 100_000, maxFiles: 2 });
+  const message = { kind: "battery", node_id: "solar-1", device: "us3000-1", timestamp_ms: 5, modules: 1, stack: [{ n: 1, present: true, serial: "TEST00AE20000001", chip: "newer" }] };
+  recorder.record("armor/solar/solar-1/us3000-1/state", JSON.stringify(message), true);
+  const text = fs.readFileSync(path.join(dir, "ingest.jsonl"), "utf8");
+  assert.doesNotMatch(text, /TEST00AE20000001/);
+  const copied = lines(path.join(dir, "ingest.jsonl"))[0]!.payload as typeof message;
+  assert.equal(copied.stack[0]!.serial, HIDDEN_SERIAL);
+  assert.equal(copied.stack[0]!.chip, "newer");
+  assert.doesNotThrow(() => parseSolarMessage(copied));
 });
 
 test("the file is rotated at the limit and no more than the configured files are kept", () => {
