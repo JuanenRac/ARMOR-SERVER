@@ -18,7 +18,7 @@ function rig(dir = tempDir(), clock = { now: 1_000_000 }) {
   const notices = new BatteryNotices(path.join(dir, "battery-notices.json"), () => clock.now);
   const centre = new AlarmCentre({ file: path.join(dir, "alarms.json"), onRaised: alarm => notices.raised(alarm), onCleared: alarm => notices.cleared(alarm) });
   const rules = new AlarmRules(centre, () => "disarmed", () => ENERGY_ALARM_DEFAULTS);
-  rules.batteryWorse = (key, id, subjects) => notices.observe(key, id, subjects);
+  rules.batteryWorse = (key, id, subjects) => { if (notices.observe(key, id, subjects) && id) centre.waitAgain(id); };
   const quiet = () => centre.active().filter(alarm => !alarm.cleared_at).map(alarm => `${alarm.code}:${notices.view(alarm).quiet}`).sort();
   return { notices, centre, rules, quiet, clock, dir };
 }
@@ -42,7 +42,9 @@ test("a problem that gets worse is new again: a protection that trips, another w
   rules.handleSolar({ ...on({}), alarm: false });
   rules.handleSolar(on({}));
   assert.deepEqual(quiet(), ["solar_battery_alarm:known", "solar_cell_soh_abnormal:new"]);
+  for (const alarm of centre.active()) centre.acknowledge(alarm.id, "owner");
   rules.handleSolar(on({ protecting: true }));
+  assert.equal(centre.active().filter(alarm => !alarm.acknowledged_at).length, 1, "the one that got worse waits again");
   assert.ok(quiet().includes("solar_battery_alarm:new"));
 });
 

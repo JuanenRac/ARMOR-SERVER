@@ -117,14 +117,15 @@ export class BatteryNotices {
   }
 
   /** What an open problem touches now (cells, a protection that tripped...). Anything not told before makes it worse: its open alarm is new again. */
-  observe(key: string, openId: string | undefined, subjects: readonly string[]): void {
+  observe(key: string, openId: string | undefined, subjects: readonly string[]): boolean {
     const problem = this.#problems.get(problemOf(key));
-    if (!problem || openId === undefined) return;
+    if (!problem || openId === undefined) return false;
     const added = subjects.filter(item => !problem.subjects.includes(item));
-    if (added.length === 0) return;
+    if (added.length === 0) return false;
     problem.subjects = [...problem.subjects, ...added].slice(-64);
     this.#alarms.set(openId, "new");
     this.#save();
+    return true;
   }
 
   /** The alarm as a client reads it: a battery alarm says how discreet it is. */

@@ -190,6 +190,14 @@ export class AlarmCentre {
     this.#options.onCleared?.(alarm);
   }
 
+  /** An open alarm that got worse waits for a person again (the event history keeps who had acknowledged it). */
+  waitAgain(id: string): void {
+    const alarm = this.#alarms.find(item => item.id === id && !item.cleared_at);
+    if (!alarm?.acknowledged_at) return;
+    delete alarm.acknowledged_at; delete alarm.acknowledged_by; delete alarm.acknowledged_unverified;
+    this.#save();
+  }
+
   /** The id of the open alarm of a cause, if there is one. */
   openId(key: string): string | undefined { return this.#open(key)?.id; }
 
