@@ -272,6 +272,9 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/solar/battery-campaigns/:id/execute` | administrator | `routes/battery_ops.ts` |
 | POST | `/api/v1/solar/battery-campaigns/:id/finish` | administrator | `routes/battery_ops.ts` |
 | POST | `/api/v1/solar/battery-campaigns/:id/retry` | administrator | `routes/battery_ops.ts` |
+| GET | `/api/v1/solar/battery-notices` | operator | `routes/solar.ts` |
+| PUT | `/api/v1/solar/battery-notices` | operator | `routes/solar.ts` |
+| POST | `/api/v1/solar/battery-notices/silence` | operator | `routes/solar.ts` |
 | GET | `/api/v1/solar/battery-ops` | administrator | `routes/battery_ops.ts` |
 | POST | `/api/v1/solar/battery-ops` | administrator | `routes/battery_ops.ts` |
 | GET | `/api/v1/solar/battery-ops/:id` | administrator | `routes/battery_ops.ts` |
@@ -282,6 +285,7 @@ Every route the code registers, with who may call it and the file that registers
 | POST | `/api/v1/solar/battery-ops/images` | administrator | `routes/battery_ops.ts` |
 | POST | `/api/v1/solar/devices` | operator | `routes/solar.ts` |
 | DELETE | `/api/v1/solar/devices/:node/:device` | operator | `routes/solar.ts` |
+| POST | `/api/v1/solar/devices/:node/:device/day-cells/reset` | operator | `routes/solar.ts` |
 | DELETE | `/api/v1/solar/devices/:node/:device/example` | operator | `routes/solar.ts` |
 | POST | `/api/v1/solar/devices/:node/:device/example` | operator | `routes/solar.ts` |
 | GET | `/api/v1/solar/energy` | operator | `routes/solar.ts` |

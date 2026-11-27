@@ -10,6 +10,7 @@ import { forwardCompatible } from "../contracts.js";
 import { stampOf } from "../mqtt.js";
 import { ENERGY_ALARM_DEFAULTS, EnergySettingsInvalid } from "../energy_alarms.js";
 import { parseSolarMessage } from "../solar.js";
+import { BATTERY_NOTICE_DEFAULTS, BatteryNoticesInvalid } from "../battery_notices.js";
 import { BATTERY_FAMILIES, ANT_CELL_COUNTS, ANT_CURRENTS, BATTERY_MODELS, CONNECTIONS, INVERTER_FAMILIES, INVERTER_MODELS, SolarRegistryError, exampleReading, modelLabel } from "../solar_registry.js";
 import { SOLAR_PROTOCOLS } from "../solar_protocols.js";
 
@@ -119,6 +120,34 @@ export function registerSolarRoutes(app: Express, context: AppContext): void {
       if (error instanceof EnergySettingsInvalid) { audit.record({ action: "solar.alarms", outcome: "failed", actor: actor(request) }); return response.status(400).json({ error: error.message }); }
       return response.status(500).json({ error: "internal error" });
     }
+  });
+
+  // How battery alarms call for attention, and the batteries that are silenced. Nothing here changes which alarms are raised.
+  const notices = () => ({ settings: context.batteryNotices.settings(), defaults: BATTERY_NOTICE_DEFAULTS, silenced: context.batteryNotices.silenced() });
+  const refused = (response: Response, error: unknown) => (error instanceof BatteryNoticesInvalid ? response.status(400).json({ error: error.message }) : response.status(500).json({ error: "internal error" }));
+  app.get("/api/v1/solar/battery-notices", requireOperator, (_request, response) => response.json(notices()));
+  app.put("/api/v1/solar/battery-notices", requireOperator, (request, response) => {
+    try {
+      const saved = context.batteryNotices.set(request.body);
+      audit.record({ action: "solar.battery_notices", outcome: "allowed", actor: actor(request), detail: JSON.stringify(saved) });
+      context.live.notify("alarm", "battery-notices");
+      return response.json(notices());
+    } catch (error) { return refused(response, error); }
+  });
+  app.post("/api/v1/solar/battery-notices/silence", requireOperator, (request, response) => {
+    try {
+      const body = (request.body ?? {}) as { id?: unknown; silenced?: unknown };
+      context.batteryNotices.silence(body.id, body.silenced, actor(request));
+      audit.record({ action: "solar.battery_silence", outcome: "allowed", actor: actor(request), target: String(body.id), detail: String(body.silenced) });
+      context.live.notify("alarm", "battery-notices");
+      return response.json(notices());
+    } catch (error) { return refused(response, error); }
+  });
+  app.post("/api/v1/solar/devices/:node/:device/day-cells/reset", requireOperator, (request, response) => {
+    const node = String(request.params.node), device = String(request.params.device);
+    if (!solar.resetDayCells(node, device)) return response.status(404).json({ error: "no cells of that battery were seen today" });
+    audit.record({ action: "solar.day_cells_reset", outcome: "allowed", actor: actor(request), target: `${node}/${device}` });
+    return response.json({ reset: true });
   });
 
   app.get("/api/v1/solar/history", requireOperator, async (request, response) => {

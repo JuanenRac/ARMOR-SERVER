@@ -17,6 +17,7 @@ import type { AlarmMessage } from "./alarm.js";
 import { HEALTH_CODES, type NodeHealthView } from "./node_health.js";
 import { ENERGY_ALARM_DEFAULTS, type EnergyAlarmSettings } from "./energy_alarms.js";
 import type { SecurityMode } from "./store.js";
+import { BATTERY_NOTICE_DEFAULTS, GapGate, type BatteryNoticeSettings } from "./battery_notices.js";
 import { durableRename } from "./durable.js";
 
 /** What a list of alarms is for: `silent` (an administrator's list) takes in every silent alarm; `shown` (a wall panel, a console) the silent ones that are also `shown`; `hidden` leaves out the alarms a session is kept from seeing. */
@@ -69,7 +70,7 @@ const MAX_KEPT = 400;
 const HARD_MAX = 2000;
 /** Open ports that a house rarely wants open on something anyone on the network can reach: an old remote shell, an unencrypted file transfer, a remote desktop, a database, the provider's remote management. */
 const RISKY_PORTS = new Set([21, 23, 445, 3306, 3389, 5432, 5900, 6379, 7547]);
-export type AlarmCentreOptions = { file: string; now?: () => Date; onEvent?: (body: ArmorEventBody) => void; onRaised?: (alarm: Alarm) => void; warn?: (message: string) => void };
+export type AlarmCentreOptions = { file: string; now?: () => Date; onEvent?: (body: ArmorEventBody) => void; onRaised?: (alarm: Alarm) => void; onCleared?: (alarm: Alarm) => void; warn?: (message: string) => void };
 
 export class AlarmCentre {
   readonly #options: AlarmCentreOptions;
@@ -186,7 +187,11 @@ export class AlarmCentre {
     alarm.cleared_at = this.#now().toISOString();
     this.#save();
     this.#emit(alarm, "cleared");
+    this.#options.onCleared?.(alarm);
   }
+
+  /** The id of the open alarm of a cause, if there is one. */
+  openId(key: string): string | undefined { return this.#open(key)?.id; }
 
   clearMatching(test: (alarm: Alarm) => boolean): void {
     for (const alarm of this.#alarms) if (!alarm.cleared_at && test(alarm)) this.clear(alarm.key);
@@ -307,6 +312,11 @@ export type ArmingGate = {
  */
 export class AlarmRules {
   constructor(private readonly centre: AlarmCentre, private readonly mode: () => SecurityMode, private readonly energy: () => EnergyAlarmSettings = () => ENERGY_ALARM_DEFAULTS) {}
+  /** Told what an open battery alarm touches now, so that a problem that gets worse is told again (see battery_notices.ts). Set by the context. */
+  batteryWorse: ((key: string, openId: string | undefined, subjects: string[]) => void) | undefined;
+  /** The plausible range of a cell voltage. Set by the context. */
+  cellRange: () => Pick<BatteryNoticeSettings, "cell_min_plausible_v" | "cell_max_plausible_v"> = () => BATTERY_NOTICE_DEFAULTS;
+  readonly #gaps = new GapGate();
 
   /** Since when each battery has had its cells further apart than the level (the time of the first message of the stretch), for the alarm that wants the gap to persist. */
   readonly #spreadSince = new Map<string, number>();
@@ -474,8 +484,10 @@ export class AlarmRules {
       if (message.heatsink_c >= level.heatsink_high_c) this.centre.raise(`${base}:hot`, { source, severity: "warning", code: "solar_inverter_hot" });
       else if (message.heatsink_c < level.heatsink_high_c - 5) this.centre.clear(`${base}:hot`);
     } else if (message.modules > 0) {
-      if (message.alarm === true) this.centre.raise(`${base}:battery_alarm`, { source, severity: "high", code: "solar_battery_alarm" });
-      else this.centre.clear(`${base}:battery_alarm`);
+      if (message.alarm === true) {
+        this.centre.raise(`${base}:battery_alarm`, { source, severity: "high", code: "solar_battery_alarm" });
+        this.batteryWorse?.(`${base}:battery_alarm`, this.centre.openId(`${base}:battery_alarm`), message.protecting === true ? ["protection"] : []);
+      } else this.centre.clear(`${base}:battery_alarm`);
       // over the voltage at which the battery's own protection acts (its model's figure; a model with none is not judged)
       const over = this.batteryProfileOf?.(id)?.over_v;
       if (over !== undefined && message.voltage_v !== undefined) {
@@ -486,13 +498,22 @@ export class AlarmRules {
       if (soc !== undefined && soc < level.soc_low) this.centre.raise(`${base}:battery`, { source, severity: "warning", code: "solar_battery_low" });
       else if (soc !== undefined && soc >= level.soc_ok) this.centre.clear(`${base}:battery`);
       // the cells of the stack, the temperature and the wear: warnings that end with a margin, so a value on the edge does not flap
-      if (message.cell_min_v !== undefined && message.cell_max_v !== undefined) {
-        const spreadMv = (message.cell_max_v - message.cell_min_v) * 1000;
+      // voltages no cell can have are left out, and a wide gap is believed only when two readings in a row show it (a protection of the BMS above does not wait)
+      const range = this.cellRange(), plausible = (v: number): boolean => v >= range.cell_min_plausible_v && v <= range.cell_max_plausible_v;
+      const read = message.stack.flatMap(module => (module.present && module.cells_v ? module.cells_v : [])).filter(plausible);
+      const low = read.length ? Math.min(...read) : message.cell_min_v, high = read.length ? Math.max(...read) : message.cell_max_v;
+      const judged = low !== undefined && high !== undefined && plausible(low) && plausible(high)
+        ? this.#gaps.judge(id, Math.round((high - low) * 1000), read.length ? read.join(",") : `${low},${high}`, level.cell_spread_mv, message.timestamp_ms) : {};
+      // the time a gap has lasted counts from its first reading, believed or not yet
+      if (judged.gap === undefined && low !== undefined && high !== undefined && plausible(low) && plausible(high) && !this.#spreadSince.has(id)) this.#spreadSince.set(id, message.timestamp_ms);
+      if (judged.gap !== undefined) {
+        const spreadMv = (high! - low!) * 1000;
         if (spreadMv > level.cell_spread_mv) {
           // Persistent: the gap must last `cell_spread_minutes` without dropping back under the level before it is an alarm (0: at once, as it always was).
           const since = this.#spreadSince.get(id) ?? message.timestamp_ms;
           this.#spreadSince.set(id, since);
           if (message.timestamp_ms - since >= level.cell_spread_minutes * 60_000) this.centre.raise(`${base}:cells`, { source, severity: "warning", code: "solar_cells_unbalanced" });
+          this.batteryWorse?.(`${base}:cells`, this.centre.openId(`${base}:cells`), spreadMv > level.cell_spread_mv * 2 ? ["twice"] : []);
         } else {
           this.#spreadSince.delete(id);
           if (spreadMv < level.cell_spread_mv * 0.8) this.centre.clear(`${base}:cells`);
@@ -511,6 +532,7 @@ export class AlarmRules {
         const abnormal = module.present && module.soh_abnormal ? module.soh_abnormal : [];
         if (abnormal.length > 0) this.centre.raise(`${base}:soh:${module.n}`, { source, severity: "warning", code: "solar_cell_soh_abnormal", detail: { module: module.n, cell: abnormal[0]! + 1, cells: abnormal.length } });   // the first cell, counted from 1 as a person counts, and how many
         else if (module.soh_counts !== undefined) this.centre.clear(`${base}:soh:${module.n}`);
+        if (abnormal.length > 0) this.batteryWorse?.(`${base}:soh:${module.n}`, this.centre.openId(`${base}:soh:${module.n}`), abnormal.map(String));
         // a current beyond what the module says it allows (its limits are in its info): charge is positive, discharge negative
         if (module.present && module.current_a !== undefined) {
           const limit = module.current_a >= 0 ? module.max_charge_a : module.max_discharge_a;

@@ -32,6 +32,7 @@ test("a module that is not there, sends no cells or sends nonsense changes nothi
   extremes.observe("solar-1/us3000-1", battery([[3.3, 3.4]]), 40);
   assert.equal(extremes.get("solar-1/us3000-1", 50)!.modules.length, 1);
   assert.equal(extremes.get("solar-1/us3000-1", 5000), undefined, "yesterday's extremes are not today's");
+  extremes.observe("solar-1/us3000-1", battery([[3.2, 3.501]]), 4999);
   extremes.observe("solar-1/us3000-1", battery([[3.2, 3.5]]), 5000);
   assert.deepEqual(extremes.get("solar-1/us3000-1", 5001)!.modules[0]!.min, { v: 3.2, cell: 1, at: 5000 });
 });
@@ -70,7 +71,9 @@ test("an unbalanced bank raises the alarm at once by default and only after the 
   const codes = () => centre.active().filter(alarm => !alarm.cleared_at).map(alarm => alarm.code).sort();
   const at = (minutes: number, max: number) => battery([[3.3]], { cell_min_v: 3.32, cell_max_v: max, timestamp_ms: 1_000_000 + minutes * 60_000 });
   rules.handleSolar(at(0, 3.46));
-  assert.deepEqual(codes(), ["solar_cells_unbalanced"], "0 minutes: at once, as before");
+  assert.deepEqual(codes(), [], "one reading is not enough");
+  rules.handleSolar(at(0.5, 3.461));
+  assert.deepEqual(codes(), ["solar_cells_unbalanced"], "0 minutes: at the second reading");
   rules.handleSolar(at(1, 3.33));
   assert.deepEqual(codes(), []);
   level = { ...level, cell_spread_minutes: 10 };

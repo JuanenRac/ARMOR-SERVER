@@ -128,6 +128,8 @@ const KEEP_ENERGY_DAYS = 400, MAX_ENERGY_GAP_MS = 120_000;
 const dateOf = (ms: number): string => dayOf(ms);
 
 export type SolarStoreOptions = {
+  /** The plausible range of a cell and the gap that wants two readings (see solar_cells.ts). */
+  cellRules?: () => import("./solar_cells.js").CellRules;
   now?: () => number;
   /** A device that has not reported for this long is stale. */
   staleAfterMs?: number;
@@ -150,11 +152,12 @@ export class SolarStore {
   /** History read from the file before the device has reported again: it is given to the device when it does. */
   readonly #pending = new Map<string, { samples: SolarSample[]; coarse: SolarSample[] }>();
   readonly #energy = new Map<string, EnergyDay>();
-  readonly #cells = new CellExtremes();
+  readonly #cells: CellExtremes;
   readonly #events = new SolarEventLog();
   readonly #options: Required<Pick<SolarStoreOptions, "now" | "staleAfterMs" | "sampleEveryMs" | "keepSamples" | "maxDevices">> & SolarStoreOptions;
 
   constructor(options: SolarStoreOptions = {}) {
+    this.#cells = new CellExtremes(options.cellRules ? { rules: options.cellRules } : {});
     // an option given as undefined (a test that leaves the clock alone) means the default
     this.#options = {
       ...options, now: options.now ?? (() => Date.now()), staleAfterMs: options.staleAfterMs ?? 120_000, sampleEveryMs: options.sampleEveryMs ?? 30_000,
@@ -211,6 +214,9 @@ export class SolarStore {
     }
     return removed;
   }
+
+  /** Starts today's extremes of the cells of a battery again. */
+  resetDayCells(node: string, device: string): boolean { return this.#cells.reset(`${node}/${device}`, this.#options.now()); }
 
   /** Forget a device (its reading and its history). */
   remove(node: string, device: string): boolean { this.#cells.forget(`${node}/${device}`); this.#events.forget(`${node}/${device}`); return this.#entries.delete(`${node}/${device}`); }
