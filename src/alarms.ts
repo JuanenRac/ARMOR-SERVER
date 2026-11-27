@@ -509,9 +509,11 @@ export class AlarmRules {
       // voltages no cell can have are left out, and a wide gap is believed only when two readings in a row show it (a protection of the BMS above does not wait)
       const range = this.cellRange(), plausible = (v: number): boolean => v >= range.cell_min_plausible_v && v <= range.cell_max_plausible_v;
       const read = message.stack.flatMap(module => (module.present && module.cells_v ? module.cells_v : [])).filter(plausible);
-      const low = read.length ? Math.min(...read) : message.cell_min_v, high = read.length ? Math.max(...read) : message.cell_max_v;
+      // the message's own extremes, unless they hold a voltage no cell can have: then those of the cells that can be
+      const sound = message.cell_min_v !== undefined && message.cell_max_v !== undefined && plausible(message.cell_min_v) && plausible(message.cell_max_v);
+      const low = sound || !read.length ? message.cell_min_v : Math.min(...read), high = sound || !read.length ? message.cell_max_v : Math.max(...read);
       const judged = low !== undefined && high !== undefined && plausible(low) && plausible(high)
-        ? this.#gaps.judge(id, Math.round((high - low) * 1000), read.length ? read.join(",") : `${low},${high}`, level.cell_spread_mv, message.timestamp_ms) : {};
+        ? this.#gaps.judge(id, Math.round((high - low) * 1000), `${read.join(",")};${low},${high}`, level.cell_spread_mv, message.timestamp_ms) : {};
       // the time a gap has lasted counts from its first reading, believed or not yet
       if (judged.gap === undefined && low !== undefined && high !== undefined && plausible(low) && plausible(high) && !this.#spreadSince.has(id)) this.#spreadSince.set(id, message.timestamp_ms);
       if (judged.gap !== undefined) {
