@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 or later">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-1389%20passing-2ea44f.svg" alt="Tests">
-  <img src="https://img.shields.io/badge/Version-0.8.2.7-0f6cbd.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Tests-1408%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Version-0.8.2.8-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
 ---
 
-**正直さのチェック - 今日動いているもの:** 以下のすべてのルート、セッション、暗号化、証拠のルールは実在し、テストでカバーされています（`npm test`：1389 件。隔離したサーバーに対する完全な HTTP 統合テストと、すべてのルートが OpenAPI ファイルに記載されていることの確認を含む）。CM5 テストベンチで日常的に動作しており、実際の MQTT ブローカー、ESP32-S3 基板上の実際のレーダーノードのファームウェア、実際の IP カメラ（ライブ映像、スナップショット、録画、Hi3510 機での PTZ）、Studio コンソール、Android アプリ、音声・観察サービスと組み合わせています。**まだ**証明されていないもの：実際の ONVIF カメラでの ONVIF、Jetson ハードウェア全般、実ノードでのソーラー・電気・警報盤・タッチパネルのルート（生成したメッセージでテスト：存在するのはレーダー基板のみ）、実際の Firebase プロジェクトでの Firebase プッシュ。
+**正直さのチェック - 今日動いているもの:** 以下のすべてのルート、セッション、暗号化、証拠のルールは実在し、テストでカバーされています（`npm test`：1408 件。隔離したサーバーに対する完全な HTTP 統合テストと、すべてのルートが OpenAPI ファイルに記載されていることの確認を含む）。CM5 テストベンチで日常的に動作しており、実際の MQTT ブローカー、ESP32-S3 基板上の実際のレーダーノードのファームウェア、実際の IP カメラ（ライブ映像、スナップショット、録画、Hi3510 機での PTZ）、Studio コンソール、Android アプリ、音声・観察サービスと組み合わせています。**まだ**証明されていないもの：実際の ONVIF カメラでの ONVIF、Jetson ハードウェア全般、実ノードでのソーラー・電気・警報盤・タッチパネルのルート（生成したメッセージでテスト：存在するのはレーダー基板のみ）、実際の Firebase プロジェクトでの Firebase プッシュ。
 
 ---
 
@@ -36,11 +36,11 @@
 
 | | |
 |---|---|
-| バージョン | `0.8.2.7` |
+| バージョン | `0.8.2.8` |
 | 成熟度 | 確立 |
 | 役割 | ファミリーの中央セキュリティコーディネーター：ノード、アラーム、デバイス、エネルギー、カメラ、ネットワーク |
 | 技術 | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| テスト | 1389 件（`npm test`：単体と完全な HTTP 結合） |
+| テスト | 1408 件（`npm test`：単体と完全な HTTP 結合） |
 | 契約 | HTTP パス 249 本、322 操作（OpenAPI は ARMOR-COMMON）、ルート表は `docs/ROUTES.md` |
 | 待ち受け | `127.0.0.1:18080`（`ARMOR_HOST`、`ARMOR_PORT`） |
 | 動作環境 | CM5 テストベンチ（サービスとして。ARMOR-DEVOPS 参照）または Node.js のある任意のコンピューター |
@@ -58,7 +58,7 @@
 | 領域 | 状態 | ここでの意味 |
 |---|---|---|
 | ソフトウェア | 🟢 | ルート、セッション、暗号化、証拠の規則は、CM5 テストベンチで毎日使われています。 |
-| テスト | 🟢 | 1389 件のテストが通ります（`npm test`）。隔離したサーバーに対する HTTP 統合テスト一式と、すべてのルートが OpenAPI ファイルに記載されているかの確認を含みます。 |
+| テスト | 🟢 | 1408 件のテストが通ります（`npm test`）。隔離したサーバーに対する HTTP 統合テスト一式と、すべてのルートが OpenAPI ファイルに記載されているかの確認を含みます。 |
 | プロトコルとデータ | 🟡 | レーダーのメッセージは実機のボードから来ています。太陽光・電気・警報パネル・タッチパネルのルートは生成したメッセージでテストしており、ONVIF は本物の ONVIF カメラと接続していません。 |
 | ハードウェア | 🟠 | CM5 テストベンチで、実際の MQTT ブローカー、実際の IP カメラ（ライブ映像、スナップショット、録画、Hi3510 機の PTZ）、実際のレーダーノードとともに動作しています。Jetson ではまだ何も動かしていません。 |
 | セキュリティ | 🟠 | セッション、暗号化、証拠、ログインの規則はテストでカバーされています。独立したレビューはありません。 |
@@ -92,6 +92,7 @@
 * **バッテリー履歴と外部からのコンソール：** サーバーは各バッテリーモジュールとセルを日ごとのファイルに記録します（直近1日は1分ごと、30日間は5分平均、最大32 MiB。`ARMOR_BATTERY_HISTORY_*`）。また家の外からは、root コンソールがパスワードに加えて二要素認証のコードを求めます（`remote.console_second_factor`、既定でオン）。これまで自動テストでのみ確認しています。
 * **古い読み取り値は除外:** 電気ノードのチャンネルで、自身の読み取りが 1 分以上古いもの（メーターが応答しなくなり、ノードが最後の正常な値を繰り返している状態）は、系統の数値とグラフから外され、ノードの `stale_channels` に並び、`totals.stale_readings` に数えられます。オプション `electrical.set_aside_old_readings`（既定でオン）でオフにできます。
 * **ノードのログイン上限と、ボードに合ったイメージ:** 管理者は、ノードが許す 1 分あたりの誤パスワード数を読み取り・変更できます（`POST /api/v1/admin/nodes/settings`。パネルのログイン情報は 1 回だけ使われ保存されません）。ファイル名がノードのボードと異なるボードを示すファームウェアイメージは、何も送る前に `wrong_board` で拒否されます。
+* **ソーラーノードの読めないシリアルポートを通知：** ノードの稼働報告で、あるポートがバイトを受信するのに何も読めないと伝えられると、ノードの健全性に `port_problems`（ポート、原因、速度、ピン、極性、バイト数、最後のバイト列）が、最後の報告から 30 分間含まれます。生成した報告で試験しています。
 
 ## 🧩 A.R.M.O.R. での役割
 
@@ -214,7 +215,7 @@ flowchart LR
 ```powershell
 npm install           # 依存関係
 npm run typecheck     # tsc --noEmit
-npm test              # 1389 件：単体と完全な HTTP 結合
+npm test              # 1408 件：単体と完全な HTTP 結合
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # ホットリロード付き開発サーバー
 ```

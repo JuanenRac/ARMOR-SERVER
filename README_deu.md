@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 oder neuer">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Sprache">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-1389%20passing-2ea44f.svg" alt="Tests">
-  <img src="https://img.shields.io/badge/Version-0.8.2.7-0f6cbd.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Tests-1408%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Version-0.8.2.8-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Reifegrad">
 </p>
 
 ---
 
-**Ehrlichkeitsprüfung - was heute läuft:** Jede Route, Sitzung, Verschlüsselung und Beweisregel unten ist real und durch Tests abgedeckt (`npm test`: 1389 Tests, darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server und eine Prüfung, dass jede Route in der OpenAPI-Datei dokumentiert ist). Er läuft im täglichen Einsatz auf dem CM5-Testaufbau mit einem echten MQTT-Broker, der Firmware eines echten Radarknotens auf einer ESP32-S3-Platine, echten IP-Kameras (Livevideo, Schnappschüsse, Aufnahmen, PTZ an den Hi3510-Geräten), der Studio-Konsole, der Android-App sowie den Sprach- und Beobachtungsdiensten. Was **noch nicht** bewiesen ist: ONVIF mit einer echten ONVIF-Kamera, jegliche Jetson-Hardware, die Solar-, Elektro-, Alarmzentralen- und Touchpanel-Routen mit echten Knoten (sie werden mit erzeugten Nachrichten getestet: nur die Radarplatine existiert) und Push über Firebase mit einem echten Firebase-Projekt.
+**Ehrlichkeitsprüfung - was heute läuft:** Jede Route, Sitzung, Verschlüsselung und Beweisregel unten ist real und durch Tests abgedeckt (`npm test`: 1408 Tests, darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server und eine Prüfung, dass jede Route in der OpenAPI-Datei dokumentiert ist). Er läuft im täglichen Einsatz auf dem CM5-Testaufbau mit einem echten MQTT-Broker, der Firmware eines echten Radarknotens auf einer ESP32-S3-Platine, echten IP-Kameras (Livevideo, Schnappschüsse, Aufnahmen, PTZ an den Hi3510-Geräten), der Studio-Konsole, der Android-App sowie den Sprach- und Beobachtungsdiensten. Was **noch nicht** bewiesen ist: ONVIF mit einer echten ONVIF-Kamera, jegliche Jetson-Hardware, die Solar-, Elektro-, Alarmzentralen- und Touchpanel-Routen mit echten Knoten (sie werden mit erzeugten Nachrichten getestet: nur die Radarplatine existiert) und Push über Firebase mit einem echten Firebase-Projekt.
 
 ---
 
@@ -36,11 +36,11 @@
 
 | | |
 |---|---|
-| Version | `0.8.2.7` |
+| Version | `0.8.2.8` |
 | Reifegrad | Etabliert |
 | Rolle | Zentraler Sicherheitskoordinator der Familie: Knoten, Alarme, Geräte, Energie, Kameras, Netzwerk |
 | Technik | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| Tests | 1389 (`npm test`: Unit und volle HTTP-Integration) |
+| Tests | 1408 (`npm test`: Unit und volle HTTP-Integration) |
 | Vertrag | 249 HTTP-Pfade, 322 Operationen (OpenAPI in ARMOR-COMMON), Routentabelle in `docs/ROUTES.md` |
 | Lauscht auf | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Läuft auf | Der CM5-Prüfstand (als Dienst, siehe ARMOR-DEVOPS) oder jeder Computer mit Node.js |
@@ -58,7 +58,7 @@ Jede Zeile ist ein Teil dieses Repositorys, und die Ampel sagt, wie weit er heut
 | Bereich | Stand | Was das hier bedeutet |
 |---|---|---|
 | Software | 🟢 | Die Routen, Sitzungen, Verschlüsselung und Beweisregeln laufen täglich auf dem CM5-Prüfstand. |
-| Tests | 🟢 | 1389 Tests bestehen (`npm test`), darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server und eine Prüfung, dass jede Route in der OpenAPI-Datei dokumentiert ist. |
+| Tests | 🟢 | 1408 Tests bestehen (`npm test`), darunter eine vollständige HTTP-Integrationssuite gegen einen isolierten Server und eine Prüfung, dass jede Route in der OpenAPI-Datei dokumentiert ist. |
 | Protokolle und Daten | 🟡 | Die Radar-Nachrichten stammen von einer echten Platine; die Routen für Solar, Elektrik, Alarmzentrale und Touch-Panel sind mit erzeugten Nachrichten getestet, und ONVIF ist keiner echten ONVIF-Kamera begegnet. |
 | Hardware | 🟠 | Er läuft auf dem CM5-Prüfstand mit einem echten MQTT-Broker, echten IP-Kameras (Live-Video, Standbilder, Aufnahmen, PTZ an den Hi3510-Geräten) und einem echten Radar-Knoten; auf einem Jetson lief nichts. |
 | Sicherheit | 🟠 | Die Regeln für Sitzungen, Verschlüsselung, Beweise und Anmeldung sind durch Tests abgedeckt; es gab keine unabhängige Prüfung. |
@@ -92,6 +92,7 @@ Jede Zeile ist ein Teil dieses Repositorys, und die Ampel sagt, wie weit er heut
 * **Batterieverlauf und die Konsole von außen:** der Server zeichnet jedes Batteriemodul und seine Zellen in Tagesdateien auf (ein Punkt pro Minute für den letzten Tag, Fünf-Minuten-Mittel für 30 Tage, nie mehr als 32 MiB; `ARMOR_BATTERY_HISTORY_*`), und von außer Haus verlangt die Root-Konsole neben dem Passwort einen Code des zweiten Faktors (`remote.console_second_factor`, standardmäßig an). Bisher nur in den automatischen Tests erprobt.
 * **Alte Messwerte beiseitegelegt:** Ein Kanal eines Elektro-Knotens, dessen eigener Messwert über eine Minute alt ist (sein Zähler antwortet nicht mehr und der Knoten wiederholt die letzten guten Zahlen), bleibt aus der Netzzahl und den Diagrammen heraus, wird in `stale_channels` des Knotens aufgeführt und in `totals.stale_readings` gezählt; die Option `electrical.set_aside_old_readings` (standardmäßig an) schaltet das ab.
 * **Das Anmeldelimit eines Knotens und das richtige Image für die richtige Platine:** Ein Administrator liest und ändert die falschen Passwörter pro Minute, die ein Knoten durchlässt (`POST /api/v1/admin/nodes/settings`, die Panel-Anmeldung einmal benutzt und nie gespeichert), und ein Firmware-Image, dessen Dateiname eine andere Platine als die des Knotens nennt, wird mit `wrong_board` abgelehnt, bevor etwas gesendet wird.
+* **Ein unlesbarer serieller Port eines Solar-Knotens wird gemeldet:** Sagt der Zustandsbericht des Knotens, dass ein Port Bytes empfängt und nichts liest, enthält der Zustand des Knotens `port_problems` (Port, Ursache, Geschwindigkeit, Pins, Polarität, Anzahl und letzte Bytes), und zwar 30 Minuten lang nach der letzten Meldung. Mit erzeugten Berichten getestet.
 
 ## 🧩 Rolle in A.R.M.O.R.
 
@@ -214,7 +215,7 @@ Die Routentabelle (`docs/ROUTES.md`, aus dem Code erzeugt) listet jede Route mit
 ```powershell
 npm install           # Abhängigkeiten
 npm run typecheck     # tsc --noEmit
-npm test              # 1389 Tests: Unit und volle HTTP-Integration
+npm test              # 1408 Tests: Unit und volle HTTP-Integration
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # Entwicklungsserver mit Hot-Reload
 ```
