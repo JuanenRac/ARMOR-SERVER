@@ -158,6 +158,13 @@ export type SolarModule = {
   soh_counts?: number[];
   soh_abnormal?: number[];
   last_event?: SolarModuleLastEvent;
+  serial?: string;
+  board?: string;
+  chip?: "older" | "newer" | "unknown";
+  specification?: string;
+  boot_version?: string;
+  comm_version?: string;
+  release_date?: string;
   board_version?: string;
   main_soft_version?: string;
   soft_version?: string;
