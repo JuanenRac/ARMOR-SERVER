@@ -34,7 +34,7 @@ export type ArmorEventBody =
   /** The system itself: a node that appears, the broker, a setting that changed (who and what, never the value), a service, an update, the alarm armed or silenced. A fixed vocabulary: no free text. */
   | { type: "system"; category: SystemCategory; action: SystemAction; subject?: string; by?: string; version?: string; previous_version?: string; profile?: string; outcome?: "allowed" | "denied" | "failed" }
   /** The life of an alarm: raised, acknowledged by someone, or cleared because its cause ended. */
-  | { type: "alarm"; alarm_id: string; state: "raised" | "acknowledged" | "cleared"; severity: "critical" | "high" | "warning"; source: string; source_type: "node" | "camera" | "device" | "solar" | "electrical" | "network" | "alarm"; code: string; /** A silent alarm: told only to the places nobody at the panel can see, never written in the history (see alarms.ts). */ silent?: true };
+  | { type: "alarm"; alarm_id: string; state: "raised" | "acknowledged" | "cleared"; severity: "critical" | "high" | "warning"; source: string; source_type: "node" | "camera" | "device" | "solar" | "electrical" | "network" | "alarm"; code: string; /** A silent alarm: told only to the places nobody at the panel can see, never written in the history (see alarms.ts). */ silent?: true; /** A raised battery alarm that is not announced: told before, or silenced (battery_notices.ts). */ quiet?: "known" | "silenced" };
 export type ArmorEvent = ArmorEventBody & { id: number; at: string };
 
 const MAX_BYTES = 5 * 1024 * 1024;

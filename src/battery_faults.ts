@@ -36,7 +36,9 @@ export class UnreadCells {
 export function moduleFault(module: SolarModule, unread: number[]): ModuleFault | undefined {
   const system = (module.flags ?? []).some(state => state.word === "SysError") || module.state === "SysError";
   if (!system && unread.length === 0) return undefined;
-  return { cells: unread, ...(system ? { word: "SysError" } : {}) };
+  // the code the battery itself gives for it (`System Fault` of its sheet, e.g. "0x40 VOLT err"), when the node read it
+  const code = (module.flags ?? []).find(state => state.column === "system" && state.word.startsWith("0x"))?.word;
+  return { cells: unread, ...(system ? { word: code ? `SysError ${code}` : "SysError" } : {}) };
 }
 
 /** The first protection or alarm a stack's modules say, so that an alarm can name the module, the column, the cell and the word. */

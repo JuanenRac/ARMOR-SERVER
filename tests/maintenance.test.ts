@@ -234,6 +234,20 @@ test("five wrong passwords close the console's door for a while, and a console t
   } finally { await running.stop(); await agent.close(); }
 });
 
+test("from outside, updating, going back, upgrading, restarting and importing an installation ask for the password again; looking does not", async () => {
+  const agent = await fakeAgent();
+  const running = await startServer({ ARMOR_MAINT_SOCKET: agent.socket, ARMOR_MAINT_TOKEN: TOKEN, ARMOR_LOCAL_NETWORKS: "10.99.0.0/16" });
+  try {
+    const cookie = await studioCookie(running.base);
+    for (const [route, body] of [["/api/v1/admin/updates", { components: ["server"] }], ["/api/v1/admin/updates/server/rollback", undefined], ["/api/v1/admin/system/upgrade", {}], ["/api/v1/admin/system/reboot", {}], ["/api/v1/admin/installation", {}]] as const) {
+      const refused = await call(running, cookie, "POST", route, body);
+      assert.deepEqual([refused.status, refused.body.code], [403, "elevation_required"], route);
+    }
+    assert.equal(agent.seen.filter(item => item.url === "/v1/updates" || item.url.endsWith("/rollback") || item.url === "/v1/system/reboot").length, 0, "nothing reached the agent");
+    assert.notEqual((await call(running, cookie, "POST", "/api/v1/admin/system/check", {})).body.code, "elevation_required");
+  } finally { await running.stop(); await agent.close(); }
+});
+
 test("the VPN and the dynamic DNS name are asked for through the agent, with a new proof from outside, and no key or token is written down", async () => {
   const agent = await fakeAgent();
   const running = await startServer({ ARMOR_MAINT_SOCKET: agent.socket, ARMOR_MAINT_TOKEN: TOKEN, ARMOR_LOCAL_NETWORKS: "10.99.0.0/16" });   // the test client is then "outside"

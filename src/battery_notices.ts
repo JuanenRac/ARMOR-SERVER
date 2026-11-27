@@ -53,6 +53,8 @@ export class BatteryNotices {
   #silenced: Silenced[] = [];
   readonly #problems = new Map<string, Problem>();
   readonly #alarms = new Map<string, "new" | "known">();
+  /** Alarms just raised whose first look at what they touch is still to come: that look is not a worsening. */
+  readonly #unseen = new Set<string>();
   readonly #file?: JsonFile<File>;
   readonly #now: () => number;
 
@@ -104,6 +106,8 @@ export class BatteryNotices {
     this.#problems.set(problem, { rank, subjects: fresh ? [] : before.subjects, ...(alarm.cleared_at ? { ended_at: now } : {}) });
     while (this.#problems.size > MAX_PROBLEMS) this.#problems.delete(this.#problems.keys().next().value as string);
     this.#alarms.set(alarm.id, fresh ? "new" : "known");
+    this.#unseen.add(alarm.id);
+    while (this.#unseen.size > MAX_ALARMS) this.#unseen.delete(this.#unseen.values().next().value as string);
     while (this.#alarms.size > MAX_ALARMS) this.#alarms.delete(this.#alarms.keys().next().value as string);
     this.#save();
   }
@@ -116,16 +120,30 @@ export class BatteryNotices {
     this.#save();
   }
 
-  /** What an open problem touches now (cells, a protection that tripped...). Anything not told before makes it worse: its open alarm is new again. */
-  observe(key: string, openId: string | undefined, subjects: readonly string[]): boolean {
+  /**
+   * What an open problem touches now (cells, a protection that tripped...). Anything not told before makes it worse: its open alarm is new again.
+   * "first" is the look that comes with the alarm itself (already told by raising it); "worse" is something added later.
+   */
+  observe(key: string, openId: string | undefined, subjects: readonly string[]): "first" | "worse" | false {
     const problem = this.#problems.get(problemOf(key));
     if (!problem || openId === undefined) return false;
+    const first = this.#unseen.delete(openId);
     const added = subjects.filter(item => !problem.subjects.includes(item));
     if (added.length === 0) return false;
     problem.subjects = [...problem.subjects, ...added].slice(-64);
     this.#alarms.set(openId, "new");
     this.#save();
-    return true;
+    return first ? "first" : "worse";
+  }
+
+  /**
+   * Why a battery alarm is not announced (no message to the phones, Telegram and the other places): the same problem was told before, or the battery is silenced.
+   * A fault of the battery management system is always announced.
+   */
+  unannounced(alarm: Alarm): "known" | "silenced" | undefined {
+    if (alarm.code === "solar_battery_fault") return undefined;
+    const quiet = this.view(alarm).quiet;
+    return quiet === "known" || quiet === "silenced" ? quiet : undefined;
   }
 
   /** The alarm as a client reads it: a battery alarm says how discreet it is. */

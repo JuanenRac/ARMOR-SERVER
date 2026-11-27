@@ -4,6 +4,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **A battery problem is announced once:** the phones, Telegram and the other places are told when a battery alarm is new or got worse, not each time the same problem comes back (the event history keeps all of them, marked `quiet`); a fault of the battery management system is always announced.
+- **A battery fault names the code of the battery** (`SysError 0x40 VOLT err`) when the node read it.
+- **Figures that a node left out as impossible reach the screens** (`left_out` of a battery module), and the wall screen's solar view gives the maker, the states, the cells not read and the figures left out.
+- **Updating, going back, upgrading or restarting the system and importing an installation ask a session from outside for the password or the code again**, as the other sensitive changes do.
 - **A battery fault is told apart and named:** a new alarm (`solar_battery_fault`) for a module whose electronics fail (SysError, or cells it does not read: said by the node, or 0 V in two readings in a row), with the module, the cells and the battery's word; the battery alarm now names the module, column, cell and word too. A silenced battery stays quiet but the fault stays listed while it lasts. A "High" or "Low" is not an alarm.
 - **The manufacturer of solar equipment, and the battery states of a newer node, are kept:** `manufacturer`, `manufacturer_source`, `flags` and `cells_unread` of the solar messages are read and served.
 ## [0.8.3.0] - Battery firmware campaigns and discreet battery alarms

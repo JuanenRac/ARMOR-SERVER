@@ -409,7 +409,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     if (event.type === "mode") automations.handleMode(event.mode);
   };
   const batteryNotices = new BatteryNotices(path.join(config.dataDir, "battery-notices.json"), overrides.now);
-  const alarms = new AlarmCentre({ file: path.join(config.dataDir, "alarms.json"), onEvent: record, onRaised: alarm => { batteryNotices.raised(alarm); automations.handleAlarm(alarm); }, onCleared: alarm => batteryNotices.cleared(alarm), warn });
+  const alarms = new AlarmCentre({ file: path.join(config.dataDir, "alarms.json"), onEvent: record, judge: alarm => { batteryNotices.raised(alarm); return batteryNotices.unannounced(alarm); }, onRaised: alarm => automations.handleAlarm(alarm), onCleared: alarm => batteryNotices.cleared(alarm), warn });
   const energyAlarms = new EnergyAlarmStore(path.join(config.dataDir, "energy-alarms.json"));
   const alarmRules = new AlarmRules(alarms, () => store.snapshot().mode, () => energyAlarms.get());
   alarmRules.dnsDwellMs = config.networkDnsDwellMin * 60_000;
@@ -496,7 +496,17 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const alarmNodes = new AlarmStore({ now: overrides.now, onMessage: (message, previous, origin) => { knownNodes.seen("alarm", message.node_id, message.phase); alarmRules.handleAlarmNode(message, previous); relaySignedAlarmState(message, origin); }, onStale: (node, stale, phase) => { alarmRules.handleAlarmNodeStale(node, stale, phase); if (stale) nodeLife.gone(node); else nodeLife.report(node); } });
   const armProfiles = new ArmProfileStore(path.join(config.dataDir, "arm-profiles.json"), overrides.now ? () => new Date(overrides.now!()) : undefined, warn);
   alarmRules.batteryProfileOf = id => { const registration = solarRegistry.list().find(item => `${item.node_id}/${item.device}` === id); return registration ? batteryProfile(registration.model) : undefined; };
-  alarmRules.batteryWorse = (key, openId, subjects) => { if (batteryNotices.observe(key, openId, subjects) && openId && batteryNotices.settings().mode === "once") alarms.waitAgain(openId); };
+  alarmRules.batteryWorse = (key, openId, subjects) => {
+    const worse = batteryNotices.observe(key, openId, subjects);
+    if (!worse || !openId || batteryNotices.settings().mode !== "once") return;
+    alarms.waitAgain(openId);
+    // an open battery problem that got worse is told once more to the places that notify (not the automations: the alarm is the same)
+    const alarm = worse === "worse" ? alarms.active().find(item => item.id === openId) : undefined;
+    if (!alarm || batteryNotices.unannounced(alarm)) return;
+    const event = events.append({ type: "alarm", alarm_id: alarm.id, state: "raised", severity: alarm.severity, source: alarm.source.id, source_type: alarm.source.type, code: alarm.code });
+    live.notify("alarm", alarm.id, event.id);
+    notifier.notify(event, store.snapshot().mode);
+  };
   alarmRules.cellRange = () => batteryNotices.settings();
   alarmRules.sirenNotice = () => securitySettings.get("alarm.siren_fault_notice");
   alarmRules.profileNotify = id => armProfiles.find(id)?.notify ?? (armProfiles.find(id) ? "urgent" : undefined);

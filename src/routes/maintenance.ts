@@ -61,7 +61,7 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
     relay(response, reply);
   });
 
-  app.post("/api/v1/admin/updates", requireAdmin, async (request, response) => {
+  app.post("/api/v1/admin/updates", requireAdmin, context.requireElevated, async (request, response) => {
     const input = body(request);
     const wanted = Array.isArray(input.components) ? input.components.filter((item): item is string => typeof item === "string") : [];
     if (wanted.length === 0 || wanted.length > COMPONENTS.length || wanted.some(item => !(COMPONENTS as readonly string[]).includes(item))) return response.status(422).json({ error: "unknown_component" });
@@ -71,7 +71,7 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
     relay(response, reply);
   });
 
-  app.post("/api/v1/admin/updates/:id/rollback", requireAdmin, async (request, response) => {
+  app.post("/api/v1/admin/updates/:id/rollback", requireAdmin, context.requireElevated, async (request, response) => {
     const id = String(request.params.id);
     if (!(COMPONENTS as readonly string[]).includes(id)) return response.status(404).json({ error: "unknown_component" });
     const reply = await ask(response, "POST", `/v1/updates/${id}/rollback`, undefined, approval(request));
@@ -88,8 +88,10 @@ export function registerMaintenanceRoutes(app: Express, context: AppContext): vo
   });
 
   // ---- the operating system ----
+  const looking = (_request: Request, _response: Response, next: () => void): void => next();
+  // Looking for updates changes nothing; installing them and restarting ask a session from outside for the password or the code again.
   for (const action of ["check", "upgrade", "reboot"] as const) {
-    app.post(`/api/v1/admin/system/${action}`, requireAdmin, async (request, response) => {
+    app.post(`/api/v1/admin/system/${action}`, requireAdmin, action === "check" ? looking : context.requireElevated, async (request: Request, response: Response) => {
       const mode = action === "upgrade" && typeof body(request).mode === "string" ? String(body(request).mode) : undefined;
       if (mode !== undefined && !["upgrade", "full", "repair"].includes(mode)) return response.status(422).json({ error: "bad_mode" });
       const reply = await ask(response, "POST", `/v1/system/${action}`, mode === undefined ? undefined : { mode });

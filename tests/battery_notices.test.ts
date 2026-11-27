@@ -5,6 +5,7 @@ import test from "node:test";
 import { AlarmCentre, AlarmRules } from "../src/alarms.js";
 import { BatteryNotices, BatteryNoticesInvalid, GapGate, problemOf } from "../src/battery_notices.js";
 import { ENERGY_ALARM_DEFAULTS } from "../src/energy_alarms.js";
+import { alertMessageFor } from "../src/notify.js";
 import type { SolarBattery } from "../src/solar.js";
 import { CellExtremes } from "../src/solar_cells.js";
 import { tempDir } from "./helpers.js";
@@ -101,4 +102,28 @@ test("a cell that really is out shows in two readings, and the day can be starte
   assert.deepEqual(gate.judge("k", 300, "same", 100, 0), {});
   assert.deepEqual(gate.judge("k", 300, "same", 100, 60_000), {}, "the same reading repeated is not a second reading");
   assert.deepEqual(gate.judge("k", 300, "same", 100, 600_000), { gap: 300 });
+});
+
+test("the same battery problem is not announced twice; one that gets worse and a BMS fault are", () => {
+  const dir = tempDir(), clock = { now: 1_000_000 }, announced: string[] = [], worse: string[] = [];
+  const notices = new BatteryNotices(path.join(dir, "battery-notices.json"), () => clock.now);
+  const centre = new AlarmCentre({ file: path.join(dir, "alarms.json"), judge: alarm => { notices.raised(alarm); return notices.unannounced(alarm); },
+    onEvent: event => { if (event.type === "alarm" && event.state === "raised") announced.push(`${event.code}:${event.quiet ?? "told"}`); }, onCleared: alarm => notices.cleared(alarm) });
+  const rules = new AlarmRules(centre, () => "disarmed", () => ENERGY_ALARM_DEFAULTS);
+  rules.batteryWorse = (key, id, subjects) => { if (notices.observe(key, id, subjects) === "worse") worse.push(key); };
+  const on = battery([[3.33, 3.34]], { alarm: true }), off = battery([[3.33, 3.34]], { alarm: false });
+  rules.handleSolar(on);
+  rules.handleSolar(off);
+  rules.handleSolar(on);
+  assert.deepEqual(announced, ["solar_battery_alarm:told", "solar_battery_alarm:known"]);
+  assert.deepEqual(worse, [], "the first look at a new alarm is no worsening");
+  rules.handleSolar({ ...on, protecting: true });
+  assert.equal(worse.length, 1);
+  const faulty: SolarBattery = { ...off, stack: [{ n: 1, present: true, state: "SysError", flags: [{ column: "system", word: "0x40 VOLT err" }] }] };
+  rules.handleSolar(faulty);
+  rules.handleSolar(off);
+  rules.handleSolar(faulty);
+  assert.deepEqual(announced.slice(2), ["solar_battery_fault:told", "solar_battery_fault:told"], "a fault of the electronics is always announced");
+  assert.equal(centre.active().find(alarm => alarm.code === "solar_battery_fault" && !alarm.cleared_at)?.detail?.bms_word, "SysError 0x40 VOLT err");
+  assert.equal(alertMessageFor({ id: 1, at: "2026-01-01T00:00:00.000Z", type: "alarm", alarm_id: "alm-1", state: "raised", severity: "high", source: "solar-1/bank-1", source_type: "solar", code: "solar_battery_alarm", quiet: "known" }, "disarmed"), null);
 });
