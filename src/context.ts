@@ -675,7 +675,10 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   // and the sound uploaded for an origin (one path per origin, so the list is closed)
   const panelSoundRoute = /^GET \/api\/v1\/alarm-audio\/sounds\/(device|solar|electrical|network|alarm|other)$/;
   // and, only while the administrator has turned the option on, the check before arming and a still picture of a camera (read only)
-  const panelOptionalRoute = (key: string): boolean => (key === "GET /api/v1/preflight" && securitySettings.get("panel.preflight")) || (/^GET \/api\/v1\/cameras\/[^/]+\/snapshot$/.test(key) && securitySettings.get("panel.camera_view"));
+  const panelOptionalRoute = (key: string): boolean => (key === "GET /api/v1/preflight" && securitySettings.get("panel.preflight")) || (/^GET \/api\/v1\/cameras\/[^/]+\/snapshot$/.test(key) && securitySettings.get("panel.camera_view"))
+    // the solar equipment of a small screen (read), and its one battery operation (its route asks the PIN and everything else): both off unless an administrator turned them on
+    || (/^GET \/api\/v1\/panel\/solar(\/history|\/devices\/[^/]+\/[^/]+)?$/.test(key) && securitySettings.get("panel.solar"))
+    || (/^(POST \/api\/v1\/panel\/solar\/battery-ops(\/[^/]+\/execute)?|GET \/api\/v1\/panel\/solar\/battery-ops\/[^/]+)$/.test(key) && securitySettings.get("solar.panel_battery_ops"));
   const operatorAuthorized = (request: HeaderSource): boolean => {
     if (hasBearer(request, config.operatorToken) || operatorSessions.has(request)) return true;
     const user = studioUser(request);
