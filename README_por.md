@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 or later">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-1411%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-1408%20passing-2ea44f.svg" alt="Tests">
   <img src="https://img.shields.io/badge/Version-0.8.2.8-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
 ---
 
-**Verificação de honestidade - o que funciona hoje:** Cada rota, sessão, cifra e regra de provas abaixo é real e está coberta por testes (`npm test`: 1411 testes, incluindo um conjunto completo de integração HTTP contra um servidor isolado e uma verificação de que cada rota está documentada no ficheiro OpenAPI). Funciona em uso diário na bancada de testes do CM5 com um broker MQTT real, o firmware de um nó radar real numa placa ESP32-S3, câmaras IP reais (vídeo em direto, fotografias, gravações, PTZ nas unidades Hi3510), a consola Studio, a aplicação Android e os serviços de voz e de observação. O que **ainda não** está provado: ONVIF com uma câmara ONVIF real, qualquer hardware Jetson, as rotas solares, elétricas, de centrais de alarme e de painel tátil com nós reais (testam-se com mensagens geradas: só existe a placa radar) e o push por Firebase com um projeto Firebase real.
+**Verificação de honestidade - o que funciona hoje:** Cada rota, sessão, cifra e regra de provas abaixo é real e está coberta por testes (`npm test`: 1408 testes, incluindo um conjunto completo de integração HTTP contra um servidor isolado e uma verificação de que cada rota está documentada no ficheiro OpenAPI). Funciona em uso diário na bancada de testes do CM5 com um broker MQTT real, o firmware de um nó radar real numa placa ESP32-S3, câmaras IP reais (vídeo em direto, fotografias, gravações, PTZ nas unidades Hi3510), a consola Studio, a aplicação Android e os serviços de voz e de observação. O que **ainda não** está provado: ONVIF com uma câmara ONVIF real, qualquer hardware Jetson, as rotas solares, elétricas, de centrais de alarme e de painel tátil com nós reais (testam-se com mensagens geradas: só existe a placa radar) e o push por Firebase com um projeto Firebase real.
 
 ---
 
@@ -40,8 +40,8 @@
 | Maturidade | Estabelecido |
 | Função | Coordenador central de segurança da família: nós, alarmes, dispositivos, energia, câmaras, rede |
 | Tecnologia | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| Testes | 1411 (`npm test`: unitários e integração HTTP completa) |
-| Contrato | 249 caminhos HTTP, 322 operações (OpenAPI no ARMOR-COMMON), tabela de rotas em `docs/ROUTES.md` |
+| Testes | 1408 (`npm test`: unitários e integração HTTP completa) |
+| Contrato | 255 caminhos HTTP, 328 operações (OpenAPI no ARMOR-COMMON), tabela de rotas em `docs/ROUTES.md` |
 | Escuta em | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Funciona em | A bancada do CM5 (como serviço, ver ARMOR-DEVOPS) ou qualquer computador com Node.js |
 | Em hardware real | A bancada de testes do CM5, em uso diário: um broker MQTT real, câmaras IP reais, um nó radar real numa placa ESP32-S3, o Studio, a aplicação Android e os serviços de voz e observação contra ele |
@@ -58,7 +58,7 @@ Cada linha é uma parte deste repositório e a luz diz até onde chega hoje. É 
 | Área | Estado | O que significa aqui |
 |---|---|---|
 | Software | 🟢 | As rotas, as sessões, a cifragem e as regras de provas funcionam todos os dias na bancada de testes CM5. |
-| Testes | 🟢 | Passam 1411 testes (`npm test`), incluindo uma bateria de integração HTTP completa contra um servidor isolado e uma verificação de que cada rota está documentada no ficheiro OpenAPI. |
+| Testes | 🟢 | Passam 1408 testes (`npm test`), incluindo uma bateria de integração HTTP completa contra um servidor isolado e uma verificação de que cada rota está documentada no ficheiro OpenAPI. |
 | Protocolos e dados | 🟡 | As mensagens do radar vêm de uma placa real; as rotas solar, elétrica, de painel de alarme e de painel tátil são testadas com mensagens geradas, e o ONVIF não encontrou uma câmara ONVIF real. |
 | Hardware | 🟠 | Funciona na bancada de testes CM5 com um broker MQTT real, câmaras IP reais (vídeo em direto, capturas, gravações, PTZ nas unidades Hi3510) e um nó radar real; nada funcionou num Jetson. |
 | Segurança | 🟠 | As regras de sessões, cifragem, provas e acesso estão cobertas por testes; não houve revisão independente. |
@@ -154,13 +154,13 @@ flowchart LR
 | Voz: silenciar sem verificar, texto longo, áudio enorme | A política `voice.silence_confirmation` (off, pin, double_turn, challenge) viaja em cada turno; confirmação ligada à pessoa; 200 caracteres, 8 idiomas, 30 pedidos por minuto; áudio de 480 000 bytes e resposta de 200 000 bytes no máximo |
 | Escritas perigosas por engano | Desligadas salvo `ARMOR_BATTERY_WRITE=1`, `ARMOR_ELECTRICAL_SWITCHING=1` ou `ARMOR_ALARM_COMMANDS=1`, com aviso no arranque |
 
-**Interruptores no Studio.** As proteções ajustáveis são 91 valores guardados em `security-settings.json` (modo 0600, escrita atómica), cada um com um valor predefinido conservador; baixar um fica registado na auditoria. Alguns: `alarm.disarm_pin`, `alarm.arming_modes`, `alarm.mode_downgrade_pin`, `alarm.mode_schedule`, `alarm.mode_schedule_lowers`, `alarm.mode_panel_sync`, `voice.silence_confirmation`, `alarm.config_hash`, `alarm.siren_fault_notice`, `server.zone_feed`, `server.zone_feed_signature`, `server.alarm_state_signature`, `media.rtsp_proxy`, `network.login_secure_only`, `login.country_alert`, `electrical.set_aside_old_readings`, `voice.multipart_turn`, `panel.live_events`, `client.device_lock`, `client.trusted_devices`, `client.trusted_session_h`, `nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`, `summary.daily`, `summary.log_days`, `summary.reading_every_s`, `summary.power_every_s`, `summary.false_alarm_s`, `vision.heatmap`, `vision.activity_events`, `vision.service_url`, `vision.service_remote`, `vision.service_token_set`, `voice.turn_max_bytes`, `voice.reply_audio_max_bytes`, `reports.timeout_s`, `reports.queue_max` e `reports.requests_per_minute`.
+**Interruptores no Studio.** As proteções ajustáveis são 93 valores guardados em `security-settings.json` (modo 0600, escrita atómica), cada um com um valor predefinido conservador; baixar um fica registado na auditoria. Alguns: `alarm.disarm_pin`, `alarm.arming_modes`, `alarm.mode_downgrade_pin`, `alarm.mode_schedule`, `alarm.mode_schedule_lowers`, `alarm.mode_panel_sync`, `voice.silence_confirmation`, `alarm.config_hash`, `alarm.siren_fault_notice`, `server.zone_feed`, `server.zone_feed_signature`, `server.alarm_state_signature`, `media.rtsp_proxy`, `network.login_secure_only`, `login.country_alert`, `electrical.set_aside_old_readings`, `voice.multipart_turn`, `panel.live_events`, `client.device_lock`, `client.trusted_devices`, `client.trusted_session_h`, `nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`, `summary.daily`, `summary.log_days`, `summary.reading_every_s`, `summary.power_every_s`, `summary.false_alarm_s`, `vision.heatmap`, `vision.activity_events`, `vision.service_url`, `vision.service_remote`, `vision.service_token_set`, `voice.turn_max_bytes`, `voice.reply_audio_max_bytes`, `reports.timeout_s`, `reports.queue_max` e `reports.requests_per_minute`.
 
 **O que nunca faz:** devolver uma palavra-passe de câmara, guardar as palavras ditas (só o comando e o seu resultado) nem escrever um PIN, um token ou um cookie num registo. Não houve revisão de segurança independente.
 
 ## 🔌 Interfaces
 
-A tabela de rotas (`docs/ROUTES.md`, gerada do código) lista cada rota com quem a pode chamar; o ficheiro OpenAPI do ARMOR-COMMON descreve 249 caminhos e 322 operações, e um teste falha se faltar alguma. As mais importantes:
+A tabela de rotas (`docs/ROUTES.md`, gerada do código) lista cada rota com quem a pode chamar; o ficheiro OpenAPI do ARMOR-COMMON descreve 255 caminhos e 328 operações, e um teste falha se faltar alguma. As mais importantes:
 
 | Rota | Autenticação | O que faz |
 |---|---|---|
@@ -215,7 +215,7 @@ Copie `.env.example` para `.env` (ignorado pelo Git), ou deixe `run.bat` / `run.
 ```powershell
 npm install           # dependências
 npm run typecheck     # tsc --noEmit
-npm test              # 1411 testes: unitários e integração HTTP completa
+npm test              # 1408 testes: unitários e integração HTTP completa
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # servidor de desenvolvimento com recarga a quente
 ```
