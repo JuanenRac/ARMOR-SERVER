@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 o successiva">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Linguaggio">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-1389%20passing-2ea44f.svg" alt="Test">
-  <img src="https://img.shields.io/badge/Version-0.8.2.7-0f6cbd.svg" alt="Versione">
+  <img src="https://img.shields.io/badge/Tests-1408%20passing-2ea44f.svg" alt="Test">
+  <img src="https://img.shields.io/badge/Version-0.8.2.8-0f6cbd.svg" alt="Versione">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturità">
 </p>
 
 ---
 
-**Controllo di onestà - cosa funziona oggi:** Ogni rotta, sessione, cifratura e regola delle prove qui sotto è reale e coperta da test (`npm test`: 1389 test, compresa una suite completa di integrazione HTTP contro un server isolato e un controllo che ogni rotta sia documentata nel file OpenAPI). Funziona in uso quotidiano sul banco di prova CM5 con un vero broker MQTT, il firmware di un vero nodo radar su una scheda ESP32-S3, vere telecamere IP (video dal vivo, istantanee, registrazioni, PTZ sulle unità Hi3510), la console Studio, l'app Android e i servizi di voce e di osservazione. Ciò che **non** è ancora provato: ONVIF con una vera telecamera ONVIF, qualsiasi hardware Jetson, le rotte solari, elettriche, delle centrali d'allarme e del pannello touch con nodi reali (si provano con messaggi generati: esiste solo la scheda radar) e il push tramite Firebase con un vero progetto Firebase.
+**Controllo di onestà - cosa funziona oggi:** Ogni rotta, sessione, cifratura e regola delle prove qui sotto è reale e coperta da test (`npm test`: 1408 test, compresa una suite completa di integrazione HTTP contro un server isolato e un controllo che ogni rotta sia documentata nel file OpenAPI). Funziona in uso quotidiano sul banco di prova CM5 con un vero broker MQTT, il firmware di un vero nodo radar su una scheda ESP32-S3, vere telecamere IP (video dal vivo, istantanee, registrazioni, PTZ sulle unità Hi3510), la console Studio, l'app Android e i servizi di voce e di osservazione. Ciò che **non** è ancora provato: ONVIF con una vera telecamera ONVIF, qualsiasi hardware Jetson, le rotte solari, elettriche, delle centrali d'allarme e del pannello touch con nodi reali (si provano con messaggi generati: esiste solo la scheda radar) e il push tramite Firebase con un vero progetto Firebase.
 
 ---
 
@@ -36,11 +36,11 @@
 
 | | |
 |---|---|
-| Versione | `0.8.2.7` |
+| Versione | `0.8.2.8` |
 | Maturità | Consolidato |
 | Ruolo | Coordinatore centrale di sicurezza della famiglia: nodi, allarmi, dispositivi, energia, telecamere, rete |
 | Tecnologia | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| Test | 1389 (`npm test`: unitari e integrazione HTTP completa) |
+| Test | 1408 (`npm test`: unitari e integrazione HTTP completa) |
 | Contratto | 249 percorsi HTTP, 322 operazioni (OpenAPI in ARMOR-COMMON), tabella delle rotte in `docs/ROUTES.md` |
 | In ascolto su | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Gira su | Il banco di prova CM5 (come servizio, vedi ARMOR-DEVOPS) o qualsiasi computer con Node.js |
@@ -58,7 +58,7 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 | Area | Stato | Cosa significa qui |
 |---|---|---|
 | Software | 🟢 | Le route, le sessioni, la cifratura e le regole delle prove girano ogni giorno sul banco di prova CM5. |
-| Test | 🟢 | Superano 1389 test (`npm test`), compresa una suite di integrazione HTTP completa contro un server isolato e un controllo che ogni rotta sia documentata nel file OpenAPI. |
+| Test | 🟢 | Superano 1408 test (`npm test`), compresa una suite di integrazione HTTP completa contro un server isolato e un controllo che ogni rotta sia documentata nel file OpenAPI. |
 | Protocolli e dati | 🟡 | I messaggi del radar vengono da una scheda reale; le rotte solare, elettrica, della centralina d'allarme e del pannello touch sono provate con messaggi generati, e ONVIF non ha incontrato una vera telecamera ONVIF. |
 | Hardware | 🟠 | Gira sul banco di prova CM5 con un broker MQTT reale, telecamere IP reali (video dal vivo, istantanee, registrazioni, PTZ sulle unità Hi3510) e un nodo radar reale; nulla ha girato su una Jetson. |
 | Sicurezza | 🟠 | Le regole di sessioni, cifratura, prove e accesso sono coperte da test; non c'è stata una revisione indipendente. |
@@ -92,6 +92,7 @@ Ogni riga è una parte di questo repository e il semaforo dice a che punto è og
 * **Storico delle batterie e la console da fuori:** il server registra ogni modulo di batteria e le sue celle in file giornalieri (un punto al minuto per l'ultimo giorno, medie di cinque minuti per 30 giorni, mai più di 32 MiB; `ARMOR_BATTERY_HISTORY_*`), e da fuori casa la console root chiede un codice del secondo fattore oltre alla password (`remote.console_second_factor`, attivo di default). Finora provato solo nei test automatici.
 * **Letture vecchie messe da parte:** un canale di un nodo elettrico la cui lettura ha più di un minuto (il suo contatore ha smesso di rispondere e il nodo ripete gli ultimi numeri buoni) resta fuori dalla cifra della rete e dai grafici, è elencato in `stale_channels` del nodo e contato in `totals.stale_readings`; l'opzione `electrical.set_aside_old_readings` (attiva per default) lo disattiva.
 * **Il limite di accesso di un nodo e l'immagine giusta per la scheda giusta:** un amministratore legge e cambia le password errate al minuto che un nodo lascia passare (`POST /api/v1/admin/nodes/settings`, con l'accesso al pannello usato una volta e mai conservato), e un'immagine firmware il cui nome di file indica una scheda diversa da quella del nodo viene rifiutata con `wrong_board` prima di inviare qualsiasi cosa.
+* **Viene segnalata una porta seriale illeggibile di un nodo solare:** quando il rapporto di salute del nodo dice che una porta riceve byte e non legge nulla, la salute del nodo porta `port_problems` (porta, causa, velocità, pin, polarità, numero di byte e gli ultimi) per 30 minuti dall'ultima volta che il nodo l'ha detto. Provato con rapporti generati.
 
 ## 🧩 Ruolo in A.R.M.O.R.
 
@@ -214,7 +215,7 @@ Copia `.env.example` in `.env` (ignorato da Git), oppure lascia che `run.bat` / 
 ```powershell
 npm install           # dipendenze
 npm run typecheck     # tsc --noEmit
-npm test              # 1389 test: unitari e integrazione HTTP completa
+npm test              # 1408 test: unitari e integrazione HTTP completa
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # server di sviluppo con ricarica a caldo
 ```

@@ -21,14 +21,14 @@
   <img src="https://img.shields.io/badge/License-GPL%203.0--or--later-blue.svg" alt="GPL 3.0 ou ultérieure">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Langage">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
-  <img src="https://img.shields.io/badge/Tests-1389%20passing-2ea44f.svg" alt="Tests">
-  <img src="https://img.shields.io/badge/Version-0.8.2.7-0f6cbd.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Tests-1408%20passing-2ea44f.svg" alt="Tests">
+  <img src="https://img.shields.io/badge/Version-0.8.2.8-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturité">
 </p>
 
 ---
 
-**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** Chaque route, session, chiffrement et règle de preuves ci-dessous est réel et couvert par des tests (`npm test` : 1389 tests, dont une suite complète d'intégration HTTP contre un serveur isolé et une vérification que chaque route est documentée dans le fichier OpenAPI). Il fonctionne en usage quotidien sur le banc de test CM5 avec un vrai broker MQTT, le firmware d'un vrai nœud radar sur une carte ESP32-S3, de vraies caméras IP (vidéo en direct, captures, enregistrements, PTZ sur les unités Hi3510), la console Studio, l'application Android et les services de voix et d'observation. Ce qui n'est **pas** encore prouvé : ONVIF avec une vraie caméra ONVIF, tout matériel Jetson, les routes solaires, électriques, de centrales d'alarme et de panneau tactile avec de vrais nœuds (testées avec des messages générés : seule la carte radar existe) et le push via Firebase avec un vrai projet Firebase.
+**Vérification d'honnêteté - ce qui fonctionne aujourd'hui :** Chaque route, session, chiffrement et règle de preuves ci-dessous est réel et couvert par des tests (`npm test` : 1408 tests, dont une suite complète d'intégration HTTP contre un serveur isolé et une vérification que chaque route est documentée dans le fichier OpenAPI). Il fonctionne en usage quotidien sur le banc de test CM5 avec un vrai broker MQTT, le firmware d'un vrai nœud radar sur une carte ESP32-S3, de vraies caméras IP (vidéo en direct, captures, enregistrements, PTZ sur les unités Hi3510), la console Studio, l'application Android et les services de voix et d'observation. Ce qui n'est **pas** encore prouvé : ONVIF avec une vraie caméra ONVIF, tout matériel Jetson, les routes solaires, électriques, de centrales d'alarme et de panneau tactile avec de vrais nœuds (testées avec des messages générés : seule la carte radar existe) et le push via Firebase avec un vrai projet Firebase.
 
 ---
 
@@ -36,11 +36,11 @@
 
 | | |
 |---|---|
-| Version | `0.8.2.7` |
+| Version | `0.8.2.8` |
 | Maturité | Établi |
 | Rôle | Coordinateur central de sécurité de la famille : nœuds, alarmes, appareils, énergie, caméras, réseau |
 | Technologie | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
-| Tests | 1389 (`npm test` : unitaires et intégration HTTP complète) |
+| Tests | 1408 (`npm test` : unitaires et intégration HTTP complète) |
 | Contrat | 249 chemins HTTP, 322 opérations (OpenAPI dans ARMOR-COMMON), table des routes dans `docs/ROUTES.md` |
 | Écoute sur | `127.0.0.1:18080` (`ARMOR_HOST`, `ARMOR_PORT`) |
 | Fonctionne sur | Le banc d'essai CM5 (en service, voir ARMOR-DEVOPS) ou tout ordinateur avec Node.js |
@@ -58,7 +58,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 | Domaine | État | Ce que cela veut dire ici |
 |---|---|---|
 | Logiciel | 🟢 | Les routes, les sessions, le chiffrement et les règles de preuves tournent au quotidien sur le banc d'essai CM5. |
-| Tests | 🟢 | 1389 tests réussissent (`npm test`), dont une suite d'intégration HTTP complète contre un serveur isolé et un contrôle que chaque route est documentée dans le fichier OpenAPI. |
+| Tests | 🟢 | 1408 tests réussissent (`npm test`), dont une suite d'intégration HTTP complète contre un serveur isolé et un contrôle que chaque route est documentée dans le fichier OpenAPI. |
 | Protocoles et données | 🟡 | Les messages du radar viennent d'une vraie carte ; les routes solaire, électrique, de centrale d'alarme et de panneau tactile sont testées avec des messages générés, et ONVIF n'a pas rencontré de vraie caméra ONVIF. |
 | Matériel | 🟠 | Il tourne sur le banc d'essai CM5 avec un vrai courtier MQTT, de vraies caméras IP (vidéo en direct, captures, enregistrements, PTZ sur les unités Hi3510) et un vrai nœud radar ; rien n'a tourné sur un Jetson. |
 | Sécurité | 🟠 | Les règles de sessions, de chiffrement, de preuves et de connexion sont couvertes par des tests ; il n'y a pas eu de revue indépendante. |
@@ -92,6 +92,7 @@ Chaque ligne est une partie de ce dépôt et le feu dit où elle en est aujourd'
 * **Historique des batteries et la console depuis l'extérieur :** le serveur enregistre chaque module de batterie et ses cellules dans des fichiers journaliers (un point par minute pour le dernier jour, des moyennes de cinq minutes pendant 30 jours, jamais plus de 32 Mio ; `ARMOR_BATTERY_HISTORY_*`), et hors de la maison la console root demande un code du second facteur en plus du mot de passe (`remote.console_second_factor`, activé par défaut). Essayé pour l'instant uniquement dans les tests automatiques.
 * **Lectures anciennes mises de côté :** un canal d'un nœud électrique dont la propre lecture a plus d'une minute (son compteur ne répond plus et le nœud répète les derniers bons chiffres) reste hors du chiffre du réseau et des graphiques, est listé dans `stale_channels` du nœud et compté dans `totals.stale_readings` ; l'option `electrical.set_aside_old_readings` (activée par défaut) le désactive.
 * **La limite de connexion d'un nœud et la bonne image pour la bonne carte :** un administrateur lit et change les mots de passe erronés par minute qu'un nœud laisse passer (`POST /api/v1/admin/nodes/settings`, l'identifiant du panneau utilisé une fois et jamais conservé), et une image de firmware dont le nom de fichier indique une autre carte que celle du nœud est refusée avec `wrong_board` avant que rien ne soit envoyé.
+* **Un port série illisible d'un nœud solaire est signalé :** quand le rapport de santé du nœud dit qu'un port reçoit des octets sans rien lire, la santé du nœud porte `port_problems` (port, cause, vitesse, broches, polarité, nombre d'octets et les derniers) pendant 30 minutes après la dernière annonce du nœud. Testé avec des rapports générés.
 
 ## 🧩 Rôle dans A.R.M.O.R.
 
@@ -214,7 +215,7 @@ Copiez `.env.example` en `.env` (ignoré par Git), ou laissez `run.bat` / `run.s
 ```powershell
 npm install           # dépendances
 npm run typecheck     # tsc --noEmit
-npm test              # 1389 tests : unitaires et intégration HTTP complète
+npm test              # 1408 tests : unitaires et intégration HTTP complète
 npm run build         # dist/server.mjs
 .\run.bat   (run.sh)  # serveur de développement avec rechargement à chaud
 ```
