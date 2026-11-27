@@ -15,6 +15,7 @@ export const PANEL_HISTORY_MINUTES = 1440;
 const BATTERY_SUMMARY = ["kind", "model", "state", "alarm", "protecting", "modules", "soc_percent", "voltage_v", "current_a", "power_w", "capacity_ah", "full_capacity_ah", "energy_kwh",
   "temperature_min_c", "temperature_max_c", "cell_min_v", "cell_max_v"] as const;
 const INVERTER_SUMMARY = ["kind", "mode", "grid_v", "out_w", "load_percent", "battery_v", "battery_a", "battery_percent", "pv_w", "heatsink_c", "warnings"] as const;
+// A list of what is given, not of what is left out: a field added to the reading (a serial number is private) never reaches a wall screen by itself.
 const MODULE_FIELDS = ["n", "present", "model", "state", "voltage_v", "current_a", "temperature_c", "soc_percent", "cells_v", "temperatures_c", "capacity_ah", "full_capacity_ah", "cycles",
   "health_percent", "counters"] as const;
 

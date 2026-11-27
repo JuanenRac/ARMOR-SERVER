@@ -132,7 +132,7 @@ What it cannot do: a wall panel shows the alarm to whoever stands in front of it
 
 ## The solar routes of a small screen
 
-For a wall screen that only shows the energy side (ARMOR-NODE-SOLAR-HMI). The field names are those of `GET /api/v1/solar`, cut down so that one answer fits the reader of a node (64 KB, 4096 values).
+For a wall screen that only shows the energy side (ARMOR-NODE-SOLAR-HMI). The field names are those of `GET /api/v1/solar`, cut down so that one answer fits the reader of a node (64 KB, 4096 values) and without serial numbers: the person types the serial number of the battery to order.
 
 * `GET /api/v1/panel/solar`: `devices` (at most 32; `omitted` says how many more there are) with their own figures and no modules, `totals`, and `battery_ops` (`enabled`, `may` for who asks, `operations`).
 * `GET /api/v1/panel/solar/devices/{node}/{device}`: that device, a battery with its modules and cells.

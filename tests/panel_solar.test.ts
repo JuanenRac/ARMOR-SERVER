@@ -12,7 +12,7 @@ import { startServer, studioCookie, type Running } from "./helpers.js";
 const SERIAL = "PPTBH02200409223";
 
 const moduleOf = (n: number) => ({ n, present: true, voltage_v: 49.7, current_a: 1.25, temperature_c: 21.5, soc_percent: 76, state: "Charge", cells_v: Array.from({ length: 32 }, () => 3.312),
-  temperatures_c: Array.from({ length: 6 }, () => 21.5), capacity_ah: 56.2, full_capacity_ah: 74, cycles: 120, health_percent: 98, board_version: "B1", soft_version: "V3.0",
+  temperatures_c: Array.from({ length: 6 }, () => 21.5), capacity_ah: 56.2, full_capacity_ah: 74, cycles: 120, health_percent: 98, board_version: "B1", soft_version: "V3.0", serial: "PRIVATE-SERIAL-0001",
   counters: Object.fromEntries(Array.from({ length: 20 }, (_, index) => [`counter_${index}_times`, index])) });
 const stack = (device: string, modules: number): SolarBattery => ({ kind: "battery", node_id: "solar-1", device, timestamp_ms: 1, modules, stack: Array.from({ length: modules }, (_, i) => moduleOf(i + 1)),
   voltage_v: 49.7, current_a: 5, soc_percent: 76, cell_min_v: 3.31, cell_max_v: 3.32 }) as unknown as SolarBattery;
@@ -40,6 +40,7 @@ test("one device carries its modules and cells, and the biggest stack fits the r
   assert.equal((modules[0].cells_v as number[]).length, 32);
   assert.ok("counters" in modules[0]);
   assert.ok(!("board_version" in modules[0]) && !("soft_version" in modules[0]));
+  assert.ok(!JSON.stringify(one).includes("PRIVATE-SERIAL"), "a serial number is private: a wall screen is never given it");
   assert.ok(JSON.stringify(one).length < 60_000);
   assert.ok(count(one) < 4_000);
 });
