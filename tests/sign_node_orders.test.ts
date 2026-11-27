@@ -68,7 +68,7 @@ test("a battery order is signed with the key of its node in every message of its
     publish: (topic, payload) => { sent.push({ topic, payload }); },
     sign: command => { if (broken) throw new Error("no key"); return signer.sign(command); },
   });
-  const order = { node: "solar-1", port: 2, op: "output_set", params: { output: "cfet", state: "off" }, serial: "PPTBH02200409223" };
+  const order = { node: "solar-1", port: 2, op: "output_set", params: { output: "cfet", state: "off" }, serial: "PPTBH00000000001" };
   service.arm("ana", order as never);
   assert.equal(sent.length, 1);
   assert.equal(sent[0]!.topic, "armor/solar/solar-1/maintenance/command");
