@@ -61,7 +61,7 @@ test("the values of an operation are checked against the table", () => {
   assert.equal(code("protections_set", { items: { bov: "dis" } }), "invalid_params");
   assert.equal(code("protections_set", { items: { bov: "dis" }, accept_risk: true }), undefined);
   assert.equal(code("protections_set", { items: { nope: "en" } }), "invalid_params");
-  assert.equal(code("write_barcode", { serial: "H221014C32213244" }), undefined);
+  assert.equal(code("write_barcode", { serial: "H000000C30000001" }), undefined);
   assert.equal(code("write_barcode", { serial: "short" }), "invalid_params");
   assert.equal(code("firmware_update", { image_size: 200000, image_crc32: 1, image_version: "2.4" }), undefined);
   assert.equal(code("firmware_update", { image_size: 1000, image_crc32: 1, image_version: "2.4" }), "invalid_params");
@@ -86,7 +86,7 @@ function bench(options: { enabled?: boolean; publishFails?: boolean; file?: stri
     enabled: options.enabled ?? true, solar, audit: log, now: () => clock, random: () => `c${String(++counter).padStart(15, "0")}`, pieceWaitMs: options.pieceWaitMs ?? 5000, file: options.file,
     publish: (topic, payload) => { if (options.publishFails) throw new Error("down"); sent.push({ topic, payload: JSON.parse(payload) as Record<string, unknown> }); },
   });
-  const identity = { model: "US3000C", serial: "PPTBH02200409223", soft_version: "V3.0", board: "" };
+  const identity = { model: "US3000C", serial: "PPTBH00000000001", soft_version: "V3.0", board: "" };
   const result = (over: Record<string, unknown>): BatteryResult => parseBatteryResult({ kind: "solar_battery_result", node_id: "solar-1", timestamp_ms: 9, port: 2, accepted: true, refusal: "none", ...over });
   const last = () => sent[sent.length - 1].payload;
   /** The node accepts the arm that was just published. */
@@ -96,12 +96,12 @@ function bench(options: { enabled?: boolean; publishFails?: boolean; file?: stri
   return { service, solar, sent, audit, last, armed, result, tick: (ms: number) => { clock += ms; solar.ingest(battery()); }, quiet: (ms: number) => { clock += ms; }, identity };
 }
 const code = (fn: () => unknown): string | undefined => { try { fn(); } catch (error) { return error instanceof BatteryOpsError ? error.code : `other:${String(error)}`; } return undefined; };
-const outputOff = { node: "solar-1", port: 2, op: "output_set", params: { output: "cfet", state: "off" }, serial: "PPTBH02200409223" };
+const outputOff = { node: "solar-1", port: 2, op: "output_set", params: { output: "cfet", state: "off" }, serial: "PPTBH00000000001" };
 
 test("writing off, nothing is sent and every refusal is audited", () => {
   const b = bench({ enabled: false });
   assert.equal(code(() => b.service.arm("admin", outputOff)), "battery_write_disabled");
-  assert.equal(code(() => b.service.execute("admin", "0123456789abcdef", "PPTBH02200409223")), "battery_write_disabled");
+  assert.equal(code(() => b.service.execute("admin", "0123456789abcdef", "PPTBH00000000001")), "battery_write_disabled");
   assert.equal(code(() => b.service.storeImage("admin", Buffer.alloc(100))), "battery_write_disabled");
   assert.equal(b.sent.length, 0);
   assert.equal(b.audit.filter(event => event.outcome === "denied").length, 3);
@@ -128,7 +128,7 @@ test("arm, then execute with the token, then the node's final answer: the whole 
   assert.equal(b.sent.length, 1);
   assert.equal(b.sent[0].topic, "armor/solar/solar-1/maintenance/command");
   assert.doesNotThrow(() => parseBatteryCommand(b.sent[0].payload));
-  assert.deepEqual([b.last().action, b.last().op, b.last().port, b.last().serial, "token" in b.last()], ["arm", "output_set", 2, "PPTBH02200409223", false]);
+  assert.deepEqual([b.last().action, b.last().op, b.last().port, b.last().serial, "token" in b.last()], ["arm", "output_set", 2, "PPTBH00000000001", false]);
   // not armed yet: nothing to execute
   assert.equal(code(() => b.service.execute("ana", record.id, outputOff.serial)), "not_armed");
   b.armed(token);
@@ -136,7 +136,7 @@ test("arm, then execute with the token, then the node's final answer: the whole 
   assert.deepEqual([armed.stage, armed.risk, armed.atomic, armed.canonical, armed.battery?.model], ["armed", "medium", false, "output_set cfet off", "US3000C"]);
   assert.ok(armed.armed_until);
   // the wrong serial, and another person, are refused
-  assert.equal(code(() => b.service.execute("ana", record.id, "PPTBH02200409224")), "serial_mismatch");
+  assert.equal(code(() => b.service.execute("ana", record.id, "PPTBH00000000002")), "serial_mismatch");
   assert.equal(code(() => b.service.execute("bob", record.id, outputOff.serial)), "not_armed");
   const started = b.service.execute("ana", record.id, outputOff.serial);
   assert.equal(started.stage, "starting");
@@ -393,12 +393,12 @@ test("turned on, the whole way through the routes, with the node's answers made 
     assert.equal(record.stage, "arming");
     const answer = (over: Record<string, unknown>) => running.app.context.batteryWrite.handleResult(parseBatteryResult({ kind: "solar_battery_result", node_id: "solar-1", timestamp_ms: 9, port: 2, accepted: true, refusal: "none", ...over }), "solar-1");
     answer({ command_id: published[0].command_id, action: "arm", op: "output_set", stage: "armed", token: "0123456789abcdef0123456789abcdef", canonical: "output_set cfet off", summary: "switch cfet off", risk: "medium", atomic: false,
-      battery: { model: "US3000C", serial: "PPTBH02200409223", soft_version: "V3.0", board: "" } });
+      battery: { model: "US3000C", serial: "PPTBH00000000001", soft_version: "V3.0", board: "" } });
     const shown = await send("GET", `/api/v1/solar/battery-ops/${record.id}`);
     const text = await shown.text();
     assert.ok(!text.includes("0123456789abcdef0123456789abcdef"), "a token is never in an answer");
     assert.equal((JSON.parse(text) as { stage: string }).stage, "armed");
-    assert.equal((await send("POST", `/api/v1/solar/battery-ops/${record.id}/execute`, { serial: "PPTBH02200409224" })).status, 400);
+    assert.equal((await send("POST", `/api/v1/solar/battery-ops/${record.id}/execute`, { serial: "PPTBH00000000002" })).status, 400);
     const executed = await send("POST", `/api/v1/solar/battery-ops/${record.id}/execute`, { serial: outputOff.serial });
     assert.equal(executed.status, 202);
     assert.equal(published[1].action, "execute");

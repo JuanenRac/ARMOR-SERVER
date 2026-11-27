@@ -10,7 +10,7 @@ import { lowers, SECURITY_DEFAULTS } from "../src/security_settings.js";
 import type { SolarBattery, SolarDeviceView } from "../src/solar.js";
 import { startServer, studioCookie, type Running } from "./helpers.js";
 
-const SERIAL = "PPTBH02200409223";
+const SERIAL = "PPTBH00000000001";
 
 const moduleOf = (n: number) => ({ n, present: true, voltage_v: 49.7, current_a: 1.25, temperature_c: 21.5, soc_percent: 76, state: "Charge", cells_v: Array.from({ length: 32 }, () => 3.312),
   temperatures_c: Array.from({ length: 6 }, () => 21.5), capacity_ah: 56.2, full_capacity_ah: 74, cycles: 120, health_percent: 98, board_version: "B1", soft_version: "V3.0", serial: "PRIVATE-SERIAL-0001",
