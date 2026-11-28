@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Language">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
   <img src="https://img.shields.io/badge/Tests-1408%20passing-2ea44f.svg" alt="Tests">
-  <img src="https://img.shields.io/badge/Version-0.8.3.1-0f6cbd.svg" alt="Version">
+  <img src="https://img.shields.io/badge/Version-0.8.3.2-0f6cbd.svg" alt="Version">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Maturity">
 </p>
 
@@ -36,7 +36,7 @@
 
 | | |
 |---|---|
-| 版本 | `0.8.3.1` |
+| 版本 | `0.8.3.2` |
 | 成熟度 | 成熟 |
 | 角色 | 家族的中央安全协调器：节点、报警、设备、能源、摄像头、网络 |
 | 技术栈 | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
@@ -154,7 +154,7 @@ flowchart LR
 | 语音：未确认就静音、超长文本、超大音频 | 策略 `voice.silence_confirmation`（off、pin、double_turn、challenge）随每个轮次发送；确认与本人绑定；200 个字符、8 种语言、每分钟 30 个请求；音频最多 480 000 字节，回复最多 200 000 字节 |
 | 误操作的危险写入 | 除非设置 `ARMOR_BATTERY_WRITE=1`、`ARMOR_ELECTRICAL_SWITCHING=1` 或 `ARMOR_ALARM_COMMANDS=1`，否则关闭；启动时给出警告 |
 
-**Studio 中的开关。** 可调的保护措施是保存在 `security-settings.json`（权限 0600，原子写入）中的 93 项设置，每项都有保守的默认值，调低任何一项都会写入审计。其中一部分：`alarm.disarm_pin`、`alarm.arming_modes`、`alarm.mode_downgrade_pin`、`alarm.mode_schedule`、`alarm.mode_schedule_lowers`、`alarm.mode_panel_sync`、`voice.silence_confirmation`、`alarm.config_hash`、`alarm.siren_fault_notice`、`server.zone_feed`、`server.zone_feed_signature`、`server.alarm_state_signature`、`media.rtsp_proxy`、`network.login_secure_only`、`login.country_alert`、`electrical.set_aside_old_readings`、`voice.multipart_turn`、`panel.live_events`、`client.device_lock`、`nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`、`summary.daily`、`summary.log_days`、`summary.reading_every_s`、`summary.power_every_s`、`summary.false_alarm_s`、`vision.heatmap`、`vision.activity_events`、`vision.service_url`、`vision.service_remote`、`vision.service_token_set`、`voice.turn_max_bytes`、`voice.reply_audio_max_bytes`、`reports.timeout_s`、`reports.queue_max` 和 `reports.requests_per_minute`。
+**Studio 中的开关。** 可调的保护措施是保存在 `security-settings.json`（权限 0600，原子写入）中的 94 项设置，每项都有保守的默认值，调低任何一项都会写入审计。其中一部分：`alarm.disarm_pin`、`alarm.arming_modes`、`alarm.mode_downgrade_pin`、`alarm.mode_schedule`、`alarm.mode_schedule_lowers`、`alarm.mode_panel_sync`、`voice.silence_confirmation`、`alarm.config_hash`、`alarm.siren_fault_notice`、`server.zone_feed`、`server.zone_feed_signature`、`server.alarm_state_signature`、`media.rtsp_proxy`、`network.login_secure_only`、`login.country_alert`、`electrical.set_aside_old_readings`、`voice.multipart_turn`、`panel.live_events`、`client.device_lock`、`nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`、`summary.daily`、`summary.log_days`、`summary.reading_every_s`、`summary.power_every_s`、`summary.false_alarm_s`、`vision.heatmap`、`vision.activity_events`、`vision.service_url`、`vision.service_remote`、`vision.service_token_set`、`voice.turn_max_bytes`、`voice.reply_audio_max_bytes`、`reports.timeout_s`、`reports.queue_max` 和 `reports.requests_per_minute`。
 
 **它绝不会：** 返回摄像头密码、保存所说的话（只保留命令及其结果），或把 PIN、令牌或 Cookie 写进日志。没有独立的安全审查。
 
