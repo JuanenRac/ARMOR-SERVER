@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **A wall screen is told who made an inverter:** the cut-down list of `GET /api/v1/panel/solar` carries the maker of an inverter and whether it was deduced, as it already did for batteries; never its serial number.
+
 ## [0.8.3.1] - Battery problems announced once, BMS faults named and safer remote maintenance
 
 - **A node that guards can refuse a pause or a standby:** the refusal `busy_guarding` is understood.
