@@ -18,6 +18,7 @@ import { HEALTH_CODES, type NodeHealthView } from "./node_health.js";
 import { ENERGY_ALARM_DEFAULTS, type EnergyAlarmSettings } from "./energy_alarms.js";
 import type { SecurityMode } from "./store.js";
 import { BATTERY_NOTICE_DEFAULTS, GapGate, type BatteryNoticeSettings } from "./battery_notices.js";
+import { CELL_JUDGE_DEFAULTS, gapCanBeJudged, type CellJudgeSettings } from "./cell_judge.js";
 import { firstProtection, moduleFault, UnreadCells } from "./battery_faults.js";
 import { durableRename } from "./durable.js";
 
@@ -332,6 +333,8 @@ export class AlarmRules {
   /** Since when each battery has had its cells further apart than the level (the time of the first message of the stretch), for the alarm that wants the gap to persist. */
   readonly #spreadSince = new Map<string, number>();
   readonly #unread = new UnreadCells();
+  /** When a cell gap says something (`cell-judge.json`). Set by the context. */
+  cellJudge: CellJudgeSettings = CELL_JUDGE_DEFAULTS;
 
   /** Since when each network node has seen the name of the house point elsewhere than its public address (the time of the first message of the stretch). */
   readonly #dnsSince = new Map<string, number>();
@@ -532,7 +535,8 @@ export class AlarmRules {
         ? this.#gaps.judge(id, Math.round((high - low) * 1000), `${read.join(",")};${low},${high}`, level.cell_spread_mv, message.timestamp_ms) : {};
       // the time a gap has lasted counts from its first reading, believed or not yet
       if (judged.gap === undefined && low !== undefined && high !== undefined && plausible(low) && plausible(high) && !this.#spreadSince.has(id)) this.#spreadSince.set(id, message.timestamp_ms);
-      if (judged.gap !== undefined) {
+      // a gap at the ends of the charge or in the cold neither raises the alarm nor clears it (see cell_judge.ts); a wide one is always judged
+      if (judged.gap !== undefined && gapCanBeJudged(message, judged.gap, level.cell_spread_mv, this.cellJudge)) {
         const spreadMv = (high! - low!) * 1000;
         if (spreadMv > level.cell_spread_mv) {
           // Persistent: the gap must last `cell_spread_minutes` without dropping back under the level before it is an alarm (0: at once, as it always was).

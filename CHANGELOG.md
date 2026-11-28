@@ -4,6 +4,9 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **The solar messages of a newer node are taken:** the whole stack's totals and limits (`bms_system`) and what an inverter counts and says of itself (`energy`, options, factory defaults, accepted charge currents, its battery). Update the server before the node: an older server refuses those messages.
+- **A cell gap is judged when it says something:** at the ends of the charge or at 5 degrees or less it neither raises nor clears the unbalance alarm. A gap of twice the level is always judged, so is a reading without charge, current or temperature, and protections and faults are not affected. The levels are in `cell-judge.json` of the data directory.
+- **Every full charge is recorded:** the mean and widest cell gap of its last minutes, the last 30 charges of each battery (`GET /api/v1/solar/full-charges`).
 - **A wall screen is told who made an inverter:** the cut-down list of `GET /api/v1/panel/solar` carries the maker of an inverter and whether it was deduced, as it already did for batteries; never its serial number.
 
 ## [0.8.3.1] - Battery problems announced once, BMS faults named and safer remote maintenance

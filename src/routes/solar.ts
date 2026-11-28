@@ -109,6 +109,9 @@ export function registerSolarRoutes(app: Express, context: AppContext): void {
     return response.json({ days: solar.energy(days) });
   });
 
+  // The cell gap of every battery stack at each of its last full charges.
+  app.get("/api/v1/solar/full-charges", requireOperator, (_request, response) => response.json({ batteries: context.fullCharges.list() }));
+
   // The levels at which batteries and inverters raise alarms: read, and changed (a field that is left out goes back to its default).
   app.get("/api/v1/solar/alarms", requireOperator, (_request, response) => response.json({ settings: context.energyAlarms.get(), defaults: ENERGY_ALARM_DEFAULTS }));
   app.put("/api/v1/solar/alarms", requireOperator, (request, response) => {
