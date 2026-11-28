@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **An inverter's Wi-Fi dongle can be read locally, off by default:** with the security option `solar.wifi_dongle` and a list of allowed addresses in `solar-wifi-dongle.json`, the server reads a Voltronic PI30 or PI18 inverter behind an Eybond dongle (SmartESS, WatchPower Wi-Fi) with questions that only read. While off no port is open. A person points the dongle at the server, and the maker's app then stops receiving data. Tested with a simulated dongle only. The transport is adapted from ha-dessmonitor (MIT).
+
 ## [0.8.3.2] - New solar figures and a cell gap judged when it means something
 
 - **The solar messages of a newer node are taken:** the whole stack's totals and limits (`bms_system`) and what an inverter counts and says of itself (`energy`, options, factory defaults, accepted charge currents, its battery). Update the server before the node: an older server refuses those messages.

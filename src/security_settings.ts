@@ -44,6 +44,7 @@
  *   panel.preflight              on | off                  the account of a wall panel may read the check before arming (GET /api/v1/preflight) to show what is wrong when the person presses Arm (off, the default: it answers 403 and the panel arms as before)
  *   panel.solar                  on | off                  the account of a wall panel may read the solar equipment cut down for a small screen (GET /api/v1/panel/solar and below; off, the default: 403)
  *   solar.panel_battery_ops      on | off                  the account of a wall panel may reset the statistics counters of a battery (and nothing else), with its PIN at every step, while solar.battery_write is on too (POST /api/v1/panel/solar/battery-ops; off, the default: 403)
+ *   solar.wifi_dongle            on | off                  the server listens for the Wi-Fi dongle of an inverter (SmartESS, WatchPower Wi-Fi ...) and reads it, only the addresses of solar-wifi-dongle.json (off, the default: no port is open); the protocol has no authentication, and this server only reads (see solar_dongle.ts)
  *   panel.camera_view            on | off                  the account of a wall panel may read a still picture of a camera (GET /api/v1/cameras/:id/snapshot), at most one every two seconds for each camera (off, the default: it answers 403)
  *   live.events                 on | off                 besides the whole state, the console channel (/api/v1/events) tells the consoles that an alarm, a device, the solar plant, the network or a design changed ({type, id, version} and nothing more; on, the default; off: the state only, as before)
  *   client.device_lock           user | sensitive | always   what the phone app asks of the person with the lock of the phone itself (fingerprint, face or the phone's PIN): user = the phone's own switches decide, sensitive = also before arming, disarming and unlocking, always = also to open the app (it can only raise what a person chose, never lower it, and a phone with no lock at all is never shut out)
@@ -212,6 +213,7 @@ export type SecuritySettingsValues = {
   "panel.camera_view": boolean;
   "panel.solar": boolean;
   "solar.panel_battery_ops": boolean;
+  "solar.wifi_dongle": boolean;
   "live.events": boolean;
   "client.device_lock": DeviceLockPolicy;
   "client.trusted_devices": boolean;
@@ -309,6 +311,7 @@ export const SECURITY_DEFAULTS: Readonly<SecuritySettingsValues> = Object.freeze
   "panel.camera_view": false,
   "panel.solar": false,
   "solar.panel_battery_ops": false,
+  "solar.wifi_dongle": false,
   "live.events": true,
   "client.device_lock": "user",
   "client.trusted_devices": false,
@@ -471,6 +474,7 @@ export function lowers(key: SecuritySettingKey, from: unknown, to: unknown): boo
   if (key === "voice.wake_word" || key === "voice.mobile_turn") return from === false && to === true;   // a panel that listens for its word all the time is the loss, even if the audio never leaves the house
   if (key === "panel.preflight" || key === "panel.camera_view") return from === false && to === true;   // letting the account of a wall panel read more than the summary is the loss
   if (key === "panel.solar" || key === "solar.panel_battery_ops") return from === false && to === true;   // more for the account of a wall panel to read, or a way for it to write to a battery
+  if (key === "solar.wifi_dongle") return from === false && to === true;   // a port opened for a device whose protocol has no authentication: turning it on is the loss
   if (key === "admin.firmware_rollout") return false;   // it only makes an update gentler: fewer nodes at a time, and a way back
   if (key === "admin.backup") return from === false && to === true;   // a copy of everything the server keeps, written where it is asked: turning it on is the loss
   if (key === "admin.field_http") return from === false && to === true;   // letting Studio open the server's port to the field network is the loss
