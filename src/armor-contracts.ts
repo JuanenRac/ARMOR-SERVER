@@ -77,6 +77,45 @@ export type SolarInverterRatings = {
   charger_priority?: "utility_first" | "solar_first" | "solar_and_utility" | "solar_only";
 };
 
+export type SolarInverterEnergy = {
+  day?: string;
+  pv_today_wh?: number;
+  pv_month_wh?: number;
+  pv_year_wh?: number;
+  load_today_wh?: number;
+  load_month_wh?: number;
+  load_year_wh?: number;
+  load_total_wh?: number;
+};
+
+export type SolarInverterDefaults = {
+  out_rating_v?: number;
+  out_rating_hz?: number;
+  battery_recharge_v?: number;
+  battery_under_v?: number;
+  battery_bulk_v?: number;
+  battery_float_v?: number;
+  max_charge_a?: number;
+  max_ac_charge_a?: number;
+  battery_type?: "agm" | "flooded" | "user";
+  input_range?: "appliance" | "ups";
+  output_priority?: "utility_first" | "solar_first" | "sbu";
+  charger_priority?: "utility_first" | "solar_first" | "solar_and_utility" | "solar_only";
+};
+
+export type SolarInverterBms = {
+  connected?: boolean;
+  soc_percent?: number;
+  force_charge?: boolean;
+  stop_discharge?: boolean;
+  stop_charge?: boolean;
+  bulk_v?: number;
+  float_v?: number;
+  cutoff_v?: number;
+  max_charge_a?: number;
+  max_discharge_a?: number;
+};
+
 export type SolarInverter = {
   kind: "inverter";
   node_id: string;
@@ -118,6 +157,13 @@ export type SolarInverter = {
   firmware?: string;
   pv_energy_total_wh?: number;
   ratings?: SolarInverterRatings;
+  energy?: SolarInverterEnergy;
+  options_on?: string[];
+  options_off?: string[];
+  defaults?: SolarInverterDefaults;
+  charge_current_options_a?: number[];
+  ac_charge_current_options_a?: number[];
+  bms?: SolarInverterBms;
 };
 
 export type SolarModuleLastEvent = {
@@ -183,6 +229,20 @@ export type SolarModule = {
   soft_version?: string;
 };
 
+export type SolarBatteryBmsSystem = {
+  modules_total?: number;
+  modules_present?: number;
+  modules_sleep?: number;
+  soc_percent?: number;
+  health_percent?: number;
+  remaining_ah?: number;
+  full_capacity_ah?: number;
+  charge_voltage_v?: number;
+  discharge_voltage_v?: number;
+  charge_current_a?: number;
+  discharge_current_a?: number;
+};
+
 export type SolarBattery = {
   kind: "battery";
   node_id: string;
@@ -212,6 +272,7 @@ export type SolarBattery = {
   protecting?: boolean;
   charge_mos?: number;
   discharge_mos?: number;
+  bms_system?: SolarBatteryBmsSystem;
 };
 
 export type ElectricalChannel = {

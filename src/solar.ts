@@ -47,7 +47,10 @@ export type SolarMessage = SolarInverter | SolarBattery;
 const deviceName = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 const INVERTER_KEYS = ["kind", "node_id", "device", "timestamp_ms", "mode", "grid_v", "grid_hz", "out_v", "out_hz", "out_va", "out_w", "load_percent", "battery_v", "battery_a", "battery_percent",
   "pv_v", "pv_a", "pv_w", "heatsink_c", "ac_charging", "pv_charging", "load_on", "warnings"] as const;
-const INVERTER_OPTIONAL_KEYS = ["warnings_known", "bus_v", "pv2_v", "pv2_a", "pv2_w", "total_out_w", "total_out_va", "total_load_percent", "total_charging_a", "units", "serial", "firmware", "pv_energy_total_wh", "ratings", "clamped", "manufacturer", "manufacturer_source"] as const;
+const INVERTER_OPTIONAL_KEYS = ["warnings_known", "bus_v", "pv2_v", "pv2_a", "pv2_w", "total_out_w", "total_out_va", "total_load_percent", "total_charging_a", "units", "serial", "firmware", "pv_energy_total_wh", "ratings", "clamped", "manufacturer", "manufacturer_source", "energy", "options_on", "options_off", "defaults", "charge_current_options_a", "ac_charge_current_options_a", "bms"] as const;
+const ENERGY_KEYS = ["day", "pv_today_wh", "pv_month_wh", "pv_year_wh", "load_today_wh", "load_month_wh", "load_year_wh", "load_total_wh"] as const;
+const INVERTER_BMS_KEYS = ["connected", "soc_percent", "force_charge", "stop_discharge", "stop_charge", "bulk_v", "float_v", "cutoff_v", "max_charge_a", "max_discharge_a"] as const;
+const BMS_SYSTEM_KEYS = ["modules_total", "modules_present", "modules_sleep", "soc_percent", "health_percent", "remaining_ah", "full_capacity_ah", "charge_voltage_v", "discharge_voltage_v", "charge_current_a", "discharge_current_a"] as const;
 const RATINGS_RANGES: Record<string, readonly [number, number]> = {
   grid_rating_v: [0, 600], out_rating_v: [0, 600], out_rating_hz: [0, 100], out_rating_va: [0, 1_000_000], out_rating_w: [0, 1_000_000], battery_rating_v: [0, 600], battery_recharge_v: [0, 600],
   battery_under_v: [0, 600], battery_bulk_v: [0, 600], battery_float_v: [0, 600], max_charge_a: [0, 2000], max_ac_charge_a: [0, 2000],
@@ -67,6 +70,9 @@ export function parseSolarInverter(value: unknown): SolarInverter {
   const body = record(value, "inverter");
   onlyKnown(body, [...INVERTER_KEYS, ...INVERTER_OPTIONAL_KEYS], "inverter");
   onlyKnownIn(body.ratings, [...Object.keys(RATINGS_RANGES), ...Object.keys(RATINGS_CHOICES)], "ratings");
+  onlyKnownIn(body.defaults, [...Object.keys(RATINGS_RANGES), ...Object.keys(RATINGS_CHOICES)], "defaults");
+  onlyKnownIn(body.energy, ENERGY_KEYS, "energy");
+  onlyKnownIn(body.bms, INVERTER_BMS_KEYS, "bms");
   if (Array.isArray(body.units)) body.units.forEach((unit, index) => onlyKnownIn(unit, UNIT_KEYS, `unit ${index}`));
   checkAgainstContract("solar_inverter", body);
   return body as unknown as SolarInverter;
@@ -77,7 +83,8 @@ const MODULE_KEYS = ["n", "present", "voltage_v", "current_a", "temperature_c", 
 
 export function parseSolarBattery(value: unknown): SolarBattery {
   const body = record(value, "battery");
-  onlyKnown(body, ["kind", "node_id", "device", "timestamp_ms", "modules", "stack", "state", "voltage_v", "current_a", "temperature_min_c", "temperature_max_c", "cell_min_v", "cell_max_v", "soc_percent", "alarm", "model", "capacity_ah", "full_capacity_ah", "energy_kwh", "cycles", "health_percent", "power_w", "balancing", "protecting", "charge_mos", "discharge_mos", "manufacturer", "manufacturer_source"], "battery");
+  onlyKnown(body, ["kind", "node_id", "device", "timestamp_ms", "modules", "stack", "state", "voltage_v", "current_a", "temperature_min_c", "temperature_max_c", "cell_min_v", "cell_max_v", "soc_percent", "alarm", "model", "capacity_ah", "full_capacity_ah", "energy_kwh", "cycles", "health_percent", "power_w", "balancing", "protecting", "charge_mos", "discharge_mos", "manufacturer", "manufacturer_source", "bms_system"], "battery");
+  onlyKnownIn(body.bms_system, BMS_SYSTEM_KEYS, "bms_system");
   if (Array.isArray(body.stack)) body.stack.forEach((module, index) => {
     onlyKnownIn(module, MODULE_KEYS, `module ${index}`);
     const flags = (module as Record<string, unknown> | null)?.flags;
