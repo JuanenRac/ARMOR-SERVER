@@ -33,7 +33,7 @@ function fakeDongle(port: number, protocol: "pi30" | "pi18" | "pi17"): Fake {
   let buffer = Buffer.alloc(0);
   socket.on("error", () => undefined);
   socket.on("data", chunk => {
-    buffer = Buffer.concat([buffer, chunk]);
+    buffer = Buffer.concat([buffer, chunk as Buffer]);
     while (buffer.length >= 8) {
       const header = readHeader(buffer, 2048)!;
       const total = 8 + header.payloadLength;

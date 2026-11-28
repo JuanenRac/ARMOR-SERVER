@@ -100,7 +100,7 @@ class Session {
     this.lastFrameMs = Date.now();
     const heartbeatMs = options.timings?.heartbeatMs ?? 60_000;
     socket.setNoDelay(true);
-    socket.on("data", chunk => this.#data(chunk));
+    socket.on("data", chunk => this.#data(chunk as Buffer));
     socket.on("error", () => this.close("connection error"));
     socket.on("close", () => this.close("the dongle closed the connection"));
     const beat = (): void => { this.#send(heartbeatFrame(this.#next(), heartbeatMs / 1000, new Date(this.options.now?.() ?? Date.now()))); };
