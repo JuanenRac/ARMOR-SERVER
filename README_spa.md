@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/Language-TypeScript-3178c6.svg" alt="Lenguaje">
   <img src="https://img.shields.io/badge/Runtime-Node%2022%2B-43853d.svg" alt="Runtime">
   <img src="https://img.shields.io/badge/Tests-1408%20passing-2ea44f.svg" alt="Pruebas">
-  <img src="https://img.shields.io/badge/Version-0.8.3.1-0f6cbd.svg" alt="Versión">
+  <img src="https://img.shields.io/badge/Version-0.8.3.2-0f6cbd.svg" alt="Versión">
   <img src="https://img.shields.io/badge/Maturity-established-2EA44F.svg" alt="Madurez">
 </p>
 
@@ -36,7 +36,7 @@
 
 | | |
 |---|---|
-| Versión | `0.8.3.1` |
+| Versión | `0.8.3.2` |
 | Madurez | Establecido |
 | Función | Coordinador central de seguridad de la familia: nodos, alarmas, dispositivos, energía, cámaras, red |
 | Tecnología | Node.js 22+, TypeScript, Express 5, MQTT, WebSocket, FFmpeg |
@@ -154,7 +154,7 @@ flowchart LR
 | Voz: silenciar sin comprobar, texto largo, audio enorme | La política `voice.silence_confirmation` (off, pin, double_turn, challenge) viaja en cada turno; confirmación atada a la persona; 200 caracteres, 8 idiomas, 30 peticiones por minuto; audio de 480 000 bytes y respuesta de 200 000 bytes como máximo |
 | Escrituras peligrosas por error | Apagadas salvo `ARMOR_BATTERY_WRITE=1`, `ARMOR_ELECTRICAL_SWITCHING=1` o `ARMOR_ALARM_COMMANDS=1`, con aviso al arrancar |
 
-**Interruptores en Studio.** Las protecciones que se pueden ajustar son 93 valores guardados en `security-settings.json` (modo 0600, escritura atómica), cada uno con un valor por defecto conservador, y bajar uno queda en la auditoría. Algunos: `alarm.disarm_pin`, `alarm.arming_modes`, `alarm.mode_downgrade_pin`, `alarm.mode_schedule`, `alarm.mode_schedule_lowers`, `alarm.mode_panel_sync`, `voice.silence_confirmation`, `alarm.config_hash`, `alarm.siren_fault_notice`, `server.zone_feed`, `server.zone_feed_signature`, `server.alarm_state_signature`, `media.rtsp_proxy`, `network.login_secure_only`, `login.country_alert`, `electrical.set_aside_old_readings`, `voice.multipart_turn`, `panel.live_events`, `client.device_lock`, `client.trusted_devices`, `client.trusted_session_h`, `nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`, `summary.daily`, `summary.log_days`, `summary.reading_every_s`, `summary.power_every_s`, `summary.false_alarm_s`, `vision.heatmap`, `vision.activity_events`, `vision.service_url`, `vision.service_remote`, `vision.service_token_set`, `voice.turn_max_bytes`, `voice.reply_audio_max_bytes`, `reports.timeout_s`, `reports.queue_max` y `reports.requests_per_minute`.
+**Interruptores en Studio.** Las protecciones que se pueden ajustar son 94 valores guardados en `security-settings.json` (modo 0600, escritura atómica), cada uno con un valor por defecto conservador, y bajar uno queda en la auditoría. Algunos: `alarm.disarm_pin`, `alarm.arming_modes`, `alarm.mode_downgrade_pin`, `alarm.mode_schedule`, `alarm.mode_schedule_lowers`, `alarm.mode_panel_sync`, `voice.silence_confirmation`, `alarm.config_hash`, `alarm.siren_fault_notice`, `server.zone_feed`, `server.zone_feed_signature`, `server.alarm_state_signature`, `media.rtsp_proxy`, `network.login_secure_only`, `login.country_alert`, `electrical.set_aside_old_readings`, `voice.multipart_turn`, `panel.live_events`, `client.device_lock`, `client.trusted_devices`, `client.trusted_session_h`, `nodes.nvs_encryption`, `alarm_audio.spoken`, `alarm_audio.custom_sounds`, `summary.daily`, `summary.log_days`, `summary.reading_every_s`, `summary.power_every_s`, `summary.false_alarm_s`, `vision.heatmap`, `vision.activity_events`, `vision.service_url`, `vision.service_remote`, `vision.service_token_set`, `voice.turn_max_bytes`, `voice.reply_audio_max_bytes`, `reports.timeout_s`, `reports.queue_max` y `reports.requests_per_minute`.
 
 **Lo que nunca hace:** devolver una contraseña de cámara, guardar las palabras que se dijeron (solo el comando y su resultado) ni escribir un PIN, un token o una cookie en un registro. No ha habido revisión de seguridad independiente.
 
