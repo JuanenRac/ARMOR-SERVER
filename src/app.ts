@@ -335,7 +335,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   if (mqtt && config.haDiscovery) {
     // Home Assistant reads the same broker: it is told, once and then again now and then, what the nodes report (read-only sensors; ha_discovery.ts).
     const discovery = new DiscoveryPublisher({
-      prefix: config.haDiscovery.prefix, solar: () => context.solar.list(), electrical: () => context.electricalNodes.list(), alarm: () => context.alarmNodes.list(),
+      prefix: config.haDiscovery.prefix, solar: () => context.solar.list().filter(view => view.node_id !== context.solarDongle.nodeId), electrical: () => context.electricalNodes.list(), alarm: () => context.alarmNodes.list(),
       publish: (topic, payload) => { if (!mqtt.connected) throw new Error("the MQTT broker is not connected"); mqtt.publish(topic, payload, { qos: 1, retain: true }); }, warn: message => console.warn(message),
     });
     // Every time the broker is (re)connected the rounds run again: they were stopped when it dropped, and a restart of the broker loses what was retained in memory.
@@ -425,6 +425,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
   const sweeper = setInterval(() => {
     try {
       context.escalator.tick(); context.automations.tick(); context.alarmZoneFeed.tick(); context.store.sweep(); context.devices.sweep(); context.solar.sweep(); context.electricalNodes.sweep(); context.electricalSwitching.sweep(); context.batteryWrite.sweep(); context.nodeControl.sweep(); context.diagnosticTokens.sweep(); context.alarmNodes.sweep(); context.alarmCommands.sweep(); context.armingModes.tick(); context.reportSilentNodes(); context.networkNodes.sweep();
+      void context.solarDongle.sync();   // the port for an inverter's Wi-Fi dongle follows its option too
       void panelOrigin?.sync();   // the second origin of the panels follows its option: open while it is on, closed when it is off
       context.studioSessions.sweep(); context.operatorSessions.sweep(); context.connections.registry.tick(); context.nodeLife.flush();
       void context.backup.tick(context.securitySettings.get("admin.backup"));
@@ -452,6 +453,7 @@ export function createArmorApp(config: ArmorConfig, version: string, overrides: 
       clearInterval(panelTimer);
       clearInterval(sheddingTimer);
       clearInterval(historySaver);
+      await context.solarDongle.close();   // nothing more is read once the server is stopping
       stateFeed.close();
       context.live.close();
       context.systemMonitor.stop();

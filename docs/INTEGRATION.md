@@ -87,6 +87,7 @@ An administrator turns these on and off from Studio (Security) or with `PUT /api
 | `panel.preflight` | on, off (default off) | Whether the account of a wall panel may read the check before arming, `GET /api/v1/preflight`, to show what is wrong when the person presses Arm. Off, it answers 403 and the panel arms as before. Turning it on lowers the protection and is written in the audit trail. |
 | `panel.camera_view` | on, off (default off) | Whether the account of a wall panel may read a still picture of a camera, `GET /api/v1/cameras/:id/snapshot` (nothing is saved; at most one picture every two seconds for each camera, answered 429 with `Retry-After` when asked sooner; never over 1 MiB). Off, it answers 403. Turning it on lowers the protection and is written in the audit trail. |
 | `panel.solar` | on, off (default off) | Whether the account of a wall panel may read the solar equipment cut down for a small screen (see *The solar routes of a small screen* below). Operators and administrators read them whatever the option says. |
+| `solar.wifi_dongle` | on, off (default off) | The server listens for the Wi-Fi dongle of an inverter and reads it (see below). Off: no port is open. Turning it on lowers security. |
 | `solar.panel_battery_ops` | on, off (default off) | Whether the account of a wall panel may reset the statistics counters of a battery, and nothing else, with its PIN at every step. `solar.battery_write` has to be on too. Turning it on counts as lowering security. |
 | `admin.acl_relays` | on, off (default off) | Whether Studio may ask the admin agent to open or close the two switches of the broker rules that no install turns on: the writing to the batteries of one solar node (`battery-write`) and the signed copy of the alarm states (`alarm-state-relay`), through `GET`/`POST /api/v1/admin/mqtt/relays`. Off, the routes answer 403 `acl_relays_disabled`. On, each change still needs `confirm: true`, the node (or `alarm-state-relay`) typed again in `confirm_text`, and the six-digit code of the administrator's authenticator in `X-Armor-Maint-Totp`, which the agent checks; every attempt is in the audit trail as `admin.acl_relay`. |
 | `admin.field_http` | on, off (default off) | Whether Studio may ask the admin agent to let the field network also reach the server's port over HTTP (the `field-http` switch of the host firewall), through `GET /api/v1/admin/firewall` and `POST /api/v1/admin/firewall/field-http`. Off, the routes answer 403 `field_http_disabled`. On, each change still needs `confirm: true`, the word `field-http` typed again in `confirm_text` and the six-digit code of the administrator's authenticator in `X-Armor-Maint-Totp`, which the agent checks; every attempt is in the audit trail as `admin.firewall`. |
@@ -139,6 +140,48 @@ For a wall screen that only shows the energy side (ARMOR-NODE-SOLAR-HMI). The fi
 * `GET /api/v1/panel/solar/history?node=&device=&minutes=`: at most 96 points of up to a day.
 * `POST /api/v1/panel/solar/battery-ops` with `{ node, port, serial, pin }`, then `GET .../battery-ops/{id}` until it is `armed`, then `POST .../battery-ops/{id}/execute` with `{ serial, pin }`. The only operation is `clear_stats` (it erases all the statistics counters of that battery). Only the account of a wall panel, from the house or the VPN, while `solar.panel_battery_ops` and `solar.battery_write` are on; the PIN of the account is checked at each step with the lockout of disarming, and every attempt is audited. Refusals: `panel_account_only`, `panel_local_only`, `panel_battery_ops_disabled`, `battery_write_disabled`, `operation_not_from_panel`, `pin_required`, `pin_not_set`, `wrong_pin`, `pin_locked`, and those of the battery operations.
 * Checking a battery has no route of its own: the screen reads the device again.
+
+## The Wi-Fi dongle of an inverter, read locally
+
+Many hybrid inverters report to their maker through a Wi-Fi dongle (or a built-in module) of the Eybond family: the ones the SmartESS, SmartClient and WatchPower Wi-Fi apps use. This server can read such an inverter on the house network, with no cable and no cloud. **It has only run against a simulated dongle: no real dongle or inverter has been tried, and not every module of those apps is of this family.**
+
+Before you start, know what it costs:
+
+* **The maker's app stops receiving data** while the dongle points at this server.
+* **The protocol has no authentication and no encryption.** Anyone on the same network can point the dongle elsewhere or talk to this port. Use it only on a network you trust, never open the port to the internet, and let your firewall take port 8899 only from the dongle.
+* **This server only reads.** It can build a heartbeat (which carries the server's clock and the interval, as the maker's cloud does) and reading questions of Voltronic PI30 and PI18 inverters. No setting command exists in it. Other protocols are named in the log and nothing more is asked.
+
+It needs two things, and while either is missing **no port is open**:
+
+1. The security option `solar.wifi_dongle`, off by default (Studio, Security).
+2. The file `solar-wifi-dongle.json` in the data directory, read when the port is opened (to apply a change, turn the option off and on):
+
+```json
+{
+  "listen_address": "192.168.1.10",
+  "dongles": [{ "address": "192.168.1.50", "device": "inverter" }]
+}
+```
+
+| Key | Default | What it is |
+| --- | --- | --- |
+| `listen_address` | required | One private IPv4 address of this machine (never `0.0.0.0`) |
+| `dongles` | required | 1 to 4 allowed dongles: `address` (give it a fixed address in the router) and `device`, the name of its inverter |
+| `port` | 8899 | TCP port, 1024 to 65535 |
+| `node_id` | `wifi-dongle` | The node name the readings carry |
+| `protocol` | `auto` | `auto`, `pi30` or `pi18` |
+| `poll_s` | 10 | Seconds between readings (5 to 300) |
+| `request_timeout_s` | 5 | Seconds to wait for a reply (2 to 30) |
+| `max_frame_bytes` | 512 | Largest payload of a frame (128 to 2048) |
+| `max_bytes_per_s` | 8192 | Bytes a second from one dongle (1024 to 65536) |
+| `max_frames_per_s` | 20 | Frames a second from one dongle (2 to 100) |
+| `connections_per_minute` | 6 | Connections a minute from one address (1 to 30) |
+
+An unknown key or a value out of range refuses the whole file. A connection from an address that is not listed is closed before anything is sent to it, and a frame or a rate over a limit closes the connection. The log says `ARMOR_SOLAR_DONGLE=` followed by `LISTENING`, `CONNECTED`, `READING`, `NOT_LISTENING`, `REFUSED`, `NO_INVERTER`, `UNSUPPORTED_PROTOCOL`, `DISCONNECTED` or `OFF`.
+
+The readings enter the same place as those of a solar gateway node (`GET /api/v1/solar`, history, alarms); they are not published on the broker. Do not read the same inverter through a node at the same time, or the totals count it twice.
+
+**Pointing the dongle at the server is done by a person, never by this server.** The dongle is told with one UDP datagram to its port 58899, with the text `set>server=<listen_address>:<port>;`. That changes a setting inside the dongle. Before sending it, write down the server the dongle uses now (your router can usually show where it connects) and make sure you know how you will put it back: whether a dongle returns to the maker's server by itself after a power cut depends on its firmware and has not been checked. To go back, send the same datagram with the address and port you wrote down, or set up its network again from the maker's app, and then turn the option off.
 
 ## The panel's live channel
 
