@@ -94,6 +94,8 @@ import { DiagnosticTokens } from "./diagnostic_tokens.js";
 import { NodeDiagnosticsStore } from "./node_diagnostics.js";
 import { RadarEventStore, type RadarEvent } from "./radar_events.js";
 import { EnergyAlarmStore } from "./energy_alarms.js";
+import { JsonFile } from "./history.js";
+import { FullCharges, parseCellJudgeSettings } from "./cell_judge.js";
 import { BatteryNotices } from "./battery_notices.js";
 import { ClientRegistry, ConnectionTracker, identify, NodeLife, systemBody, systemFromAudit, type Sighting, type SystemInput } from "./connections.js";
 import path from "node:path";
@@ -146,6 +148,7 @@ export type AppContext = {
   alarmRules: AlarmRules;
   /** The levels at which batteries and inverters raise alarms (editable from Studio). */
   energyAlarms: EnergyAlarmStore;
+  fullCharges: FullCharges;
   batteryNotices: BatteryNotices;
   automations: AutomationEngine;
   /** Signs the critical commands and gives each node its own key (see command_signature.ts). */
@@ -411,6 +414,8 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   const batteryNotices = new BatteryNotices(path.join(config.dataDir, "battery-notices.json"), overrides.now);
   const alarms = new AlarmCentre({ file: path.join(config.dataDir, "alarms.json"), onEvent: record, judge: alarm => { batteryNotices.raised(alarm); return batteryNotices.unannounced(alarm); }, onRaised: alarm => automations.handleAlarm(alarm), onCleared: alarm => batteryNotices.cleared(alarm), warn });
   const energyAlarms = new EnergyAlarmStore(path.join(config.dataDir, "energy-alarms.json"));
+  const cellJudge = parseCellJudgeSettings(new JsonFile<unknown>(path.join(config.dataDir, "cell-judge.json")).read());
+  const fullCharges = new FullCharges(path.join(config.dataDir, "full-charges.json"), cellJudge);
   const alarmRules = new AlarmRules(alarms, () => store.snapshot().mode, () => energyAlarms.get());
   alarmRules.dnsDwellMs = config.networkDnsDwellMin * 60_000;
   const devices: DeviceRegistry = new DeviceRegistry({
@@ -508,6 +513,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     notifier.notify(event, store.snapshot().mode);
   };
   alarmRules.cellRange = () => batteryNotices.settings();
+  alarmRules.cellJudge = cellJudge;
   alarmRules.sirenNotice = () => securitySettings.get("alarm.siren_fault_notice");
   alarmRules.profileNotify = id => armProfiles.find(id)?.notify ?? (armProfiles.find(id) ? "urgent" : undefined);
   const diagnosticTokens = new DiagnosticTokens({ file: path.join(config.dataDir, "diagnostic_tokens.json"), now: overrides.now, audit });
@@ -590,7 +596,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
   ingestLog.tap = (topic, payload, accepted, reason) => ingestRecorder.record(topic, payload, accepted, reason);
   const solarRegistry = new SolarRegistry(path.join(config.dataDir, "solar-devices.json"), overrides.now ? () => new Date(overrides.now!()) : undefined);
   const batteryHistory = new BatteryHistory({ dir: path.join(config.dataDir, "battery-history"), days: config.batteryHistoryDays, everyS: config.batteryHistoryEveryS, maxBytes: config.batteryHistoryMaxBytes, now: overrides.now, warn: message => console.warn("ARMOR_BATTERY_HISTORY=NOT_SAVED", message) });
-  const solar = new SolarStore({ now: overrides.now, cellRules: () => ({ min_v: batteryNotices.settings().cell_min_plausible_v, max_v: batteryNotices.settings().cell_max_plausible_v, gap_mv: energyAlarms.get().cell_spread_mv }), onMessage: message => { batteryHistory.record(message); live.notify("solar", `${message.node_id}/${message.device}`); knownNodes.seen("solar", `${message.node_id}/${message.device}`); alarmRules.handleSolar(message); }, onStale: (node, device, stale) => alarmRules.handleSolarStale(node, device, stale) });
+  const solar = new SolarStore({ now: overrides.now, cellRules: () => ({ min_v: batteryNotices.settings().cell_min_plausible_v, max_v: batteryNotices.settings().cell_max_plausible_v, gap_mv: energyAlarms.get().cell_spread_mv }), onMessage: message => { batteryHistory.record(message); live.notify("solar", `${message.node_id}/${message.device}`); knownNodes.seen("solar", `${message.node_id}/${message.device}`); alarmRules.handleSolar(message); if (message.kind === "battery" && message.modules > 0) fullCharges.note(`${message.node_id}/${message.device}`, message.timestamp_ms, message.soc_percent, message.cell_min_v !== undefined && message.cell_max_v !== undefined ? (message.cell_max_v - message.cell_min_v) * 1000 : undefined); }, onStale: (node, device, stale) => alarmRules.handleSolarStale(node, device, stale) });
   const batteryLink: AppContext["batteryLink"] = {};
   const balanceWatcher = new BalanceWatcher({
     file: path.join(config.dataDir, "energy-balance.json"), enabled: () => securitySettings.get("electrical.balance"), now: overrides.now,
@@ -768,7 +774,7 @@ export function createContext(config: ArmorConfig, overrides: ContextOverrides =
     firmware: overrides.firmware ?? new FirmwareService({ nodePort: () => (process.env.ARMOR_ADMIN_NODE_PORT ? Number(process.env.ARMOR_ADMIN_NODE_PORT) : 0), releaseApi: () => process.env.ARMOR_FIRMWARE_RELEASE_API || "https://api.github.com", rollout: () => (securitySettings.get("admin.firmware_rollout") ? firmwareRollout.get() : null), refuseDowngrade: () => securitySettings.get("admin.firmware_refuse_downgrade") }),
     admin: overrides.admin ?? (config.admin ? { request: unixTransport(config.admin.socketPath, config.admin.token) } : null),
     maintenance: overrides.maintenance ?? (config.maintenance ? { request: unixTransport(config.maintenance.socketPath, config.maintenance.token, 70_000, "X-Armor-Maint-Token") } : null),
-    duressLog, raiseDuress, alarmQuery, live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, ingestCaller, nodeTokens, sharedTokenWatch, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, ignoreProposals, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, batteryNotices, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, presence, studioUser, requireAdmin, refuseRemote, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryCampaigns, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, batteryHistory, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays, visionCounters,
+    duressLog, raiseDuress, alarmQuery, live, connections, detectionZones, recordSystem, sightingOf, nodeLife, alarmDesign, alarmZoneFeed, zoneFeedSigner, alarmStateSigner, securitySettings, ingestCaller, nodeTokens, sharedTokenWatch, geoip, loginCountries, visionTimeline, alarmSounds, runReport: overrides.runReport ?? runReportCommand, fetchVision: overrides.fetchVision ?? fetchVisionService, dailyLog, spokenAlarms, captureOnDetect, ignoreZones, ignoreProposals, countLines, fcmDevices, knownNodes, reportSilentNodes, nodeControl, controlLink, fcmEnabled: Boolean(config.fcmServiceAccount), config, store, events, rules, notifier, escalator, electricalEnergy, ingestLog, ingestRecorder, energyAlarms, fullCharges, batteryNotices, cameraWatcher, ptz: new PtzController(), audit, studioSessions, operatorSessions, totp, trustedDevices, originOfRequest, requireElevated, users, preferences, presence, studioUser, requireAdmin, refuseRemote, devices, alarms, alarmRules, electrical, electricalNodes, electricalSwitching, switchLink, batteryWrite, batteryCampaigns, batteryLink, alarmNodes, alarmCommands, armProfiles, armingModes, modePanelSync, armAway, disarmAll, nodeHealth, diagnosticTokens, nodeDiagnostics, radarEvents, alarmLink, networkNodes, networkNotes, networkCommands, deviceCredentials, systemMonitor, heartbeat, network, automations, site, solar, batteryHistory, solarRegistry, deviceLink, sendDeviceCommand, vault, evidence, relays, visionCounters,
     tickets: new StreamTickets(), discovery: new DiscoveryGate(), operatorAuthorized, requireOperator,
     balanceWatcher,
     publicCamera: camera => cameraPublic(camera, Boolean(config.ffmpegPath)),
