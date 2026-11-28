@@ -46,6 +46,15 @@ test("one device carries its modules and cells, and the biggest stack fits the r
   assert.ok(count(one) < 4_000);
 });
 
+test("a wall screen is told who made an inverter, and nothing private of it", () => {
+  const inverter = { node_id: "solar-1", device: "inv-1", kind: "inverter", received_at: "2030-01-01T00:00:00.000Z", stale: false, example: false,
+    reading: { kind: "inverter", node_id: "solar-1", device: "inv-1", timestamp_ms: 1, mode: "line", pv_w: 10, manufacturer: "Voltronic", manufacturer_source: "deduced", serial: "PRIVATESERIAL001" } } as unknown as SolarDeviceView;
+  const shown = panelDevices([inverter], () => undefined).devices[0].reading;
+  assert.equal(shown.manufacturer, "Voltronic");
+  assert.equal(shown.manufacturer_source, "deduced");
+  assert.ok(!("serial" in shown));
+});
+
 test("a history is thinned evenly and keeps the newest point", () => {
   const samples = Array.from({ length: 1000 }, (_, t) => ({ t }));
   const thin = thinHistory(samples);
