@@ -55,6 +55,18 @@ test("a wall screen is told who made an inverter, and nothing private of it", ()
   assert.ok(!("serial" in shown));
 });
 
+test("a wall screen is given what the equipment counts", () => {
+  const inverter = { node_id: "solar-1", device: "inv-1", kind: "inverter", received_at: "2030-01-01T00:00:00.000Z", stale: false, example: false,
+    reading: { kind: "inverter", node_id: "solar-1", device: "inv-1", timestamp_ms: 1, mode: "line", energy: { pv_today_wh: 1200 }, pv_energy_total_wh: 5000, options_on: ["buzzer"] } } as unknown as SolarDeviceView;
+  const shown = panelDevices([inverter], () => undefined).devices[0].reading;
+  assert.deepEqual(shown.energy, { pv_today_wh: 1200 });
+  assert.equal(shown.pv_energy_total_wh, 5000);
+  assert.ok(!("options_on" in shown));
+  const battery = { ...view(1), reading: { ...stack("pack-1", 1), bms_system: { health_percent: 97 } } } as unknown as SolarDeviceView;
+  assert.deepEqual(panelDevices([battery], () => undefined).devices[0].reading.bms_system, { health_percent: 97 });
+  assert.deepEqual(panelDevice(battery, undefined).reading.bms_system, { health_percent: 97 });
+});
+
 test("a history is thinned evenly and keeps the newest point", () => {
   const samples = Array.from({ length: 1000 }, (_, t) => ({ t }));
   const thin = thinHistory(samples);

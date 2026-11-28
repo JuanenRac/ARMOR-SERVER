@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+- **A wall screen is given what the equipment counts:** the energy counters of an inverter and what a battery stack says of itself are part of GET /api/v1/panel/solar.
+
 - **An inverter's Wi-Fi dongle can be read locally, off by default:** with the security option `solar.wifi_dongle` and a list of allowed addresses in `solar-wifi-dongle.json`, the server reads a Voltronic PI30 or PI18 inverter behind an Eybond dongle (SmartESS, WatchPower Wi-Fi) with questions that only read. While off no port is open. A person points the dongle at the server, and the maker's app then stops receiving data. Tested with a simulated dongle only. The transport is adapted from ha-dessmonitor (MIT).
 
 ## [0.8.3.2] - New solar figures and a cell gap judged when it means something
