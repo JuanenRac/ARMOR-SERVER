@@ -238,14 +238,14 @@
     {
      "name": "tests/",
      "desc": {
-      "en": "1389 tests, unit and HTTP integration",
-      "es": "1389 pruebas, unitarias e integración HTTP",
-      "de": "1389 Tests, Unit und HTTP-Integration",
-      "fr": "1389 tests, unitaires et intégration HTTP",
-      "it": "1389 test, unitari e integrazione HTTP",
-      "ja": "1389 件（単体と HTTP 結合）",
-      "zh": "1389 项测试（单元与 HTTP 集成）",
-      "pt": "1389 testes, unitários e integração HTTP"
+      "en": "1454 tests, unit and HTTP integration",
+      "es": "1454 pruebas, unitarias e integración HTTP",
+      "de": "1454 Tests, Unit und HTTP-Integration",
+      "fr": "1454 tests, unitaires et intégration HTTP",
+      "it": "1454 test, unitari e integrazione HTTP",
+      "ja": "1454 件（単体と HTTP 結合）",
+      "zh": "1454 项测试（单元与 HTTP 集成）",
+      "pt": "1454 testes, unitários e integração HTTP"
      }
     },
     {
